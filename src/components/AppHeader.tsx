@@ -29,7 +29,7 @@ export function AppHeader() {
         {/* The maker's mark, not the document heading: it never changes, so as
             an <h1> it made all six tabs report the same outline (§6.4). The
             screen's own <h1> lives in the active panel. */}
-        <span className="panel-legend text-[0.75rem] tracking-[0.22em] text-foreground">XRPL Wallet</span>
+        <span className="panel-legend text-[0.75rem] tracking-[0.22em] text-foreground">XRPL Bench</span>
         {/* The Select below already names the network, so the badge does not
             repeat it. What it carries is the thing worth flagging: on Mainnet
             the funds are real. `warning`, not `destructive` — Mainnet is the

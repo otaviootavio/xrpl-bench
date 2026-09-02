@@ -3,12 +3,15 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Button } from '@/components/ui/button'
 import { NetworkSelector } from '@/components/wallet/NetworkSelector'
 import { Lamp } from '@/components/ui/lamp'
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
+import { ExternalLinkIcon } from 'lucide-react'
+import { BUILD, shortSha, sourceUrl, formatBuiltAt } from '@/lib/build-info'
+import { useAppUpdate } from '@/hooks/useAppUpdate'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogTrigger, DialogDescription } from '@/components/ui/dialog'
 import { Separator } from '@/components/ui/separator'
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { SeedReveal } from '@/components/wallet/SeedReveal'
 import { AddressLink } from '@/components/wallet/AddressLink'
 import { useAppStore } from '@/store/app-store'
@@ -30,6 +33,7 @@ export function SettingsTab() {
   const addressBook = useAppStore((s) => s.addressBook)
   const vaultKey = useAppStore((s) => s.vaultKey)
   const lock = useAppStore((s) => s.lock)
+  const { updateReady, applying, applyUpdate } = useAppUpdate()
   const queryClient = useQueryClient()
 
   const [addOpen, setAddOpen] = useState(false)
@@ -262,6 +266,68 @@ export function SettingsTab() {
           <Button variant="danger" className="w-fit" onClick={() => setConfirmResetAll(true)}>
             Remove all wallets from this device
           </Button>
+        </CardContent>
+      </Card>
+
+      {/* Which build is running, and the only control that changes it.
+          app-versioning-and-updates.md US-1 / US-3. */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Version</CardTitle>
+          <CardDescription>
+            This wallet never updates itself. A new version waits until you install it.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="flex flex-col gap-3">
+          <dl className="flex flex-wrap gap-x-8 gap-y-2">
+            <div>
+              <dt className="panel-legend">Version</dt>
+              <dd className="font-data text-sm tracking-tight">{BUILD.version}</dd>
+            </div>
+            <div className="min-w-0">
+              <dt className="panel-legend">Commit</dt>
+              <dd className="mt-0.5">
+                <a
+                  href={sourceUrl}
+                  target="_blank"
+                  rel="noreferrer noopener"
+                  className="inline-flex items-center gap-1 font-data text-sm tracking-tight hover:underline"
+                >
+                  {shortSha}
+                  <ExternalLinkIcon className="size-3 shrink-0 opacity-60" aria-hidden="true" />
+                </a>
+              </dd>
+            </div>
+            <div>
+              <dt className="panel-legend">Built</dt>
+              <dd className="font-data text-sm tracking-tight">{formatBuiltAt()}</dd>
+            </div>
+          </dl>
+
+          {updateReady ? (
+            <Alert variant="warning">
+              <AlertTitle>Update available</AlertTitle>
+              <AlertDescription className="flex flex-col items-start gap-2">
+                <span>
+                  A new version has downloaded and is waiting. Installing it reloads the app onto the new
+                  version; anything you have typed and not submitted is lost. Your wallets and keys are
+                  untouched.
+                </span>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => void applyUpdate()}
+                  disabled={applying}
+                >
+                  {applying ? 'Installing…' : 'Install update'}
+                </Button>
+              </AlertDescription>
+            </Alert>
+          ) : (
+            <p className="text-xs leading-snug text-muted-foreground">
+              You are on the newest version this device has downloaded.
+            </p>
+          )}
         </CardContent>
       </Card>
 

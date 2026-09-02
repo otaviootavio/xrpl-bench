@@ -14,6 +14,8 @@ import { fetchAccountStateOnce } from '@/lib/xrpl/query-reads'
 import { useAppStore } from '@/store/app-store'
 import { useQueryClient } from '@tanstack/react-query'
 import { toast } from '@/lib/notify'
+import { BUILD, shortSha, sourceUrl } from '@/lib/build-info'
+import { ExternalLinkIcon } from 'lucide-react'
 
 type Step = 'choice' | 'vault-setup' | 'import-seed' | 'backup-confirm' | 'import-warning'
 
@@ -190,6 +192,16 @@ export function Onboarding() {
               </Button>
             </CardContent>
           </Card>
+
+          {/* app-versioning-and-updates.md US-1: reachable before there is
+              even a vault to unlock, not only after one exists. */}
+          <p className="text-center text-xs text-muted-foreground">
+            v{BUILD.version} ·{' '}
+            <a href={sourceUrl} target="_blank" rel="noreferrer noopener" className="inline-flex items-center gap-1 hover:underline">
+              {shortSha}
+              <ExternalLinkIcon className="size-3 shrink-0 opacity-60" aria-hidden="true" />
+            </a>
+          </p>
         </div>
       </ChassisShell>
     )

@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useState } from 'react'
-import { registerSW } from 'virtual:pwa-register'
+import { registerSW } from '@/lib/sw-register'
 import { useAppStore } from '@/store/app-store'
 import { checkForRelease, type ReleaseManifest } from '@/lib/release-check'
 import { BUILD } from '@/lib/build-info'
+import { notify } from '@/lib/notify'
+import { useNoticeStore } from '@/store/notice-store'
 
 /**
  * User-controlled updates — app-versioning-and-updates.md US-2/US-3/US-4/US-5.
@@ -24,6 +26,20 @@ let updateSW: UpdateFn | null = null
 let registration: ServiceWorkerRegistration | undefined
 let waiting = false
 const listeners = new Set<(v: boolean) => void>()
+
+/**
+ * US-6/V4: "a major release presents the update more insistently — a
+ * persistent, clearly-worded notice — while minor and patch releases surface
+ * quietly in Settings." A stronger `Alert` variant inside the Version card is
+ * still only visible to someone who has already opened Settings, so a major
+ * or security-marked release additionally raises a real Annunciator notice —
+ * reachable from any tab, exactly the surface S16/S17 built for this. Module
+ * state, not component state, because `useAppUpdate` is called from both
+ * `Main` and `SettingsTab`; without this, each mounted caller would raise its
+ * own copy of the same notice.
+ */
+let insistentNoticeCommit: string | null = null
+let insistentNoticeId: string | null = null
 
 function setWaiting(v: boolean) {
   waiting = v
@@ -75,6 +91,26 @@ export function useAppUpdate() {
     }
   }, [updateReady, pendingRelease])
 
+  // US-6/V4's "more insistently" half: once a major or security-marked
+  // release's manifest resolves, and it has not already been declined, put a
+  // real notice in the Annunciator — not just a louder Alert nobody sees
+  // until they open Settings. Guarded by commit so it fires once per release
+  // per session, not once per mounted caller and not once per re-render.
+  useEffect(() => {
+    if (!pendingRelease) return
+    const insistent = pendingRelease.bump === 'major' || pendingRelease.security
+    if (!insistent) return
+    if (declinedVersions.includes(pendingRelease.commit)) return
+    if (insistentNoticeCommit === pendingRelease.commit) return
+    insistentNoticeCommit = pendingRelease.commit
+    insistentNoticeId = notify.warning(
+      pendingRelease.security
+        ? `A security update is available (v${pendingRelease.version}).`
+        : `A major update is available (v${pendingRelease.version}).`,
+      { description: 'Review it in Settings. Nothing installs until you choose to.' },
+    )
+  }, [pendingRelease, declinedVersions])
+
   /**
    * The on-demand half of US-2: "on startup, and when the user asks". Calling
    * the registration's own `update()` is what makes the browser re-fetch
@@ -123,7 +159,16 @@ export function useAppUpdate() {
   const declineKey = pendingRelease?.commit ?? null
   const declined = declineKey !== null && declinedVersions.includes(declineKey)
   const declineCurrent = useCallback(() => {
-    if (declineKey) declineUpdateVersion(declineKey)
+    if (!declineKey) return
+    declineUpdateVersion(declineKey)
+    // "Not now" also retires the insistent notice for THIS release — US-4's
+    // "not re-prompted on every launch" would otherwise be undermined by a
+    // notice that outlives the decline it responds to. A newer release still
+    // gets its own notice; this only silences the one just declined.
+    if (insistentNoticeCommit === declineKey && insistentNoticeId) {
+      useNoticeStore.getState().dismiss(insistentNoticeId)
+      insistentNoticeId = null
+    }
   }, [declineKey, declineUpdateVersion])
 
   return {

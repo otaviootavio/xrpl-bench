@@ -1070,3 +1070,96 @@ claims to, is not "shipped" under this epic's own bar for US-3 ("a link to how
 to verify the build") — so the Version card now renders that link next to
 "What changed", and `README.md`'s Security section gained the four-step
 rebuild/hash/compare procedure it was missing.
+
+### 10.1 A second gap, found on re-audit: US-6's "more insistently" had no live instance
+
+A later pass re-reading US-6's acceptance criteria word for word ("a major
+release presents the update more insistently — a persistent, clearly-worded
+notice — while minor and patch releases surface quietly in Settings") found
+that the only bump-dependent behaviour actually shipped was a louder `Alert`
+*variant* inside the Version card — `warning` instead of `default`. Both are
+equally invisible to someone who has not opened Settings, and equally
+reachable to someone who has. Louder colour inside a place nobody is looking
+is not "more insistently" than quiet colour in that same place; the acceptance
+criterion's own contrast ("while minor and patch surface quietly **in
+Settings**") only makes sense if major's treatment is not confined to
+Settings.
+
+**Fixed by having `useAppUpdate` raise a real Annunciator notice** — via the
+same `notify.warning` used by every other persistent notice in the app — the
+moment a resolved release manifest has `bump === 'major'` or `security ===
+true`. This reuses the exact surface S16/S17 built for this purpose instead of
+inventing a second one, and inherits its properties for free: it is reachable
+from any of the six panels, it persists until dismissed (§6.5), and it is a
+real DOM text node with a tone the Annunciator already announces correctly.
+Minor and patch releases raise no notice, matching "surface quietly in
+Settings" exactly as written.
+
+Two follow-on choices, both to keep this consistent with what US-4 already
+promises about declining:
+
+- **The notice is raised once per release per session, from module state, not
+  component state.** `useAppUpdate` is called from both `Main` and
+  `SettingsTab`; without a module-scoped guard keyed by the release's commit,
+  each mounted caller would push its own copy of the same notice the instant
+  both are mounted (`Main` always is, since `SettingsTab` is one of its six
+  tabs).
+- **Declining the update (`declineCurrent`, US-4) also dismisses the notice it
+  responds to.** US-4 is explicit that a declined release must not keep
+  nagging on every launch; leaving the Annunciator notice standing after the
+  user has already said "Not now" in Settings would be exactly that nag,
+  restated on a different surface. A *newer* release still gets its own
+  notice — only the just-declined one goes quiet.
+
+Covered by `src/hooks/__tests__/useAppUpdate.test.tsx` (four cases: major
+raises a persistent warning notice, a security-marked patch raises one too,
+an ordinary minor/patch release raises none, and declining dismisses the
+notice it belongs to). Making the module under test importable in isolation
+required extracting `virtual:pwa-register` — a Vite-plugin-only specifier the
+test runner cannot resolve at all, mockable or not — behind a one-line
+indirection, `src/lib/sw-register.ts`; the hook now imports `registerSW` from
+there instead of the virtual module directly.
+
+**Also corrected while re-verifying this section: the "27 call sites" figure
+this document and `docs/sprints/notices-sprints.md`'s status banner both
+carried for `lib/notify.tsx`'s callers was wrong.** The epic file itself
+always said twenty-five (`in-app-notices.md` US-2), and a repository-wide
+count of `toast.(success|error|warning|info)(` call sites outside test files
+confirms twenty-five, not twenty-seven — the higher number was never checked
+against the codebase when it was first written. Both documents now read
+twenty-five.
+
+### 10.2 A third gap, in US-1 itself: nothing showed the build stamp before unlock
+
+US-1 predates this pass entirely — §8.8 shipped it in S15, and both
+`CLAUDE.md` and this document's own §9/§10 headers had already been written
+describing the epic as fully shipped. Re-reading its acceptance criteria
+literally against the running app found one that was never true: "the same
+values are reachable without unlocking the wallet, so a user can identify a
+build before entering a PIN." `BUILD.version`/`shortSha`/`sourceUrl` were
+rendered in exactly one place, the Version card in `SettingsTab` — and
+`SettingsTab` is one of `Main`'s six tabs, reachable only after a successful
+unlock. A user could not, in fact, identify a build before entering a PIN;
+the acceptance criterion was written correctly and the implementation simply
+never satisfied it.
+
+**Fixed by adding a small, quiet build stamp — version and linked short SHA,
+`text-xs text-muted-foreground`, nothing louder — to both pre-auth screens
+that render *instead of* `Main`:** the bottom of `Unlock`'s card (directly
+answering "before entering a PIN") and the bottom of `Onboarding`'s initial
+choice screen (the same claim applies before a PIN exists at all, on a
+device's very first launch). Deliberately not a full Version card on either
+screen: the wallet is locked, or not yet set up, and nothing on those screens
+should compete with the PIN field or the two setup buttons for attention —
+the existing Version card already covers everything past that point. Verified
+at 320px on both screens; the stamp sits clear of the card, the dashed empty
+Annunciator plate, and every control.
+
+This is the second time in this pass that re-reading an acceptance criterion
+literally, against the running app rather than against a status table, found
+a real gap a "shipped" label had missed (§10.1 was the first, for US-6). The
+pattern across both: a document said a story was done, and the code came
+close enough that nothing else caught it — no gate fails on a criterion it
+was never written to check, and no amount of re-reading the *decision record*
+substitutes for re-reading the *acceptance criteria* against what actually
+renders.

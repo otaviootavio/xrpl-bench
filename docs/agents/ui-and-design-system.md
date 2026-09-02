@@ -21,7 +21,8 @@ in both because an instrument's display is dark in a lit room.
   you add a token. It parses tokens straight out of `src/index.css` and measures
   25 pairs per theme. A token it does not measure is a token outside the rule.
 - **Build from the panel vocabulary**, not ad-hoc borders: `.panel-plate`,
-  `.panel-well`, `.panel-legend`, `.panel-lamp`, `.panel-scribe`.
+  `.panel-well`, `.panel-legend`, `.panel-lamp`. (`.panel-scribe` was removed
+  2026-09-02 for having zero call sites — see `DESIGN.md`'s Known Gaps.)
 - **Put responsive behaviour in the primitive, not the call site.** `TabsList`
   owns its own breakpoints; a call site passing conflicting Tailwind classes is
   the anti-pattern §6.8 was written about.

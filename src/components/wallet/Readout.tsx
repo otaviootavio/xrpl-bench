@@ -41,7 +41,10 @@ export function Readout({
   value: string
   unit?: string
   marks?: ScaleMark[]
-  /** A `Lamp` and its adjacent visible label; state is never colour alone. */
+  /**
+   * A `StatusLegend`. State is never colour alone, and on this well's dark
+   * ground the word takes `text-readout-muted` while the lamp stays lit.
+   */
   lamp?: React.ReactNode
   footer?: React.ReactNode
   className?: string

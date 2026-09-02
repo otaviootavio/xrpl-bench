@@ -7,6 +7,7 @@ import { Label } from '@/components/ui/label'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { FingerprintIcon } from 'lucide-react'
 import { getLockoutState, hasPasskeyRegistered, unlockVault } from '@/lib/crypto/auth'
+import { ChassisShell } from '@/components/ChassisShell'
 import { tearDownAllLocalState } from '@/lib/teardown'
 import { useQueryClient } from '@tanstack/react-query'
 import { useAppStore } from '@/store/app-store'
@@ -73,72 +74,74 @@ export function Unlock() {
   }
 
   return (
-    <div className="mx-auto flex min-h-dvh max-w-md flex-col justify-center gap-6 p-6">
-      <Card>
-        <CardHeader>
-          <CardTitle as="h1">Unlock wallet</CardTitle>
-          <CardDescription>Your wallet is locked.</CardDescription>
-        </CardHeader>
-        <CardContent className="flex flex-col gap-3">
-          {hardLocked && (
-            <p className="text-sm text-text-destructive">
-              Too many failed attempts. Reset this device and re-import your wallet with your seed to continue.
-            </p>
-          )}
-          {!hardLocked && backedOff && (
-            <p className="text-sm text-text-destructive">Too many failed attempts. Try again in {Math.ceil(remainingMs / 1000)}s.</p>
-          )}
+    <ChassisShell maxWidthClassName="max-w-md">
+      <div className="flex min-h-full flex-col justify-center gap-6 p-6">
+        <Card>
+          <CardHeader>
+            <CardTitle as="h1">Unlock wallet</CardTitle>
+            <CardDescription>Your wallet is locked.</CardDescription>
+          </CardHeader>
+          <CardContent className="flex flex-col gap-3">
+            {hardLocked && (
+              <p className="text-sm text-text-destructive">
+                Too many failed attempts. Reset this device and re-import your wallet with your seed to continue.
+              </p>
+            )}
+            {!hardLocked && backedOff && (
+              <p className="text-sm text-text-destructive">Too many failed attempts. Try again in {Math.ceil(remainingMs / 1000)}s.</p>
+            )}
 
-          {!hardLocked && (
-            <>
-              {passkeyAvailable && (
-                <Button onClick={() => handleUnlock('passkey')} disabled={busy || backedOff}>
-                  <FingerprintIcon /> Unlock with passkey
-                </Button>
-              )}
-              <div className="flex flex-col gap-2">
-                <Label htmlFor="unlock-pin">PIN</Label>
-                <Input
-                  id="unlock-pin"
-                  type="password"
-                  inputMode="numeric"
-                  autoComplete="current-password"
-                  value={pin}
-                  onChange={(e) => setPin(e.target.value)}
-                  disabled={busy || backedOff}
-                />
-                <Button variant="outline" onClick={() => handleUnlock('pin')} disabled={busy || backedOff}>
-                  Unlock with PIN
-                </Button>
-              </div>
-            </>
-          )}
+            {!hardLocked && (
+              <>
+                {passkeyAvailable && (
+                  <Button onClick={() => handleUnlock('passkey')} disabled={busy || backedOff}>
+                    <FingerprintIcon /> Unlock with passkey
+                  </Button>
+                )}
+                <div className="flex flex-col gap-2">
+                  <Label htmlFor="unlock-pin">PIN</Label>
+                  <Input
+                    id="unlock-pin"
+                    type="password"
+                    inputMode="numeric"
+                    autoComplete="current-password"
+                    value={pin}
+                    onChange={(e) => setPin(e.target.value)}
+                    disabled={busy || backedOff}
+                  />
+                  <Button variant="outline" onClick={() => handleUnlock('pin')} disabled={busy || backedOff}>
+                    Unlock with PIN
+                  </Button>
+                </div>
+              </>
+            )}
 
-          <Button variant={hardLocked ? 'destructive' : 'ghost'} size="sm" onClick={() => setConfirmReset(true)}>
-            Reset this device and re-import
-          </Button>
-        </CardContent>
-      </Card>
-
-      <Dialog open={confirmReset} onOpenChange={setConfirmReset}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Reset this device?</DialogTitle>
-            <DialogDescription>
-              This erases every wallet stored on this device, including their encrypted seeds. Anything you have not backed up
-              elsewhere will be permanently lost — this cannot be undone. You will need your seed to import your wallet again.
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setConfirmReset(false)}>
-              Cancel
+            <Button variant={hardLocked ? 'destructive' : 'ghost'} size="sm" onClick={() => setConfirmReset(true)}>
+              Reset this device and re-import
             </Button>
-            <Button variant="destructive" onClick={handleReset}>
-              Erase and reset
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-    </div>
+          </CardContent>
+        </Card>
+
+        <Dialog open={confirmReset} onOpenChange={setConfirmReset}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Reset this device?</DialogTitle>
+              <DialogDescription>
+                This erases every wallet stored on this device, including their encrypted seeds. Anything you have not backed up
+                elsewhere will be permanently lost — this cannot be undone. You will need your seed to import your wallet again.
+              </DialogDescription>
+            </DialogHeader>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setConfirmReset(false)}>
+                Cancel
+              </Button>
+              <Button variant="destructive" onClick={handleReset}>
+                Erase and reset
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      </div>
+    </ChassisShell>
   )
 }

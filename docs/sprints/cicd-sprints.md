@@ -281,10 +281,12 @@ interesting; what it got wrong is.
 - **`BUNNYNET_API_KEY` is an account-wide key.** A scoped, deploy-only
   credential would be better; bunny's CLI offered no obvious way to mint one.
   Recorded as residual risk in §8.10 rather than left implicit.
-- **US-2, US-4, US-6, US-8, US-9** of the update epic remain unbuilt. Only the
-  deploy-blocking subset shipped (the `prompt` switch, US-1, US-3). **US-5 — no
-  update while a transaction is in flight — is the highest-priority
-  follow-up**, because a reload between signing and knowing the outcome is
-  exactly the money-ambiguity this wallet exists to remove.
+- **RESOLVED 2026-09-02: US-2, US-4, US-5, US-6, US-8, US-9 of the update
+  epic are now built** (`docs/decisions.md` §10). Only the deploy-blocking
+  subset (the `prompt` switch, US-1, US-3) had shipped as of this sprint's own
+  execution; the rest — including US-5, no update while a transaction is in
+  flight, which carried the highest priority because a reload between signing
+  and knowing the outcome is exactly the money-ambiguity this wallet exists to
+  remove — followed in the same pass that built the in-app-notices epic.
 - **`.panel-scribe`** is still defined-but-unused in `src/index.css`; the
   decision to drop it is recorded in `DESIGN.md` and the deletion is pending.

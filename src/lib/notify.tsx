@@ -68,8 +68,8 @@ function raise(type: NotifyType, message: string, options?: NotifyOptions) {
  * finished reading.
  *
  * Import this as `toast` so call sites read the same as before the sonner
- * dependency was removed (docs/decisions.md §9, S16) — all 27 call sites keep
- * this exact shape unchanged.
+ * dependency was removed (docs/decisions.md §9, S16) — all twenty-five call
+ * sites keep this exact shape unchanged.
  */
 export const notify = {
   success: (message: string, options?: NotifyOptions) => raise('success', message, options),

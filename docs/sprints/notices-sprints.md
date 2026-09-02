@@ -20,7 +20,7 @@ It should not wait behind other work either.
 > **STATUS: S16 and S17 both verified-complete 2026-09-02.** N1–N4 decided in
 > `docs/decisions.md` §9. The chassis shell is shared by `Main`, `Unlock`, and
 > `Onboarding` via `ChassisShell`; sonner is removed and `notify.tsx` is
-> store-backed with all 27 `toast` call sites unchanged; the docked
+> store-backed with all twenty-five `toast` call sites unchanged; the docked
 > `Annunciator` implements the quiet state (N2), the severity-plus-count
 > display for several notices (N3), and Unlock/Onboarding's own treatment in
 > the same pass, since building the complete device once was more direct than

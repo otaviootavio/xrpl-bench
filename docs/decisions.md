@@ -1120,6 +1120,17 @@ test runner cannot resolve at all, mockable or not — behind a one-line
 indirection, `src/lib/sw-register.ts`; the hook now imports `registerSW` from
 there instead of the virtual module directly.
 
+### 10.3 A fourth thing found, not a story gap but a promotion-pipeline bug
+
+Promoting this pass's work from `dev` to `stage` hit a real blocker, discovered
+only by trying it: `docs/sprints/cicd-sprints.md`'s original promotion model —
+each PR squash-merged independently onto `dev`, then squash-merged *again*
+onto `stage` as a separately-hashed commit with the same content — had worked
+for four prior promotions (#4, #7, #10, #14) and then genuinely broke on the
+fifth. Full reasoning, the fix, and why it is a correctness improvement and
+not a workaround, is recorded on its own in §11, since it is infrastructure
+that outlives this pass's story work.
+
 **Also corrected while re-verifying this section: the "27 call sites" figure
 this document and `docs/sprints/notices-sprints.md`'s status banner both
 carried for `lib/notify.tsx`'s callers was wrong.** The epic file itself
@@ -1163,3 +1174,94 @@ close enough that nothing else caught it — no gate fails on a criterion it
 was never written to check, and no amount of re-reading the *decision record*
 substitutes for re-reading the *acceptance criteria* against what actually
 renders.
+
+---
+
+## 11. The `promotion-source` check enforced a name, when it meant an invariant (2026-09-02)
+
+**What broke.** Promoting PR #16+#17's combined diff from `dev` to `stage`
+(as PR #18, `head: dev`) failed: GitHub reported the squash merge — and,
+separately, the rebase merge — as not cleanly creatable. A local `git merge
+--no-commit --no-ff origin/dev` while on a branch based on `origin/stage`
+reproduced the same conflicts directly, so this was not a GitHub caching
+artifact.
+
+**Root cause.** `docs/sprints/cicd-sprints.md`'s promotion model squash-merges
+every PR onto `dev`, then squash-merges the *same diff* onto `stage` as a
+*separately-hashed* commit — deliberately, since `stage`'s own ruleset (like
+`dev`'s) requires linear history, which forbids a true merge commit that
+would thread the two branches' histories together. This works as long as
+every file either branch touches keeps matching the other's content, but it
+is not actually guaranteed to keep working: `git`'s merge algorithm computes
+a three-way diff from the *true* common ancestor (the initial import commit,
+before either branch existed in its current form), not from the point where
+`dev` and `stage` last held identical trees. Four promotions got away with
+this because the files they touched didn't happen to diverge in a way `git`
+couldn't reconcile. The fifth did — `useAppUpdate.ts` didn't exist at the true
+common ancestor at all (both branches "added" it independently, an add/add
+conflict merge cannot auto-resolve), and `Onboarding.tsx`/`SettingsTab.tsx`/
+`cicd-sprints.md` had each been edited on both sides of the fork enough times
+that the hunks no longer lined up. This was a **latent defect in the
+promotion model itself**, not in this pass's application code — confirmed by
+checking that `dev`'s tree is a pure superset of `stage`'s (`git diff
+origin/dev origin/stage` touches only files `dev` changed; nothing exists on
+`stage` that `dev` lacks).
+
+**What does NOT fix it, and why each was rejected:**
+- *Force-pushing `dev` or `stage` to rewrite history.* Both branches'
+  rulesets set `non_fast_forward`, and rewriting a shared branch's history
+  after the fact is exactly the kind of irreversible operation this
+  document's own guardrails exist to prevent. Not attempted.
+- *A real merge commit joining the two histories.* Would permanently fix the
+  ancestry, but both rulesets set `required_linear_history`, which forbids
+  merge commits outright. Would require relaxing a guardrail to fix a
+  one-time problem, for a permanent loss of the linear-history property.
+- *Renaming a rebased branch to literally `dev`.* Impossible — `dev` already
+  exists as a distinct ref, and the working, protected `dev` branch must not
+  be touched to fix a `stage`-side problem.
+
+**What does fix it, cleanly: `git rebase origin/stage` on a copy of `dev`.**
+Verified locally — modern `git rebase` detects, via patch-id, that the
+commits unique to `dev` before this pass's two PRs are *content-equivalent* to
+commits already on `stage` (even though the commit hashes differ) and skips
+them, replaying only the two genuinely new commits. The result: a tree
+byte-identical to `origin/dev` (`git diff origin/dev <rebased> --stat` is
+empty), sitting on a branch where `origin/stage`'s current tip **is a real
+git ancestor** — i.e. pushing it to `stage` is a genuine, ordinary
+fast-forward, not a history rewrite, and requires no ruleset relaxation at
+all. The rebased branch is simply never named `dev`, since that name is
+taken.
+
+**Which is what exposed the actual bug: the `promotion-source` CI check
+compared `github.head_ref` against the literal string `"dev"`.** That
+condition is not the property anyone actually wants — it is a proxy for "this
+PR carries exactly what was already reviewed and merged into `dev`, and
+nothing else." A literal name match is a *weaker* proxy for that property
+than it looks in both directions at once: it blocks the rebased branch above
+even though it satisfies the real property exactly, and it would wave through
+a branch that happens to be named `dev`-adjacent-in-spirit but literally
+*is* named `dev` in a fork context in a way this repo never anticipated (moot
+here — only irrelevant nuance) — more importantly, a name check never
+inspects content at all, so a branch that starts from `dev`'s tip and then
+adds extra, unreviewed commits on top would still read as `head == "dev"` if
+someone renamed a local branch to match, and pass a check that was supposed
+to stop exactly that.
+
+**Fix.** `promotion-source` now checks **tree equality** against the required
+source branch's current tip (`git diff --quiet origin/<source> <head-sha>`)
+instead of the branch's name. This is strictly more correct: it accepts the
+rebased promotion branch (tree-identical to `dev`) that the name check
+wrongly rejected, and it would reject a branch carrying `dev`'s tip plus
+unreviewed extra commits, which the name check would never have caught
+regardless of what that branch happened to be named. Implemented with an
+explicit `git fetch origin <branch>:refs/remotes/origin/<branch>` per check
+(`actions/checkout` does not configure the default refspec that makes a bare
+`git fetch origin <branch>` populate `origin/<branch>`), and `fetch-depth: 0`
+so the full history needed for the diff is present.
+
+**Consequence for future promotions.** This makes the *next* occurrence of
+this same problem self-service rather than a repeated investigation: rebase
+the promoting branch onto the target's tip, verify the tree matches
+(`git diff origin/<target> <rebased> --stat` empty), push it under any name,
+open the PR. The check now verifies the property that actually matters and
+no longer cares what the branch is called.

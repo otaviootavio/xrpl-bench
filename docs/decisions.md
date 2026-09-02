@@ -302,22 +302,28 @@ is unavailable.
 
 ### 6.5 Errors never auto-dismiss, and state changes are announced
 
-**Decision.** All notifications go through `src/lib/notify.ts`. Errors and
+**Decision.** All notifications go through `src/lib/notify.tsx`. Errors and
 warnings persist until dismissed; successes and info auto-dismiss. Any state
 change carried by an icon swap also changes the control's accessible name and
 is announced in a polite live region.
 
 **Why.** `grep` found no `aria-live`, `role="status"` or `aria-expanded`
-anywhere in `src`. sonner's 4-second default was unoverridden, so an unlock
-failure, a failed faucet request, and a `tec*` "the network fee was still
-charged" result — none of which have any inline equivalent — were shown for
-four seconds and then gone, which is less time than a screen reader may need to
-finish announcing them. On a wallet, "your fee was taken and the payment did
-not apply" is not a message that should expire on a timer.
+anywhere in `src`. The original toast provider's 4-second default was
+unoverridden, so an unlock failure, a failed faucet request, and a `tec*` "the
+network fee was still charged" result — none of which have any inline
+equivalent — were shown for four seconds and then gone, which is less time
+than a screen reader may need to finish announcing them. On a wallet, "your
+fee was taken and the payment did not apply" is not a message that should
+expire on a timer.
 
-The rule lives in `notify.ts` rather than in `<Toaster toastOptions>` because
-sonner applies one duration to every type and cannot express per-type
-durations. `closeButton` on the Toaster is therefore required, not cosmetic.
+The rule lives in `notify.tsx`, per type, because the per-type duration is a
+product decision independent of whatever renders the notice — it held even
+while the renderer was a third-party toast library (see §9 for the S16
+annunciator rework that replaced it) and would hold again if the renderer
+changed a second time. Errors and warnings never expiring is enforced by
+having no auto-dismiss timer scheduled for them at all
+(`src/lib/notify.tsx`), rather than by any provider-level "don't auto-dismiss"
+flag — there is nothing to disable.
 
 ### 6.6 Truncated values are reachable without a pointer
 
@@ -873,3 +879,389 @@ Rollback is `bunny sites deployments publish --previous --force`, which flips th
 router's current-deploy pointer without re-uploading. It is verified on staging
 *before* it is needed. `concurrency.cancel-in-progress` is **false** on deploys:
 cancelling mid-upload leaves a half-written deploy directory.
+
+---
+
+## 9. Decisions made for the 2026-09-02 notice annunciator sprints (S16–S17)
+
+Plan: `docs/sprints/notices-sprints.md`. Epic: `docs/user-stories/in-app-notices.md`.
+Four open questions (N1–N4) blocked implementation; all four are decided here,
+by the implementing agent under a standing instruction to decide rather than
+ask, each with its reasoning so it can be overturned on the merits.
+
+### 9.1 N1 — the chassis shell moves up to `App`
+
+**Decision.** The fixed-height shell (header pinned, annunciator pinned,
+content scrolling between them) is built once, as a shared `ChassisShell`
+component, and used identically by `Main`, `Unlock`, and `Onboarding`. All
+three screens share one notice area and one layout mechanism, even though
+`Main`'s header and width differ from the other two.
+
+**Why.** The alternative — a bespoke, smaller treatment for the two screens
+outside `Main` — trades a one-time shell cost for a second, permanently
+maintained notice convention. `Unlock` and `Onboarding` between them raise 8 of
+the app's 27 notices (one wrong-PIN, seven onboarding-validation), and every
+guarantee this epic exists to make — a notice never covers the control the
+user is operating, an error persists until dismissed, arrival is announced
+through a live region — has to hold on those two screens exactly as it does on
+`Main`. Building that twice, once as the real annunciator and once as a smaller
+stand-in, is the two-conventions-for-one-concept drift this project's own rules
+warn against (`docs/agents/anti-patterns.md`), and a future notice added to
+either shape would need to remember which one applies. A shared shell is more
+upfront work and one coherent answer to maintain, not two.
+
+### 9.2 N4 — the annunciator sits at the base of the chassis
+
+**Decision.** The docked notice area is the last thing in the chassis, below
+the scrolling content region, not directly under the header.
+
+**Why.** It is the position furthest from any control a user is actively
+reaching for — the commit key, a form field, a tab — so a notice arriving can
+never relocate what's under the pointer or the next tab stop. It also spends
+real estate the 2026-09-01 finish record already flagged as unfinished
+ambition (~375px of empty chassis face below the plate row at 1440×900) rather
+than opening a fifth device by compressing existing content. The tradeoff
+against "under the header, closer to where the eye starts" is real but loses
+at the narrowest supported viewport: 320px already carries a wrapped header
+plus two rows of the six-function nav, and that is the width with the least
+room to spare for a new fixed band above the fold.
+
+### 9.3 N2 — the quiet state is genuinely blank, not a dimmed last notice
+
+**Decision.** When there is nothing to report, the annunciator renders an
+unlit plate — no lamp, no legend, no ghost of the previous notice — with no
+text content in the live region. This departs from the epic's own suggested
+default (holding the last notice, unlit and dimmed).
+
+**Why.** The epic's recommendation names its own risk accurately: "a resolved
+error that stays visible can read as still true." On a wallet whose entire
+positioning is refusing to fabricate reassurance about money
+(`PRODUCT.md` "Product Purpose"), a dimmed echo of a *dismissed* error is an
+ambiguous signal precisely where this product cannot afford one — a user
+glancing at the panel mid-task has no way to tell "this already happened and
+was cleared" from "this is still true, just quieter." An unlit plate carries
+no claim at all, which is the only quiet state consistent with §6.5's rule
+that a state change also changes the accessible name: nothing changed, so
+nothing is asserted. The reserved band is not "meaningless ink" while unlit —
+a dark annunciator is itself the plate's normal resting state, the same way a
+real instrument panel has lamps that are usually off.
+
+### 9.4 N3 — most severe notice shown, with a count, expanding to the full list
+
+**Decision.** With several notices outstanding, the annunciator shows the
+single most severe one (error > warning > success > info) plus a count of the
+others, e.g. "+2 more". Activating the count expands the region to the full
+bounded list.
+
+**Why.** Errors and warnings never auto-dismiss (§6.5), so two or three
+outstanding is the ordinary case this epic has to design for, not an edge one.
+The alternative — grow the region to list everything — is more honest about
+volume but has no upper bound: at 320px, three persistent notices already
+consume most of the viewport height, and a bad minute (a failed send, a
+stuck-transaction warning, and an unrelated info toast) would eat the panel
+the epic exists to protect. Severity-first with a count keeps the region's
+height fixed regardless of how many notices exist, while still surfacing the
+worst outstanding condition without a click — "an outstanding error is never
+buried under three successes" (US-4) holds by construction, since only a more
+severe notice can ever displace what's shown. The count makes the others
+discoverable rather than silently dropped, and expanding preserves every
+notice's own dismiss control once opened.
+
+### 9.5 Visual verification found two real defects; both are fixed
+
+`docs/agents/verifying-your-work.md` treats gates passing as no evidence a
+visual change works. This epic's implementation session initially had no
+browser tool and shipped S16/S17 as code-complete only; a later session, with
+a Playwright MCP browser available, drove the actual app (`bun run dev`) end
+to end — `Unlock` → reset device → every `Onboarding` step → `Main` — at
+320px/1440px, both panel finishes, and a `640×400` viewport standing in for
+200% zoom (chosen over CSS `zoom` on `<html>`, which scales the box model
+without shrinking the viewport that `dvh` resolves against, and so doesn't
+reproduce what real browser zoom does to a `dvh`-based shell). Two defects
+surfaced that no gate had caught, because none of the four gates render
+layout or execute a screen reader's live-region semantics:
+
+1. **The expanded notice list was outside the `aria-live` region.**
+   `Annunciator`'s live-region wrapper closed after the primary row and the
+   collapsed "+N more" toggle; the expanded list of secondary notices (N3)
+   was a plain sibling `<div>`. A notice arriving while already expanded
+   would update the DOM without ever entering the accessibility tree's live
+   region, so a screen reader would not announce it — a silent violation of
+   the same §6.5 rule this epic exists to preserve. Fixed by moving the
+   expanded list inside the live-region wrapper.
+2. **An unbroken long string overflowed the notice plate instead of
+   wrapping.** A real validation error (`"Unknown letter…Allowed:
+   rpshnaf39w…"`, a 58-character base58 alphabet with no spaces) has no
+   natural break opportunity; `min-w-0` on the flex parent lets the row
+   shrink but does not make the text itself break, so it ran past the
+   plate's right edge at 320px. Fixed by adding `break-words`
+   (`overflow-wrap: anywhere`) to the message/description container.
+
+Both are one-line fixes in `Annunciator.tsx`, recorded here rather than only
+in the sprint file because they are evidence for a general point: this
+epic's own gates (`lint`, `build`, `test`, `check:contrast`) all stayed green
+throughout, on both the broken and the fixed version. Gates and visual
+verification are not substitutes for each other.
+
+---
+
+## 10. Completing the app-versioning epic (2026-09-02)
+
+Plan: `docs/user-stories/app-versioning-and-updates.md`. V1–V4 were already
+decided (§9's siblings — no relation to the notices epic — were answered
+2026-09-02 during S15; see the epic file itself). This section is implementation
+notes for the stories S15 left unbuilt (US-2, US-4, US-5, US-6, US-8, US-9), not
+new open decisions — recorded because each involved a real choice, not a
+mechanical one.
+
+**Decline is keyed by commit SHA, not the semver string.** `BUILD.commitSha` is
+already the unique identifier every build carries (US-1), and it is what the
+release manifest names too (`gen-release-manifest.mjs`). Keying US-4's
+"remembered per version" by that instead of `pendingRelease.version` means a
+re-tag or a hotfix that reuses a version number can never collide with an
+earlier decline.
+
+**Prominence (V4) reads the manifest's own `bump`/`security` fields, and
+defaults to loud when the manifest can't be read.** A resolved manifest that
+says `patch` and not `security` renders the quiet `default` alert variant;
+anything else — `major`, `security`, or no manifest at all (offline, not yet
+deployed) — renders `warning`. Understating a security fix because the network
+request that would have told us otherwise happened to fail is a worse failure
+than an ordinary patch looking slightly more urgent than it is.
+
+**US-5's in-flight flag lives at the single write choke point
+(`lib/xrpl/writes.ts#submitAndClassify`), not in each tab's local `busy`
+state.** Radix unmounts inactive `TabsContent`, so a flag local to `SendTab`
+would vanish the instant the user switched to another tab mid-send — exactly
+when this guarantee matters most. `txInFlight` lives in `useAppStore` as
+session-only state (never persisted, per guardrail #3's spirit even though it
+carries no secret) and is set/cleared in a `try/finally` around the entire
+sign-submit-await window, so a thrown error or an `expired` classification
+still releases it.
+
+**US-6 ships the mechanism, not authored changelog prose.** The manifest's
+`notes` field links to the release commit, and the prominence gating above is
+what "a security fix says so independently of its bump" actually cashes out
+to. Writing genuine user-facing changelog copy per release is a process step
+for whoever cuts a release, not something to fabricate here — inventing
+plausible-sounding release notes for commits that don't yet have any would be
+exactly the kind of manufactured reassurance `PRODUCT.md` refuses.
+
+**US-8's recovery instructions live in a `<details>` in the Version card**,
+not a separate doc page — the acceptance criteria are about what the
+instructions say (never "clear site data") and that they're reachable, not
+where they live, and Settings is already where a user goes to find out what
+build they're running.
+
+**US-9 needed no new code.** The build stamp is already baked in at build time
+(US-1) and the release/SW checks are effect-driven fetches that never gate
+initial render, so "startup never blocks on the update check" and "the version
+shown is correct offline" were already true; this section just confirms it
+rather than claiming new work.
+
+**A gap in already-shipped US-3/US-7 surfaced during this pass and was closed
+in the same change.** `gen-release-manifest.mjs` had carried a `verify` field
+and per-asset hashes since S15, and `docs/decisions.md` §8.6/§8.10 had already
+verified the build is reproducible — but nothing in the UI ever rendered the
+link, and the link's own target (`README.md`'s `#security` anchor) did not
+contain the rebuild-and-compare steps US-7's acceptance criteria requires. A
+manifest field nobody links to, pointing at a page that doesn't say what it
+claims to, is not "shipped" under this epic's own bar for US-3 ("a link to how
+to verify the build") — so the Version card now renders that link next to
+"What changed", and `README.md`'s Security section gained the four-step
+rebuild/hash/compare procedure it was missing.
+
+### 10.1 A second gap, found on re-audit: US-6's "more insistently" had no live instance
+
+A later pass re-reading US-6's acceptance criteria word for word ("a major
+release presents the update more insistently — a persistent, clearly-worded
+notice — while minor and patch releases surface quietly in Settings") found
+that the only bump-dependent behaviour actually shipped was a louder `Alert`
+*variant* inside the Version card — `warning` instead of `default`. Both are
+equally invisible to someone who has not opened Settings, and equally
+reachable to someone who has. Louder colour inside a place nobody is looking
+is not "more insistently" than quiet colour in that same place; the acceptance
+criterion's own contrast ("while minor and patch surface quietly **in
+Settings**") only makes sense if major's treatment is not confined to
+Settings.
+
+**Fixed by having `useAppUpdate` raise a real Annunciator notice** — via the
+same `notify.warning` used by every other persistent notice in the app — the
+moment a resolved release manifest has `bump === 'major'` or `security ===
+true`. This reuses the exact surface S16/S17 built for this purpose instead of
+inventing a second one, and inherits its properties for free: it is reachable
+from any of the six panels, it persists until dismissed (§6.5), and it is a
+real DOM text node with a tone the Annunciator already announces correctly.
+Minor and patch releases raise no notice, matching "surface quietly in
+Settings" exactly as written.
+
+Two follow-on choices, both to keep this consistent with what US-4 already
+promises about declining:
+
+- **The notice is raised once per release per session, from module state, not
+  component state.** `useAppUpdate` is called from both `Main` and
+  `SettingsTab`; without a module-scoped guard keyed by the release's commit,
+  each mounted caller would push its own copy of the same notice the instant
+  both are mounted (`Main` always is, since `SettingsTab` is one of its six
+  tabs).
+- **Declining the update (`declineCurrent`, US-4) also dismisses the notice it
+  responds to.** US-4 is explicit that a declined release must not keep
+  nagging on every launch; leaving the Annunciator notice standing after the
+  user has already said "Not now" in Settings would be exactly that nag,
+  restated on a different surface. A *newer* release still gets its own
+  notice — only the just-declined one goes quiet.
+
+Covered by `src/hooks/__tests__/useAppUpdate.test.tsx` (four cases: major
+raises a persistent warning notice, a security-marked patch raises one too,
+an ordinary minor/patch release raises none, and declining dismisses the
+notice it belongs to). Making the module under test importable in isolation
+required extracting `virtual:pwa-register` — a Vite-plugin-only specifier the
+test runner cannot resolve at all, mockable or not — behind a one-line
+indirection, `src/lib/sw-register.ts`; the hook now imports `registerSW` from
+there instead of the virtual module directly.
+
+### 10.3 A fourth thing found, not a story gap but a promotion-pipeline bug
+
+Promoting this pass's work from `dev` to `stage` hit a real blocker, discovered
+only by trying it: `docs/sprints/cicd-sprints.md`'s original promotion model —
+each PR squash-merged independently onto `dev`, then squash-merged *again*
+onto `stage` as a separately-hashed commit with the same content — had worked
+for four prior promotions (#4, #7, #10, #14) and then genuinely broke on the
+fifth. Full reasoning, the fix, and why it is a correctness improvement and
+not a workaround, is recorded on its own in §11, since it is infrastructure
+that outlives this pass's story work.
+
+**Also corrected while re-verifying this section: the "27 call sites" figure
+this document and `docs/sprints/notices-sprints.md`'s status banner both
+carried for `lib/notify.tsx`'s callers was wrong.** The epic file itself
+always said twenty-five (`in-app-notices.md` US-2), and a repository-wide
+count of `toast.(success|error|warning|info)(` call sites outside test files
+confirms twenty-five, not twenty-seven — the higher number was never checked
+against the codebase when it was first written. Both documents now read
+twenty-five.
+
+### 10.2 A third gap, in US-1 itself: nothing showed the build stamp before unlock
+
+US-1 predates this pass entirely — §8.8 shipped it in S15, and both
+`CLAUDE.md` and this document's own §9/§10 headers had already been written
+describing the epic as fully shipped. Re-reading its acceptance criteria
+literally against the running app found one that was never true: "the same
+values are reachable without unlocking the wallet, so a user can identify a
+build before entering a PIN." `BUILD.version`/`shortSha`/`sourceUrl` were
+rendered in exactly one place, the Version card in `SettingsTab` — and
+`SettingsTab` is one of `Main`'s six tabs, reachable only after a successful
+unlock. A user could not, in fact, identify a build before entering a PIN;
+the acceptance criterion was written correctly and the implementation simply
+never satisfied it.
+
+**Fixed by adding a small, quiet build stamp — version and linked short SHA,
+`text-xs text-muted-foreground`, nothing louder — to both pre-auth screens
+that render *instead of* `Main`:** the bottom of `Unlock`'s card (directly
+answering "before entering a PIN") and the bottom of `Onboarding`'s initial
+choice screen (the same claim applies before a PIN exists at all, on a
+device's very first launch). Deliberately not a full Version card on either
+screen: the wallet is locked, or not yet set up, and nothing on those screens
+should compete with the PIN field or the two setup buttons for attention —
+the existing Version card already covers everything past that point. Verified
+at 320px on both screens; the stamp sits clear of the card, the dashed empty
+Annunciator plate, and every control.
+
+This is the second time in this pass that re-reading an acceptance criterion
+literally, against the running app rather than against a status table, found
+a real gap a "shipped" label had missed (§10.1 was the first, for US-6). The
+pattern across both: a document said a story was done, and the code came
+close enough that nothing else caught it — no gate fails on a criterion it
+was never written to check, and no amount of re-reading the *decision record*
+substitutes for re-reading the *acceptance criteria* against what actually
+renders.
+
+---
+
+## 11. The `promotion-source` check enforced a name, when it meant an invariant (2026-09-02)
+
+**What broke.** Promoting PR #16+#17's combined diff from `dev` to `stage`
+(as PR #18, `head: dev`) failed: GitHub reported the squash merge — and,
+separately, the rebase merge — as not cleanly creatable. A local `git merge
+--no-commit --no-ff origin/dev` while on a branch based on `origin/stage`
+reproduced the same conflicts directly, so this was not a GitHub caching
+artifact.
+
+**Root cause.** `docs/sprints/cicd-sprints.md`'s promotion model squash-merges
+every PR onto `dev`, then squash-merges the *same diff* onto `stage` as a
+*separately-hashed* commit — deliberately, since `stage`'s own ruleset (like
+`dev`'s) requires linear history, which forbids a true merge commit that
+would thread the two branches' histories together. This works as long as
+every file either branch touches keeps matching the other's content, but it
+is not actually guaranteed to keep working: `git`'s merge algorithm computes
+a three-way diff from the *true* common ancestor (the initial import commit,
+before either branch existed in its current form), not from the point where
+`dev` and `stage` last held identical trees. Four promotions got away with
+this because the files they touched didn't happen to diverge in a way `git`
+couldn't reconcile. The fifth did — `useAppUpdate.ts` didn't exist at the true
+common ancestor at all (both branches "added" it independently, an add/add
+conflict merge cannot auto-resolve), and `Onboarding.tsx`/`SettingsTab.tsx`/
+`cicd-sprints.md` had each been edited on both sides of the fork enough times
+that the hunks no longer lined up. This was a **latent defect in the
+promotion model itself**, not in this pass's application code — confirmed by
+checking that `dev`'s tree is a pure superset of `stage`'s (`git diff
+origin/dev origin/stage` touches only files `dev` changed; nothing exists on
+`stage` that `dev` lacks).
+
+**What does NOT fix it, and why each was rejected:**
+- *Force-pushing `dev` or `stage` to rewrite history.* Both branches'
+  rulesets set `non_fast_forward`, and rewriting a shared branch's history
+  after the fact is exactly the kind of irreversible operation this
+  document's own guardrails exist to prevent. Not attempted.
+- *A real merge commit joining the two histories.* Would permanently fix the
+  ancestry, but both rulesets set `required_linear_history`, which forbids
+  merge commits outright. Would require relaxing a guardrail to fix a
+  one-time problem, for a permanent loss of the linear-history property.
+- *Renaming a rebased branch to literally `dev`.* Impossible — `dev` already
+  exists as a distinct ref, and the working, protected `dev` branch must not
+  be touched to fix a `stage`-side problem.
+
+**What does fix it, cleanly: `git rebase origin/stage` on a copy of `dev`.**
+Verified locally — modern `git rebase` detects, via patch-id, that the
+commits unique to `dev` before this pass's two PRs are *content-equivalent* to
+commits already on `stage` (even though the commit hashes differ) and skips
+them, replaying only the two genuinely new commits. The result: a tree
+byte-identical to `origin/dev` (`git diff origin/dev <rebased> --stat` is
+empty), sitting on a branch where `origin/stage`'s current tip **is a real
+git ancestor** — i.e. pushing it to `stage` is a genuine, ordinary
+fast-forward, not a history rewrite, and requires no ruleset relaxation at
+all. The rebased branch is simply never named `dev`, since that name is
+taken.
+
+**Which is what exposed the actual bug: the `promotion-source` CI check
+compared `github.head_ref` against the literal string `"dev"`.** That
+condition is not the property anyone actually wants — it is a proxy for "this
+PR carries exactly what was already reviewed and merged into `dev`, and
+nothing else." A literal name match is a *weaker* proxy for that property
+than it looks in both directions at once: it blocks the rebased branch above
+even though it satisfies the real property exactly, and it would wave through
+a branch that happens to be named `dev`-adjacent-in-spirit but literally
+*is* named `dev` in a fork context in a way this repo never anticipated (moot
+here — only irrelevant nuance) — more importantly, a name check never
+inspects content at all, so a branch that starts from `dev`'s tip and then
+adds extra, unreviewed commits on top would still read as `head == "dev"` if
+someone renamed a local branch to match, and pass a check that was supposed
+to stop exactly that.
+
+**Fix.** `promotion-source` now checks **tree equality** against the required
+source branch's current tip (`git diff --quiet origin/<source> <head-sha>`)
+instead of the branch's name. This is strictly more correct: it accepts the
+rebased promotion branch (tree-identical to `dev`) that the name check
+wrongly rejected, and it would reject a branch carrying `dev`'s tip plus
+unreviewed extra commits, which the name check would never have caught
+regardless of what that branch happened to be named. Implemented with an
+explicit `git fetch origin <branch>:refs/remotes/origin/<branch>` per check
+(`actions/checkout` does not configure the default refspec that makes a bare
+`git fetch origin <branch>` populate `origin/<branch>`), and `fetch-depth: 0`
+so the full history needed for the diff is present.
+
+**Consequence for future promotions.** This makes the *next* occurrence of
+this same problem self-service rather than a repeated investigation: rebase
+the promoting branch onto the target's tip, verify the tree matches
+(`git diff origin/<target> <rebased> --stat` empty), push it under any name,
+open the PR. The check now verifies the property that actually matters and
+no longer cares what the branch is called.

@@ -22,7 +22,7 @@ export async function registerPasskey(userIdLabel: string): Promise<{ credential
 
   const credential = (await navigator.credentials.create({
     publicKey: {
-      rp: { name: 'XRPL Wallet' },
+      rp: { name: 'XRPL Bench' },
       user: { id: userId, name: userIdLabel, displayName: userIdLabel },
       challenge,
       pubKeyCredParams: [

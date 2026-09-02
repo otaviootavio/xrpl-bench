@@ -2,7 +2,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Skeleton } from '@/components/ui/skeleton'
-import { Lamp } from '@/components/ui/lamp'
+import { StatusLegend } from '@/components/ui/lamp'
 import { AddressDisplay } from '@/components/wallet/AddressDisplay'
 import { Readout, type ScaleMark } from '@/components/wallet/Readout'
 import { useAccountState } from '@/hooks/useAccountState'
@@ -100,10 +100,11 @@ export function BalancesTab() {
           unit="XRP"
           marks={marks}
           lamp={
-            <span className="flex items-center gap-1.5 font-legend text-[0.6875rem] font-semibold uppercase tracking-[0.1em] text-readout-muted">
-              <Lamp tone="live" />
+            // The word takes the well's own muted token — the tone token would
+            // not hold contrast on readout ground — while the lamp stays green.
+            <StatusLegend tone="live" className="text-readout-muted">
               Live
-            </span>
+            </StatusLegend>
           }
           footer={
             network === 'testnet' && (
@@ -146,10 +147,7 @@ export function BalancesTab() {
               <span className="flex min-w-0 flex-wrap items-center gap-2">
                 <span className="font-data text-sm tracking-tight">{displayCurrencyCode(l.currency)}</span>
                 {l.freezePeer && (
-                  <span className="inline-flex items-center gap-1.5 font-legend text-[0.6875rem] font-semibold uppercase tracking-[0.1em] text-text-destructive">
-                    <Lamp tone="alert" />
-                    Frozen by issuer
-                  </span>
+                  <StatusLegend tone="alert">Frozen by issuer</StatusLegend>
                 )}
               </span>
               <span className="font-data text-base tracking-tight">{formatAmountString(l.balance)}</span>

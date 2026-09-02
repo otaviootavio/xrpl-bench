@@ -1,4 +1,4 @@
-import { Lamp } from '@/components/ui/lamp'
+import { StatusLegend } from '@/components/ui/lamp'
 import { Button } from '@/components/ui/button'
 import { AddressLink } from './AddressLink'
 import { displayCurrencyCode, formatAmountString } from '@/lib/xrpl/money'
@@ -32,16 +32,10 @@ export function TrustLineRow({
         <div className="flex flex-wrap items-center gap-2">
           <span className="font-data text-sm font-medium tracking-tight">{displayCurrencyCode(line.currency)}</span>
           {line.freezePeer && (
-            <span className="inline-flex items-center gap-1.5 font-legend text-[0.6875rem] font-semibold uppercase tracking-[0.1em] text-text-destructive">
-              <Lamp tone="alert" />
-              Frozen by issuer
-            </span>
+            <StatusLegend tone="alert">Frozen by issuer</StatusLegend>
           )}
           {line.freeze && (
-            <span className="inline-flex items-center gap-1.5 font-legend text-[0.6875rem] font-semibold uppercase tracking-[0.1em] text-text-warning">
-              <Lamp tone="caution" />
-              Frozen by you
-            </span>
+            <StatusLegend tone="caution">Frozen by you</StatusLegend>
           )}
         </div>
         <p className="mt-1 font-data text-xl leading-tight tracking-tight">{formatAmountString(line.balance)}</p>

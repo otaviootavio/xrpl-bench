@@ -1,0 +1,295 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-09-02T00:00:00.000Z",
+  "title": "Design System: XRPL Wallet",
+  "extensions": {
+    "colorMeta": {
+      "enamel-chassis": {
+        "role": "neutral",
+        "displayName": "Pale Lab Enamel (chassis)",
+        "canonical": "oklch(0.918 0.01 250)",
+        "tonalRamp": ["oklch(0.15 0.01 250)", "oklch(0.26 0.01 250)", "oklch(0.37 0.01 250)", "oklch(0.48 0.01 250)", "oklch(0.60 0.01 250)", "oklch(0.72 0.01 250)", "oklch(0.84 0.01 250)", "oklch(0.95 0.01 250)"]
+      },
+      "enamel-plate": {
+        "role": "neutral",
+        "displayName": "Enamel Legend Plate",
+        "canonical": "oklch(0.972 0.005 250)",
+        "tonalRamp": ["oklch(0.15 0.005 250)", "oklch(0.26 0.005 250)", "oklch(0.37 0.005 250)", "oklch(0.48 0.005 250)", "oklch(0.60 0.005 250)", "oklch(0.72 0.005 250)", "oklch(0.85 0.005 250)", "oklch(0.97 0.005 250)"]
+      },
+      "enamel-ink": {
+        "role": "neutral",
+        "displayName": "Enamel Panel Ink",
+        "canonical": "oklch(0.215 0.016 250)",
+        "tonalRamp": ["oklch(0.15 0.016 250)", "oklch(0.26 0.016 250)", "oklch(0.37 0.016 250)", "oklch(0.48 0.016 250)", "oklch(0.60 0.016 250)", "oklch(0.72 0.016 250)", "oklch(0.84 0.016 250)", "oklch(0.95 0.016 250)"]
+      },
+      "enamel-scribe": {
+        "role": "neutral",
+        "displayName": "Enamel Scribe Rule",
+        "canonical": "oklch(0.7 0.016 250)",
+        "note": "Decorative structure only; held to a documented 1.5:1 visibility floor, not WCAG 1.4.11.",
+        "tonalRamp": ["oklch(0.15 0.016 250)", "oklch(0.26 0.016 250)", "oklch(0.37 0.016 250)", "oklch(0.48 0.016 250)", "oklch(0.60 0.016 250)", "oklch(0.72 0.016 250)", "oklch(0.84 0.016 250)", "oklch(0.95 0.016 250)"]
+      },
+      "enamel-control-edge": {
+        "role": "neutral",
+        "displayName": "Enamel Control Edge",
+        "canonical": "oklch(0.598 0.02 250)",
+        "note": "The WCAG 1.4.11 boundary: measured at 3:1 against both plate and chassis.",
+        "tonalRamp": ["oklch(0.15 0.02 250)", "oklch(0.26 0.02 250)", "oklch(0.37 0.02 250)", "oklch(0.48 0.02 250)", "oklch(0.60 0.02 250)", "oklch(0.72 0.02 250)", "oklch(0.84 0.02 250)", "oklch(0.95 0.02 250)"]
+      },
+      "enamel-key": {
+        "role": "primary",
+        "displayName": "Panel Key (enamel finish)",
+        "canonical": "oklch(0.255 0.018 250)",
+        "tonalRamp": ["oklch(0.15 0.018 250)", "oklch(0.26 0.018 250)", "oklch(0.37 0.018 250)", "oklch(0.48 0.018 250)", "oklch(0.60 0.018 250)", "oklch(0.72 0.018 250)", "oklch(0.84 0.018 250)", "oklch(0.95 0.018 250)"]
+      },
+      "enamel-readout": {
+        "role": "secondary",
+        "displayName": "Readout Graphite (enamel finish)",
+        "canonical": "oklch(0.205 0.014 250)",
+        "note": "Dark in BOTH finishes by design — a bench instrument's display is dark in a lit room.",
+        "tonalRamp": ["oklch(0.15 0.014 250)", "oklch(0.26 0.014 250)", "oklch(0.37 0.014 250)", "oklch(0.48 0.014 250)", "oklch(0.60 0.014 250)", "oklch(0.72 0.014 250)", "oklch(0.84 0.014 250)", "oklch(0.95 0.014 250)"]
+      },
+      "commit-enamel": {
+        "role": "primary",
+        "displayName": "Commit Orange (enamel finish)",
+        "canonical": "oklch(0.545 0.155 42)",
+        "note": "Reserved. One control class, one call site: the key that moves funds.",
+        "tonalRamp": ["oklch(0.15 0.155 42)", "oklch(0.26 0.155 42)", "oklch(0.37 0.155 42)", "oklch(0.48 0.155 42)", "oklch(0.60 0.155 42)", "oklch(0.72 0.155 42)", "oklch(0.84 0.155 42)", "oklch(0.95 0.155 42)"]
+      },
+      "lamp-alert-enamel": {
+        "role": "tertiary",
+        "displayName": "Alert Red — lamp fill (enamel finish)",
+        "canonical": "oklch(0.545 0.205 27)",
+        "note": "Fill token. Always paired with its own -foreground; never used as a text colour.",
+        "tonalRamp": ["oklch(0.15 0.205 27)", "oklch(0.26 0.205 27)", "oklch(0.37 0.205 27)", "oklch(0.48 0.205 27)", "oklch(0.60 0.205 27)", "oklch(0.72 0.205 27)", "oklch(0.84 0.205 27)", "oklch(0.95 0.205 27)"]
+      },
+      "lamp-caution-enamel": {
+        "role": "tertiary",
+        "displayName": "Caution Amber — lamp fill (enamel finish)",
+        "canonical": "oklch(0.78 0.155 72)",
+        "tonalRamp": ["oklch(0.15 0.155 72)", "oklch(0.26 0.155 72)", "oklch(0.37 0.155 72)", "oklch(0.48 0.155 72)", "oklch(0.60 0.155 72)", "oklch(0.72 0.155 72)", "oklch(0.84 0.155 72)", "oklch(0.95 0.155 72)"]
+      },
+      "lamp-live-enamel": {
+        "role": "tertiary",
+        "displayName": "Live Green — lamp fill (enamel finish)",
+        "canonical": "oklch(0.52 0.135 150)",
+        "tonalRamp": ["oklch(0.15 0.135 150)", "oklch(0.26 0.135 150)", "oklch(0.37 0.135 150)", "oklch(0.48 0.135 150)", "oklch(0.60 0.135 150)", "oklch(0.72 0.135 150)", "oklch(0.84 0.135 150)", "oklch(0.95 0.135 150)"]
+      },
+      "text-alert-enamel": {
+        "role": "tertiary",
+        "displayName": "Alert Red — text role (enamel finish)",
+        "canonical": "oklch(0.495 0.2 27)",
+        "note": "The lamp hue dropped in lightness until it clears 4.5:1 on the plate and on the tinted /10 alert surface.",
+        "tonalRamp": ["oklch(0.15 0.2 27)", "oklch(0.26 0.2 27)", "oklch(0.37 0.2 27)", "oklch(0.48 0.2 27)", "oklch(0.60 0.2 27)", "oklch(0.72 0.2 27)", "oklch(0.84 0.2 27)", "oklch(0.95 0.2 27)"]
+      },
+      "steel-chassis": {
+        "role": "neutral",
+        "displayName": "Dark Rack Steel (chassis)",
+        "canonical": "oklch(0.214 0.009 125)",
+        "note": "A different material from the enamel finish, not the same hue at lower lightness. Hue 125 is clear of every lamp hue (27/42/72/150) at this chroma.",
+        "tonalRamp": ["oklch(0.15 0.009 125)", "oklch(0.26 0.009 125)", "oklch(0.37 0.009 125)", "oklch(0.48 0.009 125)", "oklch(0.60 0.009 125)", "oklch(0.72 0.009 125)", "oklch(0.84 0.009 125)", "oklch(0.95 0.009 125)"]
+      },
+      "steel-plate": {
+        "role": "neutral",
+        "displayName": "Steel Legend Plate",
+        "canonical": "oklch(0.268 0.010 125)",
+        "tonalRamp": ["oklch(0.15 0.01 125)", "oklch(0.26 0.01 125)", "oklch(0.37 0.01 125)", "oklch(0.48 0.01 125)", "oklch(0.60 0.01 125)", "oklch(0.72 0.01 125)", "oklch(0.84 0.01 125)", "oklch(0.95 0.01 125)"]
+      },
+      "steel-key": {
+        "role": "primary",
+        "displayName": "Panel Key (steel finish)",
+        "canonical": "oklch(0.36 0.016 125)",
+        "note": "A raised dark cap, not shadcn's light-slab inversion: key logic is identical in both finishes so nothing competes with commit for salience.",
+        "tonalRamp": ["oklch(0.15 0.016 125)", "oklch(0.26 0.016 125)", "oklch(0.37 0.016 125)", "oklch(0.48 0.016 125)", "oklch(0.60 0.016 125)", "oklch(0.72 0.016 125)", "oklch(0.84 0.016 125)", "oklch(0.95 0.016 125)"]
+      },
+      "steel-readout": {
+        "role": "secondary",
+        "displayName": "Readout Graphite (steel finish)",
+        "canonical": "oklch(0.108 0.008 125)",
+        "note": "The well is cut deeper than the panel around it.",
+        "tonalRamp": ["oklch(0.15 0.008 125)", "oklch(0.26 0.008 125)", "oklch(0.37 0.008 125)", "oklch(0.48 0.008 125)", "oklch(0.60 0.008 125)", "oklch(0.72 0.008 125)", "oklch(0.84 0.008 125)", "oklch(0.95 0.008 125)"]
+      },
+      "commit-steel": {
+        "role": "primary",
+        "displayName": "Commit Orange (steel finish)",
+        "canonical": "oklch(0.66 0.17 42)",
+        "tonalRamp": ["oklch(0.15 0.17 42)", "oklch(0.26 0.17 42)", "oklch(0.37 0.17 42)", "oklch(0.48 0.17 42)", "oklch(0.60 0.17 42)", "oklch(0.72 0.17 42)", "oklch(0.84 0.17 42)", "oklch(0.95 0.17 42)"]
+      },
+      "steel-control-edge": {
+        "role": "neutral",
+        "displayName": "Steel Control Edge",
+        "canonical": "oklch(0.56 0.022 125)",
+        "note": "The WCAG 1.4.11 boundary in the dark finish.",
+        "tonalRamp": ["oklch(0.15 0.022 125)", "oklch(0.26 0.022 125)", "oklch(0.37 0.022 125)", "oklch(0.48 0.022 125)", "oklch(0.60 0.022 125)", "oklch(0.72 0.022 125)", "oklch(0.84 0.022 125)", "oklch(0.95 0.022 125)"]
+      }
+    },
+    "typographyMeta": {
+      "readout": { "displayName": "Readout", "purpose": "The primary reading inside the well. Exactly one per screen; clamped so it cannot wrap at 320px and still reads across a desk." },
+      "mark": { "displayName": "Scale Mark", "purpose": "Subordinate readings of the same quantity, hanging under the readout's hairline rule." },
+      "data": { "displayName": "Data", "purpose": "Every field value, address, hash, amount, fee, currency code. The default face for inputs." },
+      "legend": { "displayName": "Placard Legend", "purpose": "The workhorse label: card titles, field labels, definition terms, tab triggers, readout legends." },
+      "nameplate": { "displayName": "Nameplate", "purpose": "The maker's mark in the header and on pre-auth screens. Never the document heading." },
+      "key": { "displayName": "Key Legend", "purpose": "Button caps — uppercase, tracked, cut into the cap." },
+      "body": { "displayName": "Body", "purpose": "Explanatory prose inside plates." },
+      "caption": { "displayName": "Caption", "purpose": "Card descriptions and inline meta." }
+    },
+    "shadows": [
+      { "name": "plate-bevel", "value": "0 1px 0 0 color-mix(in oklab, var(--foreground) 6%, transparent), 0 1px 3px -1px color-mix(in oklab, var(--foreground) 12%, transparent)", "purpose": "Every legend plate: cards, history rows, select menus, toasts, dialogs. A light top edge plus a tight drop." },
+      { "name": "well-recess", "value": "inset 0 2px 5px -1px rgb(0 0 0 / 0.55), inset 0 0 0 1px rgb(0 0 0 / 0.25), inset 0 -1px 0 0 rgb(255 255 255 / 0.07), 0 1px 0 0 color-mix(in oklab, var(--card) 55%, transparent)", "purpose": "The readout well, seed reveal, tooltips, fee summary. The cut, its wall, the lit lower lip, and the panel edge just outside it." },
+      { "name": "field-recess", "value": "inset 0 1px 2px 0 rgb(0 0 0 / 0.14)", "purpose": "Inputs and select triggers. 0.16 for the network range selector track, 0.10 for alert bodies." },
+      { "name": "key-rest-filled", "value": "inset 0 1px 0 0 rgb(255 255 255 / 0.14), 0 1px 2px 0 rgb(0 0 0 / 0.28)", "purpose": "A filled key cap at rest. Commit uses a 0.24 inner highlight; destructive 0.20." },
+      { "name": "key-rest-plate", "value": "inset 0 1px 0 0 rgb(255 255 255 / 0.5), 0 1px 2px -1px rgb(0 0 0 / 0.18)", "purpose": "Plate-ground keys (outline, secondary, danger): stronger inner highlight, lighter drop." },
+      { "name": "key-pressed", "value": "inset 0 1px 2px 0 rgb(0 0 0 / 0.4)", "purpose": "The cap sinking onto the panel; the drop is removed and the cap translates down 1px." },
+      { "name": "lamp-glow", "value": "0 0 0 1px color-mix(in oklab, var(--foreground) 22%, transparent), 0 0 6px 0 currentColor", "purpose": "A bezel ring plus a bounded glow in the lamp's own colour — bounded so it never bleeds into adjacent numerals." },
+      { "name": "swung-out-module", "value": "0 8px 28px -8px rgb(0 0 0 / 0.45)", "purpose": "Dialog content only: the one element genuinely off the panel's face." },
+      { "name": "scribe-groove", "value": "0 1px 0 0 color-mix(in oklab, var(--card) 70%, transparent)", "purpose": "Paired with a 1px top border: how an engraved groove reads on a physical panel. Defined in the component layer but currently unused in the shipped pages." }
+    ],
+    "motion": [
+      { "name": "key-travel", "value": "transition: background-color 75ms, box-shadow 75ms, translate 75ms", "purpose": "Button press. Fast because a physical key has no easing to speak of; paired with a 1px downward translate." },
+      { "name": "state-colour", "value": "transition: color 150ms, background-color 150ms, border-color 150ms", "purpose": "Tailwind's default transition-colors on tab triggers, selector positions, inputs, and menu items." },
+      { "name": "no-enter-exit", "value": "none", "purpose": "Deliberate absence: no animation dependency is installed, so dialog/select enter-exit animation classes resolved to nothing and were removed rather than left declared-but-absent. Do not declare motion the build cannot run." }
+    ],
+    "breakpoints": [
+      { "name": "sm", "value": "640px" },
+      { "name": "md", "value": "768px" }
+    ]
+  },
+  "components": [
+    {
+      "name": "Panel Key (default)",
+      "kind": "button",
+      "refersTo": "button-default",
+      "description": "The ordinary momentary pushbutton: dark cap, engraved legend, real 75ms travel. Focus is left entirely to the browser's two-tone UA ring — nothing in this system styles :focus.",
+      "html": "<button class=\"ds-btn-default\">Fund with Testnet XRP</button>",
+      "css": ".ds-btn-default { display: inline-flex; align-items: center; justify-content: center; gap: 0.5rem; height: 2.25rem; padding: 0 1rem; border: 1px solid var(--primary); border-radius: var(--radius); background: var(--primary); color: var(--primary-foreground); font-family: var(--font-legend, 'Barlow Semi Condensed', sans-serif); font-size: 0.8125rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.09em; white-space: nowrap; box-shadow: inset 0 1px 0 0 rgb(255 255 255 / 0.14), 0 1px 2px 0 rgb(0 0 0 / 0.28); transition: background-color 75ms, box-shadow 75ms, translate 75ms; } .ds-btn-default:hover { background: color-mix(in oklab, var(--primary) 90%, transparent); } .ds-btn-default:active { translate: 0 1px; box-shadow: inset 0 1px 2px 0 rgb(0 0 0 / 0.4); }"
+    },
+    {
+      "name": "Commit Key",
+      "kind": "button",
+      "refersTo": "button-commit",
+      "description": "The reserved key. The only control class permitted to use --commit, and it means one thing: pressing this moves funds. One call site in the shipped build (SendTab). Never a decorative primary.",
+      "html": "<button class=\"ds-btn-commit\">Send payment</button>",
+      "css": ".ds-btn-commit { display: inline-flex; align-items: center; justify-content: center; gap: 0.5rem; height: 2.25rem; padding: 0 1rem; border: 1px solid var(--commit); border-radius: var(--radius); background: var(--commit); color: var(--commit-foreground); font-family: var(--font-legend, 'Barlow Semi Condensed', sans-serif); font-size: 0.8125rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.09em; white-space: nowrap; box-shadow: inset 0 1px 0 0 rgb(255 255 255 / 0.24), 0 1px 2px 0 rgb(0 0 0 / 0.3); transition: background-color 75ms, box-shadow 75ms, translate 75ms; } .ds-btn-commit:hover { background: color-mix(in oklab, var(--commit) 90%, transparent); } .ds-btn-commit:active { translate: 0 1px; box-shadow: inset 0 1px 2px 0 rgb(0 0 0 / 0.4); }"
+    },
+    {
+      "name": "Danger Key",
+      "kind": "button",
+      "refersTo": "button-danger",
+      "description": "Leads to a destructive action without being one: plate ground, alert-red text and edge, hover tints the plate. The saturated red fill belongs only to the confirm key inside the dialog this opens.",
+      "html": "<button class=\"ds-btn-danger\">Remove wallet</button>",
+      "css": ".ds-btn-danger { display: inline-flex; align-items: center; justify-content: center; gap: 0.5rem; height: 2rem; padding: 0 0.75rem; border: 1px solid color-mix(in oklab, var(--destructive) 55%, transparent); border-radius: var(--radius); background: var(--card); color: var(--text-destructive); font-family: var(--font-legend, 'Barlow Semi Condensed', sans-serif); font-size: 0.6875rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.09em; box-shadow: inset 0 1px 0 0 rgb(255 255 255 / 0.4), 0 1px 2px -1px rgb(0 0 0 / 0.16); transition: background-color 75ms, box-shadow 75ms, translate 75ms; } .ds-btn-danger:hover { background: color-mix(in oklab, var(--destructive) 10%, var(--card)); } .ds-btn-danger:active { translate: 0 1px; box-shadow: inset 0 1px 2px 0 rgb(0 0 0 / 0.18); }"
+    },
+    {
+      "name": "Recessed Field",
+      "kind": "input",
+      "refersTo": "input-field",
+      "description": "Genuinely cut into the plate: chassis ground, a 1px control-edge boundary measured at 3:1, and an offset inset shadow. Set in the data face because nearly every field here receives an address, amount, or seed. Focus is the UA ring; outline-none is banned.",
+      "html": "<label class=\"ds-field-label\" for=\"ds-field-addr\">Destination address</label><input class=\"ds-field\" id=\"ds-field-addr\" value=\"rPT1Sjq2YGrBMTttX4GZHjKu9dyfzbpAYe\" />",
+      "css": ".ds-field-label { display: block; margin-bottom: 0.375rem; font-family: var(--font-legend, 'Barlow Semi Condensed', sans-serif); font-size: 0.6875rem; font-weight: 600; line-height: 1.1; letter-spacing: 0.14em; text-transform: uppercase; color: var(--foreground); } .ds-field { display: flex; width: 100%; min-width: 0; height: 2.25rem; padding: 0.25rem 0.625rem; border: 1px solid var(--input); border-radius: var(--radius); background: var(--background); color: var(--foreground); font-family: var(--font-data, 'Azeret Mono', monospace); font-size: 0.8125rem; letter-spacing: -0.025em; font-variant-numeric: tabular-nums; font-feature-settings: 'tnum' 1, 'zero' 1; box-shadow: inset 0 1px 2px 0 rgb(0 0 0 / 0.14); transition: border-color 150ms, background-color 150ms; } .ds-field::placeholder { font-family: var(--font-legend, 'Barlow Semi Condensed', sans-serif); letter-spacing: normal; color: var(--muted-foreground); } .ds-field[aria-invalid='true'] { border-color: var(--destructive); }"
+    },
+    {
+      "name": "Function Selector",
+      "kind": "nav",
+      "refersTo": "tabs-trigger",
+      "description": "A flat row of legends cut into the chassis, with the selected function marked by a 2px lit detent on the strip's own bottom rule. The detent is --foreground, deliberately not --commit: a navigation detent does not move funds. Two rows of three below 640px, six equal columns above.",
+      "html": "<div class=\"ds-nav\"><button class=\"ds-nav-trigger\" data-state=\"active\">Balances</button><button class=\"ds-nav-trigger\">Send</button><button class=\"ds-nav-trigger\">Receive</button><button class=\"ds-nav-trigger\">History</button><button class=\"ds-nav-trigger\">Tokens</button><button class=\"ds-nav-trigger\">Settings</button></div>",
+      "css": ".ds-nav { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); width: 100%; align-items: stretch; border-bottom: 1px solid var(--border); color: var(--muted-foreground); } @media (min-width: 640px) { .ds-nav { grid-template-columns: repeat(6, minmax(0, 1fr)); } } .ds-nav-trigger { position: relative; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; padding: 0.375rem 0.75rem 0.5rem; border: 0; background: transparent; color: inherit; font-family: var(--font-legend, 'Barlow Semi Condensed', sans-serif); font-size: 0.6875rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.11em; white-space: nowrap; transition: color 150ms; } .ds-nav-trigger::after { content: ''; position: absolute; left: 0; right: 0; bottom: -1px; height: 2px; background: transparent; } .ds-nav-trigger:hover { color: var(--foreground); } .ds-nav-trigger[data-state='active'] { color: var(--foreground); } .ds-nav-trigger[data-state='active']::after { background: var(--foreground); }"
+    },
+    {
+      "name": "Legend Plate",
+      "kind": "card",
+      "refersTo": "card-plate",
+      "description": "A plate screwed onto the chassis: lighter ground, a scribed 1px edge, a light top edge and a tight drop. Padding is panel-dense, and the title renders as a small engraved placard while the value it labels carries the scale.",
+      "html": "<div class=\"ds-plate\"><div class=\"ds-plate-header\"><h2 class=\"ds-plate-title\">Tokens</h2><span class=\"ds-plate-meta\">3 held</span></div><div class=\"ds-plate-body\"><p class=\"ds-plate-value\">1,204.500000</p></div></div>",
+      "css": ".ds-plate { border: 1px solid var(--border); border-radius: var(--radius); background: var(--card); color: var(--card-foreground); box-shadow: 0 1px 0 0 color-mix(in oklab, var(--foreground) 6%, transparent), 0 1px 3px -1px color-mix(in oklab, var(--foreground) 12%, transparent); } .ds-plate-header { display: flex; align-items: baseline; justify-content: space-between; gap: 0.5rem; padding: 0.75rem 1rem 0.5rem; } .ds-plate-title { margin: 0; font-family: var(--font-legend, 'Barlow Semi Condensed', sans-serif); font-size: 0.6875rem; font-weight: 600; line-height: 1.1; letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted-foreground); } .ds-plate-meta { font-family: var(--font-data, 'Azeret Mono', monospace); font-size: 0.75rem; color: var(--muted-foreground); } .ds-plate-body { padding: 0 1rem 1rem; } .ds-plate-value { margin: 0; font-family: var(--font-data, 'Azeret Mono', monospace); font-size: 1rem; letter-spacing: -0.025em; font-variant-numeric: tabular-nums; font-feature-settings: 'tnum' 1, 'zero' 1; }"
+    },
+    {
+      "name": "Readout Well",
+      "kind": "custom",
+      "refersTo": "readout-well",
+      "description": "The signature: one inset display window carrying the primary reading at panel scale, dark in BOTH finishes. Derived readings are scale marks under a single hairline inside the same well — subordinate readings of the same quantity, not stat cards. Live state is a lamp plus its word.",
+      "html": "<section class=\"ds-readout\" aria-label=\"XRP Balance\"><div class=\"ds-readout-top\"><h2 class=\"ds-readout-legend\">XRP Balance</h2><span class=\"ds-readout-state\"><span class=\"ds-lamp ds-lamp-live\"></span>Live</span></div><p class=\"ds-readout-value\"><span class=\"ds-readout-figure\">1,204.500000</span><span class=\"ds-readout-unit\">XRP</span></p><dl class=\"ds-readout-marks\"><div><dt class=\"ds-readout-legend\">Spendable</dt><dd class=\"ds-readout-mark\">1,203.500000</dd></div><div><dt class=\"ds-readout-legend\">Reserved</dt><dd class=\"ds-readout-mark\">1.000000</dd></div></dl></section>",
+      "css": ".ds-readout { padding: 0.75rem 1rem 1rem; border: 1px solid color-mix(in oklab, var(--readout) 70%, var(--foreground)); border-radius: var(--radius); background: var(--readout); color: var(--readout-foreground); box-shadow: inset 0 2px 5px -1px rgb(0 0 0 / 0.55), inset 0 0 0 1px rgb(0 0 0 / 0.25), inset 0 -1px 0 0 rgb(255 255 255 / 0.07), 0 1px 0 0 color-mix(in oklab, var(--card) 55%, transparent); } @media (min-width: 640px) { .ds-readout { padding: 1.25rem 1.5rem 1.75rem; } } .ds-readout-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 0.75rem; } .ds-readout-legend { margin: 0; font-family: var(--font-legend, 'Barlow Semi Condensed', sans-serif); font-size: 0.6875rem; font-weight: 600; line-height: 1.1; letter-spacing: 0.14em; text-transform: uppercase; color: var(--readout-muted); } .ds-readout-state { display: inline-flex; align-items: center; gap: 0.375rem; font-family: var(--font-legend, 'Barlow Semi Condensed', sans-serif); font-size: 0.6875rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.1em; color: var(--readout-muted); } .ds-readout-value { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 0.625rem; margin: 0.25rem 0 0; } .ds-readout-figure { font-family: var(--font-data, 'Azeret Mono', monospace); font-size: clamp(2.25rem, 11vw, 5rem); font-weight: 500; line-height: 1.02; letter-spacing: -0.035em; font-variant-numeric: tabular-nums; font-feature-settings: 'tnum' 1, 'zero' 1; } .ds-readout-unit { font-family: var(--font-legend, 'Barlow Semi Condensed', sans-serif); font-size: 0.875rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.12em; color: var(--readout-muted); } .ds-readout-marks { display: flex; flex-wrap: wrap; gap: 0.5rem 2.5rem; margin: 1rem 0 0; padding-top: 0.75rem; border-top: 1px solid rgb(255 255 255 / 0.15); } .ds-readout-mark { margin: 0; font-family: var(--font-data, 'Azeret Mono', monospace); font-size: 1rem; line-height: 1.375; letter-spacing: -0.025em; font-variant-numeric: tabular-nums; font-feature-settings: 'tnum' 1, 'zero' 1; } .ds-lamp { display: inline-block; width: 0.5rem; height: 0.5rem; flex: none; border-radius: 9999px; background: currentColor; box-shadow: 0 0 0 1px color-mix(in oklab, var(--foreground) 22%, transparent), 0 0 6px 0 currentColor; } .ds-lamp-live { color: var(--text-success); }"
+    },
+    {
+      "name": "Alert Annunciator",
+      "kind": "custom",
+      "refersTo": "alert-annunciator",
+      "description": "A panel does not wash a region in amber to say caution — it lights a legend. The title is a small lit plate carrying the tone's measured fill/-foreground pair; the body sits on recessed plate ground. Keeps salience and the commit reservation both: --commit stays the only saturated field.",
+      "html": "<div class=\"ds-alert ds-alert-warning\" role=\"alert\"><div class=\"ds-alert-title\"><span class=\"ds-alert-dot\"></span>Account not activated</div><div class=\"ds-alert-body\">This payment will fail: the destination needs the base reserve before it can hold XRP.</div></div>",
+      "css": ".ds-alert { position: relative; width: 100%; padding: 0.5rem 0.75rem 0.625rem; border: 1px solid var(--border); border-radius: var(--radius); background: var(--card); font-family: var(--font-legend, 'Barlow Semi Condensed', sans-serif); font-size: 0.875rem; box-shadow: inset 0 1px 2px 0 rgb(0 0 0 / 0.10); } .ds-alert-warning { border-color: color-mix(in oklab, var(--warning) 60%, transparent); color: var(--text-warning); } .ds-alert-title { display: inline-flex; align-items: center; gap: 0.375rem; margin-bottom: 0.375rem; padding: 0.125rem 0.375rem; border-radius: calc(var(--radius) - 1px); background: var(--warning); color: var(--warning-foreground); font-size: 0.75rem; font-weight: 600; line-height: 1.35; letter-spacing: 0.1em; text-transform: uppercase; box-shadow: inset 0 1px 0 0 rgb(255 255 255 / 0.22); } .ds-alert-dot { width: 0.375rem; height: 0.375rem; flex-shrink: 0; border-radius: 9999px; background: currentColor; opacity: 0.7; } .ds-alert-body { font-size: 0.875rem; line-height: 1.375; }"
+    },
+    {
+      "name": "Network Range Selector",
+      "kind": "custom",
+      "description": "A positional switch, not a dropdown: both positions visible at rest inside a recessed track, so the current network AND the alternative read without opening anything. Radiogroup semantics; selection is marked by fill AND aria-checked, never colour alone. An unselected position keeps full-strength ink because it is available, not disabled.",
+      "html": "<div class=\"ds-range\" role=\"radiogroup\" aria-label=\"Network\"><button class=\"ds-range-pos ds-range-on\" role=\"radio\" aria-checked=\"true\">Mainnet</button><button class=\"ds-range-pos\" role=\"radio\" aria-checked=\"false\">Testnet</button></div>",
+      "css": ".ds-range { display: inline-flex; flex-shrink: 0; padding: 1px; border: 1px solid var(--input); border-radius: var(--radius); background: var(--background); box-shadow: inset 0 1px 2px 0 rgb(0 0 0 / 0.16); } .ds-range-pos { padding: 0.25rem 0.625rem; border: 0; border-radius: calc(var(--radius) - 1px); background: transparent; color: var(--foreground); font-family: var(--font-legend, 'Barlow Semi Condensed', sans-serif); font-size: 0.6875rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.1em; transition: background-color 150ms, color 150ms; } .ds-range-pos:hover { background: var(--accent); } .ds-range-on, .ds-range-on:hover { background: var(--primary); color: var(--primary-foreground); box-shadow: inset 0 1px 0 0 rgb(255 255 255 / 0.14); }"
+    },
+    {
+      "name": "Stamped Tag",
+      "kind": "chip",
+      "refersTo": "badge-stamp",
+      "description": "A small square-cut stamped plate in the legend face, for a fixed label. For live state use the indicator lamp instead. The shipped build's meaningful use is the caution-amber Real funds stamp on Mainnet.",
+      "html": "<span class=\"ds-tag ds-tag-warning\">Real funds</span>",
+      "css": ".ds-tag { display: inline-flex; align-items: center; gap: 0.375rem; padding: 1px 0.375rem; border: 1px solid var(--border); border-radius: calc(var(--radius) - 1px); background: var(--secondary); color: var(--secondary-foreground); font-family: var(--font-legend, 'Barlow Semi Condensed', sans-serif); font-size: 0.6875rem; font-weight: 600; line-height: 1.35; letter-spacing: 0.1em; text-transform: uppercase; } .ds-tag-warning { border-color: var(--warning); background: var(--warning); color: var(--warning-foreground); }"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Bench Panel",
+    "overview": "The wallet is a measurement instrument for one account, and its surfaces are the parts of an instrument: a chassis (the page), engraved legend plates screwed onto it (cards), an inset readout well cut into the face (the balance), and indicator lamps that report live state. It refuses the centered card stack that rearranges itself whenever state changes — reading order is fixed at every width, and the six functions read as a flat selector row rather than a navigation that grows and shrinks.\n\nLight and dark are two real panel finishes, not one palette inverted: pale lab enamel at hue 250 and dark rack steel at hue 125, two different materials with different hues, different plate logic, and independently measured contrast. Neutrals carry chroma because no real panel is chroma-zero. The finish switches on prefers-color-scheme only; there is no .dark class and no theme toggle anywhere in the build. The one element that does not flip is the readout well: it is dark in both finishes, because a bench instrument's display is dark in a lit room, and that is what keeps the light finish an equal citizen instead of a washed-out inversion.\n\nDensity is panel-dense, not marketing-page generous: plate padding is 0.75–1rem, the legend face is condensed, and one saturated colour — the commit orange at hue 42 — is held in reserve for the single class of control that moves funds. Depth is built from real structure: bevels, drop shadows, and genuine inset shadow stacks. There is deliberately no faux-metal gradient, no brushed texture, and no drawn engraving — the panel's own risk was engraving that is drawn rather than earned, so every recess and every raised edge is carried by light logic instead of decoration.",
+    "keyCharacteristics": [
+      "Two independent finishes (enamel hue 250 / steel hue 125), never an inversion of one palette.",
+      "A single dark readout well in both finishes, carrying the primary reading at panel scale.",
+      "Machined 0.125rem radius everywhere except the indicator lamp disc.",
+      "One reserved commit colour, on one control class, at one call site.",
+      "Barlow Semi Condensed for cut legends; Azeret Mono, tabular, for every numeral, address, and hash.",
+      "Live state is a lamp plus its word — never a stamped fill, never colour alone.",
+      "Contrast is measured by script (50 pairs, both finishes), not judged by eye."
+    ],
+    "rules": [
+      { "name": "The Reservation Rule, three levels", "body": "Commit orange belongs to the control class that moves funds and to nothing else. Saturated destructive fill belongs to the confirm key inside a dialog. A control that merely opens that dialog uses the danger treatment — plate ground with alert-red text and an alert-red edge — never a fill.", "section": "colors" },
+      { "name": "The Annunciator Rule", "body": "Alerts never wash their field. A notice sits on plate ground and lights a legend-sized plate as its title, so commit orange remains the only saturated field on the panel while a caution still reads louder than prose. The lit legend plate is the permitted exception, and it uses measured fill/-foreground pairs.", "section": "colors" },
+      { "name": "The Lamp-Plus-Word Rule", "body": "Live state is an indicator lamp beside its own visible label. Never a stamped fill, never colour alone. A stamped badge is for a fixed label; a lamp is for 'this thing is currently in state X.'", "section": "colors" },
+      { "name": "The Measured-Not-Judged Rule", "body": "scripts/check-contrast.mjs parses tokens straight out of src/index.css and measures 25 pairs per finish, 50 total. Adding a colour token without adding its pairs is incomplete work. Do not hand-tune a value here without re-running it.", "section": "colors" },
+      { "name": "The No-Chroma-Zero Rule", "body": "Every neutral carries hue. oklch(… 0 0) is banned as a token value in both finishes — it is the one thing no real panel is.", "section": "colors" },
+      { "name": "The Barbell Rule", "body": "The ramp has two ends and a deliberate hole in the middle: one enormous readout and everything else clustered between 0.6875rem and 0.875rem. There is no mid-scale heading tier, because there are no display headings on this panel.", "section": "typography" },
+      { "name": "The Legend/Value Inversion Rule", "body": "The label is small and cut; the VALUE carries the scale. CardTitle renders as an engraved placard, not as a heading face. This is the direction, not a defect — do not 'fix' it by growing card titles.", "section": "typography" },
+      { "name": "The Tabular-By-Construction Rule", "body": "Tabular figures and slashed zero are set on the data face itself (.font-data), not per call site, so a live-updating balance can never shift its own digits under the reader's eye. Money arrives as a pre-formatted string; no numeral in this app is proportional.", "section": "typography" },
+      { "name": "The Screen-Names-Itself Rule", "body": "The document's h1 names the active panel and is visually hidden, because the selected function already states the screen on screen. The header nameplate is a constant and is therefore never the heading.", "section": "typography" },
+      { "name": "The Earned-Recess Rule", "body": "A recess is an inset shadow with offset and blur, never a flat colour swap. If a surface reads as 'cut in,' it must carry the shadow stack that makes it so.", "section": "elevation" },
+      { "name": "The Diffuse-Light Rule", "body": "All shadows are soft and small-offset, lit from directly above. No hard offset shadows: this is a machined panel, not a neobrutalist poster.", "section": "elevation" },
+      { "name": "The Real-Structure Rule", "body": "Depth comes from bevels, recesses, and travel. No faux-metal gradients, no brushed textures, no drawn engraving effects.", "section": "elevation" }
+    ],
+    "dos": [
+      "Do treat light and dark as two materials. Add tokens to both :root (enamel, hue 250) and the prefers-color-scheme: dark block (steel, hue 125), with values chosen per finish rather than derived by inverting lightness.",
+      "Do run bun run check:contrast after touching any colour, and add the new token's pairs to the script's 25-per-finish set. A token without pairs is incomplete work.",
+      "Do keep commit orange on the fund-moving control class only, and keep saturated destructive fill on the in-dialog confirm key only. Use the danger treatment for anything that merely opens that dialog.",
+      "Do report live state as a lamp plus an adjacent visible word, and change the accessible name when the state changes.",
+      "Do set every numeral, address, and hash in the data face, and pass money in as a pre-formatted string.",
+      "Do keep card titles as small engraved placards and let the value carry the scale.",
+      "Do put responsive behaviour inside the primitive, not at the call site.",
+      "Do build depth from bevels, recesses, and key travel — a real inset shadow stack for anything that reads as cut in.",
+      "Do leave the browser's focus ring alone, including on skip-link landing targets."
+    ],
+    "donts": [
+      "Don't ship a chroma-zero neutral. Every grey in this system has hue.",
+      "Don't style :focus or :focus-visible, and never write outline-none.",
+      "Don't round controls, plates, fields, or containers beyond the machined 0.125rem scale — no pills, no rounded-lg web chrome. The indicator lamp disc is the one intentional full-round element.",
+      "Don't wash an alert's field in its tone colour. Light a legend-sized plate instead; commit orange stays the only saturated field.",
+      "Don't use a fill token (--destructive, --warning, --success) as a text colour, or a --text-* token as a fill. They are separately measured.",
+      "Don't spend commit orange on navigation, selection detents, links, or emphasis.",
+      "Don't fake a recess with a flat colour swap, and don't add hard offset shadows — this world's light is soft and directly overhead.",
+      "Don't add faux-metal gradients, brushed textures, or drawn engraving effects.",
+      "Don't break the readout into separate stat cards, or give a screen a second panel-scale number.",
+      "Don't treat --border as a control boundary: it is a decorative scribe rule at a 1.5:1 visibility floor. Field and control edges use --input, measured at 3:1.",
+      "Don't declare motion the build cannot run. There is no animation library installed; enter/exit animation classes resolve to nothing and were removed rather than left declared-but-absent.",
+      "Don't add a .dark class or a theme toggle. The finish follows prefers-color-scheme only."
+    ],
+    "knownGaps": [
+      "Chassis density at large viewports: at 1440x900 the face below the plate row is roughly 375px of empty ground and the readout dominates the upper third rather than owning the frame. Shipped as it stands; unfinished ambition, not a defect.",
+      "Two of four devices carry the build: .panel-scribe has zero call sites in the shipped pages (region separation uses plain border-b/border-x in the scribe colour), so it is defined vocabulary rather than system rule.",
+      "QrCode.tsx hardcodes bg-white on its plate so scanners get the contrast they need. A build-carried necessity, deliberately not a palette token."
+    ]
+  }
+}

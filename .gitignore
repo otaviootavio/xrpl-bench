@@ -1,0 +1,85 @@
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+node_modules
+dist
+dist-ssr
+*.local
+
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# Machine-local Impeccable workflow settings
+.impeccable/config.local.json
+
+# impeccable-live-ignore-start
+.impeccable/hook.cache.json
+.impeccable/hook.pending.json
+.impeccable/config.local.json
+.impeccable/live/server.json
+.impeccable/live/roots.json
+.impeccable/live/app-root.json
+.impeccable/live/inject-journal.json
+.impeccable/live/sessions/
+.impeccable/live/previews/
+.impeccable/live/annotations/
+.impeccable/live/artifacts/
+.impeccable/live/accept-receipts/
+.impeccable/live/locks/
+.impeccable/live/cache/
+.impeccable/live/manual-edit-apply-transaction.json
+.impeccable/live/manual-edit-events.jsonl
+.impeccable/live/manual-edit-evidence/
+.impeccable/live/pending-manual-edits.json
+.impeccable/live/deferred-svelte-component-accepts.json
+.impeccable-live.json
+.impeccable-live/
+app/.impeccable-live/
+src/.impeccable-live/
+node_modules/.impeccable-live/
+src/lib/impeccable/ImpeccableLiveRoot.svelte
+src/lib/impeccable/__runtime.js
+src/lib/impeccable/[0-9a-f]*/
+plugins/impeccable-live.client.ts
+app/plugins/impeccable-live.client.ts
+src/plugins/impeccable-live.client.ts
+# impeccable-live-ignore-end
+
+# ---- Publication hygiene (added 2026-09-02, pre-publication audit) ----------
+# Session and verification artifacts. Never committed: once the repo is public,
+# every blob in history is permanent.
+.playwright-mcp/
+.impeccable/review/
+.impeccable/build/
+.impeccable/questions/
+/*.png
+
+# Agent/editor scaffolding. Deliberately not published: `.claude/skills/` and
+# `.agents/skills/` are vendored THIRD-PARTY docs, and shipping other people's
+# text under this repo's root FSL grant muddies a licensing posture this
+# project treats as load-bearing. `skills-lock.json` IS committed so the
+# ignored trees stay reproducible.
+.claude/
+.agents/
+
+# Impeccable live-mode config: tooling settings for a tool that is not part of
+# the product. No secret in it (the session token lives in the already-ignored
+# live/server.json), but it is machine workflow config, not project docs.
+.impeccable/live/
+
+# Kept deliberately: .impeccable/design.json and .impeccable/surfaces/*.md are
+# project documentation (the design system and its direction contract).

@@ -1,0 +1,363 @@
+@import "tailwindcss";
+
+/* ============================================================================
+   THE BENCH PANEL
+   ----------------------------------------------------------------------------
+   The wallet is a measurement instrument for one account. Its surfaces are a
+   chassis (the page), engraved legend plates (cards), and an inset readout
+   well (the balance). State is reported by indicator lamps. One reserved
+   commit colour appears only where funds actually move.
+
+   Direction contract: .impeccable/surfaces/src-pages-main-tsx.md (seed 62c39974)
+
+   Light and dark are two real panel finishes — pale lab enamel and dark rack
+   steel — not one palette inverted. Dark mode switches on
+   `prefers-color-scheme` ONLY (docs/decisions.md §6.1): Tailwind v4's `dark:`
+   variant already resolves to that media query, so there is deliberately no
+   `@custom-variant dark` override and no `.dark` class anywhere.
+
+   Every value below is measured by `bun run check:contrast`, which parses the
+   oklch tokens straight out of this file. Do not hand-tune a colour here
+   without re-running it.
+   ========================================================================= */
+
+/* ---- Faces -----------------------------------------------------------------
+   Self-hosted, not fetched from a font CDN: the app has no backend by design
+   and no screen that touches key material may depend on a third party
+   (docs/decisions.md guardrail #10). `font-display: swap` would flash a
+   fallback across a balance readout, so these block briefly instead.
+
+   Barlow Semi Condensed is the engraved legend: an industrial grotesque in the
+   DIN lineage that panel legends are actually cut in.
+   Azeret Mono carries every number, address, and hash — monospace here is for
+   measurement and comparison, which is what the address cross-check needs.
+   -------------------------------------------------------------------------- */
+@font-face {
+  font-family: 'Barlow Semi Condensed';
+  src: url('./fonts/barlow-semi-condensed-400.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: block;
+}
+@font-face {
+  font-family: 'Barlow Semi Condensed';
+  src: url('./fonts/barlow-semi-condensed-500.woff2') format('woff2');
+  font-weight: 500;
+  font-style: normal;
+  font-display: block;
+}
+@font-face {
+  font-family: 'Barlow Semi Condensed';
+  src: url('./fonts/barlow-semi-condensed-600.woff2') format('woff2');
+  font-weight: 600;
+  font-style: normal;
+  font-display: block;
+}
+@font-face {
+  font-family: 'Azeret Mono';
+  src: url('./fonts/azeret-mono-var.woff2') format('woff2-variations');
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: block;
+}
+
+:root {
+  /* Panel finish: pale lab enamel. Cool blue-grey at low chroma — instrument
+     enamel has hue. The incumbent build's neutrals were oklch(… 0 0), which is
+     the one thing no real panel is. */
+  --background: oklch(0.918 0.01 250);
+  --foreground: oklch(0.215 0.016 250);
+
+  /* Engraved legend plate: lighter than the chassis it is screwed to. */
+  --card: oklch(0.972 0.005 250);
+  --card-foreground: oklch(0.215 0.016 250);
+  --popover: oklch(0.972 0.005 250);
+  --popover-foreground: oklch(0.215 0.016 250);
+
+  /* Momentary pushbutton: dark key, light legend. */
+  --primary: oklch(0.255 0.018 250);
+  --primary-foreground: oklch(0.97 0.004 250);
+  --secondary: oklch(0.88 0.012 250);
+  --secondary-foreground: oklch(0.235 0.016 250);
+  --muted: oklch(0.878 0.012 250);
+  --muted-foreground: oklch(0.47 0.016 250);
+  --accent: oklch(0.88 0.012 250);
+  --accent-foreground: oklch(0.235 0.016 250);
+
+  /* Scribe rule: a machined line between panel regions. Decorative structure,
+     so it is held to a visibility floor rather than to WCAG 1.4.11. */
+  --border: oklch(0.7 0.016 250);
+  /* Control boundary. This one IS 1.4.11 — it is what identifies a field as a
+     field, so it is measured at 3:1 against both the plate and the chassis. */
+  --input: oklch(0.598 0.02 250);
+
+  /* Machined, not rounded. A panel's corners are chamfers, not pills. */
+  --radius: 0.125rem;
+
+  /* READOUT WELL: the instrument's display window, dark in BOTH finishes,
+     because a bench instrument's display is dark in a lit room. This is what
+     makes the light finish an equal citizen instead of a washed-out
+     inversion — the balance anchors the panel either way. */
+  --readout: oklch(0.205 0.014 250);
+  --readout-foreground: oklch(0.975 0.004 250);
+  --readout-muted: oklch(0.74 0.014 250);
+
+  /* COMMIT: reserved. This colour appears on exactly one class of control —
+     the one that moves funds (send, sign, confirm a spend). Nowhere else, ever.
+     Its scarcity is the whole point: if it is on screen, money is leaving. */
+  --commit: oklch(0.545 0.155 42);
+  --commit-foreground: oklch(0.99 0.004 60);
+
+  /* INDICATOR LAMPS — fill tokens: a lit lamp paired with its own -foreground
+     label. Never used as a text colour on a plate; that is what the text-*
+     tokens below are for (docs/decisions.md §6.2). */
+  --destructive: oklch(0.545 0.205 27);
+  --destructive-foreground: oklch(0.985 0.003 27);
+  --warning: oklch(0.78 0.155 72);
+  --warning-foreground: oklch(0.2 0.02 72);
+  --success: oklch(0.52 0.135 150);
+  --success-foreground: oklch(0.985 0.003 150);
+
+  /* TEXT-role tokens: the lamp's hue, dropped in lightness until it clears
+     4.5:1 on the plate AND on the tinted /10 alert surface. */
+  --text-destructive: oklch(0.495 0.2 27);
+  --text-warning: oklch(0.455 0.09 72);
+  --text-success: oklch(0.45 0.12 150);
+
+  /* Retained for shadcn compatibility only. The focus indicator is the
+     browser's own two-tone ring — nothing in this repo styles focus from this
+     token (docs/decisions.md §6.3). Held at a value clearing 3:1 on every
+     panel surface so a primitive that does reference it is correct. */
+  --ring: oklch(0.45 0.02 250);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    /* Panel finish: dark rack steel — a DIFFERENT material from the light
+       enamel, not the same hue at lower lightness. Green-grey at hue 125,
+       clear of every lamp hue (27 / 42 / 72 / 150) at this chroma. */
+    --background: oklch(0.214 0.009 125);
+    --foreground: oklch(0.945 0.005 125);
+    --card: oklch(0.268 0.010 125);
+    --card-foreground: oklch(0.945 0.005 125);
+    --popover: oklch(0.268 0.010 125);
+    --popover-foreground: oklch(0.945 0.005 125);
+    /* A raised dark cap, not shadcn's light-slab inversion: the panel's key
+       logic is identical in both finishes, and nothing may compete with the
+       reserved commit colour for salience. */
+    --primary: oklch(0.36 0.016 125);
+    --primary-foreground: oklch(0.965 0.004 125);
+    --secondary: oklch(0.33 0.014 125);
+    --secondary-foreground: oklch(0.945 0.005 125);
+    --muted: oklch(0.322 0.014 125);
+    --muted-foreground: oklch(0.735 0.014 125);
+    --accent: oklch(0.33 0.014 125);
+    --accent-foreground: oklch(0.945 0.005 125);
+    --border: oklch(0.47 0.018 125);
+    --input: oklch(0.56 0.022 125);
+
+    /* The well is cut deeper than the panel around it. */
+    --readout: oklch(0.108 0.008 125);
+    --readout-foreground: oklch(0.975 0.004 125);
+    --readout-muted: oklch(0.735 0.014 125);
+
+    --commit: oklch(0.66 0.17 42);
+    --commit-foreground: oklch(0.18 0.02 42);
+
+    --destructive: oklch(0.69 0.185 25);
+    --destructive-foreground: oklch(0.165 0.01 25);
+    --warning: oklch(0.79 0.155 72);
+    --warning-foreground: oklch(0.19 0.02 72);
+    --success: oklch(0.7 0.14 150);
+    --success-foreground: oklch(0.165 0.01 150);
+
+    --text-destructive: oklch(0.72 0.17 25);
+    --text-warning: oklch(0.8 0.13 72);
+    --text-success: oklch(0.76 0.13 150);
+
+    --ring: oklch(0.78 0.014 125);
+  }
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-warning: var(--warning);
+  --color-warning-foreground: var(--warning-foreground);
+  --color-success: var(--success);
+  --color-success-foreground: var(--success-foreground);
+  --color-text-destructive: var(--text-destructive);
+  --color-text-warning: var(--text-warning);
+  --color-text-success: var(--text-success);
+
+  --color-readout: var(--readout);
+  --color-readout-foreground: var(--readout-foreground);
+  --color-readout-muted: var(--readout-muted);
+  --color-commit: var(--commit);
+  --color-commit-foreground: var(--commit-foreground);
+
+  --font-legend: 'Barlow Semi Condensed', ui-sans-serif, system-ui, sans-serif;
+  --font-data: 'Azeret Mono', ui-monospace, 'Cascadia Mono', monospace;
+
+  --radius-sm: calc(var(--radius) - 1px);
+  --radius-md: var(--radius);
+  --radius-lg: calc(var(--radius) + 1px);
+  --radius-xl: calc(var(--radius) + 3px);
+}
+
+@layer base {
+  /* Only the border colour is set globally. The focus ring is deliberately NOT
+     recoloured here: `outline-ring/50` used to override the UA ring app-wide
+     down to ~1.5:1 against every surface it drew on (docs/decisions.md §6.3). */
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground antialiased;
+    font-family: var(--font-legend);
+  }
+
+  /* Every numeral in the app is tabular by construction, so a live-updating
+     balance cannot shift its own digits (docs/decisions.md §6.11 made this a
+     per-call-site utility; here it is a property of the data face itself). */
+  .font-data,
+  [class*='font-data'] {
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: 'tnum' 1, 'zero' 1;
+  }
+
+  /* ---- Browser surfaces ---------------------------------------------------
+     The parts we did not draw still belong to the panel. Left at their
+     defaults these ship as someone else's design system. */
+  ::selection {
+    background-color: color-mix(in oklab, var(--warning) 38%, transparent);
+    color: var(--foreground);
+  }
+
+  :root {
+    color-scheme: light;
+    scrollbar-color: var(--input) transparent;
+    scrollbar-width: thin;
+    /* Native controls we do not wrap (a date picker, a native checkbox in a
+       forced-colors fallback) take the panel's own key colour. */
+    accent-color: var(--primary);
+    caret-color: var(--foreground);
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root {
+      color-scheme: dark;
+    }
+  }
+
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: var(--input);
+    border: 2px solid transparent;
+    background-clip: content-box;
+    border-radius: 0;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: var(--muted-foreground);
+    border: 2px solid transparent;
+    background-clip: content-box;
+  }
+  ::-webkit-scrollbar-corner {
+    background: transparent;
+  }
+
+  a {
+    text-underline-offset: 0.2em;
+    text-decoration-thickness: from-font;
+  }
+}
+
+@layer components {
+  /* ---- Panel vocabulary ---------------------------------------------------
+     Four structural devices, and deliberately no faux-metal gradient or
+     brushed texture: the direction's own risk line is engraving that is drawn
+     rather than earned, so the panel is built from real structure only.
+     -------------------------------------------------------------------------- */
+
+  /* A scribed groove between panel regions: dark line, light line under it.
+     This is how an engraved rule actually reads on a physical panel. */
+  .panel-scribe {
+    border-top: 1px solid color-mix(in oklab, var(--border) 100%, transparent);
+    box-shadow: 0 1px 0 0 color-mix(in oklab, var(--card) 70%, transparent);
+  }
+
+  /* A legend plate: the lighter plate screwed onto the chassis. */
+  .panel-plate {
+    background-color: var(--card);
+    border: 1px solid var(--border);
+    box-shadow:
+      0 1px 0 0 color-mix(in oklab, var(--foreground) 6%, transparent),
+      0 1px 3px -1px color-mix(in oklab, var(--foreground) 12%, transparent);
+  }
+
+  /* The inset readout window. Genuinely recessed: an inner shadow with offset
+     and blur, not a flat colour swap. */
+  .panel-well {
+    background-color: var(--readout);
+    color: var(--readout-foreground);
+    border: 1px solid color-mix(in oklab, var(--readout) 70%, var(--foreground));
+    box-shadow:
+      inset 0 2px 5px -1px rgb(0 0 0 / 0.55),
+      inset 0 0 0 1px rgb(0 0 0 / 0.25),
+      /* the lit lower lip of a cut recess */
+      inset 0 -1px 0 0 rgb(255 255 255 / 0.07),
+      /* and the panel's own edge catching light just outside it */
+      0 1px 0 0 color-mix(in oklab, var(--card) 55%, transparent);
+  }
+
+  /* An engraved placard legend: the small cut label above a control or a
+     region. Uppercase, tracked, and set in the legend face. */
+  .panel-legend {
+    font-family: var(--font-legend);
+    font-weight: 600;
+    font-size: 0.6875rem;
+    line-height: 1.1;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--muted-foreground);
+  }
+
+  /* An indicator lamp: a small lit disc, not a tinted pill. Carries a real
+     glow because a lit lamp on a panel does, bounded so it never bleeds into
+     the numerals beside it. */
+  .panel-lamp {
+    display: inline-block;
+    width: 0.5rem;
+    height: 0.5rem;
+    border-radius: 9999px;
+    flex: none;
+    background-color: currentColor;
+    box-shadow:
+      0 0 0 1px color-mix(in oklab, var(--foreground) 22%, transparent),
+      0 0 6px 0 currentColor;
+  }
+}

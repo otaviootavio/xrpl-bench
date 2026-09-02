@@ -1,0 +1,141 @@
+name: CI
+
+# Only `dev`, `stage` and `prod` are listed. No branch is directly pushable, so
+# `push` fires only on merges — which is what re-gates the merge commit itself
+# and makes squash/rebase promotion safe. Feature branches are covered by the
+# pull_request event, so nothing runs twice.
+on:
+  pull_request:
+    branches: [dev, stage, prod]
+  push:
+    branches: [dev, stage, prod]
+
+# Least privilege. No job here needs more; the deploy workflow asks separately.
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  # Never cancel the run that gates a merge into prod.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+# ---------------------------------------------------------------------------
+# The four job names below (`lint`, `build`, `test`, `contrast`) plus
+# `promotion-source` are the repository's required status checks, configured in
+# the branch rulesets. THEY ARE A PUBLIC API: renaming one silently breaks
+# protection, because the named check never reports and merges block forever.
+# Do not rename them, and do not convert them to a matrix (matrix job names
+# embed the matrix value).
+#
+# Every third-party action is pinned to a full commit SHA. A tag is mutable, and
+# a compromised action would run with this repository's permissions.
+# See docs/decisions.md §8.12 and docs/agents/shipping-and-ci.md.
+# ---------------------------------------------------------------------------
+
+jobs:
+  lint:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with:
+          bun-version-file: package.json
+      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: ~/.bun/install/cache
+          key: bun-${{ runner.os }}-${{ hashFiles('bun.lock') }}
+          restore-keys: bun-${{ runner.os }}-
+      - run: bun install --frozen-lockfile
+      # --deny-warnings lives in the package script, so this is byte-identical
+      # to what a maintainer runs locally (docs/decisions.md §8.5).
+      - run: bun run lint
+
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with:
+          bun-version-file: package.json
+      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: ~/.bun/install/cache
+          key: bun-${{ runner.os }}-${{ hashFiles('bun.lock') }}
+          restore-keys: bun-${{ runner.os }}-
+      - run: bun install --frozen-lockfile
+      # `build` is `tsc -b && vite build`, so typecheck is covered here.
+      - run: bun run build
+      # Deliberately uploads no artifact. The deploy workflow rebuilds, which is
+      # only defensible because the build is reproducible — verified, see
+      # docs/decisions.md §8.6. Reusing this artifact would need a workflow_run
+      # trigger plus `actions: read`, a well-known privilege-escalation shape.
+
+  test:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with:
+          bun-version-file: package.json
+      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: ~/.bun/install/cache
+          key: bun-${{ runner.os }}-${{ hashFiles('bun.lock') }}
+          restore-keys: bun-${{ runner.os }}-
+      - run: bun install --frozen-lockfile
+      - run: bun run test
+
+  contrast:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+      # NO INSTALL STEP, DELIBERATELY. scripts/check-contrast.mjs imports only
+      # node:fs / node:url / node:path and reads src/index.css, so the runner's
+      # preinstalled node is enough. If you ever add a dependency to that
+      # script, YOU HAVE BROKEN THIS JOB — add setup-bun and an install here.
+      - run: node scripts/check-contrast.mjs
+
+  # Enforces `prod` may only be merged from `stage`. This cannot be a ruleset:
+  # GitHub rulesets have no source-branch rule (docs/decisions.md §8.4).
+  # The job always runs so it always reports a conclusion — a skipped required
+  # check is not the same thing as a passing one.
+  promotion-source:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      # Refs go through `env`, never interpolated into the shell. A branch name
+      # is attacker-controlled on a fork PR; inline interpolation is script
+      # injection (docs/agents/shipping-and-ci.md).
+      - name: Check promotion source
+        env:
+          EVENT: ${{ github.event_name }}
+          BASE: ${{ github.base_ref }}
+          HEAD: ${{ github.head_ref }}
+        run: |
+          if [ "$EVENT" != "pull_request" ]; then
+            echo "Not a pull request; nothing to check."
+            exit 0
+          fi
+          echo "PR: $HEAD -> $BASE"
+          if [ "$BASE" = "prod" ] && [ "$HEAD" != "stage" ]; then
+            echo "::error::prod may only be merged from stage. This PR targets prod from '$HEAD'."
+            echo "Promote dev -> stage first, then stage -> prod."
+            exit 1
+          fi
+          if [ "$BASE" = "stage" ] && [ "$HEAD" != "dev" ]; then
+            echo "::error::stage may only be merged from dev. This PR targets stage from '$HEAD'."
+            exit 1
+          fi
+          echo "Promotion source is valid."

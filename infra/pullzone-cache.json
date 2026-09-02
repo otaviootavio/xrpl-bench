@@ -1,0 +1,34 @@
+{
+  "_comment": [
+    "Cache configuration for both bunny sites pull zones, applied via:",
+    "  bunny api POST /pullzone/<id> -b '<the settings object>'",
+    "",
+    "WHY THESE VALUES. A freshly created bunny `sites` pull zone defaults to",
+    "CacheControlMaxAgeOverride=2592000 — thirty days — on EVERYTHING, including",
+    "index.html and sw.js. That would pin a user to a month-old app shell and",
+    "prevent the service worker from ever discovering an update. Measured live on",
+    "2026-09-02. See docs/decisions.md §8.7.",
+    "",
+    "The floor is short ZONE-WIDE rather than long-with-exceptions, deliberately:",
+    "if a per-path rule ever fails to match, the failure mode is 'revalidates too",
+    "often' (a bandwidth cost) instead of 'serves a stale wallet' (a correctness",
+    "cost).",
+    "",
+    "Hashed assets under /assets/ are content-addressed and COULD be cached for a",
+    "year. They are not, because no working per-path cache lever was found in this",
+    "CLI/API surface: an ActionType 9 (SetResponseHeader) edge rule was accepted",
+    "but stored its ActionParameter1/2 as empty strings and degraded assets to",
+    "`no-cache, no-store`; ActionType 7 dropped its parameter the same way. The",
+    "rule was deleted. Revisit if bunny exposes this properly.",
+    "",
+    "scripts/verify-headers.mjs enforces the shell property on every deploy."
+  ],
+  "settings": {
+    "CacheControlMaxAgeOverride": 60,
+    "CacheControlPublicMaxAgeOverride": 0
+  },
+  "zones": {
+    "xrpl-bench-stage": { "pullZoneId": 6467652, "storageZoneId": 1808348, "hostname": "sites-xrpl-bench-stage-bpl7ab.b-cdn.net" },
+    "xrpl-bench-prod":  { "pullZoneId": 6467751, "storageZoneId": 1808429, "hostname": "sites-xrpl-bench-prod-pdbywc.b-cdn.net" }
+  }
+}

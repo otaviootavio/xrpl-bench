@@ -158,7 +158,7 @@ export function Onboarding() {
             maker's mark is the smallest thing on it, and the instrument itself
             is what the user came to read. */}
         <div className="border-b border-border pb-4">
-          <h1 className="panel-legend text-[0.75rem] tracking-[0.22em] text-foreground">XRPL Wallet</h1>
+          <h1 className="panel-legend text-[0.75rem] tracking-[0.22em] text-foreground">XRPL Bench</h1>
           <p className="mt-1.5 text-sm leading-snug text-muted-foreground">
             A self-custody wallet for the XRP Ledger. Keys are generated and stored on this device only.
           </p>

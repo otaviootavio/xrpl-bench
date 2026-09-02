@@ -12,6 +12,8 @@ import { tearDownAllLocalState } from '@/lib/teardown'
 import { useQueryClient } from '@tanstack/react-query'
 import { useAppStore } from '@/store/app-store'
 import { toast } from '@/lib/notify'
+import { BUILD, shortSha, sourceUrl } from '@/lib/build-info'
+import { ExternalLinkIcon } from 'lucide-react'
 
 /** wallet-security.md US-1: locked by default, only an Unlock action is
  * shown — no balance/address/history until a successful unlock. */
@@ -121,6 +123,19 @@ export function Unlock() {
             </Button>
           </CardContent>
         </Card>
+
+        {/* app-versioning-and-updates.md US-1: "the same values are reachable
+            without unlocking the wallet, so a user can identify a build
+            before entering a PIN." Deliberately just a stamp, not a Settings
+            card — the wallet is still locked and nothing else on this screen
+            should compete with the PIN field for attention. */}
+        <p className="text-center text-xs text-muted-foreground">
+          v{BUILD.version} ·{' '}
+          <a href={sourceUrl} target="_blank" rel="noreferrer noopener" className="inline-flex items-center gap-1 hover:underline">
+            {shortSha}
+            <ExternalLinkIcon className="size-3 shrink-0 opacity-60" aria-hidden="true" />
+          </a>
+        </p>
 
         <Dialog open={confirmReset} onOpenChange={setConfirmReset}>
           <DialogContent>

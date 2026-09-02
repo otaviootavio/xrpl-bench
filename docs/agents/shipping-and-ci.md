@@ -1,10 +1,16 @@
 # Scenario: you are touching CI, a deploy, or the service worker
 
-Reasoning: `docs/decisions.md` guardrail #6, #7, and §8 once the CI/CD sprint
-lands. Plan: `docs/sprints/cicd-sprints.md`.
+Reasoning: `docs/decisions.md` guardrail #6, #7, and §8. Plan and execution
+record: `docs/sprints/cicd-sprints.md`.
 
-Current state: `gh` and `bunny` CLIs are installed and authenticated; there is
-no `wrangler`; **this directory is not yet a git repository.**
+Current state: this is a git repository, public at
+`github.com/otaviootavio/xrpl-bench` under `FSL-1.1-ALv2`. Three protected
+branches — `dev`, `stage`, `prod` — promote in that order; `stage` and `prod`
+each deploy to bunny.net from GitHub Actions on every push (`gh` and `bunny`
+CLIs are installed and authenticated; there is no `wrangler` — bunny.net, not
+Cloudflare, is the deploy target). Decisions and the full execution record are
+in `docs/decisions.md` §8; the plan they came from is
+`docs/sprints/cicd-sprints.md`.
 
 ## Always — rebase and re-test locally before merging into `dev`, `stage`, or `prod`
 
@@ -111,10 +117,18 @@ Two honest constraints:
   matches what was built from a tagged source. That is a meaningful property
   even though most users will never perform the check.
 
-There is also a live tension worth naming: `registerType: 'autoUpdate'` means the
-service worker silently replaces the app shell. That is good for shipping fixes
-and bad for a threat model where the origin is the adversary.
+There was also a live tension, now resolved: `registerType: 'autoUpdate'` would
+have the service worker silently replace the app shell — good for shipping
+fixes, bad for a threat model where the origin is the adversary. **Decided:
+`registerType: 'prompt'`** — a new service worker installs and waits; only an
+explicit user action activates it, and never while a transaction is in
+flight. See decision D5 in `docs/sprints/cicd-sprints.md` and
+`docs/user-stories/app-versioning-and-updates.md`. If you find yourself adding
+`skipWaiting()` or `registerType: 'autoUpdate'`, that decision is being
+undone — stop and say so instead of proceeding.
 
-**Ask first** on all of it. Whether to deploy, whether to publish, and what
-verifiability story ships alongside are product decisions for the owner, and
-they belong in `docs/decisions.md` before any pipeline goes live.
+**Ask first** before *changing* any of this. Whether to deploy, whether to
+publish, and what verifiability story ships alongside were already decided
+once (`docs/decisions.md` §8, §10) — revisiting one of them for a new reason
+is itself a decision for the owner, recorded in `docs/decisions.md` before it
+ships, not assumed from precedent.

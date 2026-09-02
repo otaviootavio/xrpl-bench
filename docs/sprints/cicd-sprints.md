@@ -11,10 +11,12 @@ Finding IDs use the `CD-` prefix, keeping them distinct from `C*/H*/M*/L*`
 (bugfix) and `IF-*` (interface). Sprint numbering continues at **S13** so IDs
 stay unique across all three files.
 
-> **STATUS: planned, not started. Every decision is now answered (2026-09-02).**
-> Licence `FSL-1.1-ALv2`, name `xrpl-bench`, branches `prod`/`stage`/`dev`,
-> CI **and** CD in scope, pullzones to be created. No blockers remain; S13 can
-> start immediately and S14–S15 follow it.
+> **STATUS: S13, S14 and S15 all completed 2026-09-02.** The repository is
+> public at `github.com/otaviootavio/xrpl-bench` under `FSL-1.1-ALv2`. Three
+> protected branches promote `dev` → `stage` → `prod`. Both environments deploy
+> from CI. Decisions are recorded in `docs/decisions.md` §8. Execution record,
+> including four defects found during execution rather than in planning, is at
+> the bottom of this file.
 
 **No verdict.** There is nothing broken to escalate; this is new capability.
 The one item carrying real risk is `CD-6`, and it is a product decision rather
@@ -205,3 +207,84 @@ Validated 2026-09-02.
 - [MDN — Subresource Integrity](https://developer.mozilla.org/en-US/docs/Web/Security/Defenses/Subresource_Integrity) and [Supply chain attacks](https://developer.mozilla.org/en-US/docs/Web/Security/Attacks/Supply_chain_attacks)
 - [AppsFlyer SDK supply-chain crypto attack](https://www.reflectiz.com/blog/appsflyer-supply-chain-attack/)
 - [Reproducible builds — Bitcoin Security Glossary](https://bitcoinsecurity.org/learn/reproducible-builds/)
+
+
+---
+
+## Execution record — 2026-09-02
+
+All three sprints executed in one session. What the plan got right is not
+interesting; what it got wrong is.
+
+### Live endpoints
+
+| | |
+|---|---|
+| Repository | `github.com/otaviootavio/xrpl-bench` (public, `FSL-1.1-ALv2`) |
+| Production | `https://sites-xrpl-bench-prod-pdbywc.b-cdn.net` (pull zone 6467751) |
+| Staging | `https://sites-xrpl-bench-stage-bpl7ab.b-cdn.net` (pull zone 6467652) |
+
+### Verified, not assumed
+
+- Direct push to `prod` → **rejected** (`GH013` rule violation).
+- PR `dev` → `prod` → **BLOCKED** by the `promotion-source` check, with the
+  message naming the offending head branch.
+- A deliberately degraded `--muted-foreground` (0.47 → 0.72) → `contrast`
+  **failed at 2.28:1** against the 4.5:1 floor while the other four checks
+  passed, and the PR could not merge. The gate bites.
+- The header gate **fails** when the 30-day default is restored and **passes**
+  when the safe floor is applied. Tested in both directions.
+- Rollback: `bunny sites deployments publish <id>` moved staging back one
+  deploy and forward again. Verified *before* it was needed.
+- Two clean builds → **byte-identical** across all 17 files, so US-7's
+  "rebuild the tag and compare" is actually meaningful.
+- Deployed commit equals the `prod` tip, checked via `releases.json`.
+
+### Four defects found during execution
+
+1. **Rulesets cannot be created at all on a private Free repo** — HTTP 403,
+   not merely unenforced as the plan assumed. So the public flip had to precede
+   S14 rather than sit between S13 and S14. Ordering corrected in flight.
+2. **A new bunny `sites` pull zone serves everything with
+   `max-age=2592000`** — thirty days, on `index.html` and `sw.js` included.
+   This was the single most consequential finding of the sprint: users would
+   have been pinned to a month-old wallet shell with no way for the service
+   worker to discover an update. Fixed zone-wide and now gated. See §8.7.
+3. **The build stamp initially destroyed reproducibility.** Injecting
+   `new Date()` changed the bundle on every build, silently invalidating §8.6
+   and US-7 minutes after they were written. The stamp now derives from the
+   commit date. Caught by re-running the probe rather than by review.
+4. **`index.html` still carried the placeholder product name.** The manifest was
+   renamed to `XRPL Bench`; the shell's `<title>` and description were missed,
+   so the browser tab and every link preview still said "XRPL Wallet". Found by
+   reading the *deployed page*, not the source — the class of defect that only
+   surfaces when you look at what shipped.
+
+### Two self-inflicted process errors worth remembering
+
+- **`oxlint-disable-next-line` targets the literal next line.** A multi-line
+  reason comment placed above the directive silently aimed it at a comment, so
+  the rule still reported *and* the directive reported unused. The harness
+  caught it; a reviewer might not have.
+- **A wrong config field name produced an empty secret.** The bunny key is
+  stored as `api_key`, not `apiKey`; the extraction failed silently, the
+  GitHub secret was set to empty, and the first deploy failed with "Not logged
+  in." The subsequent env-var probe was *also* invalid for the same reason and
+  briefly suggested `BUNNYNET_API_KEY` did not work, when in fact it does. Read
+  the config's real shape before extracting from it.
+
+### Known-not-done
+
+- **Hashed assets are cached short** (`max-age=0`) rather than a year. No
+  working per-path cache lever exists in this API surface — see §8.7 for what
+  was tried and how it failed. Safe, wasteful, revisit if bunny fixes it.
+- **`BUNNYNET_API_KEY` is an account-wide key.** A scoped, deploy-only
+  credential would be better; bunny's CLI offered no obvious way to mint one.
+  Recorded as residual risk in §8.10 rather than left implicit.
+- **US-2, US-4, US-6, US-8, US-9** of the update epic remain unbuilt. Only the
+  deploy-blocking subset shipped (the `prompt` switch, US-1, US-3). **US-5 — no
+  update while a transaction is in flight — is the highest-priority
+  follow-up**, because a reload between signing and knowing the outcome is
+  exactly the money-ambiguity this wallet exists to remove.
+- **`.panel-scribe`** is still defined-but-unused in `src/index.css`; the
+  decision to drop it is recorded in `DESIGN.md` and the deletion is pending.

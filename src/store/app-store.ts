@@ -12,17 +12,31 @@ interface AppState {
   activeWalletId: string | null
   addressBook: { address: string; label: string }[]
   autoLockMinutes: number
+  /** app-versioning-and-updates.md US-4: a declined release's identifier (its
+   * commit SHA) is remembered so it stops nagging, while a newer one still
+   * surfaces. Non-secret, so it's fine alongside the rest of this state. */
+  declinedUpdateVersions: string[]
 
   // Secret / session-only state — NEVER persisted (docs/decisions.md
   // guardrail #3: no secret ever enters anything serializable).
   vaultKey: CryptoKey | null
   unlocked: boolean
+  /** app-versioning-and-updates.md US-5: true for the exact window a payment
+   * or trust-line transaction is signing, submitted, or awaiting validation.
+   * Session-only and deliberately not derived from any per-tab local state —
+   * Radix unmounts inactive `TabsContent`, so a flag local to `SendTab` would
+   * vanish the moment the user switched away from it mid-send. Set/cleared at
+   * the single choke point every write passes through
+   * (`lib/xrpl/writes.ts#submitAndClassify`). */
+  txInFlight: boolean
 
   setNetwork: (network: NetworkId) => void
   setWallets: (wallets: WalletMeta[]) => void
   setActiveWalletId: (id: string | null) => void
   setAutoLockMinutes: (minutes: number) => void
   addAddressBookEntry: (address: string, label: string) => void
+  declineUpdateVersion: (id: string) => void
+  setTxInFlight: (inFlight: boolean) => void
   unlock: (key: CryptoKey) => void
   lock: () => void
 }
@@ -45,9 +59,11 @@ export const useAppStore = create<AppState>()(
       activeWalletId: null,
       addressBook: [],
       autoLockMinutes: 5,
+      declinedUpdateVersions: [],
 
       vaultKey: null,
       unlocked: false,
+      txInFlight: false,
 
       setNetwork: (network) => set({ network }),
       setWallets: (wallets) => set({ wallets }),
@@ -55,6 +71,9 @@ export const useAppStore = create<AppState>()(
       setAutoLockMinutes: (autoLockMinutes) => set({ autoLockMinutes }),
       addAddressBookEntry: (address, label) =>
         set((s) => ({ addressBook: [...s.addressBook.filter((e) => e.address !== address), { address, label }] })),
+      declineUpdateVersion: (id) =>
+        set((s) => (s.declinedUpdateVersions.includes(id) ? s : { declinedUpdateVersions: [...s.declinedUpdateVersions, id] })),
+      setTxInFlight: (txInFlight) => set({ txInFlight }),
       unlock: (vaultKey) => set({ vaultKey, unlocked: true }),
       lock: () => {
         set({ vaultKey: null, unlocked: false })
@@ -83,6 +102,7 @@ export const useAppStore = create<AppState>()(
         activeWalletId: s.activeWalletId,
         addressBook: s.addressBook,
         autoLockMinutes: s.autoLockMinutes,
+        declinedUpdateVersions: s.declinedUpdateVersions,
       }),
     },
   ),

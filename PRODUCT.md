@@ -95,9 +95,9 @@ can truthfully claim:
 
 ## Capabilities and Constraints
 
-The functional contract is recorded in `docs/user-stories/INDEX.md` (ten epics)
-and the technical contract in `docs/decisions.md`. Both are authoritative and
-must be read before feature work. In summary:
+The functional contract is recorded in `docs/user-stories/INDEX.md` (twelve
+epics) and the technical contract in `docs/decisions.md`. Both are
+authoritative and must be read before feature work. In summary:
 
 **In scope.** Wallet creation and import with seed backup; passkey-gated
 encrypted on-device key storage with a mandatory app PIN fallback; sending and
@@ -190,11 +190,14 @@ intended to be enforced.
 
 ## Evidence on Hand
 
-- **Real, in-repo:** ten user-story epics (`docs/user-stories/`), the technical
-  decision and guardrail record (`docs/decisions.md`), two sprint records
-  (`docs/sprints/`), a working React 19 / Vite / Tailwind v4 / xrpl.js
-  implementation covering all ten epics, a unit test suite, and an executable
-  contrast harness (`scripts/check-contrast.mjs`).
+- **Real, in-repo:** twelve user-story epics (`docs/user-stories/`), the
+  technical decision and guardrail record (`docs/decisions.md`), four sprint
+  records (`docs/sprints/`), a working React 19 / Vite / Tailwind v4 / xrpl.js
+  implementation covering all twelve epics — in-app-notices included, its
+  visual acceptance criteria checked against a real browser and two defects
+  the gates alone had missed fixed in the same pass (`docs/decisions.md`
+  §9.5, `docs/sprints/notices-sprints.md`) — a unit test suite, and an
+  executable contrast harness (`scripts/check-contrast.mjs`).
 - **Verified live against the ledger:** XRPL reserve figures, the Testnet
   faucet endpoint, and both explorer URL patterns (2026-08-31); the
   derive-vs-unwrap unlock defect was caught during Testnet validation, not in

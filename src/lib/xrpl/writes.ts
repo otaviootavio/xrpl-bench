@@ -1,6 +1,7 @@
 import { Wallet, type Payment, type TrustSet, TrustSetFlags } from 'xrpl'
 import { getXrplClient } from './client'
 import type { NetworkId } from './networks'
+import { useAppStore } from '@/store/app-store'
 
 /** Cap on the fee autofill is allowed to attach, so a fee-escalation spike
  * can never quietly turn a small payment into an expensive one. xrpl.js
@@ -24,32 +25,43 @@ function classify(resultCode: string): 'validated' | 'claimed' | 'failed' {
 }
 
 async function submitAndClassify(network: NetworkId, wallet: Wallet, tx: Payment | TrustSet): Promise<SubmitOutcome> {
-  const client = await getXrplClient(network)
-  const prepared = await client.autofill(tx as any, { maxFeeXRP: MAX_FEE_XRP } as any)
-  const signed = wallet.sign(prepared)
-  const lastLedgerSequence = (prepared as any).LastLedgerSequence as number | undefined
+  // app-versioning-and-updates.md US-5: the single choke point every write
+  // passes through, so the update flow always sees an accurate "is anything
+  // in flight right now" signal regardless of which tab is mounted. Set
+  // before the first network call (autofill needs the current sequence, so
+  // signing has effectively already started) and cleared in `finally` so a
+  // thrown/expired outcome still releases the flag.
+  useAppStore.getState().setTxInFlight(true)
   try {
-    const res = await client.submitAndWait(signed.tx_blob)
-    const meta = res.result.meta
-    const resultCode = typeof meta === 'object' && meta ? (meta as any).TransactionResult : 'unknown'
-    const status = classify(resultCode)
-    return status === 'failed'
-      ? { status, hash: signed.hash, resultCode }
-      : { status, hash: signed.hash, resultCode, ledgerIndex: res.result.ledger_index }
-  } catch (err: any) {
-    // The "stuck/expired" case from docs/decisions.md: the network moved past
-    // this transaction's LastLedgerSequence without it appearing in a
-    // validated ledger. It may simply never have been included. NEVER
-    // resubmit this exact signed blob — the caller must build a fresh
-    // transaction with a new sequence.
-    //
-    // Detected structurally (comparing the validated ledger index against the
-    // tx's own LastLedgerSequence) rather than by matching on error-message
-    // text, which silently reclassifies whenever xrpl.js rewords it.
-    if (await isExpiry(err, network, lastLedgerSequence)) {
-      return { status: 'expired', hash: signed.hash }
+    const client = await getXrplClient(network)
+    const prepared = await client.autofill(tx as any, { maxFeeXRP: MAX_FEE_XRP } as any)
+    const signed = wallet.sign(prepared)
+    const lastLedgerSequence = (prepared as any).LastLedgerSequence as number | undefined
+    try {
+      const res = await client.submitAndWait(signed.tx_blob)
+      const meta = res.result.meta
+      const resultCode = typeof meta === 'object' && meta ? (meta as any).TransactionResult : 'unknown'
+      const status = classify(resultCode)
+      return status === 'failed'
+        ? { status, hash: signed.hash, resultCode }
+        : { status, hash: signed.hash, resultCode, ledgerIndex: res.result.ledger_index }
+    } catch (err: any) {
+      // The "stuck/expired" case from docs/decisions.md: the network moved past
+      // this transaction's LastLedgerSequence without it appearing in a
+      // validated ledger. It may simply never have been included. NEVER
+      // resubmit this exact signed blob — the caller must build a fresh
+      // transaction with a new sequence.
+      //
+      // Detected structurally (comparing the validated ledger index against the
+      // tx's own LastLedgerSequence) rather than by matching on error-message
+      // text, which silently reclassifies whenever xrpl.js rewords it.
+      if (await isExpiry(err, network, lastLedgerSequence)) {
+        return { status: 'expired', hash: signed.hash }
+      }
+      throw err
     }
-    throw err
+  } finally {
+    useAppStore.getState().setTxInFlight(false)
   }
 }
 

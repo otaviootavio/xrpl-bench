@@ -63,8 +63,9 @@ feature, and do not re-derive it.
 | [docs/user-stories/app-versioning-and-updates.md](docs/user-stories/app-versioning-and-updates.md) | **Complete** (2026-09-02). All nine stories shipped; see `docs/decisions.md` §10 for the implementation notes on US-2/US-4/US-5/US-6/US-8/US-9 (US-1/US-3 shipped earlier, in S15) plus two gaps a literal re-read of the acceptance criteria found and closed in the same pass — US-6's bump-based prominence had no effect outside Settings, and US-1's build stamp was unreachable before unlock (§10.1, §10.2). |
 | [docs/user-stories/in-app-notices.md](docs/user-stories/in-app-notices.md) · [docs/sprints/notices-sprints.md](docs/sprints/notices-sprints.md) | **Complete and visually verified** (2026-09-02). N1–N4 decided and Sprint 16/17 built in `docs/decisions.md` §9; a later pass with a real browser confirmed the visual acceptance criteria and fixed two defects gates alone had missed (§9.5). |
 | [docs/sprints/bugfix-sprints.md](docs/sprints/bugfix-sprints.md) · [interface-sprints.md](docs/sprints/interface-sprints.md) | Complete. Kept as the record of what was found and decided. |
+| [docs/sprints/mobile-chrome-sprints.md](docs/sprints/mobile-chrome-sprints.md) | **Complete** (2026-09-09). A pale status bar above the dark panel on a dark-mode home-screen install: an installed PWA ignores the `media` form of `theme-color` and takes the manifest colour, which cannot carry a media query — and all four browser-surface hex literals had drifted from `--background` besides. `index.html` now writes one theme-color tag from a head script (the form an installed app *does* honour, so the bar follows the finish and a live switch); the manifest bakes dark as the floor; `check:contrast` measures all four literals. The Android install itself was not verifiable from this machine — see the file's Verification table. |
 
-**All twelve epics are now built.** The four tables above are the record of
+**All twelve epics are now built.** The five tables above are the record of
 what was found, decided, and shipped — read one before touching its area, not
 because more work is pending, but because the reasoning is the load-bearing
 part.

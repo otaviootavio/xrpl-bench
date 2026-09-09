@@ -7,12 +7,15 @@ import { Label } from '@/components/ui/label'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { SeedReveal } from '@/components/wallet/SeedReveal'
+import { ChassisShell } from '@/components/ChassisShell'
 import { setUpVaultAuth, hasPasskeyRegistered } from '@/lib/crypto/auth'
 import { generateAndStoreWallet, importAndStoreWallet, listWallets, type WalletMeta } from '@/lib/crypto/keystore'
 import { fetchAccountStateOnce } from '@/lib/xrpl/query-reads'
 import { useAppStore } from '@/store/app-store'
 import { useQueryClient } from '@tanstack/react-query'
 import { toast } from '@/lib/notify'
+import { BUILD, shortSha, sourceUrl } from '@/lib/build-info'
+import { ExternalLinkIcon } from 'lucide-react'
 
 type Step = 'choice' | 'vault-setup' | 'import-seed' | 'backup-confirm' | 'import-warning'
 
@@ -153,138 +156,158 @@ export function Onboarding() {
 
   if (step === 'choice') {
     return (
-      <div className="mx-auto flex min-h-dvh max-w-md flex-col justify-center gap-6 p-6">
-        {/* The power-on nameplate. Engraved, not a display heading: the panel's
-            maker's mark is the smallest thing on it, and the instrument itself
-            is what the user came to read. */}
-        <div className="border-b border-border pb-4">
-          <h1 className="panel-legend text-[0.75rem] tracking-[0.22em] text-foreground">XRPL Bench</h1>
-          <p className="mt-1.5 text-sm leading-snug text-muted-foreground">
-            A self-custody wallet for the XRP Ledger. Keys are generated and stored on this device only.
+      <ChassisShell maxWidthClassName="max-w-md">
+        <div className="flex min-h-full flex-col justify-center gap-6 p-6">
+          {/* The power-on nameplate. Engraved, not a display heading: the
+              panel's maker's mark is the smallest thing on it, and the
+              instrument itself is what the user came to read. */}
+          <div className="border-b border-border pb-4">
+            <h1 className="panel-legend text-[0.75rem] tracking-[0.22em] text-foreground">XRPL Bench</h1>
+            <p className="mt-1.5 text-sm leading-snug text-muted-foreground">
+              A self-custody wallet for the XRP Ledger. Keys are generated and stored on this device only.
+            </p>
+          </div>
+          <Card>
+            <CardHeader>
+              <CardTitle>Get started</CardTitle>
+              <CardDescription>Generate a brand-new wallet, or import one you already have.</CardDescription>
+            </CardHeader>
+            <CardContent className="flex flex-col gap-3">
+              <Button
+                onClick={() => {
+                  setMode('generate')
+                  setStep('vault-setup')
+                }}
+              >
+                Create a new wallet
+              </Button>
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setMode('import')
+                  setStep('import-seed')
+                }}
+              >
+                Import an existing wallet
+              </Button>
+            </CardContent>
+          </Card>
+
+          {/* app-versioning-and-updates.md US-1: reachable before there is
+              even a vault to unlock, not only after one exists. */}
+          <p className="text-center text-xs text-muted-foreground">
+            v{BUILD.version} ·{' '}
+            <a href={sourceUrl} target="_blank" rel="noreferrer noopener" className="inline-flex items-center gap-1 hover:underline">
+              {shortSha}
+              <ExternalLinkIcon className="size-3 shrink-0 opacity-60" aria-hidden="true" />
+            </a>
           </p>
         </div>
-        <Card>
-          <CardHeader>
-            <CardTitle>Get started</CardTitle>
-            <CardDescription>Generate a brand-new wallet, or import one you already have.</CardDescription>
-          </CardHeader>
-          <CardContent className="flex flex-col gap-3">
-            <Button
-              onClick={() => {
-                setMode('generate')
-                setStep('vault-setup')
-              }}
-            >
-              Create a new wallet
-            </Button>
-            <Button
-              variant="outline"
-              onClick={() => {
-                setMode('import')
-                setStep('import-seed')
-              }}
-            >
-              Import an existing wallet
-            </Button>
-          </CardContent>
-        </Card>
-      </div>
+      </ChassisShell>
     )
   }
 
   if (step === 'import-seed') {
     return (
-      <div className="mx-auto flex min-h-dvh max-w-md flex-col justify-center gap-6 p-6">
-        <Card>
-          <CardHeader>
-            <CardTitle as="h1">Import wallet</CardTitle>
-            <CardDescription>Enter your existing seed. It never leaves this device.</CardDescription>
-          </CardHeader>
-          <CardContent className="flex flex-col gap-3">
-            <Label htmlFor="seed">Seed</Label>
-            <Input id="seed" type="password" autoComplete="off" spellCheck={false} ref={importSeedRef} placeholder="s..." />
-            <Button
-              onClick={() => {
-                try {
-                  Wallet.fromSeed(importSeedRef.current?.value ?? '')
-                  setStep('vault-setup')
-                } catch {
-                  toast.error('That seed looks invalid. Double-check and try again.')
-                }
-              }}
-            >
-              Continue
-            </Button>
-          </CardContent>
-        </Card>
-      </div>
+      <ChassisShell maxWidthClassName="max-w-md">
+        <div className="flex min-h-full flex-col justify-center gap-6 p-6">
+          <Card>
+            <CardHeader>
+              <CardTitle as="h1">Import wallet</CardTitle>
+              <CardDescription>Enter your existing seed. It never leaves this device.</CardDescription>
+            </CardHeader>
+            <CardContent className="flex flex-col gap-3">
+              <Label htmlFor="seed">Seed</Label>
+              <Input id="seed" type="password" autoComplete="off" spellCheck={false} ref={importSeedRef} placeholder="s..." />
+              <Button
+                onClick={() => {
+                  try {
+                    Wallet.fromSeed(importSeedRef.current?.value ?? '')
+                    setStep('vault-setup')
+                  } catch {
+                    toast.error('That seed looks invalid. Double-check and try again.')
+                  }
+                }}
+              >
+                Continue
+              </Button>
+            </CardContent>
+          </Card>
+        </div>
+      </ChassisShell>
     )
   }
 
   if (step === 'vault-setup') {
     return (
-      <div className="mx-auto flex min-h-dvh max-w-md flex-col justify-center gap-6 p-6">
-        <Card>
-          <CardHeader>
-            <CardTitle as="h1">Secure your wallet</CardTitle>
-            <CardDescription>
-              Set a PIN to unlock the app. If your device supports it, you'll also be able to register a passkey (Face ID/Touch
-              ID/Windows Hello) for faster unlocking — the PIN always works as a fallback.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="flex flex-col gap-3">
-            <Label htmlFor="pin">PIN (min 6 digits)</Label>
-            <Input id="pin" type="password" inputMode="numeric" autoComplete="new-password" value={pin} onChange={(e) => setPin(e.target.value)} />
-            <Label htmlFor="pin-confirm">Confirm PIN</Label>
-            <Input id="pin-confirm" type="password" inputMode="numeric" autoComplete="new-password" value={pinConfirm} onChange={(e) => setPinConfirm(e.target.value)} />
-            <Button onClick={handleVaultSetup} disabled={busy}>
-              {busy ? 'Setting up…' : 'Continue'}
-            </Button>
-          </CardContent>
-        </Card>
-      </div>
+      <ChassisShell maxWidthClassName="max-w-md">
+        <div className="flex min-h-full flex-col justify-center gap-6 p-6">
+          <Card>
+            <CardHeader>
+              <CardTitle as="h1">Secure your wallet</CardTitle>
+              <CardDescription>
+                Set a PIN to unlock the app. If your device supports it, you'll also be able to register a passkey (Face ID/Touch
+                ID/Windows Hello) for faster unlocking — the PIN always works as a fallback.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="flex flex-col gap-3">
+              <Label htmlFor="pin">PIN (min 6 digits)</Label>
+              <Input id="pin" type="password" inputMode="numeric" autoComplete="new-password" value={pin} onChange={(e) => setPin(e.target.value)} />
+              <Label htmlFor="pin-confirm">Confirm PIN</Label>
+              <Input id="pin-confirm" type="password" inputMode="numeric" autoComplete="new-password" value={pinConfirm} onChange={(e) => setPinConfirm(e.target.value)} />
+              <Button onClick={handleVaultSetup} disabled={busy}>
+                {busy ? 'Setting up…' : 'Continue'}
+              </Button>
+            </CardContent>
+          </Card>
+        </div>
+      </ChassisShell>
     )
   }
 
   if (step === 'backup-confirm' && hasPendingSeed) {
     return (
-      <div className="mx-auto flex min-h-dvh max-w-md flex-col justify-center gap-6 p-6">
-        <Card>
-          <CardHeader>
-            <CardTitle as="h1">Back up your seed</CardTitle>
-            <CardDescription>This is the only way to recover your wallet.</CardDescription>
-          </CardHeader>
-          <CardContent className="flex flex-col gap-4">
-            <SeedReveal getSeed={getPendingSeed} />
-            <label className="flex items-center gap-2 text-sm">
-              <Checkbox checked={backedUp} onCheckedChange={(v) => setBackedUp(v === true)} />
-              I've written down my seed and stored it somewhere safe.
-            </label>
-            <Button disabled={!backedUp} onClick={finishBackup}>
-              Continue to my wallet
-            </Button>
-          </CardContent>
-        </Card>
-      </div>
+      <ChassisShell maxWidthClassName="max-w-md">
+        <div className="flex min-h-full flex-col justify-center gap-6 p-6">
+          <Card>
+            <CardHeader>
+              <CardTitle as="h1">Back up your seed</CardTitle>
+              <CardDescription>This is the only way to recover your wallet.</CardDescription>
+            </CardHeader>
+            <CardContent className="flex flex-col gap-4">
+              <SeedReveal getSeed={getPendingSeed} />
+              <label className="flex items-center gap-2 text-sm">
+                <Checkbox checked={backedUp} onCheckedChange={(v) => setBackedUp(v === true)} />
+                I've written down my seed and stored it somewhere safe.
+              </label>
+              <Button disabled={!backedUp} onClick={finishBackup}>
+                Continue to my wallet
+              </Button>
+            </CardContent>
+          </Card>
+        </div>
+      </ChassisShell>
     )
   }
 
   if (step === 'import-warning' && importWarning) {
     return (
-      <div className="mx-auto flex min-h-dvh max-w-md flex-col justify-center gap-6 p-6">
-        <Alert variant="warning">
-          <AlertTitle>Heads up</AlertTitle>
-          <AlertDescription>{importWarning}</AlertDescription>
-        </Alert>
-        <div className="flex gap-2">
-          <Button variant="outline" onClick={cancelImportWarning} disabled={busy}>
-            Cancel import
-          </Button>
-          <Button onClick={acceptImportWarning} disabled={busy}>
-            {busy ? 'Importing…' : 'Import anyway'}
-          </Button>
+      <ChassisShell maxWidthClassName="max-w-md">
+        <div className="flex min-h-full flex-col justify-center gap-6 p-6">
+          <Alert variant="warning">
+            <AlertTitle>Heads up</AlertTitle>
+            <AlertDescription>{importWarning}</AlertDescription>
+          </Alert>
+          <div className="flex gap-2">
+            <Button variant="outline" onClick={cancelImportWarning} disabled={busy}>
+              Cancel import
+            </Button>
+            <Button onClick={acceptImportWarning} disabled={busy}>
+              {busy ? 'Importing…' : 'Import anyway'}
+            </Button>
+          </div>
         </div>
-      </div>
+      </ChassisShell>
     )
   }
 

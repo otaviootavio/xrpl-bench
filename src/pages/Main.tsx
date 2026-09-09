@@ -1,5 +1,6 @@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { AppHeader } from '@/components/AppHeader'
+import { ChassisShell } from '@/components/ChassisShell'
 import { BalancesTab } from './tabs/BalancesTab'
 import { SendTab } from './tabs/SendTab'
 import { ReceiveTab } from './tabs/ReceiveTab'
@@ -11,6 +12,8 @@ import { useIncomingPaymentNotifications } from '@/hooks/useIncomingPaymentNotif
 import { useAccountLiveUpdates } from '@/hooks/useAccountLiveUpdates'
 import { useAutoLock } from '@/hooks/useAutoLock'
 import { useClearCacheOnLock } from '@/hooks/useClearCacheOnLock'
+import { useAppUpdate } from '@/hooks/useAppUpdate'
+import { Lamp } from '@/components/ui/lamp'
 
 /**
  * The six functions, in a fixed order that never changes with state.
@@ -41,33 +44,49 @@ export function Main() {
   useAccountLiveUpdates(network, wallet?.address ?? null)
   useAutoLock()
   useClearCacheOnLock()
+  // US-2's "persistent, quiet marker": a lamp on the Settings tab, so an
+  // available update is discoverable without opening Settings first — but
+  // never a modal, never a redirect. Declined releases (US-4) don't relight
+  // it, only a newer one does.
+  const { updateReady, declined } = useAppUpdate()
+  const showUpdateMarker = updateReady && !declined
 
   return (
-    // The chassis: a mounted instrument face with machined edges, running the
-    // full viewport height so blank lower area reads as panel face rather than
-    // as a page that ran out of content.
-    <div className="mx-auto flex min-h-dvh w-full max-w-5xl flex-col md:border-x md:border-border">
-      {/* First focusable element on the page: the header's network and wallet
-          selects precede the content on every tab (docs/decisions.md §6.4). */}
-      <a
-        href="#main-content"
-        className="sr-only focus:not-sr-only focus:absolute focus:left-2 focus:top-2 focus:z-50 focus:rounded-md focus:border focus:border-input focus:bg-card focus:px-3 focus:py-2 focus:font-legend focus:text-sm focus:font-semibold focus:uppercase focus:tracking-[0.09em] focus:shadow-md"
-      >
-        Skip to content
-      </a>
-      <AppHeader />
+    // The chassis shell (docs/decisions.md §9.1, N1) reserves the annunciator
+    // band at the base for every screen, this one included, so blank lower
+    // area reads as panel face and a notice arriving never covers a control.
+    <ChassisShell
+      header={
+        <>
+          {/* First focusable element on the page: the header's network and
+              wallet selects precede the content on every tab
+              (docs/decisions.md §6.4). */}
+          <a
+            href="#main-content"
+            className="sr-only focus:not-sr-only focus:absolute focus:left-2 focus:top-2 focus:z-50 focus:rounded-md focus:border focus:border-input focus:bg-card focus:px-3 focus:py-2 focus:font-legend focus:text-sm focus:font-semibold focus:uppercase focus:tracking-[0.09em] focus:shadow-md"
+          >
+            Skip to content
+          </a>
+          <AppHeader />
+        </>
+      }
+    >
       {/* tabIndex={-1} so the skip link moves FOCUS here, not just the
           sequential-navigation start point — Safari needs the explicit
           target. It stays out of the tab order. Nothing suppresses the ring on
           this landing target: §6.3 admits no carve-out. */}
-      <main id="main-content" tabIndex={-1} className="flex-1 px-4 pb-6 pt-3">
+      <main id="main-content" tabIndex={-1} className="px-4 pb-6 pt-3">
         <Tabs defaultValue="balances">
           <TabsList>
-            {PANELS.map((p) => (
-              <TabsTrigger key={p.value} value={p.value}>
-                {p.label}
-              </TabsTrigger>
-            ))}
+            {PANELS.map((p) => {
+              const marked = p.value === 'settings' && showUpdateMarker
+              return (
+                <TabsTrigger key={p.value} value={p.value} aria-label={marked ? `${p.label}, update available` : undefined}>
+                  {p.label}
+                  {marked && <Lamp tone="caution" className="ml-1" />}
+                </TabsTrigger>
+              )
+            })}
           </TabsList>
           {PANELS.map(({ value, heading, Panel }) => (
             <TabsContent key={value} value={value}>
@@ -77,6 +96,6 @@ export function Main() {
           ))}
         </Tabs>
       </main>
-    </div>
+    </ChassisShell>
   )
 }

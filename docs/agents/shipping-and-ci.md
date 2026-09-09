@@ -1,10 +1,48 @@
 # Scenario: you are touching CI, a deploy, or the service worker
 
-Reasoning: `docs/decisions.md` guardrail #6, #7, and §8 once the CI/CD sprint
-lands. Plan: `docs/sprints/cicd-sprints.md`.
+Reasoning: `docs/decisions.md` guardrail #6, #7, and §8. Plan and execution
+record: `docs/sprints/cicd-sprints.md`.
 
-Current state: `gh` and `bunny` CLIs are installed and authenticated; there is
-no `wrangler`; **this directory is not yet a git repository.**
+Current state: this is a git repository, public at
+`github.com/otaviootavio/xrpl-bench` under `FSL-1.1-ALv2`. Three protected
+branches — `dev`, `stage`, `prod` — promote in that order; `stage` and `prod`
+each deploy to bunny.net from GitHub Actions on every push (`gh` and `bunny`
+CLIs are installed and authenticated; there is no `wrangler` — bunny.net, not
+Cloudflare, is the deploy target). Decisions and the full execution record are
+in `docs/decisions.md` §8; the plan they came from is
+`docs/sprints/cicd-sprints.md`.
+
+## Always — rebase and re-test locally before merging into `dev`, `stage`, or `prod`
+
+There is no `main`; every merge in this repo lands directly on one of the
+three protected, deployed branches. Before merging any branch into any of
+them — a feature PR into `dev`, or a promotion into `stage`/`prod` — do this
+locally first, in order:
+
+1. **Rebase the branch onto the target branch's current tip.** Not merge,
+   rebase — a merge commit is impossible here anyway
+   (`required_linear_history`), and a rebase is what actually proves the
+   branch still applies cleanly on top of what the target has *right now*,
+   not what it had when the branch was created or when CI last ran.
+2. **Re-run the full local gate suite on the rebased result** — `bun run
+   lint`, `bun run build`, `bun run test`, `bun run check:contrast` — not just
+   whatever CI ran against the pre-rebase branch.
+3. **A rebase conflict, or a gate failure that only appears after rebasing, is
+   a real integration bug** — two changes that are each fine alone but wrong
+   together. Fix it before merging. Do not force through a merge that only
+   passed because the check ran against a stale view of the target.
+4. Only once the rebased branch is clean and every gate is green, merge it
+   (squash — that stays the actual merge method; the rebase above is
+   pre-merge hygiene, not a replacement for it).
+
+This is not theoretical: it is exactly the discipline that would have caught
+`docs/decisions.md` §11's promotion failure — a `dev` → `stage` merge that
+GitHub reported as cleanly squashable right up until it wasn't — before it
+turned into a mid-merge surprise instead of a five-minute local check.
+`strict_required_status_checks_policy` on each branch's ruleset already forces
+a rebase-and-recheck before GitHub will *let* you merge a normal PR; doing it
+proactively, and reading the result rather than only its pass/fail colour, is
+the point.
 
 ## Always — GitHub Actions
 
@@ -79,10 +117,18 @@ Two honest constraints:
   matches what was built from a tagged source. That is a meaningful property
   even though most users will never perform the check.
 
-There is also a live tension worth naming: `registerType: 'autoUpdate'` means the
-service worker silently replaces the app shell. That is good for shipping fixes
-and bad for a threat model where the origin is the adversary.
+There was also a live tension, now resolved: `registerType: 'autoUpdate'` would
+have the service worker silently replace the app shell — good for shipping
+fixes, bad for a threat model where the origin is the adversary. **Decided:
+`registerType: 'prompt'`** — a new service worker installs and waits; only an
+explicit user action activates it, and never while a transaction is in
+flight. See decision D5 in `docs/sprints/cicd-sprints.md` and
+`docs/user-stories/app-versioning-and-updates.md`. If you find yourself adding
+`skipWaiting()` or `registerType: 'autoUpdate'`, that decision is being
+undone — stop and say so instead of proceeding.
 
-**Ask first** on all of it. Whether to deploy, whether to publish, and what
-verifiability story ships alongside are product decisions for the owner, and
-they belong in `docs/decisions.md` before any pipeline goes live.
+**Ask first** before *changing* any of this. Whether to deploy, whether to
+publish, and what verifiability story ships alongside were already decided
+once (`docs/decisions.md` §8, §10) — revisiting one of them for a new reason
+is itself a decision for the owner, recorded in `docs/decisions.md` before it
+ships, not assumed from precedent.

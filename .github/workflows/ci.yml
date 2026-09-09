@@ -107,35 +107,65 @@ jobs:
       # script, YOU HAVE BROKEN THIS JOB — add setup-bun and an install here.
       - run: node scripts/check-contrast.mjs
 
-  # Enforces `prod` may only be merged from `stage`. This cannot be a ruleset:
-  # GitHub rulesets have no source-branch rule (docs/decisions.md §8.4).
-  # The job always runs so it always reports a conclusion — a skipped required
-  # check is not the same thing as a passing one.
+  # Enforces `prod` may only be merged from `stage`, and `stage` only from
+  # `dev`. This cannot be a ruleset: GitHub rulesets have no source-branch
+  # rule (docs/decisions.md §8.4). The job always runs so it always reports a
+  # conclusion — a skipped required check is not the same thing as a passing
+  # one.
+  #
+  # Checks TREE EQUALITY against the required source branch's current tip,
+  # not the PR's branch name (docs/decisions.md §11). The real invariant a
+  # promotion must satisfy is "carries exactly what was already reviewed on
+  # the source branch — not more, not less"; a literal name match was only
+  # ever a proxy for that, and a weaker one: it happens to block a
+  # legitimately-rebased promotion (dev and stage are promoted via
+  # independent squash merges, so their tips can diverge in commit hash while
+  # staying tree-identical — recovering from that requires a branch rebased
+  # onto the target's own tip, which is never literally named "dev") while
+  # NOT actually stopping a branch that merely starts from dev's tip and adds
+  # unreviewed commits on top, since a name check never inspects content.
+  # Tree equality catches both cases correctly.
   promotion-source:
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+          fetch-depth: 0
       # Refs go through `env`, never interpolated into the shell. A branch name
       # is attacker-controlled on a fork PR; inline interpolation is script
-      # injection (docs/agents/shipping-and-ci.md).
+      # injection (docs/agents/shipping-and-ci.md). HEAD_SHA is a commit hash
+      # in a fixed format for the same reason, not a free-form string.
       - name: Check promotion source
         env:
           EVENT: ${{ github.event_name }}
           BASE: ${{ github.base_ref }}
-          HEAD: ${{ github.head_ref }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
           if [ "$EVENT" != "pull_request" ]; then
             echo "Not a pull request; nothing to check."
             exit 0
           fi
-          echo "PR: $HEAD -> $BASE"
-          if [ "$BASE" = "prod" ] && [ "$HEAD" != "stage" ]; then
-            echo "::error::prod may only be merged from stage. This PR targets prod from '$HEAD'."
-            echo "Promote dev -> stage first, then stage -> prod."
-            exit 1
+          echo "PR into: $BASE"
+
+          require_tree_matches() {
+            local source_branch="$1"
+            # Explicit destination ref: a bare `git fetch origin <branch>`
+            # only populates FETCH_HEAD, not `origin/<branch>` — actions/checkout
+            # does not configure the full default refspec.
+            git fetch origin "$source_branch:refs/remotes/origin/$source_branch"
+            if ! git diff --quiet "origin/$source_branch" "$HEAD_SHA"; then
+              echo "::error::this PR's resulting tree does not exactly match '$source_branch''s current tip."
+              echo "A promotion must carry exactly what was already reviewed and merged into '$source_branch' — not more, not less."
+              return 1
+            fi
+          }
+
+          if [ "$BASE" = "prod" ]; then
+            require_tree_matches stage || { echo "Promote dev -> stage first, then stage -> prod."; exit 1; }
           fi
-          if [ "$BASE" = "stage" ] && [ "$HEAD" != "dev" ]; then
-            echo "::error::stage may only be merged from dev. This PR targets stage from '$HEAD'."
-            exit 1
+          if [ "$BASE" = "stage" ]; then
+            require_tree_matches dev || exit 1
           fi
           echo "Promotion source is valid."

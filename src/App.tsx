@@ -1,6 +1,5 @@
 import { useEffect, useState } from 'react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { Toaster } from 'sonner'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { Onboarding } from '@/pages/Onboarding'
 import { Unlock } from '@/pages/Unlock'
@@ -59,32 +58,6 @@ function App() {
     <QueryClientProvider client={queryClient}>
       <TooltipProvider>
         <Gate />
-        {/* `closeButton` is required, not cosmetic: errors and warnings never
-            auto-dismiss (see lib/notify.ts + docs/decisions.md §6.5), so they
-            need a way out. Per-type durations live in lib/notify.ts because
-            sonner's toastOptions cannot express them.
-
-            `richColors` is deliberately off: it would paint toasts from
-            sonner's own palette, which is not measured by
-            `bun run check:contrast`. These classNames use the same tinted
-            alert surfaces and text-* tokens as `Alert`, so a notification and
-            an inline notice report the same state in the same colours. */}
-        <Toaster
-          closeButton
-          position="top-center"
-          toastOptions={{
-            classNames: {
-              toast: 'panel-plate rounded-md gap-2.5 text-sm',
-              title: 'font-legend font-semibold uppercase tracking-[0.08em] text-[0.8125rem]',
-              description: 'font-legend leading-snug text-muted-foreground',
-              closeButton: 'rounded-sm border-border bg-card text-foreground',
-              success: 'border-success/45 bg-success/10 text-text-success',
-              error: 'border-destructive/45 bg-destructive/10 text-text-destructive',
-              warning: 'border-warning/45 bg-warning/10 text-text-warning',
-              info: 'border-border bg-card text-foreground',
-            },
-          }}
-        />
       </TooltipProvider>
     </QueryClientProvider>
   )

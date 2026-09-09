@@ -12,6 +12,7 @@ This is the functional scope reference for the wallet. It exists to keep every f
 - Managing trust lines (required to hold non-XRP tokens on XRPL)
 - Viewing transaction history
 - App versioning and user-controlled updates (the user decides when the code changes)
+- In-app notices: where the wallet tells you something happened, without covering the panel
 
 **Out of scope — exchange/custodial features:**
 - Token swaps / built-in DEX trading UI
@@ -42,6 +43,7 @@ These are legitimate native XRPL features and can become their own epics later, 
 | [multi-wallet-management.md](./multi-wallet-management.md) | Adding/removing multiple wallets, listing them, selecting the active one for actions |
 | [block-explorer-links.md](./block-explorer-links.md) | Clickable addresses/transactions that open the on-chain block explorer to cross-check wallet data |
 | [app-versioning-and-updates.md](./app-versioning-and-updates.md) | Which build is running, learning a new release exists, and applying it **only** when the user chooses |
+| [in-app-notices.md](./in-app-notices.md) | Where a notice appears and how long it stays — a docked annunciator that never covers the panel, on every screen |
 
 ## Quick Reference (XRPL facts every story below relies on)
 

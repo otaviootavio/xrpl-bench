@@ -206,6 +206,10 @@ components:
     backgroundColor: "{colors.lamp-live-enamel}"
     rounded: "{rounded.lamp}"
     size: "0.5rem"
+  status-legend:
+    textColor: "{colors.lamp-live-enamel}"
+    typography: "{typography.legend}"
+    gap: "0.375rem"
 ---
 
 # Design System: XRPL Wallet
@@ -254,7 +258,7 @@ Four signal hues, each with a *fill* token (for lit lamps and stamped plates, al
 ### Neutral
 
 - **Lab Enamel / Rack Steel Chassis** (`{colors.enamel-chassis}` / `{colors.steel-chassis}`): the page ground, and the ground behind recessed fields.
-- **Legend Plate** (`{colors.enamel-plate}` / `{colors.steel-plate}`): every card, dialog, select menu, toast, and history row. Lighter than the chassis it is screwed to, in both finishes.
+- **Legend Plate** (`{colors.enamel-plate}` / `{colors.steel-plate}`): every card, dialog, select menu, notice, and history row. Lighter than the chassis it is screwed to, in both finishes.
 - **Scribe Rule** (`{colors.enamel-scribe}` / `{colors.steel-scribe}`): the machined line between panel regions — the global border colour. Decorative structure only, held to a documented 1.5:1 visibility floor rather than to WCAG 1.4.11.
 - **Control Edge** (`{colors.enamel-control-edge}` / `{colors.steel-control-edge}`): the boundary that identifies a field as a field. This one *is* WCAG 1.4.11 and is measured at 3:1 against both the plate and the chassis. It is also the scrollbar thumb.
 - **Muted Ink** (`{colors.enamel-ink-muted}` / `{colors.steel-ink-muted}`): engraved placard legends, descriptions, unselected selector legends.
@@ -320,7 +324,7 @@ Structural, not ambient. This system has no elevation ladder and no "cards float
 
 ### Shadow Vocabulary
 
-- **Plate bevel** (`box-shadow: 0 1px 0 0 color-mix(in oklab, var(--foreground) 6%, transparent), 0 1px 3px -1px color-mix(in oklab, var(--foreground) 12%, transparent)`): every legend plate — cards, history rows, select menus, toasts, dialogs.
+- **Plate bevel** (`box-shadow: 0 1px 0 0 color-mix(in oklab, var(--foreground) 6%, transparent), 0 1px 3px -1px color-mix(in oklab, var(--foreground) 12%, transparent)`): every legend plate — cards, history rows, select menus, dialogs, and (since S16) the docked annunciator's notice rows.
 - **Well recess** (`inset 0 2px 5px -1px rgb(0 0 0 / 0.55), inset 0 0 0 1px rgb(0 0 0 / 0.25), inset 0 -1px 0 0 rgb(255 255 255 / 0.07), 0 1px 0 0 color-mix(in oklab, var(--card) 55%, transparent)`): the readout well, the seed reveal, tooltips, the fee summary. Four layers: the cut, its wall, the lit lower lip, and the panel edge catching light just outside it.
 - **Field recess** (`inset 0 1px 2px 0 rgb(0 0 0 / 0.14)`): inputs, select triggers, the network range selector (0.16), alert bodies (0.10).
 - **Key at rest** (`inset 0 1px 0 0 rgb(255 255 255 / 0.14–0.24), 0 1px 2px 0 rgb(0 0 0 / 0.28–0.30)`): filled keys. Plate-ground keys use a stronger inner highlight (0.4–0.5) and a lighter drop.
@@ -342,7 +346,7 @@ Radius is machined, not pilled: 0.125rem (`--radius`) with a four-step scale tha
 
 The one intentional full-round element is the **indicator lamp** — a 0.5rem disc at `9999px`, plus the smaller dot inside an annunciator legend. A lamp is round because lamps are round; it is a light, not a control.
 
-Borders are the second half of the form language. Every element that is a plate, a key, or a field carries a 1px edge: plates and stamped badges on the scribe colour, fields and menus on the control-edge colour, filled keys on their own fill colour. The chassis itself is edged from `md` up. The scribe device (a dark rule with a light line under it, the way an engraved groove actually reads) is defined in the component layer but unused in the shipped pages — see Known Gaps.
+Borders are the second half of the form language. Every element that is a plate, a key, or a field carries a 1px edge: plates and stamped badges on the scribe colour, fields and menus on the control-edge colour, filled keys on their own fill colour. The chassis itself is edged from `md` up. Region separation is a plain 1px `border-b` / `border-x` in the scribe colour — the `.panel-scribe` two-tone groove device was removed 2026-09-02 (see Known Gaps) for having zero call sites.
 
 ## Components
 
@@ -361,7 +365,24 @@ The panel's keys. Every variant is a physical cap: a light top edge, a shadow un
 
 ### Chips
 
-Stamped tags (`Badge`): square-cut 1px-edged plates, placard legend, 1px/0.375rem padding. Semantic variants use fill/`-foreground` pairs. The build ships one meaningful use — the caution-amber "Real funds" stamp when the network is Mainnet. Use a lamp, not a badge, for live state.
+Stamped tags (`Badge`): square-cut 1px-edged plates, placard legend, 1px/0.375rem padding. Semantic variants use fill/`-foreground` pairs. The build ships one meaningful use — the caution-amber "Real funds" stamp when the network is Mainnet. Use `StatusLegend`, not a badge, for live state.
+
+### Status Legend (live state)
+
+`StatusLegend` (`ui/lamp`) is the device behind the "lamp plus an adjacent
+visible word" rule: a lit 0.5rem disc, `gap-1.5`, then the word in the legend
+face at 0.6875rem/600, tracked 0.1em, in the tone's `--text-*` token. The word
+is always present and always specific, so the state never rests on the lamp's
+colour; the lamp only makes it findable at a glance down a list of rows.
+
+Tone drives both the disc and the word from one map, and `className` overrides
+the word alone — the lamp carries its own colour through `currentColor`. That
+divergence has exactly one call site and one reason: on the readout well's dark
+ground the `--text-*` tokens would not hold contrast, so the word takes
+`--readout-muted` while the lamp stays lit green.
+
+Reach for a bare `Lamp` only where the word is already on screen for another
+reason, such as a select item marking the chosen position.
 
 ### Cards / Containers
 
@@ -398,9 +419,15 @@ Those marks are subordinate readings *of the same quantity*, which is exactly wh
 
 Mode is set by a positional switch, never a dropdown: both positions are visible at rest inside a recessed field-ground track, so which network you are on *and* what the alternative is are readable without opening anything. Radiogroup semantics, arrow keys native. The selected position takes the panel key's fill plus its inner highlight and `aria-checked`; the unselected position keeps full-strength ink on the plate, because an unselected position is available, not disabled.
 
-### Alerts (Annunciator)
+### Alerts (inline) and the Annunciator (docked, S16)
 
-Plate ground, recessed body, machined corners, 1px edge in the tone's hue at 55–60%. The **title** is a small lit legend plate carrying the tone's measured fill and foreground, with a dot inside it, and the tone is always stated in the title's words. No thick coloured left rule; no washed field. Body text uses the tone's text token, never its fill token.
+**Alert** (`ui/alert`) is the inline device: plate ground, recessed body, machined corners, 1px edge in the tone's hue at 55–60%. The **title** is a small lit legend plate carrying the tone's measured fill and foreground, with a dot inside it, and the tone is always stated in the title's words. No thick coloured left rule; no washed field. Body text uses the tone's text token, never its fill token.
+
+**The Annunciator (`components/Annunciator.tsx`) is the same device, docked at the base of the chassis, not held above it.** Every screen — `Main`, `Unlock`, `Onboarding` — reserves this band via the shared `ChassisShell` (docs/decisions.md §9.1). It lights the same legend from the same tone map (`ANNUNCIATOR` and `NOTICE_TONE`, exported from `ui/alert`), so an inline notice and a docked notice report a state in identical colours. Because it sits in the panel's own plane like every other device, it takes the ordinary plate bevel shadow (`.panel-plate`) rather than a raised one — there is nothing left in this app that floats above the chassis. Its lit legend is the **state word** — Confirmed / Caution / Error / Notice — because a notice's message is a whole sentence, and a lit sentence is a washed field by another name.
+
+The legend plate's shape is one exported constant (`ANNUNCIATOR_LEGEND`), shared by `AlertTitle` and the Annunciator's notice rows, so the two devices cannot visually drift apart.
+
+**Quiet, several-at-once, and where it lives.** With nothing to report the annunciator is a genuinely unlit plate — no ghost of a dismissed notice (docs/decisions.md §9.3, N2). With several notices outstanding it shows the most severe one plus a count of the rest, expanding to the full bounded list on request, so an outstanding error is never buried under successes and the band never grows without bound (§9.4, N3). It replaced a sonner-backed floating toast in S16 — the previous "opts out of sonner's unlayered stylesheet" workaround no longer applies to anything in this repo, since the dependency is gone.
 
 ## Do's and Don'ts
 
@@ -409,7 +436,7 @@ Plate ground, recessed body, machined corners, 1px edge in the tone's hue at 55�
 - **Do** treat light and dark as two materials. Add tokens to both `:root` (enamel, hue 250) and the `prefers-color-scheme: dark` block (steel, hue 125), with values chosen per finish rather than derived by inverting lightness.
 - **Do** run `bun run check:contrast` after touching any colour, and add the new token's pairs to the script's 25-per-finish set. A token without pairs is incomplete work.
 - **Do** keep commit orange on the fund-moving control class only, and keep saturated destructive fill on the in-dialog confirm key only. Use the `danger` treatment for anything that merely opens that dialog.
-- **Do** report live state as a lamp plus an adjacent visible word, and change the accessible name when the state changes.
+- **Do** report live state with `StatusLegend` — a lamp plus an adjacent visible word — and change the accessible name when the state changes. Do not hand-roll the pair; that is how six call sites came to carry the same string with one silent variation.
 - **Do** set every numeral, address, and hash in the data face, and pass money in as a pre-formatted string.
 - **Do** keep card titles as small engraved placards and let the value carry the scale.
 - **Do** put responsive behaviour inside the primitive, not at the call site.
@@ -435,10 +462,8 @@ Plate ground, recessed body, machined corners, 1px edge in the tone's hue at 55�
 
 Recorded honestly; the owner chose to ship as it stands.
 
-- **Chassis density at large viewports.** At 1440×900 the face below the plate row is roughly 375px of empty ground, and the readout dominates the upper third rather than owning the frame. The full-height chassis makes that read as panel face rather than as a page that ran out of content, but the composition does not yet fill the instrument. This is unfinished ambition, not a defect: the next move is a lower register that earns its ground.
-- **`.panel-scribe` — RESOLVED 2026-09-02: drop it.** The device had zero call sites, so it was defined vocabulary rather than a system rule, and leaving it in invited a future agent to treat it as the standard for region separation when nothing had ever used it. Region separation is, and remains, a plain 1px `border-b` / `border-x` in the scribe colour — which is what every verified screenshot actually shows. The two-tone groove is also close to invisible at 1px on ordinary DPI, so adopting it would have cost fussiness for no legibility.
-
-  **Pending cleanup:** the rule is still present in `src/index.css`'s component layer. Removing it is a five-line deletion with no call sites to update; it is left for the next change that touches that file rather than done as a standalone edit.
+- **Chassis density at large viewports — partially spent, 2026-09-02.** At 1440×900 the face below the plate row was roughly 375px of empty ground. The S16 annunciator (docs/decisions.md §9) now occupies a fixed band of it at the base of the chassis on every screen, but that band is small and mostly unlit at rest (N2) — the composition still does not fill the instrument the way a fifth register of real content would. Unfinished ambition remains: the next move is content, not more chrome.
+- **`.panel-scribe` — RESOLVED and removed 2026-09-02.** The device had zero call sites, so it was defined vocabulary rather than a system rule. Region separation is, and remains, a plain 1px `border-b` / `border-x` in the scribe colour — which is what every verified screenshot actually shows. Deleted from `src/index.css`'s component layer in the same change that touched that file for S16.
 
   **If the chassis-density gap above is ever funded, the scribed groove is the device to reach for** — a real depth register is exactly what that work needs, and re-introducing it deliberately, with call sites, is different from leaving it lying around unused.
 - **Hardcoded white on the QR plate.** `QrCode.tsx` sets `bg-white` on its plate so scanners have the contrast they need. It is a build-carried necessity, not a palette token, and is deliberately not recorded above.

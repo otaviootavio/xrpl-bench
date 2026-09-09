@@ -303,13 +303,6 @@
      rather than earned, so the panel is built from real structure only.
      -------------------------------------------------------------------------- */
 
-  /* A scribed groove between panel regions: dark line, light line under it.
-     This is how an engraved rule actually reads on a physical panel. */
-  .panel-scribe {
-    border-top: 1px solid color-mix(in oklab, var(--border) 100%, transparent);
-    box-shadow: 0 1px 0 0 color-mix(in oklab, var(--card) 70%, transparent);
-  }
-
   /* A legend plate: the lighter plate screwed onto the chassis. */
   .panel-plate {
     background-color: var(--card);

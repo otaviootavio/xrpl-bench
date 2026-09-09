@@ -26,6 +26,25 @@ import { type LampTone } from '@/components/ui/lamp'
  * Deliberately no thick coloured left rule — a 4px accent bar is a generic
  * callout costume.
  */
+/**
+ * The tone of a notice: its edge and its text, with no ground.
+ *
+ * Exported because the docked Annunciator (`components/Annunciator.tsx`) is
+ * the same device on a different surface — `lib/notify.tsx` tags each notice
+ * with a tone from this map so a notification and an inline notice report the
+ * same state in the same colours. Ground is deliberately excluded: an inline
+ * notice is recessed into the plate it sits on, the Annunciator's rows sit on
+ * plate ground, and only the tone is shared.
+ */
+const NOTICE_TONE = {
+  default: 'border-border text-foreground',
+  destructive: 'border-destructive/55 text-text-destructive',
+  warning: 'border-warning/60 text-text-warning',
+  success: 'border-success/55 text-text-success',
+} as const
+
+export type NoticeTone = keyof typeof NOTICE_TONE
+
 const alertVariants = cva(
   // Recessed rather than recoloured, so a notice reads as a different PLANE
   // when it sits on a plate that shares its ground.
@@ -33,32 +52,53 @@ const alertVariants = cva(
   {
     variants: {
       variant: {
-        default: 'border-border bg-muted/40 text-foreground',
-        destructive: 'border-destructive/55 bg-card text-text-destructive',
-        warning: 'border-warning/60 bg-card text-text-warning',
-        success: 'border-success/55 bg-card text-text-success',
+        default: `${NOTICE_TONE.default} bg-muted/40`,
+        destructive: `${NOTICE_TONE.destructive} bg-card`,
+        warning: `${NOTICE_TONE.warning} bg-card`,
+        success: `${NOTICE_TONE.success} bg-card`,
       },
     },
     defaultVariants: { variant: 'default' },
   },
 )
 
-/** The lit legend plate. Uses only measured fill/-foreground pairs. */
-const ANNUNCIATOR: Record<string, string> = {
+/**
+ * The lit legend plate's SHAPE, with no fill.
+ *
+ * Extracted for a reason that is not repetition count — there are only two
+ * consumers, `AlertTitle` and `Annunciator`'s `NoticeRow`, and both are real
+ * components now that the toast layer is store-backed rather than a
+ * third-party library's chrome. What each adds is its own: `AlertTitle` adds
+ * the bottom margin; `NoticeRow` adds `w-fit` and a real dot element instead
+ * of a pseudo-element.
+ */
+const ANNUNCIATOR_LEGEND = [
+  'inline-flex items-center gap-1.5 rounded-sm px-1.5 py-0.5',
+  'font-legend text-[0.75rem] font-semibold uppercase leading-[1.35] tracking-[0.1em]',
+  'shadow-[inset_0_1px_0_0_rgb(255_255_255/0.22)]',
+].join(' ')
+
+/**
+ * The lit legend plate. Uses only measured fill/-foreground pairs.
+ *
+ * Exported for the same reason as NOTICE_TONE: the toast layer lights the same
+ * legend. The plate's SHAPE is per-surface; only these fills are shared.
+ */
+const ANNUNCIATOR: Record<NoticeTone, string> = {
   default: 'bg-muted text-foreground',
   destructive: 'bg-destructive text-destructive-foreground',
   warning: 'bg-warning text-warning-foreground',
   success: 'bg-success text-success-foreground',
 }
 
-const LAMP_TONE: Record<string, LampTone> = {
+const LAMP_TONE: Record<NoticeTone, LampTone> = {
   default: 'neutral',
   destructive: 'alert',
   warning: 'caution',
   success: 'live',
 }
 
-const AlertVariantContext = React.createContext<string>('default')
+const AlertVariantContext = React.createContext<NoticeTone>('default')
 
 function Alert({
   className,
@@ -80,13 +120,7 @@ function AlertTitle({ className, children, ...props }: React.ComponentProps<'div
   const variant = React.useContext(AlertVariantContext)
   return (
     <div
-      className={cn(
-        'mb-1.5 inline-flex items-center gap-1.5 rounded-sm px-1.5 py-0.5',
-        'font-legend text-[0.75rem] font-semibold uppercase leading-[1.35] tracking-[0.1em]',
-        'shadow-[inset_0_1px_0_0_rgb(255_255_255/0.22)]',
-        ANNUNCIATOR[variant],
-        className,
-      )}
+      className={cn(ANNUNCIATOR_LEGEND, 'mb-1.5', ANNUNCIATOR[variant], className)}
       {...props}
     >
       {/* The lamp is inside the lit legend, the way an annunciator reads. It is
@@ -105,4 +139,4 @@ function AlertDescription({ className, ...props }: React.ComponentProps<'div'>) 
   return <div className={cn('text-sm leading-snug [&_p]:leading-snug', className)} {...props} />
 }
 
-export { Alert, AlertTitle, AlertDescription }
+export { Alert, AlertTitle, AlertDescription, ANNUNCIATOR, ANNUNCIATOR_LEGEND, NOTICE_TONE }

@@ -2,7 +2,7 @@ import { useCallback, useRef, useState } from 'react'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { NetworkSelector } from '@/components/wallet/NetworkSelector'
-import { Lamp } from '@/components/ui/lamp'
+import { StatusLegend } from '@/components/ui/lamp'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { ExternalLinkIcon } from 'lucide-react'
 import { BUILD, shortSha, sourceUrl, formatBuiltAt } from '@/lib/build-info'
@@ -33,7 +33,8 @@ export function SettingsTab() {
   const addressBook = useAppStore((s) => s.addressBook)
   const vaultKey = useAppStore((s) => s.vaultKey)
   const lock = useAppStore((s) => s.lock)
-  const { updateReady, applying, applyUpdate } = useAppUpdate()
+  const { updateReady, applying, applyUpdate, checking, checkError, checkForUpdate, pendingRelease, blockedReason, declined, declineCurrent } =
+    useAppUpdate()
   const queryClient = useQueryClient()
 
   const [addOpen, setAddOpen] = useState(false)
@@ -188,10 +189,7 @@ export function SettingsTab() {
                 <div className="flex items-center gap-2">
                   <span className="font-legend text-sm font-semibold">{w.label}</span>
                   {w.id === activeWalletId && (
-                    <span className="inline-flex items-center gap-1.5 font-legend text-[0.6875rem] font-semibold uppercase tracking-[0.1em] text-text-success">
-                      <Lamp tone="live" />
-                      Active
-                    </span>
+                    <StatusLegend tone="live">Active</StatusLegend>
                   )}
                 </div>
                 <AddressLink address={w.address} />
@@ -270,7 +268,7 @@ export function SettingsTab() {
       </Card>
 
       {/* Which build is running, and the only control that changes it.
-          app-versioning-and-updates.md US-1 / US-3. */}
+          app-versioning-and-updates.md US-1 / US-2 / US-3 / US-4 / US-5 / US-6 / US-8. */}
       <Card>
         <CardHeader>
           <CardTitle>Version</CardTitle>
@@ -304,30 +302,92 @@ export function SettingsTab() {
             </div>
           </dl>
 
-          {updateReady ? (
-            <Alert variant="warning">
-              <AlertTitle>Update available</AlertTitle>
+          {/* US-2: an explicit on-demand check, distinct from the automatic
+              one the service worker already runs on registration. */}
+          <div className="flex items-center gap-2">
+            <Button variant="outline" size="sm" onClick={() => void checkForUpdate()} disabled={checking}>
+              {checking ? 'Checking…' : 'Check for updates'}
+            </Button>
+            {checkError && (
+              <span className="text-xs text-text-warning">Could not check — you may be offline.</span>
+            )}
+          </div>
+
+          {updateReady && !declined ? (
+            /* V4: a major or security-marked release warns harder; minor/patch
+               stay quiet. Unknown (manifest unreachable) falls back to the
+               louder treatment, since understating a security fix is worse
+               than overstating an ordinary one. */
+            <Alert variant={pendingRelease && !pendingRelease.security && pendingRelease.bump !== 'major' ? 'default' : 'warning'}>
+              <AlertTitle>{pendingRelease?.security ? 'Security update available' : 'Update available'}</AlertTitle>
               <AlertDescription className="flex flex-col items-start gap-2">
                 <span>
-                  A new version has downloaded and is waiting. Installing it reloads the app onto the new
-                  version; anything you have typed and not submitted is lost. Your wallets and keys are
-                  untouched.
+                  A new version has downloaded and is waiting
+                  {pendingRelease ? ` (v${pendingRelease.version}, released ${new Date(pendingRelease.releasedAt).toLocaleDateString()})` : ''}.
+                  Installing it reloads the app onto the new version; anything you have typed and not
+                  submitted is lost. Your wallets and keys are untouched.
                 </span>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => void applyUpdate()}
-                  disabled={applying}
-                >
-                  {applying ? 'Installing…' : 'Install update'}
-                </Button>
+                {pendingRelease && (
+                  <div className="flex flex-wrap gap-3">
+                    <a href={pendingRelease.notes} target="_blank" rel="noreferrer noopener" className="inline-flex items-center gap-1 text-sm hover:underline">
+                      What changed <ExternalLinkIcon className="size-3 shrink-0 opacity-60" aria-hidden="true" />
+                    </a>
+                    {/* US-7: the wallet never claims to verify itself — this
+                        only links to instructions a third party can follow. */}
+                    <a href={pendingRelease.verify} target="_blank" rel="noreferrer noopener" className="inline-flex items-center gap-1 text-sm hover:underline">
+                      How to verify this build <ExternalLinkIcon className="size-3 shrink-0 opacity-60" aria-hidden="true" />
+                    </a>
+                  </div>
+                )}
+                <div className="flex flex-wrap gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => void applyUpdate()}
+                    disabled={applying || !!blockedReason}
+                    aria-disabled={!!blockedReason}
+                  >
+                    {applying ? 'Installing…' : 'Install update'}
+                  </Button>
+                  <Button variant="ghost" size="sm" onClick={declineCurrent} disabled={applying}>
+                    Not now
+                  </Button>
+                </div>
+                {/* Never hidden — a disabled control states its reason in
+                    visible text (docs/decisions.md §6.4). */}
+                {blockedReason && <span className="text-xs text-text-warning">{blockedReason}</span>}
               </AlertDescription>
             </Alert>
+          ) : updateReady && declined ? (
+            // US-4: declined, so it stops nagging with a full alert — but
+            // stays reachable, not hidden.
+            <p className="text-xs leading-snug text-muted-foreground">
+              An update is available but was dismissed.{' '}
+              <button type="button" onClick={() => void applyUpdate()} disabled={applying || !!blockedReason} className="underline hover:no-underline">
+                Install it
+              </button>
+              {blockedReason ? ` (${blockedReason})` : ''}
+            </p>
           ) : (
             <p className="text-xs leading-snug text-muted-foreground">
               You are on the newest version this device has downloaded.
             </p>
           )}
+
+          {/* US-8: recovery never mentions clearing site data — that destroys
+              the encrypted vault. */}
+          <details className="text-xs text-muted-foreground">
+            <summary className="cursor-pointer select-none font-legend uppercase tracking-[0.08em]">
+              Trouble after an update?
+            </summary>
+            <p className="mt-1.5 leading-snug">
+              Reload the page first. If the app still won't start, reinstall it from your home screen or
+              browser. As a last resort, you can re-import this wallet from your seed on a clean install —
+              your wallets and keys are never affected by an update. Never clear this site's storage or
+              browsing data to fix an update problem: that erases the encrypted seed stored on this device
+              and cannot be undone without your own backup.
+            </p>
+          </details>
         </CardContent>
       </Card>
 

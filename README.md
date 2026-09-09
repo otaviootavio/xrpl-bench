@@ -89,3 +89,29 @@ the parts that are **not** mitigated, is documented in `docs/decisions.md` §8.
 
 This software has not been audited. It is built to hold real funds and used that
 way by its author, which is a statement about intent, not a guarantee.
+
+### Verifying a build
+
+The wallet does not — and cannot — attest to its own integrity: an origin that
+has been compromised also controls the code that would report "everything is
+fine". Verification has to be performed by someone else, against the tagged
+source, and is meaningful precisely because a third party can do it.
+
+1. Check out the tag named in the running build's `Version` (Settings shows it,
+   and the commit links here) and run `bun install --frozen-lockfile && bun run
+   build`. `docs/decisions.md` §8.6 records that this build is reproducible —
+   two clean builds of the same tag produce byte-identical output.
+2. Hash every file under `dist/` (`sha256sum $(find dist -type f)` or
+   equivalent) and diff the result against the `assets` map in that release's
+   `releases.json` — `scripts/gen-release-manifest.mjs` produces both from the
+   same build.
+3. Fetch `releases.json` from the live origin (`/releases.json`, `cache:
+   'no-store'`) and confirm its `assets` map is byte-identical to the one you
+   just rebuilt. Optionally re-download each served asset and hash it directly,
+   rather than trusting the manifest the same origin also serves.
+4. A mismatch means the tag you checked out is not what the origin is serving.
+   Do not use that build to sign anything, and see `docs/decisions.md` §8 for
+   what this threat model does and does not cover.
+
+Subresource Integrity is not a substitute for this: an attacker controlling the
+origin controls `index.html` and therefore the integrity attributes themselves.

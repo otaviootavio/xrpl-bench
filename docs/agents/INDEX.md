@@ -32,7 +32,7 @@ means never — not "prefer not to".
 - **Never** — do not do this. If the task appears to require it, the task is
   wrong or you have misread it; say so instead of complying.
 
-## The five standing behaviours
+## The six standing behaviours
 
 These apply to every task in this repo and are not repeated in the scenario
 files.
@@ -60,6 +60,14 @@ files.
 5. **Never repair drift as a side effect.** If you notice something stale or
    wrong outside your task, report it and move on. Do not fix it silently in a
    change about something else.
+
+6. **Rebase onto the target branch and re-test locally before every merge.**
+   There is no `main`; every merge here lands directly on `dev`, `stage`, or
+   `prod`. Rebase (never merge — see `docs/decisions.md` §11 for why), re-run
+   the full local gate suite on the result, and treat a rebase conflict or a
+   gate that only fails post-rebase as a real integration bug to fix, not a
+   check to force past. Mechanics in
+   [shipping-and-ci.md](shipping-and-ci.md).
 
 ## The delivery model
 

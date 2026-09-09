@@ -5,8 +5,39 @@
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="description" content="XRPL Bench — a self-custody XRP Ledger wallet. Your keys stay on your device." />
-    <meta name="theme-color" content="#e6eaef" media="(prefers-color-scheme: light)" />
-    <meta name="theme-color" content="#1c2026" media="(prefers-color-scheme: dark)" />
+    <!-- The status bar / omnibox is a panel surface too, and it follows the
+         finish. Both values are --background from src/index.css converted to
+         sRGB; `bun run check:contrast` asserts they still equal it, because
+         they had already drifted from it once
+         (docs/sprints/mobile-chrome-sprints.md B2).
+
+         Why a script rather than the two media-scoped <meta> tags this
+         replaces: Chrome does not apply the `media` form in an INSTALLED PWA
+         (crbug 40634649), which is where the pale-band bug was reported, but
+         it does honour a theme-color meta that JavaScript rewrites. Writing
+         one tag imperatively is therefore the only form that is responsive in
+         both a browser tab and an installed app. The manifest's baked
+         theme_color stays the floor for wherever even this is ignored, and for
+         the splash screen before any of our code runs.
+
+         Synchronous and in <head> on purpose: it must settle before first
+         paint, and it must not depend on the bundle. -->
+    <script>
+      ;(function () {
+        var LIGHT = '#dfe5ea'
+        var DARK = '#181a15'
+        var meta = document.createElement('meta')
+        meta.name = 'theme-color'
+        var query = window.matchMedia('(prefers-color-scheme: dark)')
+        function apply() {
+          meta.content = query.matches ? DARK : LIGHT
+        }
+        apply()
+        document.head.appendChild(meta)
+        // Follows a live OS/browser switch, not just the value at boot.
+        query.addEventListener('change', apply)
+      })()
+    </script>
     <title>XRPL Bench</title>
   </head>
   <body>

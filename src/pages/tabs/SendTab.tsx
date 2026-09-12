@@ -23,6 +23,7 @@ import {
   displayCurrencyCode,
   isPositiveDecimalString,
   compareDecimalStrings,
+  amountPlusFeeFits,
 } from '@/lib/xrpl/money'
 import { describeResultCode } from '@/lib/xrpl/result-codes'
 import { queryKeys } from '@/lib/xrpl/query-keys'
@@ -72,9 +73,8 @@ export function SendTab() {
     if (!amountValidation.valid) return undefined
     if (asset === 'XRP') {
       if (!spendableDrops) return undefined
-      // The fee comes out on top of the amount, so both must fit.
-      const needed = BigInt(xrpToDropsString(amount)) + BigInt(fee.data ?? '0')
-      if (needed > BigInt(spendableDrops)) {
+      // The fee comes out on top of the amount, so both must fit (money.ts).
+      if (!amountPlusFeeFits(xrpToDropsString(amount), fee.data ?? '0', spendableDrops)) {
         return `That's more than your spendable balance (${formatXrp(spendableDrops)}) once the network fee is included.`
       }
       return undefined

@@ -13,7 +13,7 @@ import { act, renderHook, waitFor } from '@testing-library/react'
  * raises for major/security releases, and its interaction with decline
  * (US-4) and with minor/patch staying quiet.
  *
- * `@/lib/sw-register` (the one-line indirection around the
+ * `@/lib/sw-register` (the single registration path around the
  * `virtual:pwa-register` Vite plugin module, which this test runner cannot
  * resolve at all) and `@/lib/release-check` are mocked per test via
  * `vi.doMock` + `vi.resetModules`, because `useAppUpdate` registers its
@@ -40,16 +40,33 @@ describe('useAppUpdate — insistent notice for major/security releases', () => 
   }
 
   async function setup(manifest: FakeManifest) {
-    let onNeedRefresh: (() => void) | undefined
     const declinedUpdateVersions: string[] = []
     const declineUpdateVersion = vi.fn((v: string) => declinedUpdateVersions.push(v))
 
+    // AD-11: the hook no longer registers the worker itself — it asks the
+    // single registry in `@/lib/sw-register` and subscribes to it. The mock
+    // stands in for that registry, and `onNeedRefresh` here is the trigger the
+    // real registry would fire when a new worker installs and waits.
+    const waitingListeners = new Set<(v: boolean) => void>()
+    let waiting = false
+    const onNeedRefresh = () => {
+      waiting = true
+      waitingListeners.forEach((l) => l(true))
+    }
+    const updateSW = vi.fn(async () => {})
+    const registerServiceWorker = vi.fn(() => updateSW)
+    const subscribeToWaitingUpdate = vi.fn((listener: (v: boolean) => void) => {
+      waitingListeners.add(listener)
+      if (waiting) listener(true)
+      return () => {
+        waitingListeners.delete(listener)
+      }
+    })
     vi.doMock('@/lib/sw-register', () => ({
-      registerSW: (opts: { onRegisteredSW?: (url: string, reg: unknown) => void; onNeedRefresh?: () => void }) => {
-        onNeedRefresh = opts.onNeedRefresh
-        opts.onRegisteredSW?.('sw.js', {})
-        return vi.fn(async () => {})
-      },
+      registerServiceWorker,
+      getServiceWorkerRegistration: () => ({}) as ServiceWorkerRegistration,
+      isUpdateWaiting: () => waiting,
+      subscribeToWaitingUpdate,
     }))
     vi.doMock('@/lib/release-check', () => ({
       checkForRelease: vi.fn(async () => ({ ok: true, manifest })),
@@ -72,12 +89,12 @@ describe('useAppUpdate — insistent notice for major/security releases', () => 
     const hook = renderHook(() => useAppUpdate())
 
     act(() => {
-      onNeedRefresh?.()
+      onNeedRefresh()
     })
     await waitFor(() => expect(hook.result.current.updateReady).toBe(true))
     await waitFor(() => expect(hook.result.current.pendingRelease).toEqual(manifest))
 
-    return { hook, useNoticeStore, declinedUpdateVersions }
+    return { hook, useNoticeStore, declinedUpdateVersions, registerServiceWorker, subscribeToWaitingUpdate, updateSW }
   }
 
   it('raises a persistent warning notice for a major release', async () => {
@@ -159,5 +176,30 @@ describe('useAppUpdate — insistent notice for major/security releases', () => 
 
     expect(declinedUpdateVersions).toContain(manifest.commit)
     expect(useNoticeStore.getState().notices).toHaveLength(0)
+  })
+
+  it('takes its worker and its waiting state from the shared registry (AD-11)', async () => {
+    const manifest: FakeManifest = {
+      version: '1.2.0',
+      commit: 'e'.repeat(40),
+      releasedAt: '2026-01-01T00:00:00.000Z',
+      bump: 'minor',
+      security: false,
+      notes: 'https://example.com/notes',
+      verify: 'https://example.com#security',
+    }
+    const { hook, registerServiceWorker, subscribeToWaitingUpdate, updateSW } = await setup(manifest)
+
+    // The hook does not register a second worker and does not track the
+    // waiting flag itself — it asks the one registry and subscribes to it.
+    expect(registerServiceWorker).toHaveBeenCalledTimes(1)
+    expect(subscribeToWaitingUpdate).toHaveBeenCalledTimes(1)
+
+    // And the action that swaps the running code calls the function that
+    // single registration returned, not one of its own.
+    await act(async () => {
+      await hook.result.current.applyUpdate()
+    })
+    expect(updateSW).toHaveBeenCalledWith(true)
   })
 })

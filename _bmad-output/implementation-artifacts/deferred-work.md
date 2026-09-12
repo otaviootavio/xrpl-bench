@@ -37,3 +37,15 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-2-sealed-boundaries.md`
   summary: The two seed-import paths disagree — Onboarding gates the write on the disabled-master-key warning, SettingsTab writes to the vault first and warns afterwards — and they surface a malformed seed differently.
   evidence: Confirmed at both call sites and independently reported by the implementer as an unmet acceptance criterion. Making the settings path gate the write is a user-visible flow change, so it needs its own story. Neither path trims the seed input either, so a pasted trailing newline reads as malformed.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-4-rules-and-code.md`
+  summary: AGENTS.md still states "no secret ever enters localStorage, React state, a store, the URL, or anything serializable" absolutely, while docs/decisions.md §4 now carries a narrow exception for a non-extractable CryptoKey handle.
+  evidence: AGENTS.md is loaded first via CLAUDE.md, so an agent reading it deletes the vaultKey code the §4 exception exists to protect — the exact failure the exception was written to prevent. Deferred because the fix edits an agent-context file. Per the repo's own rule it should gain a pointer to §4, not a restatement of it.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-4-rules-and-code.md`
+  summary: The waiting-update flag never returns to false, so a failed applyUpdate leaves the update prompt showing.
+  evidence: Pre-existing in shape — useAppUpdate only ever set waiting true before this change too. Confirmed in src/lib/sw-register-core.ts. Would be settled by a setWaiting(false) on activation failure.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-4-rules-and-code.md`
+  summary: No lint gate stops BigInt arithmetic reappearing outside money.ts, or a hand-rolled explorer anchor returning outside AddressLink/TxLink.
+  evidence: Both acceptance criteria for Epic 4 are grep-shaped and hold today, but nothing enforces them tomorrow — the same decay the query-key guard was written to stop. Two more guard scripts in the check-query-keys.mjs idiom would close it.

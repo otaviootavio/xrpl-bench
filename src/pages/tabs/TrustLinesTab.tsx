@@ -13,7 +13,7 @@ import { useServerReserves } from '@/hooks/useServerReserves'
 import { useSpendableBalance } from '@/hooks/useSpendableBalance'
 import { submitTrustSet } from '@/lib/xrpl/writes'
 import { unlockWalletForSigning } from '@/lib/crypto/keystore'
-import { formatXrp, displayCurrencyCode } from '@/lib/xrpl/money'
+import { formatXrp, displayCurrencyCode, coversOwnerReserve } from '@/lib/xrpl/money'
 import { describeResultCode } from '@/lib/xrpl/result-codes'
 import { queryKeys } from '@/lib/xrpl/query-keys'
 import { useQueryClient } from '@tanstack/react-query'
@@ -66,7 +66,7 @@ export function TrustLinesTab() {
   }
 
   const reserveCostDrops = reserves.data?.ownerReserveDrops ?? '200000'
-  const canAffordNewLine = spendableDrops ? BigInt(spendableDrops) >= BigInt(reserveCostDrops) : false
+  const canAffordNewLine = spendableDrops ? coversOwnerReserve(spendableDrops, reserveCostDrops) : false
   // XRPL currency codes are either a 3-character code or a 40-char hex code.
   const issuerValid = isValidClassicAddress(issuer)
   const currencyValid = /^[A-Za-z0-9]{3}$/.test(currency) || /^[0-9A-Fa-f]{40}$/.test(currency)

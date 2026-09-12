@@ -121,3 +121,38 @@ export function displayCurrencyCode(code: string): string {
   }
   return code
 }
+
+/**
+ * The reserve an account must keep: the base reserve plus one owner reserve
+ * for every owned object (trust line, offer, …) — viewing-balances.md US-2.
+ */
+export function reserveRequirementDrops(baseReserveDrops: string, ownerReserveDrops: string, ownerCount: number): string {
+  return (BigInt(baseReserveDrops) + BigInt(multiplyDropsByCount(ownerReserveDrops, ownerCount))).toString()
+}
+
+/**
+ * Spendable = balance − reserve requirement, clamped at zero. An account whose
+ * balance has fallen below its reserve has nothing spendable; it never shows a
+ * negative figure (AD-7: the whole rule lives here, not in the hook).
+ */
+export function spendableAfterReserve(balanceDrops: string, reservedDrops: string): string {
+  const raw = subtractDrops(balanceDrops, reservedDrops)
+  return isNonNegativeDrops(raw) ? raw : '0'
+}
+
+/**
+ * The send-form funds check: the network fee comes out on top of the amount,
+ * so both must fit inside the spendable balance. Exactly equal fits — this is
+ * inclusive by design, not an off-by-one.
+ */
+export function amountPlusFeeFits(amountDrops: string, feeDrops: string, spendableDrops: string): boolean {
+  return BigInt(amountDrops) + BigInt(feeDrops) <= BigInt(spendableDrops)
+}
+
+/**
+ * Whether the spendable balance covers one more owner reserve — the cost of
+ * opening one additional trust line.
+ */
+export function coversOwnerReserve(spendableDrops: string, ownerReserveDrops: string): boolean {
+  return BigInt(spendableDrops) >= BigInt(ownerReserveDrops)
+}

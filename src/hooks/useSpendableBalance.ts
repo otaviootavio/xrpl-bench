@@ -1,9 +1,10 @@
 import { useAccountState } from './useAccountState'
 import { useServerReserves } from './useServerReserves'
-import { subtractDrops, multiplyDropsByCount } from '@/lib/xrpl/money'
+import { reserveRequirementDrops, spendableAfterReserve } from '@/lib/xrpl/money'
 import type { NetworkId } from '@/lib/xrpl/networks'
 
-// viewing-balances.md US-2: spendable = balance - base_reserve - (owner_reserve * ownerCount)
+// viewing-balances.md US-2: spendable = balance - base_reserve - (owner_reserve * ownerCount).
+// The arithmetic itself lives in money.ts (AD-7); this hook only supplies the inputs.
 export function useSpendableBalance(network: NetworkId, address: string | null) {
   const accountState = useAccountState(network, address)
   const reserves = useServerReserves(network)
@@ -12,11 +13,12 @@ export function useSpendableBalance(network: NetworkId, address: string | null) 
     return { isLoading: accountState.isLoading || reserves.isLoading, spendableDrops: null, reservedDrops: null }
   }
 
-  const reservedDrops = (
-    BigInt(reserves.data.baseReserveDrops) + BigInt(multiplyDropsByCount(reserves.data.ownerReserveDrops, accountState.data.ownerCount))
-  ).toString()
-  const spendableRaw = subtractDrops(accountState.data.balanceDrops, reservedDrops)
-  const spendableDrops = BigInt(spendableRaw) > 0n ? spendableRaw : '0'
+  const reservedDrops = reserveRequirementDrops(
+    reserves.data.baseReserveDrops,
+    reserves.data.ownerReserveDrops,
+    accountState.data.ownerCount,
+  )
+  const spendableDrops = spendableAfterReserve(accountState.data.balanceDrops, reservedDrops)
 
   return { isLoading: false, spendableDrops, reservedDrops }
 }

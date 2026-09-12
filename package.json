@@ -11,12 +11,13 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
-    "lint": "oxlint --deny-warnings --report-unused-disable-directives && node scripts/check-query-keys.mjs",
+    "lint": "oxlint --deny-warnings --report-unused-disable-directives && node scripts/check-query-keys.mjs && node scripts/check-sw-register.mjs",
     "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest",
     "check:contrast": "node scripts/check-contrast.mjs",
-    "check:query-keys": "node scripts/check-query-keys.mjs"
+    "check:query-keys": "node scripts/check-query-keys.mjs",
+    "check:sw-register": "node scripts/check-sw-register.mjs"
   },
   "dependencies": {
     "@radix-ui/react-checkbox": "^1.3.11",

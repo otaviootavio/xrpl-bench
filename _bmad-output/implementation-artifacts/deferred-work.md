@@ -21,3 +21,19 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-1-1-query-key-factory.md`
   summary: docs/agents/ledger-io.md:12 still instructs agents to put the active wallet and network into every query key by hand, with no mention of the factory or the lint gate.
   evidence: Verified the line is present and now behind the code. Deferred because the fix edits an agent-context file, which this workflow routes away from a build story.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-2-sealed-boundaries.md`
+  summary: The transaction in-flight signal is a boolean, so two overlapping writes let the first to finish clear it while the second is still in flight — the window FR-48 exists to close.
+  evidence: Reachable, not theoretical: the flag is deliberately global because Radix unmounts inactive tabs, so a payment and a trust-line change can be in flight together. Pre-existing — `git show 2eba44c:src/lib/xrpl/writes.ts` uses the same boolean. The fix is a depth counter reporting true on 0→1 and false on 1→0.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-2-sealed-boundaries.md`
+  summary: Clients discarded during failover are never disconnected, and a connect abandoned at the 10-second timeout can still open a socket nobody owns.
+  evidence: Confirmed by reading the failover loop in lib/xrpl/client.ts. Pre-existing; Epic 2 added a clearTimeout for the timer but not socket cleanup. Would be settled by disconnecting the loser in the catch and on cache-miss replacement.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-2-sealed-boundaries.md`
+  summary: getXrplClient has no in-flight deduplication, so several queries firing at mount each construct and connect their own Client, and every loser is dropped from the map still connected.
+  evidence: Confirmed by reading client.ts. Pre-existing. Caching the in-flight connect promise per network closes it.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-2-sealed-boundaries.md`
+  summary: The two seed-import paths disagree — Onboarding gates the write on the disabled-master-key warning, SettingsTab writes to the vault first and warns afterwards — and they surface a malformed seed differently.
+  evidence: Confirmed at both call sites and independently reported by the implementer as an unmet acceptance criterion. Making the settings path gate the write is a user-visible flow change, so it needs its own story. Neither path trims the seed input either, so a pasted trailing newline reads as malformed.

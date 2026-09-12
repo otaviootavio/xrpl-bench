@@ -26,6 +26,34 @@ export async function generateAndStoreWallet(label: string, vaultKey: CryptoKey)
   return { meta, seed: wallet.seed! }
 }
 
+/**
+ * Derives an account's classic address from a seed, with no storage side
+ * effect and no network call — AD-3: screens that need an address before a
+ * wallet exists (the disabled-master-key pre-flight probe on both import
+ * paths) ask the keystore for it instead of importing `Wallet` themselves.
+ *
+ * Throws on a malformed seed, exactly as `Wallet.fromSeed` does. The seed
+ * stays a parameter and a local: nothing here stores or logs it.
+ */
+export function addressFromSeed(seed: string): string {
+  return Wallet.fromSeed(seed).address
+}
+
+/**
+ * True if a string is a seed this wallet can sign with — AD-3: the check
+ * lives with the key material, so a screen validating typed input never has
+ * to construct a `Wallet` (or call a derivation it does not want the result
+ * of) to find out. Offline, and it neither stores nor logs the seed.
+ */
+export function isValidSeed(seed: string): boolean {
+  try {
+    Wallet.fromSeed(seed)
+    return true
+  } catch {
+    return false
+  }
+}
+
 /** Imports an existing wallet from a seed — account-onboarding.md US-2. */
 export async function importAndStoreWallet(label: string, seed: string, vaultKey: CryptoKey): Promise<WalletMeta> {
   const wallet = Wallet.fromSeed(seed) // throws on malformed seed

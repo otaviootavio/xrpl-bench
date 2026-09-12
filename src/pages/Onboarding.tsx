@@ -1,5 +1,4 @@
 import { useCallback, useRef, useState } from 'react'
-import { Wallet } from 'xrpl'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -9,7 +8,7 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { SeedReveal } from '@/components/wallet/SeedReveal'
 import { ChassisShell } from '@/components/ChassisShell'
 import { setUpVaultAuth, hasPasskeyRegistered } from '@/lib/crypto/auth'
-import { generateAndStoreWallet, importAndStoreWallet, listWallets, type WalletMeta } from '@/lib/crypto/keystore'
+import { addressFromSeed, isValidSeed, generateAndStoreWallet, importAndStoreWallet, listWallets, type WalletMeta } from '@/lib/crypto/keystore'
 import { fetchAccountStateOnce } from '@/lib/xrpl/query-reads'
 import { useAppStore } from '@/store/app-store'
 import { useQueryClient } from '@tanstack/react-query'
@@ -99,8 +98,8 @@ export function Onboarding() {
         // resolved decision in docs/decisions.md says to warn *before*
         // completing import, so nothing is written to the vault until the
         // user has seen the warning and chosen to continue.
-        const probe = Wallet.fromSeed(seed)
-        const state = await fetchAccountStateOnce(queryClient, network, probe.address)
+        const probeAddress = addressFromSeed(seed)
+        const state = await fetchAccountStateOnce(queryClient, network, probeAddress)
         if (state.exists && state.disableMasterKey) {
           setImportWarning(
             "This account's master key is disabled (a Regular Key has been set elsewhere). Signing with this seed alone may not work.",
@@ -221,10 +220,9 @@ export function Onboarding() {
               <Input id="seed" type="password" autoComplete="off" spellCheck={false} ref={importSeedRef} placeholder="s..." />
               <Button
                 onClick={() => {
-                  try {
-                    Wallet.fromSeed(importSeedRef.current?.value ?? '')
+                  if (isValidSeed(importSeedRef.current?.value ?? '')) {
                     setStep('vault-setup')
-                  } catch {
+                  } else {
                     toast.error('That seed looks invalid. Double-check and try again.')
                   }
                 }}

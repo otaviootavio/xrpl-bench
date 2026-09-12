@@ -1,7 +1,31 @@
 import { Wallet, type Payment, type TrustSet, TrustSetFlags } from 'xrpl'
 import { getXrplClient } from './client'
 import type { NetworkId } from './networks'
-import { useAppStore } from '@/store/app-store'
+
+/**
+ * Reports whether a transaction is currently in flight.
+ *
+ * AD-1: `lib` reports upward, it never reaches upward. The app installs the
+ * real reporter once at startup (`src/App.tsx`); until then — and in every
+ * test — it is a no-op, so this module can be exercised without standing up
+ * React state.
+ *
+ * Deliberately module-level and global: AD-9/FR-48 require EVERY write to
+ * raise the flag, so there is no per-call override and no way for a caller
+ * to opt out.
+ */
+export type TxInFlightReporter = (inFlight: boolean) => void
+
+let reportTxInFlight: TxInFlightReporter = () => {}
+
+export function setTxInFlightReporter(reporter: TxInFlightReporter): void {
+  reportTxInFlight = reporter
+}
+
+/** Test seam — restores the default no-op reporter. */
+export function resetTxInFlightReporter(): void {
+  reportTxInFlight = () => {}
+}
 
 /** Cap on the fee autofill is allowed to attach, so a fee-escalation spike
  * can never quietly turn a small payment into an expensive one. xrpl.js
@@ -31,7 +55,7 @@ async function submitAndClassify(network: NetworkId, wallet: Wallet, tx: Payment
   // before the first network call (autofill needs the current sequence, so
   // signing has effectively already started) and cleared in `finally` so a
   // thrown/expired outcome still releases the flag.
-  useAppStore.getState().setTxInFlight(true)
+  reportTxInFlight(true)
   try {
     const client = await getXrplClient(network)
     const prepared = await client.autofill(tx as any, { maxFeeXRP: MAX_FEE_XRP } as any)
@@ -61,7 +85,7 @@ async function submitAndClassify(network: NetworkId, wallet: Wallet, tx: Payment
       throw err
     }
   } finally {
-    useAppStore.getState().setTxInFlight(false)
+    reportTxInFlight(false)
   }
 }
 

@@ -98,6 +98,16 @@ No arrow points upward. `src/components/ui` is a leaf: it may import
   write functions. Pure offline helpers from `xrpl` that touch no connection
   (`isValidClassicAddress` and its kind) are exempt and may be imported
   anywhere.
+- **One named exception:** `src/hooks/useAccountLiveUpdates.ts` calls
+  `getXrplClient` from outside `src/lib/xrpl/` and attaches a `transaction`
+  listener to the returned client. It is a **push stream, not a read**: it
+  issues `subscribe`/`unsubscribe` and invalidates the AD-4 query keys when a
+  transaction affecting the active account validates — it fetches nothing and
+  returns nothing. Wrapping it in a `lib/xrpl` read function would mean
+  modelling a long-lived listener and a React unmount inside the read layer,
+  for no gain: it still opens no second connection, because it goes through
+  the one owner. It remains the only permitted caller of `getXrplClient`
+  outside the boundary; any other is a violation.
 
 ### AD-3 — One owner of key material
 

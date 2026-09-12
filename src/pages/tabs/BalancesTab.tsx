@@ -5,6 +5,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { StatusLegend } from '@/components/ui/lamp'
 import { AddressDisplay } from '@/components/wallet/AddressDisplay'
 import { Readout, type ScaleMark } from '@/components/wallet/Readout'
+import { QueryErrorState } from '@/components/wallet/QueryErrorState'
 import { useAccountState } from '@/hooks/useAccountState'
 import { useSpendableBalance } from '@/hooks/useSpendableBalance'
 import { useTrustLines } from '@/hooks/useTrustLines'
@@ -52,8 +53,13 @@ export function BalancesTab() {
     }
   }
 
-  const nonZeroLines = trustLines.data?.filter((l) => l.balance !== '0') ?? []
-  const zeroLines = trustLines.data?.filter((l) => l.balance === '0') ?? []
+  // TanStack keeps the previous data across a failed refetch, so `data` and
+  // `isError` are true together on the 15-second poll. A retained figure shown
+  // beside "could not be read" is a stale number presented as current, which is
+  // the falsehood this screen exists to avoid — so the failure replaces it.
+  const linesReadable = !trustLines.isError
+  const nonZeroLines = linesReadable ? (trustLines.data?.filter((l) => l.balance !== '0') ?? []) : []
+  const zeroLines = linesReadable ? (trustLines.data?.filter((l) => l.balance === '0') ?? []) : []
 
   const marks: ScaleMark[] =
     !reserveLoading && spendableDrops && reservedDrops
@@ -74,7 +80,22 @@ export function BalancesTab() {
     <div className="flex flex-col gap-3">
       {accountState.isLoading && <Skeleton className="h-36 w-full" />}
 
-      {accountState.data && !accountState.data.exists && (
+      {/* Where the readout would be, not inside it: the destructive tone does
+          not hold contrast on readout ground, and a balance the app could not
+          read has no figure to engrave. A blank panel here would read as
+          "nothing to show", which is exactly the wrong thing to say about
+          money. */}
+      {accountState.isError && (
+        <QueryErrorState
+          title="Balance unavailable"
+          description="The XRP balance could not be read from the ledger. Nothing is shown here because the app does not know what this account holds right now — this is not a balance of zero."
+          onRetry={() => accountState.refetch()}
+        />
+      )}
+
+      {/* Also gated on `!isError`: offering the faucet would act on data the
+          panel has just said it cannot read. */}
+      {accountState.data && !accountState.data.exists && !accountState.isError && (
         <Alert variant="warning">
           <AlertTitle>Account not activated yet</AlertTitle>
           <AlertDescription className="flex flex-col items-start gap-2">
@@ -94,7 +115,11 @@ export function BalancesTab() {
         </Alert>
       )}
 
-      {accountState.data?.exists && (
+      {/* Retained data again: the lamp says "Live", and a balance that failed to
+          refetch is not live. Rather than inventing a stale-lamp state — a new
+          visual vocabulary this epic may not add — the reading steps aside and
+          the failure above stands in its place, which is what its words say. */}
+      {accountState.data?.exists && !accountState.isError && (
         <Readout
           legend="XRP Balance"
           value={formatXrpValue(accountState.data.balanceDrops)}
@@ -132,7 +157,17 @@ export function BalancesTab() {
         </CardHeader>
           <CardContent className="flex flex-col gap-2">
           {trustLines.isLoading && <Skeleton className="h-12 w-full" />}
-          {nonZeroLines.length === 0 && !trustLines.isLoading && (
+          {/* Same false claim as the history empty state: with the read failed,
+              `nonZeroLines` is empty because nothing came back, not because
+              this account holds no tokens. */}
+          {trustLines.isError && (
+            <QueryErrorState
+              title="Token balances unavailable"
+              description="The trust lines for this account could not be read from the ledger, so the app cannot say which tokens it holds."
+              onRetry={() => trustLines.refetch()}
+            />
+          )}
+          {nonZeroLines.length === 0 && !trustLines.isLoading && linesReadable && (
             <div className="flex flex-col gap-1">
               <p className="text-sm font-medium">No token balances yet</p>
               <p className="text-sm leading-snug text-muted-foreground">

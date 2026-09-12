@@ -10,6 +10,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { AmountInput, validateAmountString } from '@/components/wallet/AmountInput'
 import { TxLink } from '@/components/wallet/AddressLink'
 import { TxStatusBadge } from '@/components/wallet/TxStatusBadge'
+import { QueryErrorState } from '@/components/wallet/QueryErrorState'
 import { useAppStore, useActiveWallet } from '@/store/app-store'
 import { useSpendableBalance } from '@/hooks/useSpendableBalance'
 import { useRecommendedFee } from '@/hooks/useRecommendedFee'
@@ -54,6 +55,17 @@ export function SendTab() {
   // Ledger reads go through a query hook, never an onBlur handler (§4).
   const destQuery = useDestinationInfo(network, destination, asset)
   const destInfo = destQuery.data
+  /**
+   * The destination check failed, so the app does not know whether this
+   * recipient requires a destination tag.
+   *
+   * `destInfo` being undefined used to read as "nothing required": the send
+   * guard `!destInfo?.requireDestTag` was SATISFIED by the failure, and the
+   * field's label said "(optional)". A payment sent tagless to an exchange
+   * address that requires a tag is credited to nobody and is not recoverable by
+   * this app, so a read that never succeeded may not relax the guard.
+   */
+  const destCheckFailed = destQuery.isError && !destQuery.data
 
   // Frozen assets can't be moved, so they're not offerable (decisions.md §2).
   // Balances are DECIMAL strings — never BigInt them.
@@ -139,6 +151,7 @@ export function SendTab() {
     amountValidation.valid &&
     !fundsError &&
     tagValid &&
+    !destCheckFailed &&
     (!destInfo?.requireDestTag || destTag.length > 0) &&
     !busy
 
@@ -171,6 +184,14 @@ export function SendTab() {
             {destQuery.isFetching && <p className="text-xs text-muted-foreground">Checking destination…</p>}
           </div>
 
+          {destCheckFailed && (
+            <QueryErrorState
+              title="Destination check failed"
+              description="This address could not be checked against the ledger, so the app cannot tell whether it exists or whether the recipient requires a destination tag. Sending is held until the check succeeds — an untagged payment to an address that requires one cannot be recovered from here."
+              onRetry={() => destQuery.refetch()}
+            />
+          )}
+
           {destInfo && !destInfo.exists && (
             <Alert variant="warning">
               <AlertTitle>Destination not activated</AlertTitle>
@@ -192,7 +213,11 @@ export function SendTab() {
 
           <div className="grid gap-1.5">
             <Label htmlFor="dtag">
-              {destInfo?.requireDestTag ? 'Destination tag (required by recipient)' : 'Destination tag (optional)'}
+              {destInfo?.requireDestTag
+                ? 'Destination tag (required by recipient)'
+                : destCheckFailed
+                  ? 'Destination tag (requirement unknown)'
+                  : 'Destination tag (optional)'}
             </Label>
             <Input
               id="dtag"

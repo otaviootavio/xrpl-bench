@@ -49,3 +49,7 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-4-rules-and-code.md`
   summary: No lint gate stops BigInt arithmetic reappearing outside money.ts, or a hand-rolled explorer anchor returning outside AddressLink/TxLink.
   evidence: Both acceptance criteria for Epic 4 are grep-shaped and hold today, but nothing enforces them tomorrow — the same decay the query-key guard was written to stop. Two more guard scripts in the check-query-keys.mjs idiom would close it.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-3-report-failed-reads.md`
+  summary: When useServerReserves fails but account_info succeeds, useSpendableBalance returns spendableDrops: null with isLoading: false, so Balances renders the XRP balance with Spendable and Reserved silently missing — no skeleton, no failure text. useRecommendedFee failing in SendTab is likewise unreported.
+  evidence: Found by the implementer while reading src/hooks/useSpendableBalance.ts:13; same defect class as the three this epic fixed, same screen, but outside its task list and I/O matrix. The spendable figure is the number the operator acts on, so its silent absence is worth its own decision rather than a side-effect fix.

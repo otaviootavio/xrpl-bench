@@ -10,7 +10,6 @@ import { useAppStore } from '@/store/app-store'
 import { checkForRelease, type ReleaseManifest } from '@/lib/release-check'
 import { BUILD } from '@/lib/build-info'
 import { notify } from '@/lib/notify'
-import { useNoticeStore } from '@/store/notice-store'
 
 /**
  * User-controlled updates — app-versioning-and-updates.md US-2/US-3/US-4/US-5.
@@ -152,7 +151,7 @@ export function useAppUpdate() {
     // notice that outlives the decline it responds to. A newer release still
     // gets its own notice; this only silences the one just declined.
     if (insistentNoticeCommit === declineKey && insistentNoticeId) {
-      useNoticeStore.getState().dismiss(insistentNoticeId)
+      notify.dismiss(insistentNoticeId)
       insistentNoticeId = null
     }
   }, [declineKey, declineUpdateVersion])

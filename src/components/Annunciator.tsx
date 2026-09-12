@@ -1,7 +1,8 @@
 import { useState } from 'react'
 import { X } from 'lucide-react'
 import { useNoticeStore, type Notice } from '@/store/notice-store'
-import { ANNUNCIATOR, ANNUNCIATOR_LEGEND, NOTICE_TONE, type NoticeTone } from '@/components/ui/alert'
+import { ANNUNCIATOR, ANNUNCIATOR_LEGEND } from '@/components/ui/alert'
+import { NOTICE_TONE, type NoticeTone } from '@/lib/notice-tone'
 import { cn } from '@/lib/utils'
 
 /**

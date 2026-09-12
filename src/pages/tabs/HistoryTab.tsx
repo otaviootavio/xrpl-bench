@@ -6,6 +6,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { AddressLink, TxLink } from '@/components/wallet/AddressLink'
 import { TxStatusBadge } from '@/components/wallet/TxStatusBadge'
+import { QueryErrorState } from '@/components/wallet/QueryErrorState'
 import { useAppStore, useActiveWallet } from '@/store/app-store'
 import { useAccountTxHistory } from '@/hooks/useAccountTxHistory'
 import { formatXrp, formatAmountString, displayCurrencyCode } from '@/lib/xrpl/money'
@@ -18,11 +19,19 @@ export function HistoryTab() {
   const wallet = useActiveWallet()
   const [filter, setFilter] = useState<Filter>('all')
   const [expanded, setExpanded] = useState<string | null>(null)
-  const { data, isLoading, fetchNextPage, hasNextPage, isFetchingNextPage } = useAccountTxHistory(network, wallet?.address ?? null)
+  const { data, isLoading, isError, refetch, fetchNextPage, hasNextPage, isFetchingNextPage } =
+    useAccountTxHistory(network, wallet?.address ?? null)
 
   if (!wallet) return <p className="text-muted-foreground">No active wallet.</p>
 
   const allItems = data?.pages.flatMap((p) => p.items) ?? []
+
+  /**
+   * Retry the read that actually failed. With pages already loaded the failure
+   * came from `fetchNextPage`, and `refetch` there would clear the error while
+   * never fetching the missing page — the list would silently stop short.
+   */
+  const retryRead = () => (data && data.pages.length > 0 ? fetchNextPage() : refetch())
   const items = filter === 'all' ? allItems : allItems.filter((t) => t.direction === filter)
 
   return (
@@ -39,9 +48,24 @@ export function HistoryTab() {
       </CardHeader>
       <CardContent className="flex flex-col gap-2">
         {isLoading && <Skeleton className="h-32 w-full" />}
+        {/* A failed read is not an empty account. Saying "No transactions yet"
+            here would state as fact something the app does not know — the worst
+            thing this screen can do. The list itself stays rendered when a
+            *later* page fails, so a failing "Load more" never takes away
+            history the user already has. */}
+        {isError && (
+          <QueryErrorState
+            title="History unavailable"
+            description="The transaction history could not be read from the ledger, so this list may be incomplete or empty for a reason that has nothing to do with this account."
+            onRetry={retryRead}
+          />
+        )}
         {!isLoading && items.length === 0 && (
           <div className="flex flex-col items-start gap-1">
             {allItems.length > 0 && filter !== 'all' ? (
+              // Accurate whether or not the read failed — rows were loaded, this
+              // filter matches none of them — and it carries the only way back
+              // to "All", so it must survive an error.
               <>
                 <p className="text-sm font-medium">No {filter} transactions loaded yet</p>
                 <Button variant="outline" size="sm" className="mt-1" onClick={() => setFilter('all')}>
@@ -49,12 +73,15 @@ export function HistoryTab() {
                 </Button>
               </>
             ) : (
-              <>
-                <p className="text-sm font-medium">No transactions yet</p>
-                <p className="text-sm text-muted-foreground">
-                  Payments this account sends or receives will appear here once the ledger validates them.
-                </p>
-              </>
+              // The false claim. Only ever said when a read actually succeeded.
+              !isError && (
+                <>
+                  <p className="text-sm font-medium">No transactions yet</p>
+                  <p className="text-sm text-muted-foreground">
+                    Payments this account sends or receives will appear here once the ledger validates them.
+                  </p>
+                </>
+              )
             )}
           </div>
         )}

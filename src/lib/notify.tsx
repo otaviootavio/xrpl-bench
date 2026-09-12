@@ -1,5 +1,5 @@
 import { useNoticeStore } from '@/store/notice-store'
-import { type NoticeTone } from '@/components/ui/alert'
+import { type NoticeTone } from '@/lib/notice-tone'
 
 interface NotifyOptions {
   description?: string
@@ -78,6 +78,18 @@ export const notify = {
   error: (message: string, options?: NotifyOptions) => raise('error', message, options),
   /** Persists until dismissed. */
   warning: (message: string, options?: NotifyOptions) => raise('warning', message, options),
+  /**
+   * Clear a notice this module raised, by the id `raise` returned.
+   *
+   * Part of the surface because AD-8 makes dismissal part of `notify`: a
+   * persistent notice the app itself must take back — the update notice the
+   * user declines — would otherwise force `hooks/useAppUpdate` to reach into
+   * the notice store, which was the only caller outside this module doing so.
+   * The store is still touched by `raise`'s own auto-dismiss above, and read by
+   * `components/Annunciator.tsx`, which renders it; neither is a way around the
+   * funnel.
+   */
+  dismiss: (id: string) => useNoticeStore.getState().dismiss(id),
 }
 
 /** Alias so call sites read identically to the pre-S16 sonner-backed API. */

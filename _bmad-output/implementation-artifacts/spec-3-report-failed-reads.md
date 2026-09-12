@@ -2,10 +2,10 @@
 title: 'Epic 3 — a failed ledger read is reported, not silent'
 type: 'bugfix'
 created: '2026-09-12'
-status: 'draft'
+status: 'done'
 route: 'dispatch'
 review_loop_iteration: 0
-baseline_commit: 'PENDING'
+baseline_commit: '3ca0917b60d1bdec17df9205463f517e11b04848'
 context:
   - '{project-root}/_bmad-output/planning-artifacts/architecture/architecture-xrpl-wallet-2026-09-12/ARCHITECTURE-SPINE.md'
 ---
@@ -85,15 +85,15 @@ below the component layer so the funnel stops importing upward, and give
 
 **Execution:**
 
-- [ ] `src/components/wallet/QueryErrorState.tsx` (or similar) -- one small component: what failed, in plain words, plus a retry control -- so the three screens report a failure the same way instead of each inventing one.
-- [ ] `src/pages/tabs/HistoryTab.tsx` -- take the query's error state; render the failure instead of the empty state, and never claim "No transactions yet" when the read failed -- the false statement is the most serious defect here.
-- [ ] `src/pages/tabs/BalancesTab.tsx` -- render the failure where the readout would be, rather than nothing.
-- [ ] `src/pages/tabs/TrustLinesTab.tsx` -- same; note `data?.length === 0` is false on error, so the existing empty branch does not cover it.
-- [ ] `src/components/ui/notice-tone.ts` (or equivalent below the component layer) -- move `NOTICE_TONE` / `NoticeTone` so `lib` and `store` stop importing from `components`; `alert.tsx` imports it too -- AD-1.
-- [ ] `src/lib/notify.tsx` -- add `dismiss`; stop importing from `src/components`.
-- [ ] `src/hooks/useAppUpdate.ts` -- dismiss through `notify`, not `useNoticeStore` -- closes the one escape hatch past the funnel.
-- [ ] `src/components/wallet/__tests__/query-error-state.test.tsx` -- new; assert the failure text renders, the retry is reachable by keyboard, and nothing auto-dismisses.
-- [ ] `src/pages/tabs/__tests__/history-error.test.tsx` -- new; assert a failed history read never renders the empty-state copy -- this is the regression that must not come back.
+- [x] `src/components/wallet/QueryErrorState.tsx` (or similar) -- one small component: what failed, in plain words, plus a retry control -- so the three screens report a failure the same way instead of each inventing one.
+- [x] `src/pages/tabs/HistoryTab.tsx` -- take the query's error state; render the failure instead of the empty state, and never claim "No transactions yet" when the read failed -- the false statement is the most serious defect here.
+- [x] `src/pages/tabs/BalancesTab.tsx` -- render the failure where the readout would be, rather than nothing.
+- [x] `src/pages/tabs/TrustLinesTab.tsx` -- same; note `data?.length === 0` is false on error, so the existing empty branch does not cover it.
+- [x] `src/components/ui/notice-tone.ts` (or equivalent below the component layer) -- move `NOTICE_TONE` / `NoticeTone` so `lib` and `store` stop importing from `components`; `alert.tsx` imports it too -- AD-1.
+- [x] `src/lib/notify.tsx` -- add `dismiss`; stop importing from `src/components`.
+- [x] `src/hooks/useAppUpdate.ts` -- dismiss through `notify`, not `useNoticeStore` -- closes the one escape hatch past the funnel.
+- [x] `src/components/wallet/__tests__/query-error-state.test.tsx` -- new; assert the failure text renders, the retry is reachable by keyboard, and nothing auto-dismisses.
+- [x] `src/pages/tabs/__tests__/history-error.test.tsx` -- new; assert a failed history read never renders the empty-state copy -- this is the regression that must not come back.
 
 **Acceptance Criteria:**
 
@@ -108,9 +108,107 @@ below the component layer so the funnel stops importing upward, and give
 
 ## Implementation Notes
 
+- **`notice-tone` lives in `src/lib/notice-tone.ts`, not `src/components/ui/`.**
+  The task line suggested the `ui` path, but Verification asks that
+  `grep -rn "from '@/components" src/lib src/store` return nothing, and only a
+  module under `lib` satisfies that. `components → lib` is the permitted
+  direction in the spine, and `alert.tsx` already imports
+  `@/components/ui/lamp`, so the "ui leaf imports `@/lib/utils` alone" line was
+  already non-literal. `alert.tsx` and `Annunciator.tsx` now import the map
+  from `lib`; `notice-store.ts` keeps an `import type`, so no runtime edge is
+  added.
+- **A second false-empty, not in the Code Map.** `BalancesTab`'s Tokens card
+  rendered "No token balances yet" on `nonZeroLines.length === 0`, which is
+  also true when `account_lines` *failed* — the same defect class as
+  `HistoryTab`'s and forbidden by the same frozen line. It is gated on
+  `isError` too.
+- **A failed later page never takes away history already on screen.** In
+  `HistoryTab` the error panel is a sibling of the empty block and `items.map`
+  is untouched, so a `fetchNextPage` that fails with pages already loaded
+  reports the failure above a list that stays. The `!isError` guard sits on the
+  inner "No transactions yet" branch only: the outer "No {filter} transactions
+  loaded yet" branch is accurate whether or not the read failed — rows *were*
+  loaded and this filter matches none — and it carries the only control that
+  gets the user back to "All", so suppressing it on error would strand them.
+- **The failure renders beside the readout, never inside it.** `BalancesTab`'s
+  own note says the tone token will not hold contrast on readout ground, so the
+  failure takes the same `Alert variant="destructive"` arrangement on card
+  ground that "Account not activated yet" uses — an existing tone, an existing
+  shape, no new token.
+- **The underlying `error` is never rendered.** A transport message is no more
+  meant for a person than a raw `tec` code is; the test asserts it does not
+  reach the DOM.
+- **The retry label flips on its own every 15 seconds.** `useAccountState` and
+  `useTrustLines` carry `refetchInterval: 15_000`, which keeps firing on an
+  errored query, so `isRetrying` — and with it the "Retrying…" label and
+  `aria-busy` — goes true periodically with no user action. It is an accurate
+  report of what the app is doing, not a bug; recorded so it is not later read
+  as one.
+
+- **Retained data is part of the failure case, not a separate one.** TanStack
+  keeps the previous data across a failed refetch, and every one of these reads
+  polls on 15 seconds — so `data` and `isError` arrive together far more often
+  than `isError` alone. `BalancesTab` therefore steps the `Readout` (and its
+  "Live" lamp), the not-activated prompt and the token rows aside on `isError`
+  rather than showing a stale figure beside "could not be read";
+  `TrustLinesTab`'s empty branch is gated the same way. Rows that did load stay:
+  a list that is merely behind is not a false claim, a number labelled live is.
+- **"Retrying…" belongs to the user's own attempt.** `QueryErrorState` owns that
+  state and awaits the promise `onRetry` returns, instead of reading the query's
+  `isFetching` — which the 15-second poll flips on its own, rewriting the
+  accessible name of a control the user may have focused.
+- **Two screens outside the Code Map had the same defect and are fixed here.**
+  `SendTab`: a failed `useDestinationInfo` left `destInfo` undefined, which
+  *satisfied* `!destInfo?.requireDestTag` and labelled the field "(optional)" —
+  a tagless payment to an address that requires a tag, authorised by a read that
+  never succeeded. The failure is now reported, the label says "requirement
+  unknown", and `canSend` is false until the check succeeds. `ReceiveTab`:
+  `?? false` made a failed read indistinguishable from "no tag required", so the
+  warning silently vanished; the failure is reported instead.
+- **AD-1 now has a gate.** `scripts/check-layering.mjs`, in the idiom of
+  `check-query-keys.mjs` / `check-sw-register.mjs`, fails when anything under
+  `src/lib` or `src/store` imports from `src/components` or `src/pages` — alias
+  or relative path, `import type` included. Wired into `bun run lint` and
+  `bun run check:layering`, with its own fixture suite in
+  `src/lib/__tests__/layering-guard.test.ts`. Without it the whole point of the
+  `notice-tone` move passes all four gates on the next edit that undoes it.
+
+**Reported, not fixed — outside this spec's task list and I/O matrix:**
+
+- `src/hooks/useSpendableBalance.ts:13` — when `useServerReserves` fails while
+  `account_info` succeeds, the hook returns `spendableDrops: null` /
+  `reservedDrops: null` with `isLoading: false`. `BalancesTab` then builds
+  `marks: []` and the `Readout` renders the XRP balance with **Spendable and
+  Reserved silently absent** — no skeleton, no failure text. That is the same
+  defect class this epic exists to close, on the same screen, and the screen was
+  *not* swept clean of it. It needs its own decision (a per-mark failure state,
+  or a reserve fallback) rather than being folded in here unasked.
+- `useRecommendedFee` in `SendTab` — a failed fee read has no reported state.
+  The confirm dialog falls back to "the current rate", which is vague but not
+  false.
+- `useServerReserves`' `'the base reserve'` text fallback in the not-activated
+  alert is already graceful and states nothing false. No change wanted.
+
 ## Spec Change Log
 
 ## Review Triage Log
+
+| # | Finding | Verdict | Evidence | Route |
+|---|---|---|---|---|
+| 1 | A failed destination check *relaxes* the send guard: `destInfo` is `undefined`, so `(!destInfo?.requireDestTag \|\| destTag.length > 0)` is satisfied and the send is enabled tagless, labelled "(optional)" | **high** | Verified at `SendTab.tsx:142` and `:195`. A payment to a destination that requires a tag can be sent without one on a read that never succeeded — a money-loss path. Pre-existing, but squarely inside this epic's stated intent ("a failed read must never be rendered as an empty result"), so it is not deferred. | patch |
+| 2 | A stale balance renders under a green "Live" lamp directly beneath "Balance unavailable" | **high** | Verified at `BalancesTab.tsx:112`. TanStack retains data across a failed refetch, so `data?.exists` and `isError` are both true. This is the epic's own sin committed on the headline number. | patch |
+| 3 | The same retained-data interaction leaves stale token balances under "Token balances unavailable", and offers the faucet on data the app just said it could not read | **medium** | Confirmed by reading the same file. | patch |
+| 4 | `TrustLinesTab`'s empty state is the one left unguarded, justified by a comment true only on a first read | **medium** | Verified at `:157`. With `refetchInterval: 15_000`, a failed refetch keeps prior data, so `data?.length === 0` stays true and both messages render together. | patch |
+| 5 | `ReceiveTab` treats a failed read as "no destination tag required", silently dropping the warning | **medium** | Verified at `ReceiveTab.tsx:15` (`?? false`). Same falsehood class as the three the epic fixed. | patch |
+| 6 | Two assertions in the error-state test are vacuous | **medium** | Confirmed: the fake-timer advance tests a component that registers no timer, so it passes for any component; `tabIndex >= 0` is also true for a disabled button. Same defect class as Epic 1's vacuous assertions. | patch |
+| 7 | `BalancesTab` and `TrustLinesTab` changed and have no tests, so two of three acceptance criteria are unpinned | **medium** | Pre-verified: no test file imports either tab. Only the History criterion is enforced. | patch |
+| 8 | `isRetrying={isFetching}` flips the retry control's accessible name to "Retrying…" every 15 seconds with no user action, and also while "Load more" is fetching | **medium** | Confirmed against `refetchInterval: 15_000`. A changing accessible name under a possibly-focused control. Retrying after a `fetchNextPage` error also calls `refetch`, clearing the error without fetching the missing page. | patch |
+| 9 | `notify.dismiss`'s comment claims it closed the one escape hatch, but `raise()` still calls the store directly and `Annunciator` still imports it | **low** | Confirmed by reading the file. Direct correction to the comment. | patch |
+| 10 | The AD-1 acceptance criterion (`lib`/`store` never import from `components`) has no automated check | **medium** | Confirmed: `lint` is oxlint plus two guard scripts, neither inspecting import direction, and `.oxlintrc.json` has no `no-restricted-imports`. The repo now has the guard-script pattern twice. | patch |
+| 11 | Doc drift left by the `NOTICE_TONE` move — a stray blank line, and an `ANNUNCIATOR` comment giving a dependency-direction reason for an export | **low** | Confirmed. Direct correction. | patch |
+| 12 | `useServerReserves` failing makes Spendable and Reserved vanish with no explanation; `useRecommendedFee` in `SendTab` likewise unreported | **medium** | Real, and found independently by the implementer. Outside this spec's task list and I/O matrix; the spendable figure is the number the operator acts on, so it warrants its own decision. Already recorded in `deferred-work.md`. | defer |
+| 13 | The comment justifying the unguarded "Show all transactions" branch says it "carries the only way back to All", but the header tab does too | **low** | True — the premise is wrong even though keeping the branch is right (it is accurate whether or not the read failed). Subsumed by the #8 rework of that file. | reject |
+
 
 ## Verification
 
@@ -121,5 +219,22 @@ below the component layer so the funnel stops importing upward, and give
 - `bun run check:contrast` -- expected: exit 0. New markup, so this must stay green.
 - `grep -rn "from '@/components" src/lib src/store` -- expected: no hits.
 
+**Run on 2026-09-12, baseline `3ca0917`:**
+- `bun run lint` — exit 0 (including `check-query-keys`, `check-sw-register`
+  and the new `check-layering`).
+- `bun run build` — exit 0.
+- `bun run test` — exit 0, 23 files / 150 tests, including the two new suites.
+- `bun run check:contrast` — exit 0, "All token pairs pass."
+- `grep -rn "from '@/components" src/lib src/store` — no hits.
+
 **Manual checks:**
 - The three failure states at 320px and at 200% zoom, per `docs/agents/verifying-your-work.md`. This epic changes what the user sees, so the gates alone do not settle it.
+- **Not performed.** Reaching these states in a browser means forcing three
+  different ledger reads to reject, which this change does not provide a seam
+  for. What can be said instead: every failure renders the exact arrangement
+  already shipped in `BalancesTab`'s "Account not activated yet" —
+  `Alert variant="destructive"` with `AlertDescription className="flex flex-col
+  items-start gap-2"` and a `Button size="sm"` — with no `min-width`, no fixed
+  width and no unbreakable string, and it reuses measured token pairs
+  (`check:contrast` green). That is an argument from equivalence, not an
+  observation, and this line is here so nobody reads the gates as settling it.

@@ -7,6 +7,7 @@ import { Label } from '@/components/ui/label'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription, DialogTrigger } from '@/components/ui/dialog'
 import { Skeleton } from '@/components/ui/skeleton'
 import { TrustLineRow } from '@/components/wallet/TrustLineRow'
+import { QueryErrorState } from '@/components/wallet/QueryErrorState'
 import { useAppStore, useActiveWallet } from '@/store/app-store'
 import { useTrustLines } from '@/hooks/useTrustLines'
 import { useServerReserves } from '@/hooks/useServerReserves'
@@ -142,7 +143,18 @@ export function TrustLinesTab() {
       </CardHeader>
       <CardContent className="flex flex-col gap-2">
         {trustLines.isLoading && <Skeleton className="h-16 w-full" />}
-        {trustLines.data?.length === 0 && (
+        {/* On a first failed read there is no data at all and the list renders
+            as nothing; on a failed refetch TanStack keeps the previous data, so
+            the empty branch below CAN fire beside this one. Both cases need the
+            failure said out loud, and the empty branch gated on it. */}
+        {trustLines.isError && (
+          <QueryErrorState
+            title="Trust lines unavailable"
+            description="The trust lines for this account could not be read from the ledger. The list below is not empty — the app simply does not know what is on it."
+            onRetry={() => trustLines.refetch()}
+          />
+        )}
+        {trustLines.data?.length === 0 && !trustLines.isError && (
           <div className="flex flex-col gap-1">
             <p className="text-sm font-medium">No trust lines yet</p>
             <p className="text-sm text-muted-foreground">

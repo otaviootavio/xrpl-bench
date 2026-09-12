@@ -1,5 +1,6 @@
 import type { QueryClient } from '@tanstack/react-query'
 import { fetchAccountState, type AccountState } from './reads'
+import { queryKeys } from './query-keys'
 import type { NetworkId } from './networks'
 
 /**
@@ -18,7 +19,7 @@ export function fetchAccountStateOnce(
   address: string,
 ): Promise<AccountState> {
   return queryClient.fetchQuery({
-    queryKey: ['accountState', network, address],
+    queryKey: queryKeys.accountState(network, address),
     queryFn: () => fetchAccountState(network, address),
     staleTime: 15_000,
   })

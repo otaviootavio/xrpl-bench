@@ -12,6 +12,7 @@ import { useServerReserves } from '@/hooks/useServerReserves'
 import { useAppStore, useActiveWallet } from '@/store/app-store'
 import { formatXrp, formatXrpValue, formatAmountString, displayCurrencyCode } from '@/lib/xrpl/money'
 import { requestTestnetFunds } from '@/lib/xrpl/faucet'
+import { queryKeys } from '@/lib/xrpl/query-keys'
 import { toast } from '@/lib/notify'
 import { useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
@@ -43,7 +44,7 @@ export function BalancesTab() {
     try {
       const result = await requestTestnetFunds(network, wallet!.address)
       toast.success(`Funded with ${result.amountXrp} test XRP.`)
-      await queryClient.invalidateQueries({ queryKey: ['accountState', network, wallet!.address] })
+      await queryClient.invalidateQueries({ queryKey: queryKeys.accountState(network, wallet!.address) })
     } catch (err: any) {
       toast.error(err?.message ?? 'Faucet request failed.')
     } finally {

@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query'
 import { isValidClassicAddress } from 'xrpl'
 import { fetchAccountState, fetchAccountLines } from '@/lib/xrpl/reads'
+import { queryKeys } from '@/lib/xrpl/query-keys'
 import type { NetworkId } from '@/lib/xrpl/networks'
 
 export interface DestinationInfo {
@@ -27,7 +28,7 @@ export function useDestinationInfo(
 ) {
   const valid = isValidClassicAddress(destination)
   return useQuery<DestinationInfo>({
-    queryKey: ['destinationInfo', network, destination, asset],
+    queryKey: queryKeys.destinationInfo(network, destination, asset),
     enabled: valid,
     staleTime: 30_000,
     queryFn: async () => {

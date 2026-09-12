@@ -25,6 +25,7 @@ import {
   compareDecimalStrings,
 } from '@/lib/xrpl/money'
 import { describeResultCode } from '@/lib/xrpl/result-codes'
+import { queryKeys } from '@/lib/xrpl/query-keys'
 import { useQueryClient } from '@tanstack/react-query'
 import { toast } from '@/lib/notify'
 
@@ -120,9 +121,9 @@ export function SendTab() {
       } else {
         toast.error(describeResultCode(result.resultCode))
       }
-      await queryClient.invalidateQueries({ queryKey: ['accountState', network, wallet.address] })
-      await queryClient.invalidateQueries({ queryKey: ['accountTx', network, wallet.address] })
-      await queryClient.invalidateQueries({ queryKey: ['trustLines', network, wallet.address] })
+      await queryClient.invalidateQueries({ queryKey: queryKeys.accountState(network, wallet.address) })
+      await queryClient.invalidateQueries({ queryKey: queryKeys.accountTx(network, wallet.address) })
+      await queryClient.invalidateQueries({ queryKey: queryKeys.trustLines(network, wallet.address) })
     } catch (err: any) {
       toast.error(err?.message ?? 'Send failed.')
     } finally {

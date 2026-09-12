@@ -76,11 +76,12 @@ branch because it is the code actually deployed — so a visitor, or anyone
 verifying a release against what the CDN serves, lands on the real thing. There is
 deliberately no `main`.
 
-Before changing anything, read [`CLAUDE.md`](./CLAUDE.md). It indexes four
+Before changing anything, read [`AGENTS.md`](./AGENTS.md). It indexes five
 documents that are each authoritative for their own layer: how to behave
 (`docs/agents/`), what the wallet does (`docs/user-stories/`), what was decided
-and why (`docs/decisions.md`), and the visual system (`DESIGN.md`). Several rules
-in there are non-negotiable because breaking them loses money or keys.
+and why (`docs/decisions.md`), the visual system (`DESIGN.md`), and what each
+epic found and shipped (`docs/sprints/`). Several rules in there are
+non-negotiable because breaking them loses money or keys.
 
 ## Security
 

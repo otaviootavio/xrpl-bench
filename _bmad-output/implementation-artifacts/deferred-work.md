@@ -53,3 +53,15 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-3-report-failed-reads.md`
   summary: When useServerReserves fails but account_info succeeds, useSpendableBalance returns spendableDrops: null with isLoading: false, so Balances renders the XRP balance with Spendable and Reserved silently missing — no skeleton, no failure text. useRecommendedFee failing in SendTab is likewise unreported.
   evidence: Found by the implementer while reading src/hooks/useSpendableBalance.ts:13; same defect class as the three this epic fixed, same screen, but outside its task list and I/O matrix. The spendable figure is the number the operator acts on, so its silent absence is worth its own decision rather than a side-effect fix.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-5-1-destination-check-guard.md`
+  summary: The Send screen's Review button uses native `disabled={!canSend}`, which docs/decisions.md §6.4 forbids — a temporarily unavailable control must be `aria-disabled` with its reason in visible text.
+  evidence: Confirmed at SendTab.tsx:279; the rule is restated in docs/agents/ui-and-design-system.md:56 and PRODUCT.md:249, with existing precedent at TrustLineRow.tsx:66 and SettingsTab.tsx:347. Deferred at the story 5.1 intent gate because `canSend` composes seven conditions and each needs its own accurate visible reason — well past this story's destination check. Safe to defer only because story 5.1 puts the real guard inside the submit path.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-5-1-destination-check-guard.md`
+  summary: The send submit path re-reads the destination and then consumes only `requireDestTag` — the fresh `exists` and `hasTrustLine` are discarded, so a destination that de-activated or lost its trust line between the two reads is still submitted to and burns a network fee.
+  evidence: Raised independently by all three review layers against SendTab.tsx's `doSend`. Real, but deferred rather than patched: both facts were warnings and never members of `canSend` before story 5.1, so making them refusals is a behaviour change past this story's intent, and the cost is a spent fee rather than unrecoverable funds. The fresh answer is already in hand at that point, so the fix is cheap whenever it is wanted.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-5-1-destination-check-guard.md`
+  summary: The pre-flight `fetchDestinationInfoOnce` inside `doSend` has no timeout or abort, and the dialog's Cancel is `disabled={busy}`, so a stalled read leaves the confirm dialog showing "Sending…" with no way out while the decrypted signing wallet sits in a local.
+  evidence: Verified, and narrower than first filed — `client.ts:43` gives connection a 10s timeout and `App.tsx:24` sets `retry: 1`, so the wait is bounded rather than open-ended; a request that stalls after connect still has none. Deferred because the fix needs a race or abort path plus a cancellable busy state, which is more than a direct correction.

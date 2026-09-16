@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { isValidClassicAddress } from 'xrpl'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -12,6 +12,7 @@ import { TxLink } from '@/components/wallet/AddressLink'
 import { TxStatusBadge } from '@/components/wallet/TxStatusBadge'
 import { QueryErrorState } from '@/components/wallet/QueryErrorState'
 import { useAppStore, useActiveWallet } from '@/store/app-store'
+import type { NetworkId } from '@/lib/xrpl/networks'
 import { useSpendableBalance } from '@/hooks/useSpendableBalance'
 import { useRecommendedFee } from '@/hooks/useRecommendedFee'
 import { useTrustLines } from '@/hooks/useTrustLines'
@@ -28,6 +29,11 @@ import {
 } from '@/lib/xrpl/money'
 import { describeResultCode } from '@/lib/xrpl/result-codes'
 import { queryKeys } from '@/lib/xrpl/query-keys'
+import {
+  DESTINATION_CHECK_FRESHNESS_MS,
+  fetchDestinationInfoOnce,
+  type DestinationInfo,
+} from '@/lib/xrpl/query-reads'
 import { useQueryClient } from '@tanstack/react-query'
 import { toast } from '@/lib/notify'
 
@@ -48,6 +54,28 @@ export function SendTab() {
   const [confirming, setConfirming] = useState(false)
   const [busy, setBusy] = useState(false)
   const [outcome, setOutcome] = useState<SubmitOutcome | null>(null)
+  /** Why the submit path refused to send, and the `(network, destination,
+   * asset)` it refused for. Inline on the form, never a toast: a failed *read*
+   * reports where the data would have been (AD-8).
+   *
+   * The triple is stored with the reason, and the reason is read back only when
+   * it still matches, so one comparison retires the report for every way the
+   * inputs can change — including a network switch, which no field's `onChange`
+   * ever sees. A report about another ledger is not a smaller version of the
+   * truth; it is a false statement about this one. */
+  const [preflightReport, setPreflightReport] = useState<{
+    network: NetworkId
+    destination: string
+    asset: string
+    reason: 'failed' | 'tag-required' | 'guard-closed'
+  } | null>(null)
+  /** The last clock reading the form has actually taken, written only by the
+   * timer below. Rendering never calls `Date.now()` itself: a render that reads
+   * the clock answers differently each time it runs, and a guard that cannot be
+   * reasoned about or pinned by a test is not a guard. It starts at mount time
+   * rather than 0, so an answer restored from the cache already older than the
+   * window is refused on the FIRST render rather than on the timer's. */
+  const [observedNow, setObservedNow] = useState(Date.now)
 
   const { spendableDrops } = useSpendableBalance(network, wallet?.address ?? null)
   const fee = useRecommendedFee(network)
@@ -55,17 +83,53 @@ export function SendTab() {
   // Ledger reads go through a query hook, never an onBlur handler (§4).
   const destQuery = useDestinationInfo(network, destination, asset)
   const destInfo = destQuery.data
+  const destinationValid = isValidClassicAddress(destination)
+
   /**
-   * The destination check failed, so the app does not know whether this
-   * recipient requires a destination tag.
+   * The send guard, stated positively: a read SUCCEEDED for the input on screen
+   * now and is still fresh.
    *
-   * `destInfo` being undefined used to read as "nothing required": the send
-   * guard `!destInfo?.requireDestTag` was SATISFIED by the failure, and the
-   * field's label said "(optional)". A payment sent tagless to an exchange
-   * address that requires a tag is credited to nobody and is not recoverable by
-   * this app, so a read that never succeeded may not relax the guard.
+   * It used to be `destQuery.isError && !destQuery.data` — "no failure seen" —
+   * and three states passed it that are not permission: a failed refetch that
+   * kept an earlier answer, an answer about a different address or asset while
+   * the new read is in flight, and a successful answer older than its window.
+   * Each ends the same way: `!destInfo?.requireDestTag` is satisfied, the label
+   * says "(optional)", and a tagless payment goes to an address that requires a
+   * tag — credited to nobody, unrecoverable from here. Absence of a prohibition
+   * is not permission (docs/decisions.md §12, rule 1).
    */
-  const destCheckFailed = destQuery.isError && !destQuery.data
+  /** The report, read back only while it is still about what is on screen. */
+  const preflight =
+    preflightReport &&
+    preflightReport.network === network &&
+    preflightReport.destination === destination &&
+    preflightReport.asset === asset
+      ? preflightReport.reason
+      : null
+
+  const destCheckMatchesInput =
+    !!destInfo && destInfo.network === network && destInfo.destination === destination && destInfo.asset === asset
+  const checkedAt = destQuery.dataUpdatedAt || 0
+  const checkExpiresAt = destCheckMatchesInput && checkedAt > 0 ? checkedAt + DESTINATION_CHECK_FRESHNESS_MS : null
+  const destCheckFresh = checkExpiresAt !== null && observedNow < checkExpiresAt
+  const destCheckOk = !destQuery.isError && destCheckMatchesInput && destCheckFresh
+
+  /** A check that succeeded for this input and then aged out. It did not FAIL,
+   * and must not say it did (AD-15) — it is out of date, and re-readable. */
+  const destCheckStale = !destQuery.isError && destCheckMatchesInput && !destCheckFresh
+  /** Nothing is known yet for what is in the field: the read is in flight, or
+   * has not started, or the retained answer is about a different input. */
+  const destCheckPending = destinationValid && !destQuery.isError && !destCheckMatchesInput
+
+  // Take one clock reading when this check expires — and immediately, if it was
+  // already old when it arrived from the cache. No fetch and no interval: the
+  // app does not re-read on going stale and does not poll to keep the answer
+  // warm; this only stops the screen claiming a permission it no longer has.
+  useEffect(() => {
+    if (checkExpiresAt === null) return
+    const timer = setTimeout(() => setObservedNow(Date.now()), Math.max(0, checkExpiresAt - Date.now()))
+    return () => clearTimeout(timer)
+  }, [checkExpiresAt])
 
   // Frozen assets can't be moved, so they're not offerable (decisions.md §2).
   // Balances are DECIMAL strings — never BigInt them.
@@ -73,7 +137,6 @@ export function SendTab() {
   const selectedLine = asset === 'XRP' ? null : heldTokens.find((l) => `${l.currency}|${l.account}` === asset)
 
   const isKnownDestination = addressBook.some((e) => e.address === destination)
-  const destinationValid = isValidClassicAddress(destination)
   const isSelfSend = !!wallet && destination === wallet.address
   const amountValidation = validateAmountString(amount || '', asset === 'XRP' ? 'xrp' : 'issued')
   const tagValue = destTag ? Number(destTag) : undefined
@@ -99,10 +162,51 @@ export function SendTab() {
 
   async function doSend() {
     if (!wallet || !vaultKey) return
+    /**
+     * The guard lives here, not on the button. `disabled` dims a control; it
+     * does not prevent activation, and this handler is what actually spends
+     * money — so the same conditions are re-asserted inside the submit path.
+     */
+    // A report, not a silent no-op: a dialog that vanishes on a press says
+    // nothing about why nothing happened.
+    const report = (reason: 'failed' | 'tag-required' | 'guard-closed') =>
+      setPreflightReport({ network, destination, asset, reason })
+
+    if (!canSend || !destCheckOk) {
+      report('guard-closed')
+      setConfirming(false)
+      return
+    }
     setBusy(true)
     setOutcome(null)
+    setPreflightReport(null)
     try {
       const signingWallet = await unlockWalletForSigning(wallet.id, vaultKey)
+
+      /**
+       * Re-read the destination AFTER the unlock and immediately before
+       * submitting. The unlock can take seconds (passphrase typing, passkey
+       * prompt, key derivation), and the answer the operator was shown can age
+       * out or change inside that gap. The permission that authorises this
+       * payment is therefore a read taken now, not one taken when the form was
+       * filled in.
+       */
+      let latest: DestinationInfo
+      try {
+        latest = await fetchDestinationInfoOnce(queryClient, network, destination, asset)
+      } catch {
+        // Inline, not the Annunciator: this is a failed READ of data with a
+        // place on screen (AD-8). Nothing was signed and no fee was spent.
+        report('failed')
+        setConfirming(false)
+        return
+      }
+      if (latest.requireDestTag && tagValue === undefined) {
+        report('tag-required')
+        setConfirming(false)
+        return
+      }
+
       let result: SubmitOutcome
       if (asset === 'XRP') {
         result = await submitXrpPayment(network, signingWallet, {
@@ -151,7 +255,7 @@ export function SendTab() {
     amountValidation.valid &&
     !fundsError &&
     tagValid &&
-    !destCheckFailed &&
+    destCheckOk &&
     (!destInfo?.requireDestTag || destTag.length > 0) &&
     !busy
 
@@ -181,10 +285,18 @@ export function SendTab() {
               </p>
             )}
             {isSelfSend && <p className="text-sm text-text-destructive">You can't send a payment to your own address.</p>}
-            {destQuery.isFetching && <p className="text-xs text-muted-foreground">Checking destination…</p>}
+            {/* A read not yet completed FOR WHAT IS IN THE FIELD NOW — in flight,
+                not started, or still holding an answer about a previous input.
+                Unknown is not an error, and it is not permission either. */}
+            {(destCheckPending || destQuery.isFetching) && (
+              <p className="text-xs text-muted-foreground">Checking destination…</p>
+            )}
           </div>
 
-          {destCheckFailed && (
+          {/* Any errored check, including one that kept an earlier answer. That
+              retained answer is not shown and does not count: while a read is in
+              error, nothing from an earlier success stays on screen (§12). */}
+          {destQuery.isError && preflight !== 'failed' && (
             <QueryErrorState
               title="Destination check failed"
               description="This address could not be checked against the ledger, so the app cannot tell whether it exists or whether the recipient requires a destination tag. Sending is held until the check succeeds — an untagged payment to an address that requires one cannot be recovered from here."
@@ -192,7 +304,68 @@ export function SendTab() {
             />
           )}
 
-          {destInfo && !destInfo.exists && (
+          {/* Aged out, which is not the same fact as failed and must not borrow
+              its words. The app does not re-read on its own here: a silent
+              refetch would put the operator back in front of an answer they
+              never asked for and did not watch arrive. */}
+          {destCheckStale && (
+            <Alert variant="warning">
+              <AlertTitle>Destination check is out of date</AlertTitle>
+              <AlertDescription className="flex flex-col items-start gap-2">
+                <span>
+                  This address was checked more than {Math.round(DESTINATION_CHECK_FRESHNESS_MS / 1000)} seconds ago. The
+                  answer may no longer hold — an account can start requiring a destination tag at any time — so sending is
+                  held until the check is run again.
+                </span>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => {
+                    setPreflightReport(null)
+                    void destQuery.refetch()
+                  }}
+                >
+                  Check again
+                </Button>
+              </AlertDescription>
+            </Alert>
+          )}
+
+          {/* The submit-path re-check refused. Reported where the check lives,
+              not in the notice band, and never as a completed payment. */}
+          {preflight === 'failed' && (
+            <QueryErrorState
+              title="Payment not sent — destination check failed"
+              description="The destination was re-checked immediately before sending, as it always is, and that read did not succeed. Nothing was submitted to the ledger and no network fee was spent. Run the check again, then send."
+              onRetry={() => {
+                setPreflightReport(null)
+                return destQuery.refetch()
+              }}
+            />
+          )}
+
+          {preflight === 'guard-closed' && (
+            <Alert variant="warning">
+              <AlertTitle>Payment not sent — the form was no longer ready</AlertTitle>
+              <AlertDescription>
+                Something this form checks changed between opening the confirmation and confirming it, so nothing was
+                submitted and no network fee was spent. What is outstanding is shown on the form.
+              </AlertDescription>
+            </Alert>
+          )}
+
+          {preflight === 'tag-required' && (
+            <Alert variant="warning">
+              <AlertTitle>Payment not sent — this address now requires a destination tag</AlertTitle>
+              <AlertDescription>
+                The re-check made immediately before sending came back saying this recipient requires a destination tag,
+                which it did not when you filled the form in. Nothing was submitted and no network fee was spent. Enter the
+                tag the recipient gave you, then send again.
+              </AlertDescription>
+            </Alert>
+          )}
+
+          {destCheckOk && destInfo && !destInfo.exists && (
             <Alert variant="warning">
               <AlertTitle>Destination not activated</AlertTitle>
               <AlertDescription>
@@ -202,7 +375,7 @@ export function SendTab() {
             </Alert>
           )}
 
-          {destInfo?.hasTrustLine === false && (
+          {destCheckOk && destInfo?.hasTrustLine === false && (
             <Alert variant="warning">
               <AlertTitle>Recipient can't hold this token</AlertTitle>
               <AlertDescription>
@@ -213,9 +386,14 @@ export function SendTab() {
 
           <div className="grid gap-1.5">
             <Label htmlFor="dtag">
-              {destInfo?.requireDestTag
-                ? 'Destination tag (required by recipient)'
-                : destCheckFailed
+              {/* Driven by the guard, not by the error flag: a stale answer and
+                  an answer about a different address are as unknown as a failed
+                  read, and "(optional)" is the sentence that loses the money. */}
+              {destCheckOk
+                ? destInfo?.requireDestTag
+                  ? 'Destination tag (required by recipient)'
+                  : 'Destination tag (optional)'
+                : destinationValid
                   ? 'Destination tag (requirement unknown)'
                   : 'Destination tag (optional)'}
             </Label>
@@ -304,7 +482,19 @@ export function SendTab() {
           stating the exact consequence (§4) — not only for unknown addresses.
           A first-send additionally escalates the warning, since the address
           book auto-records every successful destination. */}
-      <Dialog open={confirming} onOpenChange={(o) => !o && setConfirming(false)}>
+      {/* The confirm step is gated on the destination check, not merely on the
+          control that opened it: a check that fails or ages out while the
+          dialog is up takes the dialog down with it, so the last thing on
+          screen before "Confirm and send" can never be a permission the submit
+          path is already going to refuse. `canSend` is deliberately NOT the
+          condition — it goes false on `busy` the moment the send starts. */}
+      {/* The confirm step is gated on the guard itself, so a check that fails
+          or ages out while the dialog is up takes the dialog down with it.
+          `|| busy` holds it open once a send is under way: the expiry timer is
+          independent of `busy`, so without it a check aging out during the
+          unlock would pull "Sending…" off the screen mid-submission and leave
+          the operator with no sign that a payment was in flight. */}
+      <Dialog open={confirming && (destCheckOk || busy)} onOpenChange={(o) => !o && setConfirming(false)}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Send {amountLabel}?</DialogTitle>

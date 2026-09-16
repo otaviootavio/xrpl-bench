@@ -4,11 +4,17 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { renderHook, waitFor } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 import { queryKeys } from '@/lib/xrpl/query-keys'
-import { fetchAccountStateOnce } from '@/lib/xrpl/query-reads'
+import {
+  DESTINATION_CHECK_FRESHNESS_MS,
+  fetchAccountStateOnce,
+  fetchDestinationInfoOnce,
+} from '@/lib/xrpl/query-reads'
+import { fetchAccountState } from '@/lib/xrpl/reads'
 import { useAccountState } from '@/hooks/useAccountState'
 import { useAccountTxHistory } from '@/hooks/useAccountTxHistory'
 import { useTrustLines } from '@/hooks/useTrustLines'
 import { useIncomingPaymentNotifications } from '@/hooks/useIncomingPaymentNotifications'
+import { useDestinationInfo } from '@/hooks/useDestinationInfo'
 
 /**
  * Each account-scoped hook must land on ITS OWN factory key.
@@ -34,6 +40,9 @@ vi.mock('@/lib/notify', () => ({ toast: { success: vi.fn(), error: vi.fn(), warn
 
 const NETWORK = 'testnet' as const
 const ADDRESS = 'rWiring'
+/** `useDestinationInfo` runs the real `isValidClassicAddress` before it is
+ * enabled, so this one has to survive a checksum. */
+const DESTINATION = 'rHb9CJAWyB4rj91VRWn96DkukG4bwdtyTh'
 
 function harness() {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
@@ -106,5 +115,69 @@ describe('the pre-flight probe and the Balances screen share one entry', () => {
     await fetchAccountStateOnce(client, NETWORK, ADDRESS)
 
     expect(cachedKeys(client)).toEqual([JSON.stringify(queryKeys.accountState(NETWORK, ADDRESS))])
+  })
+})
+
+/**
+ * The destination check is the one read that authorises a payment, and the
+ * three ways it can be broken are all invisible to the four gates: a wider
+ * `staleTime` lets a minutes-old answer authorise a send, a dropped field in
+ * the payload's `(network, destination, asset)` stamp blocks every send
+ * forever, and a swap to a sibling factory function collides with another
+ * read's cache entry. Each is one edit away and none is a type error.
+ */
+describe('the destination check', () => {
+  it('useDestinationInfo lands on the destination-scoped key', async () => {
+    await expectLandsOn(
+      () => useDestinationInfo(NETWORK, DESTINATION, 'XRP'),
+      queryKeys.destinationInfo(NETWORK, DESTINATION, 'XRP'),
+    )
+  })
+
+  it('fetchDestinationInfoOnce reuses the entry the form already watches', async () => {
+    // The probe that authorises the payment and the check the operator was
+    // shown must be the same entry, or the form can say one thing while the
+    // submit path acts on another.
+    const { client, wrapper } = harness()
+    renderHook(() => useDestinationInfo(NETWORK, DESTINATION, 'XRP'), { wrapper })
+    await waitFor(() => expect(cachedKeys(client).length).toBe(1))
+
+    await fetchDestinationInfoOnce(client, NETWORK, DESTINATION, 'XRP')
+
+    expect(cachedKeys(client)).toEqual([JSON.stringify(queryKeys.destinationInfo(NETWORK, DESTINATION, 'XRP'))])
+  })
+
+  it('stamps the answer with the triple it was asked for', async () => {
+    // Without the stamp the form cannot tell whether an answer it is holding is
+    // about the address in the field, and the guard closes on every send.
+    const { client } = harness()
+
+    // An issued asset, not XRP: a stamp that hardcodes the common case reads
+    // as correct against an XRP send and mislabels every token one.
+    const info = await fetchDestinationInfoOnce(client, NETWORK, DESTINATION, 'USD|rIssuer')
+
+    expect(info).toMatchObject({ network: NETWORK, destination: DESTINATION, asset: 'USD|rIssuer' })
+  })
+
+  it('re-reads an entry older than the freshness window, and reuses a younger one', async () => {
+    const reads = vi.mocked(fetchAccountState)
+    reads.mockClear()
+    vi.useFakeTimers()
+    const started = Date.now()
+    try {
+      const { client } = harness()
+      await fetchDestinationInfoOnce(client, NETWORK, DESTINATION, 'XRP')
+      expect(reads).toHaveBeenCalledTimes(1)
+
+      vi.setSystemTime(started + DESTINATION_CHECK_FRESHNESS_MS - 1_000)
+      await fetchDestinationInfoOnce(client, NETWORK, DESTINATION, 'XRP')
+      expect(reads).toHaveBeenCalledTimes(1)
+
+      vi.setSystemTime(started + DESTINATION_CHECK_FRESHNESS_MS + 1_000)
+      await fetchDestinationInfoOnce(client, NETWORK, DESTINATION, 'XRP')
+      expect(reads).toHaveBeenCalledTimes(2)
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })

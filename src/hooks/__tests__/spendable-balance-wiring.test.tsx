@@ -14,15 +14,22 @@ import { useSpendableBalance } from '@/hooks/useSpendableBalance'
  * The two source hooks are mocked: this is about the composition, not about
  * what the ledger says.
  */
-const accountState: { data: unknown; isLoading: boolean } = { data: undefined, isLoading: false }
-const reserves: { data: unknown; isLoading: boolean } = { data: undefined, isLoading: false }
+type Fixture = { data: unknown; isLoading: boolean; isError: boolean; refetch: () => Promise<unknown> }
+const accountState: Fixture = { data: undefined, isLoading: false, isError: false, refetch: vi.fn(async () => ({})) }
+const reserves: Fixture = { data: undefined, isLoading: false, isError: false, refetch: vi.fn(async () => ({})) }
 
 vi.mock('@/hooks/useAccountState', () => ({ useAccountState: () => accountState }))
 vi.mock('@/hooks/useServerReserves', () => ({ useServerReserves: () => reserves }))
 
-function given(account: Record<string, unknown> | undefined, reserveData: Record<string, unknown> | undefined) {
+function given(
+  account: Record<string, unknown> | undefined,
+  reserveData: Record<string, unknown> | undefined,
+  errors: { account?: boolean; reserve?: boolean } = {},
+) {
   accountState.data = account
   reserves.data = reserveData
+  accountState.isError = errors.account ?? false
+  reserves.isError = errors.reserve ?? false
   return renderHook(() => useSpendableBalance('mainnet', 'rSpendable')).result.current
 }
 
@@ -61,5 +68,63 @@ describe('useSpendableBalance — which figure goes where', () => {
   it('produces no figure before the reserves have loaded', () => {
     const result = given(ACCOUNT, undefined)
     expect(result.spendableDrops).toBeNull()
+  })
+})
+
+/**
+ * Story 5.2. The hook used to answer three different facts with the same pair
+ * of nulls, so no consumer could report any of them: `!reserves.data` collapsed
+ * a *failed* read into "nothing yet", and a failed read that still held an
+ * earlier answer skipped that gate entirely and computed a Spendable figure
+ * from a read that was in error at that moment. These pin the word, not just
+ * the nulls — the word is what a screen has to report.
+ */
+describe('useSpendableBalance — which of the four outcomes happened', () => {
+  it('says ok, with figures, when both reads succeeded', () => {
+    expect(given(ACCOUNT, RESERVES).status).toBe('ok')
+  })
+
+  it('says loading, not failed, while a read is in flight', () => {
+    const result = given(ACCOUNT, undefined)
+    expect(result.status).toBe('loading')
+    expect(result.reserveFailed).toBe(false)
+  })
+
+  it('says not-activated for an absent account — a successful read, never an error', () => {
+    const result = given({ exists: false, balanceDrops: '0', ownerCount: 0 }, RESERVES)
+    expect(result.status).toBe('not-activated')
+    expect(result.reserveFailed).toBe(false)
+    expect(result.accountFailed).toBe(false)
+  })
+
+  it('says unavailable, and names the reserve read, when the reserve read failed', () => {
+    const result = given(ACCOUNT, undefined, { reserve: true })
+    expect(result.status).toBe('unavailable')
+    expect(result.reserveFailed).toBe(true)
+    expect(result.isLoading).toBe(false)
+  })
+
+  it('withholds both figures computed from a retained answer while the reserve read is in error', () => {
+    // The half that used to fall straight through: TanStack keeps the previous
+    // answer across a failed refetch, so `data` is truthy and `isError` is true
+    // together. Computing here returns a Spendable figure derived from a read
+    // that is currently failing.
+    const result = given(ACCOUNT, RESERVES, { reserve: true })
+    expect(result.status).toBe('unavailable')
+    expect(result.spendableDrops).toBeNull()
+    expect(result.reservedDrops).toBeNull()
+  })
+
+  it('names the account read, not the reserve read, when account_info failed', () => {
+    const result = given(ACCOUNT, RESERVES, { account: true })
+    expect(result.status).toBe('unavailable')
+    expect(result.accountFailed).toBe(true)
+    expect(result.reserveFailed).toBe(false)
+  })
+
+  it('hands back the reserve query\u2019s own refetch, so the failure can carry a retry', async () => {
+    const result = given(ACCOUNT, RESERVES, { reserve: true })
+    await result.retryReserves()
+    expect(reserves.refetch).toHaveBeenCalled()
   })
 })

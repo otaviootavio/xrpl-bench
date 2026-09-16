@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 
 const useDestinationInfo = vi.fn()
+const useSpendableBalance = vi.fn()
 const fetchQuery = vi.fn()
 const submitXrpPayment = vi.fn()
 const unlockWalletForSigning = vi.fn()
@@ -10,9 +11,7 @@ const unlockWalletForSigning = vi.fn()
 vi.mock('@/hooks/useDestinationInfo', () => ({ useDestinationInfo: () => useDestinationInfo() }))
 vi.mock('@/hooks/useRecommendedFee', () => ({ useRecommendedFee: () => ({ data: '12' }) }))
 vi.mock('@/hooks/useTrustLines', () => ({ useTrustLines: () => ({ data: [] }) }))
-vi.mock('@/hooks/useSpendableBalance', () => ({
-  useSpendableBalance: () => ({ isLoading: false, spendableDrops: '100000000', reservedDrops: '1000000' }),
-}))
+vi.mock('@/hooks/useSpendableBalance', () => ({ useSpendableBalance: () => useSpendableBalance() }))
 vi.mock('@tanstack/react-query', () => ({
   useQueryClient: () => ({ invalidateQueries: vi.fn(), fetchQuery }),
 }))
@@ -41,6 +40,7 @@ vi.mock('@/store/app-store', () => ({
 }))
 
 import { SendTab } from '../SendTab'
+import type { SpendableBalance } from '@/hooks/useSpendableBalance'
 import { DESTINATION_CHECK_FRESHNESS_MS } from '@/lib/xrpl/query-reads'
 import { queryKeys } from '@/lib/xrpl/query-keys'
 
@@ -82,6 +82,24 @@ function query(
   }
 }
 
+/**
+ * The spendable figure this form checks an amount against. Annotated with the
+ * hook's own interface, so a renamed `status` value or a dropped field is a
+ * compile error here instead of a test passing against a stale contract.
+ */
+function spendable(overrides: Partial<SpendableBalance> = {}): SpendableBalance {
+  return {
+    status: 'ok',
+    isLoading: false,
+    reserveFailed: false,
+    accountFailed: false,
+    retryReserves: vi.fn().mockResolvedValue({}),
+    spendableDrops: '100000000',
+    reservedDrops: '1000000',
+    ...overrides,
+  }
+}
+
 /** Fill in everything a send needs EXCEPT knowing about the destination. */
 function fillValidForm(destination = DESTINATION) {
   fireEvent.change(screen.getByLabelText('Destination address'), { target: { value: destination } })
@@ -102,6 +120,7 @@ beforeEach(() => {
   vi.useFakeTimers()
   vi.setSystemTime(NOW)
   useDestinationInfo.mockReturnValue(query())
+  useSpendableBalance.mockReturnValue(spendable())
   fetchQuery.mockResolvedValue(info())
   // The active wallet's own address, not the destination's: a signing wallet
   // that IS the recipient describes a self-send the form already refuses.
@@ -443,5 +462,74 @@ describe('SendTab — the submit path re-checks before it spends', () => {
 
     expect(screen.queryByRole('button', { name: 'Confirm and send' })).toBeNull()
     expect(screen.getByText('Destination check is out of date')).toBeTruthy()
+  })
+})
+
+/**
+ * The affordability check used to `return undefined` the moment there was no
+ * spendable figure — "no figure, so no objection" — and an amount was then
+ * declared affordable against a balance the app had never worked out. The read
+ * that gets there is the 15-second account poll with `retry: 1`, so one failed
+ * poll reaches a form the operator is already filling in.
+ */
+describe('the affordability check fails closed without a spendable figure', () => {
+  it('says the balance is still being read, not that it failed, while a read is in flight', () => {
+    // A read in flight has not failed. The amount is still refused — nothing
+    // may be declared affordable against an unknown balance — but the reason
+    // has to be the true one.
+    useSpendableBalance.mockReturnValue(spendable({ status: 'loading', isLoading: true, spendableDrops: null, reservedDrops: null }))
+    render(<SendTab />)
+    fireEvent.change(screen.getByLabelText('Destination address'), { target: { value: DESTINATION } })
+    fireEvent.change(screen.getByLabelText('Amount'), { target: { value: '1000' } })
+    settleClock()
+
+    expect(reviewButton().disabled).toBe(true)
+    expect(screen.getByText(/still being read/i)).toBeTruthy()
+    expect(screen.queryByText(/could not be read/i)).toBeNull()
+  })
+
+  it('says an account that does not exist yet has nothing to check against', () => {
+    useSpendableBalance.mockReturnValue(spendable({ status: 'not-activated', spendableDrops: null, reservedDrops: null }))
+    render(<SendTab />)
+    fireEvent.change(screen.getByLabelText('Destination address'), { target: { value: DESTINATION } })
+    fireEvent.change(screen.getByLabelText('Amount'), { target: { value: '1000' } })
+    settleClock()
+
+    expect(reviewButton().disabled).toBe(true)
+    expect(screen.getByText(/isn't activated yet/i)).toBeTruthy()
+    expect(screen.queryByText(/could not be read/i)).toBeNull()
+  })
+
+  it('refuses an amount when the spendable balance could not be worked out', () => {
+    useSpendableBalance.mockReturnValue(
+      spendable({ status: 'unavailable', accountFailed: true, spendableDrops: null, reservedDrops: null }),
+    )
+    render(<SendTab />)
+    // 1000 XRP against a 100 XRP balance: affordable only if nothing checked.
+    fireEvent.change(screen.getByLabelText('Destination address'), { target: { value: DESTINATION } })
+    fireEvent.change(screen.getByLabelText('Amount'), { target: { value: '1000' } })
+    settleClock()
+
+    expect(reviewButton().disabled).toBe(true)
+    expect(screen.getByText(/spendable balance could not be read/i)).toBeTruthy()
+  })
+
+  it('says the Spendable readout is unavailable instead of dropping the row', () => {
+    useSpendableBalance.mockReturnValue(
+      spendable({ status: 'unavailable', accountFailed: true, spendableDrops: null, reservedDrops: null }),
+    )
+    render(<SendTab />)
+
+    expect(screen.getByText('Spendable')).toBeTruthy()
+    expect(screen.getByText('Unavailable')).toBeTruthy()
+  })
+
+  it('still allows an amount that fits when the figure was read', () => {
+    render(<SendTab />)
+    fillValidForm()
+    settleClock()
+
+    expect(reviewButton().disabled).toBe(false)
+    expect(screen.queryByText(/could not be worked out/i)).toBeNull()
   })
 })

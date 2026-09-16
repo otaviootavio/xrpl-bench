@@ -1,6 +1,7 @@
 /** @vitest-environment jsdom */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import type { SpendableBalance } from '@/hooks/useSpendableBalance'
 
 const useTrustLines = vi.fn()
 
@@ -9,7 +10,17 @@ vi.mock('@/hooks/useServerReserves', () => ({
   useServerReserves: () => ({ data: { baseReserveDrops: '1000000', ownerReserveDrops: '200000' } }),
 }))
 vi.mock('@/hooks/useSpendableBalance', () => ({
-  useSpendableBalance: () => ({ isLoading: false, spendableDrops: '25000000', reservedDrops: '1000000' }),
+  // Annotated, so renaming a `status` value or dropping a field is a compile
+  // error here rather than a test that stays green against a stale contract.
+  useSpendableBalance: (): SpendableBalance => ({
+    status: 'ok',
+    isLoading: false,
+    reserveFailed: false,
+    accountFailed: false,
+    retryReserves: vi.fn().mockResolvedValue({}),
+    spendableDrops: '25000000',
+    reservedDrops: '1000000',
+  }),
 }))
 vi.mock('@tanstack/react-query', () => ({ useQueryClient: () => ({ invalidateQueries: vi.fn() }) }))
 // The row renders an AddressLink, which reads the store and mounts a Tooltip;

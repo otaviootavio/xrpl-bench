@@ -15,6 +15,7 @@ import { useAccountTxHistory } from '@/hooks/useAccountTxHistory'
 import { useTrustLines } from '@/hooks/useTrustLines'
 import { useIncomingPaymentNotifications } from '@/hooks/useIncomingPaymentNotifications'
 import { useDestinationInfo } from '@/hooks/useDestinationInfo'
+import { useServerReserves } from '@/hooks/useServerReserves'
 
 /**
  * Each account-scoped hook must land on ITS OWN factory key.
@@ -34,6 +35,7 @@ vi.mock('@/lib/xrpl/reads', () => ({
   fetchAccountState: vi.fn(async () => ({ exists: true, requireDestTag: false })),
   fetchAccountTx: vi.fn(async () => ({ items: [], marker: undefined })),
   fetchAccountLines: vi.fn(async () => []),
+  fetchServerReserves: vi.fn(async () => ({ baseReserveDrops: '1000000', ownerReserveDrops: '200000' })),
 }))
 
 vi.mock('@/lib/notify', () => ({ toast: { success: vi.fn(), error: vi.fn(), warning: vi.fn() } }))
@@ -179,5 +181,27 @@ describe('the destination check', () => {
     } finally {
       vi.useRealTimers()
     }
+  })
+})
+
+/**
+ * The reserve read is a NAMED network-scoped exception on the factory, not an
+ * account-scoped key — so it gets its own describe rather than joining the
+ * group above. Two ways it breaks, neither of them a type error: an address
+ * element creeping in (a ledger-wide answer would then be thrown away on every
+ * wallet switch, and re-read per wallet), or the hook reaching for a sibling
+ * builder and colliding with another read's entry. The equivalent absence for
+ * the destination read cost story 5.1 a whole patch round.
+ */
+describe('the reserve read is network-scoped, by name', () => {
+  it('useServerReserves lands on the network-scoped key, with no address in it', async () => {
+    const { client, wrapper } = harness()
+    renderHook(() => useServerReserves(NETWORK), { wrapper })
+    await waitFor(() => expect(cachedKeys(client).length).toBeGreaterThan(0))
+
+    // The literal spelled out, not just the factory call: an address element
+    // appended to the builder would keep both sides of an equality against
+    // `queryKeys.serverReserves` in step and change nothing here.
+    expect(cachedKeys(client)).toEqual([JSON.stringify(['serverReserves', NETWORK])])
   })
 })

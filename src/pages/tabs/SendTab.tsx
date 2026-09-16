@@ -77,7 +77,23 @@ export function SendTab() {
    * window is refused on the FIRST render rather than on the timer's. */
   const [observedNow, setObservedNow] = useState(Date.now)
 
-  const { spendableDrops } = useSpendableBalance(network, wallet?.address ?? null)
+  const spendable = useSpendableBalance(network, wallet?.address ?? null)
+  const spendableDrops = spendable.spendableDrops
+  /**
+   * Why there is no figure, in the form's own words.
+   *
+   * All three states stop an amount being declared affordable — absence of a
+   * prohibition is not permission — but they are not the same fact, and this
+   * epic exists because a screen that cannot tell them apart says the wrong
+   * one. A read still in flight has not failed, and an account that does not
+   * exist yet has nothing to fail about.
+   */
+  const spendableUnknownReason =
+    spendable.status === 'loading'
+      ? 'Your spendable balance is still being read, so this amount cannot be checked against it yet.'
+      : spendable.status === 'not-activated'
+        ? "This account isn't activated yet, so there is no spendable balance to check this against."
+        : 'Your spendable balance could not be read, so this amount cannot be checked against it.'
   const fee = useRecommendedFee(network)
   const trustLines = useTrustLines(network, wallet?.address ?? null)
   // Ledger reads go through a query hook, never an onBlur handler (§4).
@@ -147,7 +163,13 @@ export function SendTab() {
   const fundsError = (() => {
     if (!amountValidation.valid) return undefined
     if (asset === 'XRP') {
-      if (!spendableDrops) return undefined
+      // Fails CLOSED. This used to `return undefined` — "no figure, so no
+      // objection" — and an amount was declared affordable against a balance
+      // the app had not worked out. `useAccountState` polls every 15 seconds
+      // with `retry: 1`, so a single failed poll reaches here on a form the
+      // operator is already filling in. Absence of a prohibition is not
+      // permission (docs/decisions.md §12 rule 1).
+      if (!spendableDrops) return spendableUnknownReason
       // The fee comes out on top of the amount, so both must fit (money.ts).
       if (!amountPlusFeeFits(xrpToDropsString(amount), fee.data ?? '0', spendableDrops)) {
         return `That's more than your spendable balance (${formatXrp(spendableDrops)}) once the network fee is included.`
@@ -446,10 +468,18 @@ export function SendTab() {
               <dt className="panel-legend text-readout-muted">Network fee</dt>
               <dd className="font-data text-base tracking-tight">{fee.data ? formatXrp(fee.data) : '…'}</dd>
             </div>
-            {asset === 'XRP' && spendableDrops && (
+            {/* The row stays when there is no figure and says so. Removing it
+                left the operator with a fee and nothing to weigh it against,
+                and no hint that anything was missing. Words, not a numeral, so
+                the data face and tabular numerals step aside. */}
+            {asset === 'XRP' && (
               <div>
                 <dt className="panel-legend text-readout-muted">Spendable</dt>
-                <dd className="font-data text-base tracking-tight">{formatXrp(spendableDrops)}</dd>
+                {spendableDrops ? (
+                  <dd className="font-data text-base tracking-tight">{formatXrp(spendableDrops)}</dd>
+                ) : (
+                  <dd className="text-sm text-readout-muted">Unavailable</dd>
+                )}
               </div>
             )}
           </dl>

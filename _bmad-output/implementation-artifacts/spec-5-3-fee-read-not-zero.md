@@ -196,8 +196,40 @@ story.
 
 ## Verification
 
-**Commands:**
-- `bun run lint` — expected: exit 0
-- `bun run build` — expected: exit 0, `tsc -b` clean
-- `bun run test` — expected: exit 0, new fee cases passing
-- `bun run check:contrast` — expected: exit 0, no new token measured
+**Commands:** all four run twice — after implementation and again after the
+review patches. Results from the second run:
+
+| Command | Result |
+|---|---|
+| `bun run lint` | exit 0, including `check-query-keys`, `check-sw-register`, `check-layering` |
+| `bun run build` | exit 0, `tsc -b` clean |
+| `bun run test` | exit 0 — 245 passed, 28 files |
+| `bun run check:contrast` | exit 0, all token pairs pass, no new token measured |
+
+**Mutation checks (run by this session, not taken on report):**
+
+- Restoring `feeDrops ?? '0'` and deleting the `if (!feeDrops)` line fails 3
+  tests. The guard is pinned by assertions that bind to the fix.
+- Collapsing the dialog's in-flight branch into the failed wording, and
+  replacing the row's success branch with the pending ellipsis, fails 3 tests.
+  The three renderings are pinned positively, not only by the absence of the
+  failure wordings.
+
+**Browser pass: ATTEMPTED, NOT COMPLETED — the visual acceptance is unverified.**
+
+`docs/agents/verifying-your-work.md` requires a real browser for a visual
+change, and this change is visual: a `QueryErrorState` panel is inserted as a
+sibling below the `panel-well`, and a `<dd>` switches from `font-data
+text-base tracking-tight` to `text-sm` inside a `flex-wrap` `<dl>`. The dev
+server was started and driven with Playwright, but wallet setup calls
+`navigator.credentials.create()` (`src/lib/crypto/webauthn.ts:23`), which never
+resolves in the headless browser available here — no authenticator answers the
+prompt, so the app cannot be taken past "Setting up…" and no funded account,
+second wallet, or Send screen was reachable. Testnet itself is reachable from
+this machine; the block is the passkey step alone.
+
+Unseen by anyone, therefore: the fee row and the error panel stacked at 320px
+and 390px, in both themes; and the both-reads-failed case, which renders two
+error panels and two unavailable rows in one column. `check:contrast` passing
+is not that claim. Closing this needs a browser with a virtual authenticator
+(CDP `WebAuthn.addVirtualAuthenticator`) or a human running it locally.

@@ -4,13 +4,30 @@ import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 
 const useDestinationInfo = vi.fn()
 const useSpendableBalance = vi.fn()
+const useRecommendedFee = vi.fn()
+const useTrustLines = vi.fn()
 const fetchQuery = vi.fn()
 const submitXrpPayment = vi.fn()
 const unlockWalletForSigning = vi.fn()
 
 vi.mock('@/hooks/useDestinationInfo', () => ({ useDestinationInfo: () => useDestinationInfo() }))
-vi.mock('@/hooks/useRecommendedFee', () => ({ useRecommendedFee: () => ({ data: '12' }) }))
-vi.mock('@/hooks/useTrustLines', () => ({ useTrustLines: () => ({ data: [] }) }))
+vi.mock('@/hooks/useRecommendedFee', () => ({ useRecommendedFee: () => useRecommendedFee() }))
+vi.mock('@/hooks/useTrustLines', () => ({ useTrustLines: () => useTrustLines() }))
+/** Radix's Select needs pointer capture jsdom does not implement, and the
+ * asset picker is a means to an end here: the token-send assertions are about
+ * the fee, not about the listbox. A native select keeps the same contract —
+ * `value` in, `onValueChange` out — with none of that apparatus. */
+vi.mock('@/components/ui/select', () => ({
+  Select: ({ value, onValueChange, children }: any) => (
+    <select data-testid="asset" value={value} onChange={(e) => onValueChange(e.target.value)}>
+      {children}
+    </select>
+  ),
+  SelectTrigger: () => null,
+  SelectValue: () => null,
+  SelectContent: ({ children }: any) => <>{children}</>,
+  SelectItem: ({ value, children }: any) => <option value={value}>{children}</option>,
+}))
 vi.mock('@/hooks/useSpendableBalance', () => ({ useSpendableBalance: () => useSpendableBalance() }))
 vi.mock('@tanstack/react-query', () => ({
   useQueryClient: () => ({ invalidateQueries: vi.fn(), fetchQuery }),
@@ -43,6 +60,9 @@ import { SendTab } from '../SendTab'
 import type { SpendableBalance } from '@/hooks/useSpendableBalance'
 import { DESTINATION_CHECK_FRESHNESS_MS } from '@/lib/xrpl/query-reads'
 import { queryKeys } from '@/lib/xrpl/query-keys'
+// The real formatter, so a test asserting the figure cannot drift from the one
+// the row actually renders.
+import { formatXrp } from '@/lib/xrpl/money'
 
 // Real addresses: `isValidClassicAddress` is the actual xrpl checksum check,
 // not a mock, so a made-up string would fail validation before anything this
@@ -100,6 +120,28 @@ function spendable(overrides: Partial<SpendableBalance> = {}): SpendableBalance 
   }
 }
 
+/**
+ * The recommended-fee read, as the form sees it. Three outcomes and no fourth:
+ * a figure that was read, a read still in flight, a read that failed. The
+ * default is a fee that was read, because every other assertion in this file
+ * depends on the XRP affordability check being able to complete.
+ */
+function feeRead(overrides: { data?: string; isError?: boolean; refetch?: () => unknown } = {}) {
+  const { isError = false, refetch = vi.fn().mockResolvedValue({}) } = overrides
+  const data = 'data' in overrides ? overrides.data : '12'
+  // Only what `SendTab` actually reads. `isSuccess`/`isLoading` would be
+  // inconsistent for a retained value under an errored refetch, and nothing
+  // would catch it because nothing consults them.
+  return { data, isError, refetch }
+}
+
+/** A token the wallet holds, so an issued-currency send can be selected. */
+const TOKEN_ISSUER = 'rPT1Sjq2YGrBMTttX4GZHjKu9dyfzbpAYe'
+const TOKEN_ASSET = `USD|${TOKEN_ISSUER}`
+function heldToken() {
+  return { currency: 'USD', account: TOKEN_ISSUER, balance: '50', freeze: false, freezePeer: false }
+}
+
 /** Fill in everything a send needs EXCEPT knowing about the destination. */
 function fillValidForm(destination = DESTINATION) {
   fireEvent.change(screen.getByLabelText('Destination address'), { target: { value: destination } })
@@ -121,6 +163,8 @@ beforeEach(() => {
   vi.setSystemTime(NOW)
   useDestinationInfo.mockReturnValue(query())
   useSpendableBalance.mockReturnValue(spendable())
+  useRecommendedFee.mockReturnValue(feeRead())
+  useTrustLines.mockReturnValue({ data: [] })
   fetchQuery.mockResolvedValue(info())
   // The active wallet's own address, not the destination's: a signing wallet
   // that IS the recipient describes a self-send the form already refuses.
@@ -531,5 +575,227 @@ describe('the affordability check fails closed without a spendable figure', () =
 
     expect(reviewButton().disabled).toBe(false)
     expect(screen.queryByText(/could not be worked out/i)).toBeNull()
+  })
+})
+
+/**
+ * The fee read used to reach `amountPlusFeeFits` as `fee.data ?? '0'`, so a
+ * read that failed — or simply had not landed — was substituted with a fee of
+ * zero and an amount that does not fit was declared affordable. The same read
+ * was reported twice more as something it was not: the readout rendered the
+ * pending ellipsis, and the confirm dialog named "the current rate".
+ *
+ * `useRecommendedFee` has no `refetchInterval`, so a failed read stays failed
+ * until something asks again — which makes the retry below the only way back,
+ * not a convenience.
+ */
+describe('the affordability check fails closed without a fee figure', () => {
+  /** An amount comfortably inside the 100 XRP spendable balance, so nothing
+   * but the fee can be what refuses it. */
+  function fillWellWithinBalance() {
+    fireEvent.change(screen.getByLabelText('Destination address'), { target: { value: DESTINATION } })
+    fireEvent.change(screen.getByLabelText('Amount'), { target: { value: '1' } })
+  }
+
+  it('refuses an amount that is well within the balance when the fee read failed', () => {
+    // Absence of a prohibition is not permission. With `?? '0'` this amount was
+    // declared affordable against a fee the app had never read.
+    useRecommendedFee.mockReturnValue(feeRead({ data: undefined, isError: true }))
+    render(<SendTab />)
+    fillWellWithinBalance()
+    settleClock()
+
+    expect(reviewButton().disabled).toBe(true)
+    // Twice over: the amount field's reason, and the inline report by the row.
+    expect(screen.getByText(/network fee could not be read, so this amount/i)).toBeTruthy()
+  })
+
+  it('names the fee, not the balance, as the reason', () => {
+    useRecommendedFee.mockReturnValue(feeRead({ data: undefined, isError: true }))
+    render(<SendTab />)
+    fillWellWithinBalance()
+    settleClock()
+
+    // The spendable read succeeded. Blaming it would be a second false
+    // statement layered on the first.
+    expect(screen.queryByText(/spendable balance could not be read/i)).toBeNull()
+  })
+
+  it('says the fee is still being read, not that it failed, while a read is in flight', () => {
+    useRecommendedFee.mockReturnValue(feeRead({ data: undefined }))
+    render(<SendTab />)
+    fillWellWithinBalance()
+    settleClock()
+
+    expect(reviewButton().disabled).toBe(true)
+    expect(screen.getByText(/network fee is still being read/i)).toBeTruthy()
+    // In flight has not failed, and nothing on screen may say it has.
+    expect(screen.queryByText(/network fee could not be read/i)).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Try again' })).toBeNull()
+  })
+
+  it('drops a retained figure while the read is in error', () => {
+    // §12 rule 2: a failed refetch that kept an earlier answer is still a
+    // failure, and the stale figure must not be shown or acted on.
+    useRecommendedFee.mockReturnValue(feeRead({ data: '12', isError: true }))
+    render(<SendTab />)
+    fillWellWithinBalance()
+    settleClock()
+
+    expect(reviewButton().disabled).toBe(true)
+    expect(screen.getByText('Unavailable')).toBeTruthy()
+  })
+
+  it('keeps the Network fee row and states unavailability in words', () => {
+    useRecommendedFee.mockReturnValue(feeRead({ data: undefined, isError: true }))
+    render(<SendTab />)
+
+    // A screen with fewer numbers on it than before is the defect, not the fix.
+    expect(screen.getByText('Network fee')).toBeTruthy()
+    expect(screen.getByText('Unavailable')).toBeTruthy()
+  })
+
+  it('shows the pending treatment, and no failure, while the read is in flight', () => {
+    useRecommendedFee.mockReturnValue(feeRead({ data: undefined }))
+    render(<SendTab />)
+
+    expect(screen.getByText('Network fee')).toBeTruthy()
+    expect(screen.getByText('…')).toBeTruthy()
+    expect(screen.queryByText('Network fee could not be read')).toBeNull()
+  })
+
+  it('offers a retry that is reachable by keyboard alone', () => {
+    const refetch = vi.fn().mockResolvedValue({})
+    useRecommendedFee.mockReturnValue(feeRead({ data: undefined, isError: true, refetch }))
+    render(<SendTab />)
+
+    // A real button, neither `disabled` nor `aria-disabled`: that is what makes
+    // it focusable and activatable by Enter without a pointer.
+    const retry = screen.getByRole('button', { name: 'Try again' })
+    expect(retry.tagName).toBe('BUTTON')
+    expect(retry.hasAttribute('disabled')).toBe(false)
+    expect(retry.getAttribute('aria-disabled')).toBeNull()
+    fireEvent.click(retry)
+    expect(refetch).toHaveBeenCalledOnce()
+  })
+
+  it('puts the figure back and reopens the guard when the retried read succeeds', () => {
+    // The panel promises the send is held "until this read succeeds". Without
+    // this, that promise is only prose: nothing checks the screen ever comes
+    // back, and the hook has no refetchInterval to come back on its own.
+    useRecommendedFee.mockReturnValue(feeRead({ data: undefined, isError: true }))
+    const { rerender } = render(<SendTab />)
+    fillWellWithinBalance()
+    settleClock()
+    expect(reviewButton().disabled).toBe(true)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Try again' }))
+    useRecommendedFee.mockReturnValue(feeRead())
+    rerender(<SendTab />)
+    settleClock()
+
+    expect(screen.getByText(formatXrp('12'))).toBeTruthy()
+    expect(screen.queryByText('Network fee could not be read')).toBeNull()
+    expect(reviewButton().disabled).toBe(false)
+  })
+
+  it('reports a failed fee and a failed balance each in its own words, once', () => {
+    useRecommendedFee.mockReturnValue(feeRead({ data: undefined, isError: true }))
+    useSpendableBalance.mockReturnValue(
+      spendable({ status: 'unavailable', accountFailed: true, spendableDrops: null, reservedDrops: null }),
+    )
+    render(<SendTab />)
+    fillWellWithinBalance()
+    settleClock()
+
+    // Two failed reads, two reports. The spendable wording story 5.2 settled is
+    // the one the amount field carries, because it is checked first.
+    expect(screen.getByText(/spendable balance could not be read/i)).toBeTruthy()
+    expect(screen.getByText('Network fee could not be read')).toBeTruthy()
+    // Scoped to the fee's own row: counting 'Unavailable' across the well would
+    // tie this story's assertion to the Spendable row's wording, which story
+    // 5.2 owns and this one must not constrain.
+    expect(screen.getByText('Network fee').closest('div')?.textContent).toContain('Unavailable')
+    expect(screen.getAllByRole('button', { name: 'Try again' })).toHaveLength(1)
+  })
+
+  it('behaves exactly as before once the fee read succeeds', () => {
+    render(<SendTab />)
+    fillWellWithinBalance()
+    settleClock()
+
+    expect(reviewButton().disabled).toBe(false)
+    // The figure itself, not merely the absence of a complaint: a row that
+    // rendered the pending ellipsis over a fee it HAD would otherwise pass.
+    expect(screen.getByText(formatXrp('12'))).toBeTruthy()
+    expect(screen.queryByText('…')).toBeNull()
+    expect(screen.queryByText(/network fee could not be read/i)).toBeNull()
+    expect(screen.queryByText(/network fee is still being read/i)).toBeNull()
+  })
+
+  it('names the fee in the confirm dialog when it was read', () => {
+    render(<SendTab />)
+    fillWellWithinBalance()
+    settleClock()
+    fireEvent.click(reviewButton())
+
+    // The figure the row shows, not just the preposition before it.
+    expect(screen.getByText(/plus a network fee of/i).textContent).toContain(`plus a network fee of ${formatXrp('12')}`)
+    expect(screen.queryByText(/the current rate/i)).toBeNull()
+  })
+})
+
+/**
+ * A token send decides nothing against the fee figure — no arithmetic on this
+ * path reads it — so a failed fee read states a fact here rather than closing a
+ * guard. Blocking it would refuse sends whose affordability never depended on
+ * the fee.
+ */
+describe('a failed fee read does not block a token send', () => {
+  function renderTokenForm() {
+    useTrustLines.mockReturnValue({ data: [heldToken()] })
+    // The destination answer has to be stamped for the asset actually selected:
+    // `hasTrustLine` answers a question about the token, not about XRP.
+    useDestinationInfo.mockReturnValue(query({ data: info({ asset: TOKEN_ASSET, hasTrustLine: true }) }))
+    render(<SendTab />)
+    fireEvent.change(screen.getByTestId('asset'), { target: { value: TOKEN_ASSET } })
+    fireEvent.change(screen.getByLabelText('Destination address'), { target: { value: DESTINATION } })
+    fireEvent.change(screen.getByLabelText('Amount'), { target: { value: '1' } })
+    settleClock()
+  }
+
+  it('still permits the send', () => {
+    useRecommendedFee.mockReturnValue(feeRead({ data: undefined, isError: true }))
+    renderTokenForm()
+
+    expect(reviewButton().disabled).toBe(false)
+    // The failed read is still STATED — the fee row is not asset-gated, and a
+    // panel that came and went with the asset picker would be a second thing
+    // the screen says about one read. What must not appear is a refusal: the
+    // amount field carries no fee reason, because nothing here was decided
+    // against the fee.
+    expect(screen.getByText('Network fee could not be read')).toBeTruthy()
+    expect(screen.queryByText(/network fee could not be read, so this amount/i)).toBeNull()
+  })
+
+  it('states in the confirm dialog that the fee is still being read, while it is', () => {
+    // A token send is permitted throughout, so this is the one place the
+    // in-flight wording is reachable — and pending must not borrow failed's
+    // words here either.
+    useRecommendedFee.mockReturnValue(feeRead({ data: undefined }))
+    renderTokenForm()
+    fireEvent.click(reviewButton())
+
+    expect(screen.getByText(/plus a network fee that is still being read/i)).toBeTruthy()
+    expect(screen.queryByText(/plus a network fee that could not be read/i)).toBeNull()
+  })
+
+  it('states in the confirm dialog that the fee could not be read', () => {
+    useRecommendedFee.mockReturnValue(feeRead({ data: undefined, isError: true }))
+    renderTokenForm()
+    fireEvent.click(reviewButton())
+
+    expect(screen.getByText(/plus a network fee that could not be read/i)).toBeTruthy()
+    expect(screen.queryByText(/the current rate/i)).toBeNull()
   })
 })

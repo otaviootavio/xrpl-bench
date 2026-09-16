@@ -95,6 +95,26 @@ export function SendTab() {
         ? "This account isn't activated yet, so there is no spendable balance to check this against."
         : 'Your spendable balance could not be read, so this amount cannot be checked against it.'
   const fee = useRecommendedFee(network)
+  /**
+   * The fee, in drops, only when it was actually read for the network on
+   * screen now — never a fabricated one.
+   *
+   * `fee.data ?? '0'` used to reach `amountPlusFeeFits`, so a read that failed
+   * or had not landed yet was substituted with a fee of zero and an amount that
+   * does not fit was declared affordable. A retained value is dropped while the
+   * read is in error too: while a read is in error, nothing from an earlier
+   * success stays on screen (docs/decisions.md §12, rule 2).
+   */
+  const feeDrops = !fee.isError && fee.data ? fee.data : null
+  /**
+   * Why there is no fee figure, in the form's own words — the same three-state
+   * shape the spendable figure uses above. The hook has no `enabled`, so no
+   * data and no error really does mean a read still in flight, and a read in
+   * flight has not failed.
+   */
+  const feeUnknownReason = fee.isError
+    ? 'The network fee could not be read, so this amount cannot be checked against your spendable balance.'
+    : 'The network fee is still being read, so this amount cannot be checked against your spendable balance yet.'
   const trustLines = useTrustLines(network, wallet?.address ?? null)
   // Ledger reads go through a query hook, never an onBlur handler (§4).
   const destQuery = useDestinationInfo(network, destination, asset)
@@ -170,8 +190,12 @@ export function SendTab() {
       // operator is already filling in. Absence of a prohibition is not
       // permission (docs/decisions.md §12 rule 1).
       if (!spendableDrops) return spendableUnknownReason
+      // Fails CLOSED on the fee as well, and for the same reason. There is no
+      // "safe" substitute figure: a fabricated fee is what let an amount that
+      // does not fit be declared affordable.
+      if (!feeDrops) return feeUnknownReason
       // The fee comes out on top of the amount, so both must fit (money.ts).
-      if (!amountPlusFeeFits(xrpToDropsString(amount), fee.data ?? '0', spendableDrops)) {
+      if (!amountPlusFeeFits(xrpToDropsString(amount), feeDrops, spendableDrops)) {
         return `That's more than your spendable balance (${formatXrp(spendableDrops)}) once the network fee is included.`
       }
       return undefined
@@ -464,9 +488,18 @@ export function SendTab() {
           {/* A reading, so it is shown in the panel's well rather than a grey
               box: these two numbers are what decide whether the send fits. */}
           <dl className="panel-well flex flex-wrap gap-x-8 gap-y-2 rounded-md px-3 py-2.5">
+            {/* Three outcomes, three renderings. The ellipsis is the PENDING
+                treatment and may not stand in for a failure — that is exactly
+                how this read used to hide. */}
             <div>
               <dt className="panel-legend text-readout-muted">Network fee</dt>
-              <dd className="font-data text-base tracking-tight">{fee.data ? formatXrp(fee.data) : '…'}</dd>
+              {feeDrops ? (
+                <dd className="font-data text-base tracking-tight">{formatXrp(feeDrops)}</dd>
+              ) : fee.isError ? (
+                <dd className="text-sm text-readout-muted">Unavailable</dd>
+              ) : (
+                <dd className="font-data text-base tracking-tight">…</dd>
+              )}
             </div>
             {/* The row stays when there is no figure and says so. Removing it
                 left the operator with a fee and nothing to weigh it against,
@@ -483,6 +516,20 @@ export function SendTab() {
               </div>
             )}
           </dl>
+
+          {/* Reported where the figure belongs, immediately under the row that
+              now says "Unavailable". The hook has no `refetchInterval`, so this
+              retry is the only way back — without it a failed read stays failed
+              for as long as the screen is open. Worded so it does not assert a
+              hold that is not in force: a token send never uses this figure and
+              is deliberately NOT blocked by its absence. */}
+          {fee.isError && (
+            <QueryErrorState
+              title="Network fee could not be read"
+              description="The current network fee could not be read from the ledger, so it cannot be shown and an XRP amount cannot be checked against your spendable balance with the fee added. Sending XRP is held until this read succeeds; a token send does not depend on this figure and is not held."
+              onRetry={() => fee.refetch()}
+            />
+          )}
 
           <Button onClick={() => setConfirming(true)} disabled={!canSend}>
             Review payment
@@ -530,9 +577,16 @@ export function SendTab() {
             <DialogTitle>Send {amountLabel}?</DialogTitle>
             <DialogDescription>
               This sends {amountLabel} to {destination}
-              {tagValue !== undefined ? ` (destination tag ${tagValue})` : ''} on {network}, plus a network fee of{' '}
-              {fee.data ? formatXrp(fee.data) : 'the current rate'}. Payments on the XRP Ledger are irreversible and cannot be
-              cancelled or refunded once sent.
+              {tagValue !== undefined ? ` (destination tag ${tagValue})` : ''} on {network},{' '}
+              {/* "the current rate" named a figure that was never read. An XRP
+                  send cannot reach this dialog without one; a token send can,
+                  and is told the plain fact instead. */}
+              {feeDrops
+                ? `plus a network fee of ${formatXrp(feeDrops)}`
+                : fee.isError
+                  ? 'plus a network fee that could not be read'
+                  : 'plus a network fee that is still being read'}
+              . Payments on the XRP Ledger are irreversible and cannot be cancelled or refunded once sent.
             </DialogDescription>
           </DialogHeader>
           {!isKnownDestination && (

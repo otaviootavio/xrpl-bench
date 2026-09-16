@@ -16,6 +16,7 @@ import { useTrustLines } from '@/hooks/useTrustLines'
 import { useIncomingPaymentNotifications } from '@/hooks/useIncomingPaymentNotifications'
 import { useDestinationInfo } from '@/hooks/useDestinationInfo'
 import { useServerReserves } from '@/hooks/useServerReserves'
+import { useRecommendedFee } from '@/hooks/useRecommendedFee'
 
 /**
  * Each account-scoped hook must land on ITS OWN factory key.
@@ -36,6 +37,7 @@ vi.mock('@/lib/xrpl/reads', () => ({
   fetchAccountTx: vi.fn(async () => ({ items: [], marker: undefined })),
   fetchAccountLines: vi.fn(async () => []),
   fetchServerReserves: vi.fn(async () => ({ baseReserveDrops: '1000000', ownerReserveDrops: '200000' })),
+  fetchRecommendedFeeDrops: vi.fn(async () => '12'),
 }))
 
 vi.mock('@/lib/notify', () => ({ toast: { success: vi.fn(), error: vi.fn(), warning: vi.fn() } }))
@@ -203,5 +205,24 @@ describe('the reserve read is network-scoped, by name', () => {
     // appended to the builder would keep both sides of an equality against
     // `queryKeys.serverReserves` in step and change nothing here.
     expect(cachedKeys(client)).toEqual([JSON.stringify(['serverReserves', NETWORK])])
+  })
+})
+
+/**
+ * The fee is the second named network-scoped exception, and it is the figure an
+ * XRP send is checked against — so a key that quietly took the active address
+ * would throw the answer away on every wallet switch, and a key that collided
+ * with a sibling read would let another read's payload arrive as a fee. Neither
+ * is a type error: all these builders share one signature.
+ */
+describe('the fee read is network-scoped, by name', () => {
+  it('useRecommendedFee lands on the network-scoped key, with no address in it', async () => {
+    const { client, wrapper } = harness()
+    renderHook(() => useRecommendedFee(NETWORK), { wrapper })
+    await waitFor(() => expect(cachedKeys(client).length).toBeGreaterThan(0))
+
+    // The literal, not the factory call: an address element appended to the
+    // builder would keep both sides of an equality in step and change nothing.
+    expect(cachedKeys(client)).toEqual([JSON.stringify(['fee', NETWORK])])
   })
 })

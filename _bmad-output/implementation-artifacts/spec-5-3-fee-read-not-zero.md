@@ -163,11 +163,37 @@ took one `spec_file`, not because 5.3 caused them. Each item names its story.
 
 **Patches**
 
-- [ ] [Review][Patch] The post-unlock re-read's `exists` and `hasTrustLine` are read and discarded (5.1) [src/pages/tabs/SendTab.tsx:250]
-- [ ] [Review][Patch] `confirming` is never cleared when the computed dialog `open` goes false, so the confirm step reopens unprompted after Check again (5.1) [src/pages/tabs/SendTab.tsx:574]
-- [ ] [Review][Patch] The preflight stamp is `(network, destination, asset)` only, so a refusal survives correcting the tag or the amount (5.1) [src/pages/tabs/SendTab.tsx:150]
-- [ ] [Review][Patch] Check freshness rests on one `setTimeout`; a throttled or slept tab can render an expired check as permission (5.1) [src/pages/tabs/SendTab.tsx:164]
+- [x] [Review][Patch] The post-unlock re-read's `exists` and `hasTrustLine` are read and discarded (5.1) [src/pages/tabs/SendTab.tsx:250]
+- [x] [Review][Patch] `confirming` is never cleared when the computed dialog `open` goes false, so the confirm step reopens unprompted after Check again (5.1) [src/pages/tabs/SendTab.tsx:574]
+- [x] [Review][Patch] The preflight stamp is `(network, destination, asset)` only, so a refusal survives correcting the tag or the amount (5.1) [src/pages/tabs/SendTab.tsx:150]
+- [x] [Review][Patch] Check freshness rests on one `setTimeout`; a throttled or slept tab can render an expired check as permission (5.1) [src/pages/tabs/SendTab.tsx:164]
 - [ ] [Review][Patch] A failed reserve read blocks XRP sends on Send with no retry, while a failed fee read gets one; `retryReserves` is returned and unused here (5.2/5.3) [src/pages/tabs/SendTab.tsx:526]
+  - **Disposition: DEFERRED, still open.** Not superseded and not out of scope —
+    it is the one item above that the story 5.1 follow-up
+    (`spec-5-1-guard-retires-what-it-stops-knowing.md`, 2026-09-16) did *not*
+    take: that spec's Never list forbids touching stories 5.2–5.5, and this is
+    the 5.2 leg (wiring `spendable.retryReserves` to a retry beside the
+    reserve's own failure). The four items above it were closed by that follow-
+    up. Left unticked deliberately; nothing in the code has changed underneath
+    it.
+
+**Recorded from the story 5.1 follow-up (2026-09-16)** — behaviour this
+screen gained after this spec was written, noted here because this file is
+where the four ticked items above were raised:
+
+- The post-unlock re-read now refuses on a destination fact that *changed*
+  under the operator: shown activated and now not, shown a trust line and now
+  none. Two new `preflight` reasons, `not-activated` and `no-trust-line`, each
+  with its own `Alert variant="warning"` panel; the matching standing warning
+  ("Destination not activated" / "Recipient can't hold this token") stands down
+  while its refusal is on screen. Neither fact joins `canSend` — both still
+  warn without blocking, and a second confirm after the form has caught up
+  submits, which is the decided behaviour (sending to an unactivated address is
+  how an account is activated).
+- Check freshness now takes a reading on `visibilitychange` → visible as well
+  as on the expiry timeout, both floored so the clock only moves forward. Still
+  no interval, no re-read on going stale, and `DESTINATION_CHECK_FRESHNESS_MS`
+  unchanged.
 - [x] [Review][Patch] The relocated destination `queryFn` maps `hasTrustLine` and `requireDestTag` with no test running it (5.1) [src/lib/xrpl/query-reads.ts:68]
 - [x] [Review][Patch] Refusal retirement is pinned only on the network leg; destination and asset legs are unverified (5.1) [src/pages/tabs/__tests__/send-destination-error.test.tsx:427]
 - [x] [Review][Patch] Two consecutive contradicting comment blocks above `<Dialog>`, the second silently superseding the first (5.1) [src/pages/tabs/SendTab.tsx:558]

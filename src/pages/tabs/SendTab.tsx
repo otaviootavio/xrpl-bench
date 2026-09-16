@@ -39,6 +39,12 @@ import { toast } from '@/lib/notify'
 
 const MAX_DESTINATION_TAG = 4294967295
 
+/** Why the submit path refused. Named as a type rather than written inline
+ * three times, because the retirement rule below switches on it exhaustively:
+ * a new reason that forgets to say when it stops being true is a compile
+ * error, not a message that outlives its cause. */
+type PreflightReason = 'failed' | 'tag-required' | 'guard-closed' | 'not-activated' | 'no-trust-line'
+
 export function SendTab() {
   const network = useAppStore((s) => s.network)
   const wallet = useActiveWallet()
@@ -51,7 +57,18 @@ export function SendTab() {
   const [asset, setAsset] = useState('XRP')
   const [amount, setAmount] = useState('')
   const [destTag, setDestTag] = useState('')
-  const [confirming, setConfirming] = useState(false)
+  /** The operator's intent to confirm, pinned to the exact check that was on
+   * screen when they asked for it — `destQuery.dataUpdatedAt`, or `null` for
+   * no intent at all.
+   *
+   * A bare boolean could not retire: the dialog's open state is computed from
+   * the guard, so a check that failed or aged out under an open dialog took
+   * the dialog away while leaving the intent behind, and the next thing to
+   * reopen the guard — a successful "Check again" — put the spend confirmation
+   * back on screen with nobody asking for it. Pinning the intent to the
+   * reading it was formed against retires it with that reading, in the render
+   * itself rather than in an effect that would have to chase it. */
+  const [confirmingFor, setConfirmingFor] = useState<number | null>(null)
   const [busy, setBusy] = useState(false)
   const [outcome, setOutcome] = useState<SubmitOutcome | null>(null)
   /** Why the submit path refused to send, and the `(network, destination,
@@ -67,7 +84,7 @@ export function SendTab() {
     network: NetworkId
     destination: string
     asset: string
-    reason: 'failed' | 'tag-required' | 'guard-closed'
+    reason: PreflightReason
   } | null>(null)
   /** The last clock reading the form has actually taken, written only by the
    * timer below. Rendering never calls `Date.now()` itself: a render that reads
@@ -121,15 +138,6 @@ export function SendTab() {
   const destInfo = destQuery.data
   const destinationValid = isValidClassicAddress(destination)
 
-  /** The report, read back only while it is still about what is on screen. */
-  const preflight =
-    preflightReport &&
-    preflightReport.network === network &&
-    preflightReport.destination === destination &&
-    preflightReport.asset === asset
-      ? preflightReport.reason
-      : null
-
   const destCheckMatchesInput =
     !!destInfo && destInfo.network === network && destInfo.destination === destination && destInfo.asset === asset
   const checkedAt = destQuery.dataUpdatedAt || 0
@@ -162,11 +170,47 @@ export function SendTab() {
   // already old when it arrived from the cache. No fetch and no interval: the
   // app does not re-read on going stale and does not poll to keep the answer
   // warm; this only stops the screen claiming a permission it no longer has.
+  //
+  // The reading is the LATEST of the three moments known here, never just
+  // `Date.now()`: a browser that fires a backgrounded timeout late gives a
+  // clock later than the expiry, and a fake or coarsened clock that reports
+  // the callback as early still cannot un-expire a check whose own expiry
+  // moment has arrived. `setObservedNow` takes the previous reading too, so
+  // this clock only ever moves forward.
   useEffect(() => {
     if (checkExpiresAt === null) return
-    const timer = setTimeout(() => setObservedNow(Date.now()), Math.max(0, checkExpiresAt - Date.now()))
+    const timer = setTimeout(
+      () => setObservedNow((prev) => Math.max(prev, checkExpiresAt, Date.now())),
+      Math.max(0, checkExpiresAt - Date.now()),
+    )
     return () => clearTimeout(timer)
   }, [checkExpiresAt])
+
+  // The other way the clock moves: the tab coming back into view.
+  //
+  // A `setTimeout` is not a promise that it fires. A hidden tab that the
+  // browser froze, or whose timers it throttled, can outlive the freshness
+  // window, and the form would then render an expired check as permission
+  // until the timeout eventually ran. This catches exactly one moment — the
+  // tab becoming visible again — and claims no more: a machine resuming with
+  // this tab already in view fires no `visibilitychange` and is left to the
+  // timeout.
+  //
+  // That one moment survives `useAutoLock`'s own 30 s background grace, so it
+  // is not dead code behind the lock: hidden at t=25 s and visible again at
+  // t=45 s is 20 s away — too short to lock the app — while the check is 45 s
+  // old and its timer never fired.
+  //
+  // Event-driven, so there is still no interval and still no read: this only
+  // takes a reading (docs/decisions.md §12).
+  useEffect(() => {
+    function readClockOnReturn() {
+      if (document.visibilityState !== 'visible') return
+      setObservedNow((prev) => Math.max(prev, Date.now()))
+    }
+    document.addEventListener('visibilitychange', readClockOnReturn)
+    return () => document.removeEventListener('visibilitychange', readClockOnReturn)
+  }, [])
 
   // Frozen assets can't be moved, so they're not offerable (decisions.md §2).
   // Balances are DECIMAL strings — never BigInt them.
@@ -207,6 +251,79 @@ export function SendTab() {
     return undefined
   })()
 
+  const canSend =
+    destinationValid &&
+    !isSelfSend &&
+    amountValidation.valid &&
+    !fundsError &&
+    tagValid &&
+    destCheckOk &&
+    (!destInfo?.requireDestTag || destTag.length > 0) &&
+    !busy
+
+  /**
+   * Whether a refusal is still true of the form in front of the operator.
+   *
+   * The `(network, destination, asset)` stamp is the outer bound and stays
+   * where it was; this is the inner one. A refusal that outlives its cause is
+   * a false statement about the form: "enter the tag the recipient gave you"
+   * with the tag entered, or "the form was no longer ready" on a form that is.
+   *
+   * The three reasons that answer `true` unconditionally retire on the stamp
+   * alone, deliberately:
+   * - `failed` — its cause is a read that did not succeed, and the form's own
+   *   observer may still be showing a perfectly good earlier answer for this
+   *   same triple. Retiring it on `destCheckOk` would take the report off the
+   *   screen in exactly the case it was written for.
+   * - `not-activated` / `no-trust-line` — the probe writes into the same cache
+   *   entry the form observes, so the contradicted fact *becomes* the displayed
+   *   one within the same tick. Retiring on the fact would erase the refusal
+   *   before it was read, leaving a payment that did not happen unexplained.
+   *   Their cause is the disagreement at that attempt, not the current value;
+   *   the next confirm clears the report on its own.
+   */
+  const preflightReasonStillHolds = (reason: PreflightReason): boolean => {
+    switch (reason) {
+      // Retires on the very predicate that wrote it — `tagValue !== undefined`
+      // is what the submit path tests, so anything it would not accept as a
+      // tag must not retire a refusal that asked for one.
+      case 'tag-required':
+        return tagValue === undefined
+      // Retires when the form is ready again, which is what it said it was not.
+      case 'guard-closed':
+        return !canSend
+      case 'failed':
+      case 'not-activated':
+      case 'no-trust-line':
+        return true
+    }
+  }
+
+  /** The report, read back only while it is still about what is on screen —
+   * and still true of it. */
+  const preflight =
+    preflightReport &&
+    preflightReport.network === network &&
+    preflightReport.destination === destination &&
+    preflightReport.asset === asset &&
+    preflightReasonStillHolds(preflightReport.reason)
+      ? preflightReport.reason
+      : null
+
+  /**
+   * The confirm step's open state, derived — intent and guard together, so the
+   * two can never disagree.
+   *
+   * `canSend` is deliberately NOT the condition — it goes false on `busy` the
+   * moment the send starts. `|| busy` holds the dialog open once a send is
+   * under way: the expiry timer is independent of `busy`, so without it a
+   * check aging out during the unlock would pull "Sending…" off the screen
+   * mid-submission and leave the operator with no sign that a payment was in
+   * flight. Outside `busy` the intent must still be about the reading it was
+   * formed against, which is what stops a recovered check reopening it.
+   */
+  const confirmOpen = confirmingFor !== null && (busy || (destCheckOk && confirmingFor === checkedAt))
+
   async function doSend() {
     if (!wallet || !vaultKey) return
     /**
@@ -216,8 +333,7 @@ export function SendTab() {
      */
     // A report, not a silent no-op: a dialog that vanishes on a press says
     // nothing about why nothing happened.
-    const report = (reason: 'failed' | 'tag-required' | 'guard-closed') =>
-      setPreflightReport({ network, destination, asset, reason })
+    const report = (reason: PreflightReason) => setPreflightReport({ network, destination, asset, reason })
 
     // Re-entry returns silently rather than reporting. `canSend` contains
     // `!busy`, so without this a second entry would fall into the branch below
@@ -233,7 +349,7 @@ export function SendTab() {
     if (busy) return
     if (!canSend || !destCheckOk) {
       report('guard-closed')
-      setConfirming(false)
+      setConfirmingFor(null)
       return
     }
     setBusy(true)
@@ -263,12 +379,44 @@ export function SendTab() {
         // Inline, not the Annunciator: this is a failed READ of data with a
         // place on screen (AD-8). Nothing was signed and no fee was spent.
         report('failed')
-        setConfirming(false)
+        setConfirmingFor(null)
         return
       }
       if (latest.requireDestTag && tagValue === undefined) {
         report('tag-required')
-        setConfirming(false)
+        setConfirmingFor(null)
+        return
+      }
+      /**
+       * A destination fact the operator was SHOWN may not change under them
+       * between the displayed check and the submission.
+       *
+       * Compared against the displayed answer, never against a constant. Both
+       * facts are legitimately false on a form that sends: an unactivated
+       * address is activated BY a payment, and neither fact joins `canSend` —
+       * they warn without blocking, and that stays true. What is refused is
+       * only the contradiction: shown activated and now not, shown a trust
+       * line and now none. `=== true` states the "was it shown?" half
+       * explicitly, so a token send (where `hasTrustLine` is undefined for XRP)
+       * and an address that was already unactivated on screen both pass.
+       *
+       * Both sides test `=== false` rather than falsiness, so neither depends
+       * on the other running first. `latest.hasTrustLine` is legitimately
+       * `undefined` — for XRP, and for an account that does not exist
+       * (query-reads.ts skips the trust-line read then) — and undefined is not
+       * a contradiction of anything.
+       *
+       * `destInfo` here is the render closure's — the answer that was on
+       * screen when this handler was entered — which is the whole point.
+       */
+      if (destInfo?.exists === true && latest.exists === false) {
+        report('not-activated')
+        setConfirmingFor(null)
+        return
+      }
+      if (destInfo?.hasTrustLine === true && latest.hasTrustLine === false) {
+        report('no-trust-line')
+        setConfirmingFor(null)
         return
       }
 
@@ -290,7 +438,7 @@ export function SendTab() {
         })
       }
       setOutcome(result)
-      setConfirming(false)
+      setConfirmingFor(null)
       if (result.status === 'validated') {
         toast.success('Payment sent.')
         if (!isKnownDestination) addAddressBookEntry(destination, destination.slice(0, 8))
@@ -307,22 +455,18 @@ export function SendTab() {
       await queryClient.invalidateQueries({ queryKey: queryKeys.trustLines(network, wallet.address) })
     } catch (err: any) {
       toast.error(err?.message ?? 'Send failed.')
+      // The intent to confirm goes too, deliberately rather than as a side
+      // effect of whether the probe happened to bump `dataUpdatedAt`. A throw
+      // here means the unlock or the submit call itself failed; the toast says
+      // so, and re-confirming a payment after that should be an act the
+      // operator takes again, not a dialog left standing over a failure.
+      setConfirmingFor(null)
     } finally {
       setBusy(false)
     }
   }
 
   if (!wallet) return <p className="text-muted-foreground">No active wallet.</p>
-
-  const canSend =
-    destinationValid &&
-    !isSelfSend &&
-    amountValidation.valid &&
-    !fundsError &&
-    tagValid &&
-    destCheckOk &&
-    (!destInfo?.requireDestTag || destTag.length > 0) &&
-    !busy
 
   const amountLabel = asset === 'XRP' ? `${amount} XRP` : `${amount} ${displayCurrencyCode(asset.split('|')[0])}`
 
@@ -430,7 +574,35 @@ export function SendTab() {
             </Alert>
           )}
 
-          {destCheckOk && destInfo && !destInfo.exists && (
+          {preflight === 'not-activated' && (
+            <Alert variant="warning">
+              <AlertTitle>Payment not sent — this address stopped being activated</AlertTitle>
+              <AlertDescription>
+                This address existed on the ledger when the form was filled in, and the re-check made immediately before
+                sending came back saying it no longer does. Nothing was submitted and no network fee was spent. The form now
+                shows the address as it currently stands, so sending again will go through — check the address with the
+                recipient first if you did not expect this.
+              </AlertDescription>
+            </Alert>
+          )}
+
+          {preflight === 'no-trust-line' && (
+            <Alert variant="warning">
+              <AlertTitle>Payment not sent — the recipient stopped accepting this token</AlertTitle>
+              <AlertDescription>
+                This recipient had a trust line to this issuer when the form was filled in, and the re-check made
+                immediately before sending came back saying they no longer do. Nothing was submitted and no network fee was
+                spent. The form now shows the trust line as it currently stands, so sending again will go through — and
+                will most likely fail on the ledger, at the cost of the fee.
+              </AlertDescription>
+            </Alert>
+          )}
+
+          {/* Suppressed while the refusal above is on screen: the refusal
+              already states this fact, and in the stronger form of what
+              changed. Two `role="alert"` panels making overlapping claims
+              about one fact is one fact told twice. */}
+          {destCheckOk && destInfo && !destInfo.exists && preflight !== 'not-activated' && (
             <Alert variant="warning">
               <AlertTitle>Destination not activated</AlertTitle>
               <AlertDescription>
@@ -440,7 +612,7 @@ export function SendTab() {
             </Alert>
           )}
 
-          {destCheckOk && destInfo?.hasTrustLine === false && (
+          {destCheckOk && destInfo?.hasTrustLine === false && preflight !== 'no-trust-line' && (
             <Alert variant="warning">
               <AlertTitle>Recipient can't hold this token</AlertTitle>
               <AlertDescription>
@@ -550,7 +722,7 @@ export function SendTab() {
             />
           )}
 
-          <Button onClick={() => setConfirming(true)} disabled={!canSend}>
+          <Button onClick={() => setConfirmingFor(checkedAt)} disabled={!canSend}>
             Review payment
           </Button>
 
@@ -581,14 +753,12 @@ export function SendTab() {
       {/* The confirm step is gated on the guard itself, not merely on the
           control that opened it, so the last thing on screen before "Confirm
           and send" can never be a permission the submit path is already going
-          to refuse. `canSend` is deliberately NOT the condition — it goes
-          false on `busy` the moment the send starts. A check that fails
-          or ages out while the dialog is up takes the dialog down with it.
-          `|| busy` holds it open once a send is under way: the expiry timer is
-          independent of `busy`, so without it a check aging out during the
-          unlock would pull "Sending…" off the screen mid-submission and leave
-          the operator with no sign that a payment was in flight. */}
-      <Dialog open={confirming && (destCheckOk || busy)} onOpenChange={(o) => !o && setConfirming(false)}>
+          to refuse. A check that fails or ages out while the dialog is up takes
+          the dialog down with it, and the intent to confirm with it: the intent
+          is pinned to the reading that formed it, and every path that restores
+          `destCheckOk` is a successful fetch, which strictly increases
+          `dataUpdatedAt`. A withdrawn intent therefore cannot revive. */}
+      <Dialog open={confirmOpen} onOpenChange={(o) => !o && setConfirmingFor(null)}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Send {amountLabel}?</DialogTitle>
@@ -613,7 +783,7 @@ export function SendTab() {
             </Alert>
           )}
           <DialogFooter>
-            <Button variant="outline" onClick={() => setConfirming(false)} disabled={busy}>
+            <Button variant="outline" onClick={() => setConfirmingFor(null)} disabled={busy}>
               Cancel
             </Button>
             {/* The one control in this app that moves funds, and therefore the

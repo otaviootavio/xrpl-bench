@@ -8,6 +8,7 @@ const useRecommendedFee = vi.fn()
 const useTrustLines = vi.fn()
 const fetchQuery = vi.fn()
 const submitXrpPayment = vi.fn()
+const submitIssuedPayment = vi.fn()
 const unlockWalletForSigning = vi.fn()
 
 vi.mock('@/hooks/useDestinationInfo', () => ({ useDestinationInfo: () => useDestinationInfo() }))
@@ -37,7 +38,7 @@ vi.mock('@/lib/crypto/keystore', () => ({
 }))
 vi.mock('@/lib/xrpl/writes', () => ({
   submitXrpPayment: (...args: unknown[]) => submitXrpPayment(...args),
-  submitIssuedPayment: vi.fn(),
+  submitIssuedPayment: (...args: unknown[]) => submitIssuedPayment(...args),
 }))
 // TxLink mounts a Tooltip that needs a provider this test doesn't supply, and
 // the outcome panel that renders it is not what any assertion here is about.
@@ -170,6 +171,7 @@ beforeEach(() => {
   // that IS the recipient describes a self-send the form already refuses.
   unlockWalletForSigning.mockResolvedValue({ address: WALLET_ADDRESS })
   submitXrpPayment.mockResolvedValue({ status: 'validated', resultCode: 'tesSUCCESS', hash: 'AB' })
+  submitIssuedPayment.mockResolvedValue({ status: 'validated', resultCode: 'tesSUCCESS', hash: 'CD' })
 })
 
 afterEach(() => {
@@ -301,6 +303,50 @@ describe('SendTab — only a fresh successful check for this input permits a sen
     expect(reviewButton().disabled).toBe(true)
     // Going stale never re-reads on its own, and never polls to stay warm.
     expect(refetch).not.toHaveBeenCalled()
+  })
+
+  it('closes the guard when the tab comes back to an expiry its timer never fired', () => {
+    // A `setTimeout` is not a promise that it fires. `setSystemTime` is that
+    // tab exactly: the wall clock moves past the window while the pending
+    // timeout stays pending, which is what a frozen tab or a slept laptop
+    // does. Before this, the form came back still holding permission.
+    const refetch = vi.fn().mockResolvedValue({})
+    useDestinationInfo.mockReturnValue(query({ refetch }))
+    render(<SendTab />)
+    fillValidForm()
+    settleClock()
+    expect(reviewButton().disabled).toBe(false)
+
+    vi.setSystemTime(NOW + DESTINATION_CHECK_FRESHNESS_MS + 15_000)
+    act(() => {
+      document.dispatchEvent(new Event('visibilitychange'))
+    })
+
+    expect(reviewButton().disabled).toBe(true)
+    expect(screen.getByText('Destination check is out of date')).toBeTruthy()
+    // Taking a reading is not re-reading: the tab returning must not fetch.
+    expect(refetch).not.toHaveBeenCalled()
+  })
+
+  it('never lets the freshness clock run backwards', () => {
+    render(<SendTab />)
+    fillValidForm()
+    settleClock()
+    act(() => {
+      vi.advanceTimersByTime(DESTINATION_CHECK_FRESHNESS_MS + 1_000)
+    })
+    expect(reviewButton().disabled).toBe(true)
+
+    // A clock that steps back — an NTP correction, a machine whose wall clock
+    // was wrong — must not hand back a permission that already expired. Each
+    // reading is a floor, never a replacement.
+    vi.setSystemTime(NOW)
+    act(() => {
+      document.dispatchEvent(new Event('visibilitychange'))
+    })
+
+    expect(reviewButton().disabled).toBe(true)
+    expect(screen.getByText('Destination check is out of date')).toBeTruthy()
   })
 
   it('refuses a cached answer that was already expired when the form mounted', () => {
@@ -607,6 +653,151 @@ describe('SendTab — the submit path re-checks before it spends', () => {
       release({ address: WALLET_ADDRESS })
     })
     expect(submitXrpPayment).toHaveBeenCalledOnce()
+  })
+
+  it('retires the tag-required refusal once the tag it asked for is entered', async () => {
+    fetchQuery.mockResolvedValue(info({ requireDestTag: true }))
+    render(<SendTab />)
+    await reviewAndConfirm()
+    expect(screen.getByText('Payment not sent — this address now requires a destination tag')).toBeTruthy()
+
+    // "Enter the tag the recipient gave you, then send again" — with the tag
+    // entered, that sentence is no longer true of this form.
+    fireEvent.change(screen.getByLabelText(/^Destination tag/), { target: { value: '42' } })
+
+    expect(screen.queryByText('Payment not sent — this address now requires a destination tag')).toBeNull()
+    // And nothing else changed: no other input was touched.
+    expect(reviewButton().disabled).toBe(false)
+  })
+
+  it('retires the guard-closed refusal once the form is ready again', async () => {
+    render(<SendTab />)
+    fillValidForm()
+    settleClock()
+    fireEvent.click(reviewButton())
+    fireEvent.change(screen.getByLabelText('Amount'), { target: { value: '1000' } })
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Confirm and send' }))
+    })
+    expect(screen.getByText('Payment not sent — the form was no longer ready')).toBeTruthy()
+
+    // "What is outstanding is shown on the form" — with nothing outstanding,
+    // the panel is a false statement about the form.
+    fireEvent.change(screen.getByLabelText('Amount'), { target: { value: '1' } })
+
+    expect(screen.queryByText('Payment not sent — the form was no longer ready')).toBeNull()
+    expect(reviewButton().disabled).toBe(false)
+  })
+
+  it('does not reopen the confirm step when a withdrawn check recovers', () => {
+    const { rerender } = render(<SendTab />)
+    fillValidForm()
+    settleClock()
+    fireEvent.click(reviewButton())
+    expect(screen.getByRole('button', { name: 'Confirm and send' })).toBeTruthy()
+
+    // The guard withdraws the dialog when the check ages out under it.
+    act(() => {
+      vi.advanceTimersByTime(DESTINATION_CHECK_FRESHNESS_MS + 1_000)
+    })
+    expect(screen.queryByRole('button', { name: 'Confirm and send' })).toBeNull()
+
+    // "Check again" succeeds. The intent to confirm went with the check that
+    // formed it, so the spend confirmation does not come back on its own — the
+    // one thing a form that moves money must never put in front of somebody
+    // unasked. A read that actually ran is stamped at the clock as it stands
+    // now, so its age against this file's fixed NOW is negative.
+    useDestinationInfo.mockReturnValue(query({ ageMs: -(DESTINATION_CHECK_FRESHNESS_MS + 1_000) }))
+    rerender(<SendTab />)
+    settleClock()
+
+    expect(reviewButton().disabled).toBe(false)
+    expect(screen.queryByRole('button', { name: 'Confirm and send' })).toBeNull()
+  })
+
+  it('does not submit when the re-read contradicts the activation it showed', async () => {
+    // Shown activated, and the re-read says otherwise. An account CAN be
+    // deleted (AccountDelete), and the payment would be a different act from
+    // the one the operator approved.
+    fetchQuery.mockResolvedValue(info({ exists: false }))
+    const { rerender } = render(<SendTab />)
+    await reviewAndConfirm()
+
+    expect(submitXrpPayment).not.toHaveBeenCalled()
+    expect(screen.getByText('Payment not sent — this address stopped being activated')).toBeTruthy()
+
+    // The probe writes through to the entry the form observes, so the
+    // contradicted fact becomes the displayed one within the same tick. A
+    // refusal that retired on the current fact would vanish here, leaving a
+    // payment that did not happen unexplained.
+    useDestinationInfo.mockReturnValue(query({ data: info({ exists: false }) }))
+    rerender(<SendTab />)
+
+    expect(screen.getByText('Payment not sent — this address stopped being activated')).toBeTruthy()
+    // And says it once: the standing warning stands down while the refusal,
+    // which states the same fact in the stronger form of what changed, is up.
+    expect(screen.queryByText('Destination not activated')).toBeNull()
+  })
+
+  it('does not submit when the re-read contradicts the trust line it showed', async () => {
+    useTrustLines.mockReturnValue({ data: [heldToken()] })
+    useDestinationInfo.mockReturnValue(query({ data: info({ asset: TOKEN_ASSET, hasTrustLine: true }) }))
+    fetchQuery.mockResolvedValue(info({ asset: TOKEN_ASSET, hasTrustLine: false }))
+    const { rerender } = render(<SendTab />)
+    fireEvent.change(screen.getByTestId('asset'), { target: { value: TOKEN_ASSET } })
+    await reviewAndConfirm()
+
+    expect(submitIssuedPayment).not.toHaveBeenCalled()
+    expect(screen.getByText('Payment not sent — the recipient stopped accepting this token')).toBeTruthy()
+
+    // The same write-through on the issued-currency leg.
+    useDestinationInfo.mockReturnValue(query({ data: info({ asset: TOKEN_ASSET, hasTrustLine: false }) }))
+    rerender(<SendTab />)
+
+    expect(screen.getByText('Payment not sent — the recipient stopped accepting this token')).toBeTruthy()
+    expect(screen.queryByText("Recipient can't hold this token")).toBeNull()
+  })
+
+  it('submits when the re-read agrees the destination was never activated', async () => {
+    // The fact was false on screen and is false in the re-read: nothing
+    // changed under the operator. Sending to an unactivated address is how an
+    // account is activated, and this wallet supports that — a check written
+    // against the fact rather than against the contradiction would refuse it.
+    useDestinationInfo.mockReturnValue(query({ data: info({ exists: false }) }))
+    fetchQuery.mockResolvedValue(info({ exists: false }))
+    render(<SendTab />)
+    await reviewAndConfirm()
+
+    expect(submitXrpPayment).toHaveBeenCalledOnce()
+    expect(screen.queryByText('Payment not sent — this address stopped being activated')).toBeNull()
+  })
+
+  it('submits when the re-read agrees the recipient has no trust line', async () => {
+    // The warning half of the same rule: `hasTrustLine: false` warns and does
+    // not block, on screen and in the re-read alike. A check written against
+    // the fact rather than against the contradiction would turn a standing
+    // warning into a refusal the operator was never shown.
+    useTrustLines.mockReturnValue({ data: [heldToken()] })
+    useDestinationInfo.mockReturnValue(query({ data: info({ asset: TOKEN_ASSET, hasTrustLine: false }) }))
+    fetchQuery.mockResolvedValue(info({ asset: TOKEN_ASSET, hasTrustLine: false }))
+    render(<SendTab />)
+    fireEvent.change(screen.getByTestId('asset'), { target: { value: TOKEN_ASSET } })
+    await reviewAndConfirm()
+
+    expect(submitIssuedPayment).toHaveBeenCalledOnce()
+    expect(screen.queryByText('Payment not sent — the recipient stopped accepting this token')).toBeNull()
+  })
+
+  it('takes the confirm step away when the unlock throws', async () => {
+    // Nothing was signed and nothing was submitted, and the confirm step goes
+    // with the attempt rather than standing over a failure: re-confirming a
+    // payment after one is an act the operator takes again.
+    unlockWalletForSigning.mockRejectedValue(new Error('unlock failed'))
+    render(<SendTab />)
+    await reviewAndConfirm()
+
+    expect(submitXrpPayment).not.toHaveBeenCalled()
+    expect(screen.queryByRole('button', { name: 'Confirm and send' })).toBeNull()
   })
 
   it('takes the confirm step away when the check stops holding', () => {

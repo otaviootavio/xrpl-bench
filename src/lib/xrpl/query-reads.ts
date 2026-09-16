@@ -28,11 +28,20 @@ export function fetchAccountStateOnce(
 /**
  * How long a successful destination check stays permission to send.
  *
- * Its own constant, deliberately not a reuse of a hook's `staleTime`: staleness
- * decides when a cache entry may be refetched, and this decides whether a read
- * still authorises a payment. Tying the second to the first means a later tuning
- * of cache behaviour silently widens the window in which a tagless payment can
- * be sent to an address that began requiring a tag (docs/decisions.md §12).
+ * Named here rather than written as a bare `staleTime`, because the two
+ * questions are different: staleness decides when a cache entry may be
+ * refetched, and this decides whether a read still authorises a payment.
+ *
+ * Three sites read this one constant, which is what keeps them aligned: the
+ * form derives expiry from `dataUpdatedAt` plus it, the probe below is given it
+ * as `staleTime`, and `destinationInfoQueryOptions` hands it to the hook. Note
+ * `staleTime` alone would not do that job — it decides refetch eligibility, and
+ * TanStack keeps serving data past it; the form's expiry is computed separately.
+ *
+ * The consequence of the sharing is that retuning cache behaviour for this read
+ * IS retuning the window in which a tagless payment can go to an address that
+ * began requiring a tag: change it for one reason and you have changed it for
+ * the other (docs/decisions.md §12).
  */
 export const DESTINATION_CHECK_FRESHNESS_MS = 30_000
 

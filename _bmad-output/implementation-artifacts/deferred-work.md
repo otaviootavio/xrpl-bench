@@ -86,3 +86,9 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-5-3-fee-read-not-zero.md`
   summary: The Send screen's Spendable row renders the word "Unavailable" for a read still in flight and for an account that does not exist yet, not only for a read that failed — the same collapse epic 5 exists to remove, one row away from the fee row that now distinguishes all three.
   evidence: `SendTab.tsx:511-514` branches on `spendableDrops` alone, and `useSpendableBalance.ts:64,70,78` returns null for `unavailable`, `loading` and `not-activated` alike. Written by story 5.2, not by 5.3, and found by the review of 5.3 — recorded rather than repaired, because a fix here is a change to the story next door. The guard itself still fails closed and the amount field's refusal already names the right one of the three states (5.2 fixed that half), so this is a wrong word in the readout, not a wrong permission. Would be settled by giving that row the hook's `status` the way the refusal wording already takes it.
+
+## Deferred from: code review of story-5.1 (2026-09-16)
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-5-1-destination-check-guard.md`
+  summary: No decision record names `DESTINATION_CHECK_FRESHNESS_MS`, its 30-second value, the third ("out of date") state the Send form now has, the post-unlock placement of the re-check, or the deliberate choice not to refetch when a check goes stale.
+  evidence: All five are new rules on the money path, and the code comments in `query-reads.ts:29` and `SendTab.tsx:154` cite them as already decided. `docs/decisions.md` §12 mentions a "freshness window" in passing but names none of them. Deferred because the fix edits §12, a rules file this workflow routes away from a build story.

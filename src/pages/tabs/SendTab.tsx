@@ -121,19 +121,6 @@ export function SendTab() {
   const destInfo = destQuery.data
   const destinationValid = isValidClassicAddress(destination)
 
-  /**
-   * The send guard, stated positively: a read SUCCEEDED for the input on screen
-   * now and is still fresh.
-   *
-   * It used to be `destQuery.isError && !destQuery.data` — "no failure seen" —
-   * and three states passed it that are not permission: a failed refetch that
-   * kept an earlier answer, an answer about a different address or asset while
-   * the new read is in flight, and a successful answer older than its window.
-   * Each ends the same way: `!destInfo?.requireDestTag` is satisfied, the label
-   * says "(optional)", and a tagless payment goes to an address that requires a
-   * tag — credited to nobody, unrecoverable from here. Absence of a prohibition
-   * is not permission (docs/decisions.md §12, rule 1).
-   */
   /** The report, read back only while it is still about what is on screen. */
   const preflight =
     preflightReport &&
@@ -148,6 +135,20 @@ export function SendTab() {
   const checkedAt = destQuery.dataUpdatedAt || 0
   const checkExpiresAt = destCheckMatchesInput && checkedAt > 0 ? checkedAt + DESTINATION_CHECK_FRESHNESS_MS : null
   const destCheckFresh = checkExpiresAt !== null && observedNow < checkExpiresAt
+  /**
+   * The send guard, stated positively: a read SUCCEEDED for the input on screen
+   * now and is still fresh.
+   *
+   * It used to be `!destCheckFailed`, where `destCheckFailed` was
+   * `destQuery.isError && !destQuery.data` — "no failure seen" — and three
+   * states passed it that are not permission: a failed refetch that
+   * kept an earlier answer, an answer about a different address or asset while
+   * the new read is in flight, and a successful answer older than its window.
+   * Each ends the same way: `!destInfo?.requireDestTag` is satisfied, the label
+   * says "(optional)", and a tagless payment goes to an address that requires a
+   * tag — credited to nobody, unrecoverable from here. Absence of a prohibition
+   * is not permission (docs/decisions.md §12, rule 1).
+   */
   const destCheckOk = !destQuery.isError && destCheckMatchesInput && destCheckFresh
 
   /** A check that succeeded for this input and then aged out. It did not FAIL,
@@ -218,6 +219,18 @@ export function SendTab() {
     const report = (reason: 'failed' | 'tag-required' | 'guard-closed') =>
       setPreflightReport({ network, destination, asset, reason })
 
+    // Re-entry returns silently rather than reporting. `canSend` contains
+    // `!busy`, so without this a second entry would fall into the branch below
+    // and claim "nothing was submitted" about a payment that was — the one
+    // statement this screen must never make.
+    //
+    // What it does NOT catch is two presses inside one React flush: `busy` here
+    // is the render closure's value, so both reads see `false`. That race is
+    // closed by `disabled={busy}` on Confirm (pinned below), which is also why
+    // this branch is unreachable today and has no test of its own. It stands as
+    // defence-in-depth against that attribute being dropped, on the same
+    // reasoning that kept `!destCheckOk`.
+    if (busy) return
     if (!canSend || !destCheckOk) {
       report('guard-closed')
       setConfirming(false)

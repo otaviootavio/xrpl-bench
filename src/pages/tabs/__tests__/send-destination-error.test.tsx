@@ -348,6 +348,58 @@ describe('SendTab — only a fresh successful check for this input permits a sen
     expect(refetch).toHaveBeenCalledOnce()
   })
 
+  it('warns that the destination is not activated, on a check that permits the send', () => {
+    // Gated on `destCheckOk` by this story. Nothing asserted this panel APPEARS,
+    // so re-gating it on anything false in the reachable case — or deleting it —
+    // took the only warning off the screen with every test still green.
+    // `canSend` consults neither `exists` nor `hasTrustLine`: the panel is the
+    // whole warning, and the send it does not block costs a fee on a validated
+    // tecNO_DST_INSUFF_XRP.
+    useDestinationInfo.mockReturnValue(query({ data: info({ exists: false }) }))
+    render(<SendTab />)
+    fillValidForm()
+    settleClock()
+
+    expect(screen.getByText('Destination not activated')).toBeTruthy()
+    // The other half of the title: `canSend` consults neither `exists` nor
+    // `hasTrustLine`, so this warns without blocking. A change that starts
+    // blocking instead is a different screen, and should fail here.
+    expect(reviewButton().disabled).toBe(false)
+  })
+
+  it("warns that the recipient can't hold the token, on a check that permits the send", () => {
+    // The same hole on the issued-currency leg, where it ends in tecNO_LINE /
+    // tecPATH_DRY — also fee-taking, also unwarned.
+    useTrustLines.mockReturnValue({ data: [heldToken()] })
+    useDestinationInfo.mockReturnValue(query({ data: info({ asset: TOKEN_ASSET, hasTrustLine: false }) }))
+    render(<SendTab />)
+    fillValidForm()
+    fireEvent.change(screen.getByTestId('asset'), { target: { value: TOKEN_ASSET } })
+    settleClock()
+
+    expect(screen.getByText("Recipient can't hold this token")).toBeTruthy()
+    expect(reviewButton().disabled).toBe(false)
+  })
+
+  it('hides both destination warnings once the check they came from is stale', () => {
+    // Triage #16: a stale answer must not put its warnings back on screen —
+    // that renders a non-current answer as current. Round one of this review
+    // pinned only that the panels APPEAR; re-gating them
+    // `(destCheckOk || destCheckStale)` passed all 251 tests.
+    useTrustLines.mockReturnValue({ data: [heldToken()] })
+    useDestinationInfo.mockReturnValue(
+      query({ data: info({ exists: false, asset: TOKEN_ASSET, hasTrustLine: false }), ageMs: DESTINATION_CHECK_FRESHNESS_MS + 1_000 }),
+    )
+    render(<SendTab />)
+    fillValidForm()
+    fireEvent.change(screen.getByTestId('asset'), { target: { value: TOKEN_ASSET } })
+    settleClock()
+
+    expect(screen.getByText('Destination check is out of date')).toBeTruthy()
+    expect(screen.queryByText('Destination not activated')).toBeNull()
+    expect(screen.queryByText("Recipient can't hold this token")).toBeNull()
+  })
+
   it('keeps the recipient-requires-a-tag state distinct from the unknown one', () => {
     useDestinationInfo.mockReturnValue(query({ data: info({ requireDestTag: true }) }))
     render(<SendTab />)
@@ -391,8 +443,19 @@ describe('SendTab — the submit path re-checks before it spends', () => {
     // And on the SAME cache entry the form's own check reads, from the one key
     // factory — a probe on a different key could not disagree with the display
     // because it would never be looking at it.
+    // One call carrying BOTH: asserted separately, a probe with the right key
+    // and a probe with the right window could be two different calls.
+    //
+    // `staleTime: Infinity` — an arbitrarily old cached answer authorising a
+    // payment — passes every other assertion in this file. It is also caught
+    // behaviourally by `query-key-wiring.test.tsx`'s "re-reads an entry older
+    // than the freshness window" against a real QueryClient; this pins the same
+    // thing at the call site the operator's payment actually goes through.
     expect(fetchQuery).toHaveBeenCalledWith(
-      expect.objectContaining({ queryKey: queryKeys.destinationInfo('testnet', DESTINATION, 'XRP') }),
+      expect.objectContaining({
+        queryKey: queryKeys.destinationInfo('testnet', DESTINATION, 'XRP'),
+        staleTime: DESTINATION_CHECK_FRESHNESS_MS,
+      }),
     )
   })
 
@@ -515,6 +578,30 @@ describe('SendTab — the submit path re-checks before it spends', () => {
       rerender(<SendTab />)
     })
     expect(screen.getByText('Sending…')).toBeTruthy()
+
+    await act(async () => {
+      release({ address: WALLET_ADDRESS })
+    })
+    expect(submitXrpPayment).toHaveBeenCalledOnce()
+  })
+
+  it('disables both dialog controls while a send is in flight', async () => {
+    // The premise `doSend`'s re-entry guard rests on: React drops a press on a
+    // disabled control before any handler runs, so no second activation can
+    // reach the submit path. Dropping `disabled={busy}` would make a double
+    // press reachable — and `busy` there is a render closure, so the guard in
+    // `doSend` would not catch it either.
+    let release: (w: unknown) => void = () => {}
+    unlockWalletForSigning.mockImplementationOnce(() => new Promise((r) => (release = r)))
+
+    render(<SendTab />)
+    fillValidForm()
+    settleClock()
+    fireEvent.click(reviewButton())
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm and send' }))
+
+    expect((screen.getByRole('button', { name: 'Sending…' }) as HTMLButtonElement).disabled).toBe(true)
+    expect((screen.getByRole('button', { name: 'Cancel' }) as HTMLButtonElement).disabled).toBe(true)
 
     await act(async () => {
       release({ address: WALLET_ADDRESS })

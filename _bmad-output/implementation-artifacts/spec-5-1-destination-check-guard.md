@@ -128,6 +128,81 @@ authorises the payment is a read, not the absence of one.
 - Given `bun run lint`, `bun run build`, `bun run test` and
   `bun run check:contrast`, when each runs, then all four exit 0.
 
+
+### Review Findings
+
+Source: `bmad-code-review`, 2026-09-16, four layers over `d19c257^..d19c257`
+(story 5.1 alone). **A prior review already covered this commit** as part of
+`93f41b5..HEAD`; its triage log is in `spec-5-3-fee-read-not-zero.md`. Findings
+that re-discover its still-open action items are listed under *Already open*
+below rather than filed twice. Verdicts are rendered against `HEAD`, not against
+the diff, since `2d9352f` closed part of what the layers were shown.
+
+**Patches**
+
+- [x] [Review][Patch] Neither destination warning panel has a test asserting it renders; both were newly gated on `destCheckOk` and a mutation that hides either ships green [src/pages/tabs/__tests__/send-destination-error.test.tsx:252]
+- [x] [Review][Patch] The submit probe's freshness window is unasserted — the only `fetchQuery` assertion pins `queryKey`, so `staleTime: Infinity` would let an arbitrarily old answer authorise a payment and pass every test [src/pages/tabs/__tests__/send-destination-error.test.tsx:394]
+- [x] [Review][Patch] A second activation during an in-flight send reports "Payment not sent — the form was no longer ready", a false statement about a payment that was submitted; `canSend` contains `!busy`, so re-entry is indistinguishable from a closed guard [src/pages/tabs/SendTab.tsx:405] — fixed with an early `if (busy) return`. Left untested on purpose: `disabled={busy}` on Confirm means React drops a second press before `doSend` runs, so no reachable path re-enters and a test would assert against a click that never lands. Kept as defence-in-depth, on the same reasoning that kept `!destCheckOk`.
+- [x] ~~[Review][Patch] `AD-15` is cited for the stale-vs-failed distinction; the governing rule is `AD-13`~~ — **withdrawn in the second pass**: frozen Boundaries line 41 cites `AD-15` for this sentence deliberately. Applied, then reverted.
+- [x] [Review][Patch] `DESTINATION_CHECK_FRESHNESS_MS`'s comment says it is "deliberately not a reuse of a hook's `staleTime`" and warns that tying them lets cache tuning widen the send window — while the next lines pass that same constant as the query's `staleTime` [src/lib/xrpl/query-reads.ts:31]
+- [x] [Review][Patch] The "send guard, stated positively" doc block sits above `const preflight`, which it does not describe; `destCheckOk` is defined lower with no comment [src/pages/tabs/SendTab.tsx:140]
+
+**Deferred**
+
+- [x] [Review][Defer] No decision record names `DESTINATION_CHECK_FRESHNESS_MS`, its value, the third ("out of date") state, the post-unlock placement of the re-check, or the deliberate choice not to refetch on going stale — the code comments treat all five as already decided [src/lib/xrpl/query-reads.ts:29] — deferred: the fix edits `docs/decisions.md` §12, a rules file this workflow routes away from a build story.
+
+**Already open from the prior review — not re-filed**
+
+Each was raised again by at least one layer and each remains an unticked action
+item in `spec-5-3-fee-read-not-zero.md`:
+
+- The post-unlock re-read's `exists` and `hasTrustLine` are read and discarded [src/pages/tabs/SendTab.tsx:250]
+- `confirming` is never cleared when the computed dialog `open` goes false, so the confirm step reopens unprompted after "Check again" [src/pages/tabs/SendTab.tsx:578]
+- The preflight stamp is `(network, destination, asset)` only, so a refusal survives correcting the tag or the amount [src/pages/tabs/SendTab.tsx:150]
+- Check freshness rests on one `setTimeout`; a throttled or slept tab can render an expired check as permission [src/pages/tabs/SendTab.tsx:164]
+
+**Rejected**
+
+- The four refusal panels are unreachable and unannounced for assistive tech — `false`. `Alert` carries `role="alert"` (`alert.tsx:95`), an assertive live region, so insertion is announced. The focus-drop half is a separate, weaker claim the announcement mitigates.
+- The `!destCheckOk` half of `doSend`'s refusal is unpinned by any test — `false`. `canSend` contains `destCheckOk`, so "`canSend` true and `destCheckOk` false" is unreachable; no test can pin a clause with no distinguishing state. (Distinct from the prior review's #18, which argued redundancy and was rejected on other grounds.)
+- `vaultKey` cleared while the confirm dialog is open makes the press do nothing silently — `false`. `lock()` sets `vaultKey: null` and `unlocked: false` in one `set` (`app-store.ts:79`), and `App.tsx:65` returns `<Unlock />`, so SendTab and its dialog unmount together.
+- The post-unlock probe is a re-check, not a re-read, and the comment overstates it (filed by three layers) — `false` as of `HEAD`: `2d9352f` reworded the comment to the guarantee actually held. The layers were shown the pre-fix snapshot.
+- Two overlapping comment blocks above `<Dialog>` — `false` as of `HEAD`: `2d9352f` dropped the superseded half.
+- A post-mount switch to an answer that expired before mount enables Review for one frame — `low`. `observedNow` is monotonic and never exceeds real time, the 0 ms timer closes the guard on the next tick, and the expired entry forces a real read at submit. The proposed fix (`Math.max(observedNow, checkedAt)`) reduces to `checkedAt < checkedAt + WINDOW`, always true — it would open the guard permanently, not close it.
+
+### Review Findings — second pass (the patches above)
+
+Source: `bmad-code-review`, 2026-09-16, four layers over the uncommitted patch
+set. Verdicts rendered against the working tree.
+
+**Reverted, not filed — patch 4 was wrong**
+
+Patch 4 changed `SendTab.tsx:154` from `AD-15` to `AD-13`. Three layers disputed
+it and the frozen Boundaries block settles it: line 34 cites `AD-13` for the
+guard, line 41 cites `AD-15` for this exact sentence — "a check that succeeded 40
+seconds ago did not *fail* and must not say it did (AD-15)". The comment was
+mirroring a frozen human-owned line. Reverted to `AD-15`; the round-one entry for
+it is struck below.
+
+**Patches**
+
+- [x] [Review][Patch] The *stale* branch of both destination warning gates is unpinned — re-gating them `(destCheckOk || destCheckStale)` passes all 251 tests, although triage #16 decided a stale answer must hide them. Round one pinned that the panels appear, not that they stay hidden on a non-current answer [src/pages/tabs/SendTab.tsx:432]
+- [x] [Review][Patch] The probe's `queryKey` and `staleTime` are asserted in two separate `toHaveBeenCalledWith` calls; merge into one `objectContaining({ queryKey, staleTime })` so one call must carry both [src/pages/tabs/__tests__/send-destination-error.test.tsx:425]
+- [x] [Review][Patch] The new `staleTime` assertion's comment says "every other assertion in this file would still pass" — true as scoped, but `query-key-wiring.test.tsx:192` already pins the window behaviourally against a real `QueryClient`, and the mutation run failed both. Name the sibling [src/pages/tabs/__tests__/send-destination-error.test.tsx:427]
+- [x] [Review][Patch] The rewritten constant comment says the form's answer and the probe's "expire together" because of `staleTime`; `staleTime` governs refetch eligibility only, and the form computes expiry independently from `dataUpdatedAt + DESTINATION_CHECK_FRESHNESS_MS`. What aligns them is the shared constant [src/lib/xrpl/query-reads.ts:36]
+- [x] [Review][Patch] The `if (busy) return` comment names a double-activation race the guard cannot intercept: `busy` is render-closure state, so a press before the flush reads `false` and one after is already blocked by `disabled={busy}`. State the real guarantee [src/pages/tabs/SendTab.tsx:226]
+- [x] [Review][Patch] No test asserts Confirm is `disabled` during an in-flight send — the premise that makes the branch above unreachable, and cheap to pin [src/pages/tabs/__tests__/send-destination-error.test.tsx]
+- [x] [Review][Patch] The two new tests are titled "on a check that permits the send" but assert only the panel text; `canSend` consults neither `exists` nor `hasTrustLine`, so `expect(reviewButton().disabled).toBe(false)` pins the other half [src/pages/tabs/__tests__/send-destination-error.test.tsx:351]
+- [x] [Review][Patch] The relocated guard block says the guard "used to be `destQuery.isError && !destQuery.data`" — that expression was `destCheckFailed`; the guard was its negation [src/pages/tabs/SendTab.tsx:141]
+
+**Rejected**
+
+- The real double-submit race needs a `busyRef` — `low`. Two presses must land inside one React flush; discrete events flush synchronously, so the second meets a disabled button. The fix adds state for a path nothing reaches.
+- Patch 5 contradicts the frozen "its own named constant, not a reuse of `staleTime`" — `false`. The window *is* the named constant and `staleTime` derives from it; the constraint guards the reverse direction.
+- The `info()` test helper is untyped, so dropping `DestinationInfo.exists` would compile — `low`, pre-existing helper shape, not introduced by these patches.
+- Assert `DESTINATION_CHECK_FRESHNESS_MS`'s literal value — `low`, a change-detector test on a tunable constant.
+- `docs/decisions.md` §12 does not record the `staleTime` coupling the comment cites — already the round-one deferred item; not filed twice.
+
 ## Implementation Notes
 
 **The shared query options live in `lib`, not in the hook.** The task line asks

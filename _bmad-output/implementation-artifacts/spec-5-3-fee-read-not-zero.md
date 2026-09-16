@@ -149,6 +149,40 @@ story.
 - Given `bun run lint`, `bun run build`, `bun run test` and
   `bun run check:contrast`, when each runs, then all four exit 0.
 
+### Review Findings
+
+Source: `bmad-code-review`, 2026-09-16, four layers over the epic-5 stack
+(`93f41b5..HEAD`, stories 5.1–5.3). **Most findings below belong to 5.1 and 5.2,
+not to this story** — this spec is where they are recorded because the review
+took one `spec_file`, not because 5.3 caused them. Each item names its story.
+
+**Decisions needed — both resolved by the human, 2026-09-16; now patches**
+
+- [x] [Review][Patch] (was Decision; **resolved: reword the comment, keep the behaviour** — the guarantee is that permission is at most 30s old, which was the design) The post-unlock re-read performs no network read in the common case (5.1) — `destCheckOk` requires the cached answer to be younger than `DESTINATION_CHECK_FRESHNESS_MS`, and `query-reads.ts:71` uses that same constant as the probe's `staleTime`, so `fetchQuery` returns the answer already on screen. `SendTab.tsx:236` states "The permission that authorises this payment is therefore a read taken now, not one taken when the form was filled in" — false whenever the unlock finishes inside the window. Either give the probe `staleTime: 0` so it always reads (costs a round trip on every send, and the 30s window stops being the guarantee), or reword the comment to the guarantee actually held: permission is at most 30s old. The choice is what the guard is *for*, so it is yours.
+- [ ] [Review][Patch] (was Decision; **resolved: give `AmountInput` a pending treatment** — one non-destructive, non-`aria-invalid` state fixing 5.3's AC 2 and 5.2's identical case together) A fee read still in flight is painted in the failure tone and announced `aria-invalid` (5.3) — `SendTab.tsx:485` passes `fundsError` into `AmountInput`'s `error` prop; `AmountInput.tsx:61,71` render it as `aria-invalid` plus `text-text-destructive`. This story's own AC 2 says a read in flight reports no failure anywhere on screen; the wording is right, the tone and the ARIA state are not. 5.2's `spendableUnknownReason` uses the same slot, so a fix means giving `AmountInput` a non-destructive pending treatment — new public surface on a shared component, touching the story next door.
+
+**Patches**
+
+- [ ] [Review][Patch] The post-unlock re-read's `exists` and `hasTrustLine` are read and discarded (5.1) [src/pages/tabs/SendTab.tsx:250]
+- [ ] [Review][Patch] `confirming` is never cleared when the computed dialog `open` goes false, so the confirm step reopens unprompted after Check again (5.1) [src/pages/tabs/SendTab.tsx:574]
+- [ ] [Review][Patch] The preflight stamp is `(network, destination, asset)` only, so a refusal survives correcting the tag or the amount (5.1) [src/pages/tabs/SendTab.tsx:150]
+- [ ] [Review][Patch] Check freshness rests on one `setTimeout`; a throttled or slept tab can render an expired check as permission (5.1) [src/pages/tabs/SendTab.tsx:164]
+- [ ] [Review][Patch] A failed reserve read blocks XRP sends on Send with no retry, while a failed fee read gets one; `retryReserves` is returned and unused here (5.2/5.3) [src/pages/tabs/SendTab.tsx:526]
+- [x] [Review][Patch] The relocated destination `queryFn` maps `hasTrustLine` and `requireDestTag` with no test running it (5.1) [src/lib/xrpl/query-reads.ts:68]
+- [x] [Review][Patch] Refusal retirement is pinned only on the network leg; destination and asset legs are unverified (5.1) [src/pages/tabs/__tests__/send-destination-error.test.tsx:427]
+- [x] [Review][Patch] Two consecutive contradicting comment blocks above `<Dialog>`, the second silently superseding the first (5.1) [src/pages/tabs/SendTab.tsx:558]
+- [x] [Review][Patch] SendTab's hand-rolled "Unavailable" omits `font-legend`, diverging from `ScaleMark.unavailable` (5.2/5.3) [src/pages/tabs/SendTab.tsx:499]
+- [x] [Review][Patch] The "Fee failed, confirm dialog" matrix row has no test; the dialog's `open` never consults `fundsError` (5.3) [src/pages/tabs/SendTab.tsx:574]
+
+**Rejected**
+
+- `status: done` overstates verification while the visual half is unverified — rejected by rule: the fix edits the spec under review. Already disclosed in this file's Verification section.
+- The confirm step withdraws with no statement at the dialog — `low`; the form behind it does say "Destination check is out of date", and the fix is more than a direct correction.
+- `useSpendableBalance` offers no `retryAccount` beside `retryReserves` — `low`; the fix adds public surface to the hook.
+- The reserve-availability rule is written in both `BalancesTab` and the hook — `low`; real drift risk, but the fix is a refactor, not a correction.
+- `isLoading` is hardcoded `false` in the `unavailable` branch — `low`; verified no consumer reads `spendable.isLoading` (BalancesTab uses its own `accountState.isLoading`, SendTab uses `status`, TrustLinesTab destructures `spendableDrops` only), so nothing meets it today.
+- The two `TrustLinesTab` defects (`'200000'` fallback, single refusal reason) — already recorded in `deferred-work.md` by this same diff; the reviewer raised them only to confirm the ledger matches the code.
+
 ## Implementation Notes
 
 - The fee's three states are derived as `feeDrops = !fee.isError && fee.data ? fee.data : null`

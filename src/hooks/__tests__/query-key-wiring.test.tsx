@@ -9,7 +9,7 @@ import {
   fetchAccountStateOnce,
   fetchDestinationInfoOnce,
 } from '@/lib/xrpl/query-reads'
-import { fetchAccountState } from '@/lib/xrpl/reads'
+import { fetchAccountState, fetchAccountLines } from '@/lib/xrpl/reads'
 import { useAccountState } from '@/hooks/useAccountState'
 import { useAccountTxHistory } from '@/hooks/useAccountTxHistory'
 import { useTrustLines } from '@/hooks/useTrustLines'
@@ -161,6 +161,32 @@ describe('the destination check', () => {
     const info = await fetchDestinationInfoOnce(client, NETWORK, DESTINATION, 'USD|rIssuer')
 
     expect(info).toMatchObject({ network: NETWORK, destination: DESTINATION, asset: 'USD|rIssuer' })
+  })
+
+  it('carries the trust-line answer and the tag flag out of the payload', async () => {
+    // The stamp test above inspects only the triple, so the two fields the send
+    // guard and the token warning actually consult were unverified: inverting
+    // the `.some()` or hardcoding `requireDestTag: false` left every test green
+    // while the form stopped warning about an unreachable token destination.
+    const { client } = harness()
+
+    vi.mocked(fetchAccountLines).mockResolvedValueOnce([])
+    const noLine = await fetchDestinationInfoOnce(client, NETWORK, DESTINATION, 'USD|rIssuer')
+    expect(noLine.hasTrustLine).toBe(false)
+
+    client.clear()
+    vi.mocked(fetchAccountLines).mockResolvedValueOnce([
+      { currency: 'USD', account: 'rIssuer', balance: '0', freeze: false, freezePeer: false } as never,
+    ])
+    const withLine = await fetchDestinationInfoOnce(client, NETWORK, DESTINATION, 'USD|rIssuer')
+    expect(withLine.hasTrustLine).toBe(true)
+
+    client.clear()
+    vi.mocked(fetchAccountState).mockResolvedValueOnce({ exists: true, requireDestTag: true } as never)
+    const tagged = await fetchDestinationInfoOnce(client, NETWORK, DESTINATION, 'XRP')
+    expect(tagged.requireDestTag).toBe(true)
+    // XRP sends involve no trust line, so the field stays absent rather than false.
+    expect(tagged.hasTrustLine).toBeUndefined()
   })
 
   it('re-reads an entry older than the freshness window, and reuses a younger one', async () => {

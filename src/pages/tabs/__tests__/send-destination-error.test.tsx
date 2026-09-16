@@ -437,6 +437,37 @@ describe('SendTab — the submit path re-checks before it spends', () => {
     expect(screen.queryByText('Payment not sent — this address now requires a destination tag')).toBeNull()
   })
 
+  it('retires the refusal when the destination changes under it', async () => {
+    fetchQuery.mockResolvedValue(info({ requireDestTag: true }))
+    render(<SendTab />)
+    await reviewAndConfirm()
+    expect(screen.getByText('Payment not sent — this address now requires a destination tag')).toBeTruthy()
+
+    // The tag requirement was read about the OLD address. Left on screen it
+    // states as fact about the new recipient something never read about them.
+    useDestinationInfo.mockReturnValue(query({ data: info({ destination: OTHER_DESTINATION }) }))
+    await act(async () => {
+      fireEvent.change(screen.getByLabelText('Destination address'), { target: { value: OTHER_DESTINATION } })
+    })
+
+    expect(screen.queryByText('Payment not sent — this address now requires a destination tag')).toBeNull()
+  })
+
+  it('retires the refusal when the asset changes under it', async () => {
+    fetchQuery.mockResolvedValue(info({ requireDestTag: true }))
+    useTrustLines.mockReturnValue({ data: [heldToken()] })
+    render(<SendTab />)
+    await reviewAndConfirm()
+    expect(screen.getByText('Payment not sent — this address now requires a destination tag')).toBeTruthy()
+
+    useDestinationInfo.mockReturnValue(query({ data: info({ asset: TOKEN_ASSET, hasTrustLine: true }) }))
+    await act(async () => {
+      fireEvent.change(screen.getByTestId('asset'), { target: { value: TOKEN_ASSET } })
+    })
+
+    expect(screen.queryByText('Payment not sent — this address now requires a destination tag')).toBeNull()
+  })
+
   it('does not submit when the re-read says a tag has become required', async () => {
     fetchQuery.mockResolvedValue(info({ requireDestTag: true }))
     render(<SendTab />)
@@ -731,6 +762,20 @@ describe('the affordability check fails closed without a fee figure', () => {
     expect(screen.queryByText('…')).toBeNull()
     expect(screen.queryByText(/network fee could not be read/i)).toBeNull()
     expect(screen.queryByText(/network fee is still being read/i)).toBeNull()
+  })
+
+  it('keeps the confirm step out of reach while the fee read has failed', () => {
+    // The matrix row says the dialog is unreachable, and the mechanism is
+    // `fundsError` closing `canSend` — not the dialog's own open condition,
+    // which consults the destination check alone. Asserted on the dialog, so a
+    // future change that opens it another way fails here.
+    useRecommendedFee.mockReturnValue(feeRead({ data: undefined, isError: true }))
+    render(<SendTab />)
+    fillWellWithinBalance()
+    settleClock()
+
+    fireEvent.click(reviewButton())
+    expect(screen.queryByRole('button', { name: 'Confirm and send' })).toBeNull()
   })
 
   it('names the fee in the confirm dialog when it was read', () => {

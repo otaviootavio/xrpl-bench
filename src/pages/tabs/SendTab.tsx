@@ -230,12 +230,18 @@ export function SendTab() {
       const signingWallet = await unlockWalletForSigning(wallet.id, vaultKey)
 
       /**
-       * Re-read the destination AFTER the unlock and immediately before
+       * Re-check the destination AFTER the unlock and immediately before
        * submitting. The unlock can take seconds (passphrase typing, passkey
        * prompt, key derivation), and the answer the operator was shown can age
-       * out or change inside that gap. The permission that authorises this
-       * payment is therefore a read taken now, not one taken when the form was
-       * filled in.
+       * out inside that gap.
+       *
+       * This is a re-CHECK, not always a re-READ. `staleTime` on the shared
+       * options is the freshness window itself, so an answer still inside the
+       * window satisfies `fetchQuery` from the cache and no request is made;
+       * only an answer that aged out during the unlock forces a real read.
+       * What this guarantees is therefore the window, not a round trip: the
+       * permission that authorises this payment is at most
+       * `DESTINATION_CHECK_FRESHNESS_MS` old at the moment of submission.
        */
       let latest: DestinationInfo
       try {
@@ -496,7 +502,7 @@ export function SendTab() {
               {feeDrops ? (
                 <dd className="font-data text-base tracking-tight">{formatXrp(feeDrops)}</dd>
               ) : fee.isError ? (
-                <dd className="text-sm text-readout-muted">Unavailable</dd>
+                <dd className="font-legend text-sm text-readout-muted">Unavailable</dd>
               ) : (
                 <dd className="font-data text-base tracking-tight">…</dd>
               )}
@@ -511,7 +517,7 @@ export function SendTab() {
                 {spendableDrops ? (
                   <dd className="font-data text-base tracking-tight">{formatXrp(spendableDrops)}</dd>
                 ) : (
-                  <dd className="text-sm text-readout-muted">Unavailable</dd>
+                  <dd className="font-legend text-sm text-readout-muted">Unavailable</dd>
                 )}
               </div>
             )}
@@ -559,13 +565,11 @@ export function SendTab() {
           stating the exact consequence (§4) — not only for unknown addresses.
           A first-send additionally escalates the warning, since the address
           book auto-records every successful destination. */}
-      {/* The confirm step is gated on the destination check, not merely on the
-          control that opened it: a check that fails or ages out while the
-          dialog is up takes the dialog down with it, so the last thing on
-          screen before "Confirm and send" can never be a permission the submit
-          path is already going to refuse. `canSend` is deliberately NOT the
-          condition — it goes false on `busy` the moment the send starts. */}
-      {/* The confirm step is gated on the guard itself, so a check that fails
+      {/* The confirm step is gated on the guard itself, not merely on the
+          control that opened it, so the last thing on screen before "Confirm
+          and send" can never be a permission the submit path is already going
+          to refuse. `canSend` is deliberately NOT the condition — it goes
+          false on `busy` the moment the send starts. A check that fails
           or ages out while the dialog is up takes the dialog down with it.
           `|| busy` holds it open once a send is under way: the expiry timer is
           independent of `busy`, so without it a check aging out during the

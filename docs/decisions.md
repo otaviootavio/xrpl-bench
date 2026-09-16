@@ -58,7 +58,7 @@ Research-backed (React/PWA/shadcn/crypto-wallet specific, checked against curren
 
 - **All ledger reads go through TanStack Query hooks.** No component calls the XRPL client's read methods directly inside a `useEffect` or event handler.
 - **Money is strings/BigInt end-to-end.** No `Number()`/floating-point arithmetic on drops or issued-currency amounts anywhere outside the single shared formatting utility used at render time.
-- **Active wallet + active network are one global source of truth**, never duplicated into separate component-local state. Every TanStack Query key includes both, so a switch of either can never leave stale cross-wallet or cross-network data on screen.
+- **Active wallet + active network are one global source of truth**, never duplicated into separate component-local state. Every **account-scoped** TanStack Query key includes both, so a switch of either can never leave stale cross-wallet or cross-network data on screen. A genuinely ledger-wide read (server reserves, the recommended fee) or a device-scoped one (passkey registered, lockout state) is a **named exception on the key factory** rather than an address bolted on — keying a ledger-wide fact by address would make four duplicate cache entries and invalidate them all on a wallet switch for no reason. The exception has to be visible on the factory; it may never be an undeclared literal.
 - **No secret ever enters React/store state, the URL, or anything serializable.** Decrypted key material exists only transiently in memory for signing, and is cleared immediately after use. One thing is deliberately not a secret under this rule and is permitted: a `CryptoKey` imported **non-extractable** may be held in session state (`app-store.ts`'s `vaultKey`) and written to the IndexedDB session store, because it is a handle the browser will not export bytes for — no code, ours or an attacker's, can read the key material back out of it. Raw key bytes, a plaintext seed, or an *extractable* key remain banned in state, in storage and in anything serializable. The handle lives in `vaultKey` on `src/store/app-store.ts` (session-only, excluded from `partialize`) and in the `session` store of `src/lib/crypto/db.ts`, whose entry carries an expiry. That expiry is the auto-lock setting counted from the last activity, not from unlock: `extendSession` (`src/lib/crypto/auth.ts`) pushes it forward on every activity tick, so a session in continuous use never expires. Expiry is also lazy — an entry past its time is only deleted when `getUnlockedSession` next reads it, or when a lock path calls `clearUnlockedSession`, so the handle can sit in IndexedDB past its expiry until one of those runs. The window is therefore "auto-lock minutes of inactivity, with deletion on the next read or lock", not a hard lifetime, and it is accepted as such. Do not "fix" `vaultKey` by removing it.
 - **Every destructive/irreversible action requires an explicit confirm step** stating the exact consequence in plain language: removing a wallet, closing a trust line, revealing a seed, sending a payment.
 - **Every address or transaction hash renders through the shared `<AddressLink>`/`<TxLink>` components**, never a hand-rolled `<a href>` to an explorer.
@@ -1265,3 +1265,40 @@ the promoting branch onto the target's tip, verify the tree matches
 (`git diff origin/<target> <rebased> --stat` empty), push it under any name,
 open the PR. The check now verifies the property that actually matters and
 no longer cares what the branch is called.
+
+
+## 12. Read failures are reported, not absorbed
+
+Decided 2026-09-15, from the defects in `b359058` and the architecture spine's
+AD-13, AD-14 and AD-15. Recorded here because §3 and §4 are what an agent audits
+against, and these are money-path rules that lived only in a spine.
+
+**The defect that prompted it.** A failed destination check *relaxed* the send
+guard: `destInfo` was undefined, so `!destInfo?.requireDestTag` was satisfied,
+and the app enabled a tagless payment to an address that requires a tag —
+credited to nobody, unrecoverable. Separately, two screens reported an unread
+ledger as an empty one ("No transactions yet" on a failed `account_tx`), and a
+stale balance rendered under a green "Live" lamp beneath "Balance unavailable".
+
+**The three rules:**
+
+1. **A guard fails closed.** A guard on a money-moving action is satisfied only
+   by a read that succeeded for the input currently on screen. Neither an
+   errored read, nor data retained from an earlier input, nor a read outside its
+   freshness window satisfies it. Absence of a prohibition is not permission.
+   The cost is real and accepted: a legitimate send is blocked during an RPC
+   failure. A blocked send is recoverable; a tagless send to an exchange is not.
+2. **Retained data is never rendered as current.** When a read is in error, data
+   from an earlier success is not shown at all — no figure, no liveness
+   indicator, no derived total.
+3. **An empty state is a claim, not a default.** A screen may state a collection
+   is empty only when its read succeeded and returned empty. A failure and an
+   empty result are different facts and never share a rendering.
+
+**There are three declared surfaces, not two.** A failed *read* renders inline
+where the data would have been, through `components/wallet/QueryErrorState.tsx`.
+Anything the user *did*, and anything that *arrived on its own* (an incoming
+payment, an activation, a new release), goes to the Annunciator through
+`lib/notify.tsx`. §6.5's rule governs that notice surface — errors and warnings
+never auto-dismiss — and does not reach the inline one, which persists until the
+read succeeds.

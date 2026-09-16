@@ -44,8 +44,12 @@ expanded in `docs/agents/`.
 - No secret ever enters `localStorage`, React state, a store, the URL, or
   anything serializable — not even in development.
 - An unlock is proven by decrypting known ciphertext, never by deriving a key.
-- Every ledger read goes through a TanStack Query hook whose key includes the
-  active wallet *and* the active network.
+- Every ledger read goes through a TanStack Query hook whose key comes from the
+  one key factory. An account-scoped key includes the active wallet *and* the
+  active network; a ledger-wide or device-scoped read is a named exception on
+  that factory, never an undeclared literal.
+- A failed read is never rendered as an empty one or as a current one, and never
+  relaxes a guard on a money-moving action.
 - The service worker caches the static shell only. Never an RPC response.
 - Nothing styles `:focus`; `outline-none` is banned.
 - Colour never carries meaning alone, and `bun run check:contrast` is the gate.

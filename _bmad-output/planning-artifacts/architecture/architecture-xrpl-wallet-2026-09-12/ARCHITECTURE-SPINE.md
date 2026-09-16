@@ -5,9 +5,9 @@ purpose: build-substrate
 altitude: initiative
 paradigm: 'layered, with two sealed boundaries'
 scope: 'The whole client. Every module under src/, the build, and the service worker.'
-status: draft
+status: final
 created: '2026-09-12'
-updated: '2026-09-12'
+updated: '2026-09-15'
 sources:
   - docs/decisions.md
   - docs/user-stories/INDEX.md
@@ -16,6 +16,7 @@ sources:
 companions:
   - GAP-REGISTER.md
   - vaultkey-options.md
+  - reviews/
 ---
 
 # Architecture Spine — XRPL Bench
@@ -26,6 +27,9 @@ depend on which, and what a new unit must go through rather than around.
 
 Where this spine and the code disagree today, `GAP-REGISTER.md` says so with
 file and line. A rule here is the target, not a description of the current tree.
+
+An `AD` marked **`[GATED]`** is enforced mechanically by a script inside
+`bun run lint`; it fails a merge. Every other `AD` is enforced by review only.
 
 ## Design Paradigm
 
@@ -64,17 +68,21 @@ graph TD
   hooks --> ledger
   hooks --> store
   hooks --> shared
+  pages --> crypto
+  comp --> store
+  hooks --> crypto
   store --> crypto
   shared --> store
-  crypto --> ledger
 ```
 
 No arrow points upward. `src/components/ui` is a leaf: it may import
-`@/lib/utils` and nothing else.
+`@/lib/utils`, `@/lib/notice-tone`, and its own siblings — nothing else. The
+`notice-tone` edge is deliberate and is what lets `lib` and `store` name a tone
+without importing a component (AD-8).
 
 ## Invariants & Rules
 
-### AD-1 — Dependencies point one way
+### AD-1 — Dependencies point one way `[GATED]`
 
 - **Binds:** all
 - **Prevents:** a cycle, and a `lib` module that cannot be reasoned about or
@@ -98,6 +106,15 @@ No arrow points upward. `src/components/ui` is a leaf: it may import
   write functions. Pure offline helpers from `xrpl` that touch no connection
   (`isValidClassicAddress` and its kind) are exempt and may be imported
   anywhere.
+- **Egress beyond the ledger is declared, not incidental.** AD-2 seals the
+  `Client`, not the network. Every other outbound request — today the Testnet
+  Faucet (`lib/xrpl/faucet.ts`) and the same-origin Release Manifest
+  (`lib/release-check.ts`) — lives in a named `lib` module whose purpose is that
+  call. A `fetch` from a hook, a component or a screen is a violation. The
+  privacy claim in `PRODUCT.md` is a claim about this list, so the list has to be
+  enumerable — **and closed**. Visible is not the same as permitted: adding a
+  destination is a product decision, not an implementation one, and a module that
+  merely follows the naming rule has not earned a new outbound host.
 - **One named exception:** `src/hooks/useAccountLiveUpdates.ts` calls
   `getXrplClient` from outside `src/lib/xrpl/` and attaches a `transaction`
   listener to the returned client. It is a **push stream, not a read**: it
@@ -120,7 +137,7 @@ No arrow points upward. `src/components/ui` is a leaf: it may import
   in a local variable or a ref, never in React state, never in a store, never in
   a query cache.
 
-### AD-4 — One factory owns every query key
+### AD-4 — One factory owns every query key `[GATED]`
 
 - **Binds:** every TanStack Query read and every invalidation
 - **Prevents:** an invalidation key drifting from the read key it is meant to
@@ -139,19 +156,29 @@ No arrow points upward. `src/components/ui` is a leaf: it may import
   literally and removing working code, or the opposite — someone later putting
   actual seed bytes where the handle sits.
 - **Rule:** A `CryptoKey` imported non-extractable may be held in session state
-  and in the IndexedDB session store. Raw key bytes and plaintext seeds may not.
-  The session entry carries an expiry and is deleted on every lock path. The
-  exposure window is the auto-lock setting and is accepted as such.
-  `docs/decisions.md` §4 owes one sentence saying this; see `GAP-REGISTER.md`.
+  and in the IndexedDB session store. Raw key bytes, plaintext seeds, and any
+  **extractable** key may not — non-extractability is the whole basis of the
+  permission. The window is *auto-lock minutes of inactivity*, extended by
+  activity and ended by any lock path; expiry is **lazy**, so an entry past its
+  time survives until the next session read or lock rather than disappearing on
+  a timer. That is a longer window than "the auto-lock setting" suggests, and it
+  is accepted as such. `docs/decisions.md` §4 states this in full.
 
-### AD-6 — One source of truth for active wallet and active network
+### AD-6 — One source of truth for selection state and persisted entities
 
 - **Binds:** every read, every write, every screen
-- **Prevents:** two components disagreeing about which wallet is active, and
-  stale cross-wallet or cross-network data surviving a switch.
+- **Prevents:** two components disagreeing about which wallet is active, stale
+  cross-wallet or cross-network data surviving a switch, and two features
+  disagreeing about what makes two persisted records the same thing.
 - **Rule:** `src/store/app-store.ts` holds `network` and `activeWalletId` and
   nothing duplicates them into component state. Both reach a query through the
   factory in AD-4.
+- **It also owns the Address Book, and an entry's identity is the (address,
+  destination tag) pair** — not the address alone. One exchange address with two
+  tags is two counterparties, and collapsing them onto the address loses the tag
+  that makes a payment arrive. The identity is a named function beside the
+  entity, never re-derived at a call site. This is a target: today's entry is
+  `{ address, label }` and dedupes on address (see `GAP-REGISTER.md`).
 
 ### AD-7 — Money arithmetic lives in one module
 
@@ -162,27 +189,46 @@ No arrow points upward. `src/components/ui` is a leaf: it may import
 - **Rule:** All arithmetic on drops or issued-currency values happens in
   `src/lib/xrpl/money.ts` and is called from elsewhere. Comparison and formatting
   too. No `Number()`, `parseFloat`, or `toFixed` touches a monetary value
-  anywhere, including inside that module.
+  anywhere, **including inside that module** — deliberately stricter than §4,
+  which exempts the render-time formatter. The carve-out is how a float reaches
+  a formatter; formatting drops is string work and needs no numeric type.
 
-### AD-8 — Two declared error surfaces, chosen by cause `[MY CALL — override me]`
+### AD-8 — Three declared surfaces, chosen by cause `[ADOPTED]`
 
-- **Binds:** every failure the user can see
+- **Binds:** every failure and every event the user can see
 - **Prevents:** the same class of failure appearing in the notice band in one
   screen and inline in another, because the rule was never written down.
-- **Rule:** A failed **read** of data that has a place on screen renders inline,
-  where the missing data would have been. Anything the user **did** — a send, a
-  trust-line change, an unlock, an update — reports through `src/lib/notify.tsx`
-  to the Annunciator. Errors and warnings there never auto-dismiss. Dismissal is
-  part of the `notify` surface; nothing reaches into the notice store directly.
+- **Rule:** A failed **read** of data that has a place on screen renders inline
+  through `src/components/wallet/QueryErrorState.tsx`, which is the only owner
+  of that surface. Anything the user **did** — a send, a trust-line change, an
+  unlock, an update — reports through `src/lib/notify.tsx` to the Annunciator.
+  So does anything that **arrived on its own** — an incoming payment, an
+  activation detected, a new release available — which is neither an error nor
+  user-initiated and is the third category `in-app-notices.md` US-2 names.
+  Errors and warnings there never auto-dismiss. Dismissal is part of the
+  `notify` surface. Nothing outside `src/lib/notify.tsx` and
+  `src/components/Annunciator.tsx` touches the notice store — the Annunciator is
+  that surface's renderer and is the only component permitted to read it. The tone
+  vocabulary lives in `src/lib/notice-tone.ts`, not in a UI component, so
+  `lib` and `store` can name a tone without importing upward.
 
 ### AD-9 — Every write passes one choke point `[ADOPTED]`
 
-- **Binds:** payments, trust-line changes
+- **Binds:** every transaction this app signs — payments and trust-line changes
+  today, and every type added later
 - **Prevents:** a write that forgets to raise `txInFlight`, which would let an
   app update activate mid-transaction.
 - **Rule:** Every transaction submission goes through `submitAndClassify` in
-  `src/lib/xrpl/writes.ts`. That function owns the in-flight flag and the result
-  classification. How it reaches the flag is governed by AD-1, not here.
+  `src/lib/xrpl/writes.ts`. That function owns the in-flight signal and the
+  result classification. How it reaches the signal is governed by AD-1, not here.
+- **The signal counts, it does not toggle.** Two writes can overlap, and a
+  boolean cleared by whichever finishes first would report "nothing in flight"
+  while a transaction is still live — the exact failure this AD exists to
+  prevent. The choke point holds a depth, and in-flight means depth above zero.
+- **The choke point must be reachable and wide enough to obey.** A new
+  transaction type cannot be required to pass through a function it cannot
+  import or whose parameter type excludes it; today's signature admits only
+  `Payment | TrustSet` (see `GAP-REGISTER.md`).
 
 ### AD-10 — Explorer links only through the shared components
 
@@ -192,7 +238,7 @@ No arrow points upward. `src/components/ui` is a leaf: it may import
   the URL builder directly in a hand-written anchor is a violation even when the
   URL is correct.
 
-### AD-11 — One service-worker registration path
+### AD-11 — One service-worker registration path `[GATED]`
 
 - **Binds:** app startup, update flow
 - **Prevents:** two registrations racing, and an update prompt that fires from a
@@ -212,6 +258,84 @@ No arrow points upward. `src/components/ui` is a leaf: it may import
   and the fall-through to the backup endpoint are all reachable without a live
   network.
 
+### AD-13 — A read-backed guard is satisfied only by a current read
+
+- **Binds:** every guard on a money-moving action whose condition comes from a
+  ledger read
+- **Prevents:** a read that failed or went stale reading as permission. The
+  shipped defect: `destInfo` was undefined, so `!destInfo?.requireDestTag` was
+  satisfied, and a tagless payment was enabled to a destination that requires a
+  tag — credited to nobody and unrecoverable.
+- **Rule:** A guard fails **closed**. It is satisfied only by a read that
+  succeeded for the input currently on screen; neither an errored read, nor data
+  retained from an earlier input, nor a read outside its freshness window
+  satisfies it. Absence of a prohibition is not permission.
+- **Every transaction submission is a money-moving action.** There is no second
+  category to argue about.
+- **A guard lives inside the submit path, not only on the control.** The
+  Conventions table requires an unavailable control to be `aria-disabled` with
+  its reason visible — and `aria-disabled` does not prevent activation. A screen
+  that only dims a button is literally compliant and factually unguarded.
+
+### AD-14 — Retained data is never rendered as current
+
+- **Binds:** every screen that renders query data
+- **Prevents:** a figure from an earlier success surviving a failed refetch and
+  reading as live — a stale balance under a green "Live" lamp, directly beneath
+  "Balance unavailable".
+- **Rule:** When a read is in error, data retained from an earlier success is
+  not rendered: no figure, no liveness indicator, no derived total. AD-8's
+  inline surface renders in its place.
+
+### AD-15 — An empty state is a claim, not a default
+
+- **Binds:** every screen that can render "nothing there"
+- **Prevents:** reporting an unread ledger as an empty one. Two screens shipped
+  this at once — history said "No transactions yet" and the tokens card said
+  "No token balances yet", both on reads that had failed.
+- **Rule:** A screen may state that a collection is empty only when its read
+  **succeeded** and returned empty. A failed read renders the failure. A
+  failure and an empty result are different facts and never share a rendering.
+
+### AD-16 — One owner of local persistence teardown
+
+- **Binds:** every module that persists anything, and every lock, removal and
+  reset path
+- **Prevents:** a "remove everything" that leaves data behind, and a lock that
+  deletes something it was never meant to touch. Both have happened: the
+  persisted app store survives a hard-lock reset, and the lock path deletes the
+  precached shell.
+- **Rule:** `src/lib/teardown.ts` owns the clear set, and it is **two** sets,
+  never one. **Account data** — the vault, the query cache, live sockets, the
+  persisted app store — never survives a teardown that claims to remove it.
+  **The shell** — the service-worker precache — survives every lock, because it
+  holds no account data to leak and the app must still open offline. A module
+  that persists anything is incomplete until its clear is registered here; a new
+  Cache Storage entry must declare which of the two sets it belongs to.
+
+### AD-17 — Cache policy is architecture, and it fails safe toward staleness
+
+- **Binds:** every deployed asset, the app shell, the service worker, and the
+  Release Manifest
+- **Prevents:** an edge-cached shell or manifest making a running instance
+  unable to learn that a newer build exists — which would silently void the
+  user-controlled update model, since a user cannot accept a version they are
+  never told about. The provider's own default is the hazard: a fresh pull zone
+  overrides `max-age` to thirty days on *everything*, `index.html` and `sw.js`
+  included.
+- **Rule:** The shell, the service worker, the web manifest and the Release
+  Manifest are never edge-cached. The zone floor is short **zone-wide** rather
+  than long with per-path exceptions, deliberately: if a rule ever fails to
+  match, the failure must be "revalidates more often than necessary", a
+  bandwidth cost, and never "serves a stale wallet", a correctness cost. Hashed
+  assets are content-addressed and could be cached indefinitely; they are not,
+  because no working per-path lever exists in the provider's API today — that is
+  a known cost, not an oversight.
+- **Enforcement:** `scripts/verify-headers.mjs` checks the shell property on
+  every deploy. It is not part of `lint`, so this AD is deploy-gated rather than
+  merge-gated. `infra/pullzone-cache.json` holds the settings and the reasoning;
+  `docs/decisions.md` §8.7 is authoritative.
+
 ## Consistency Conventions
 
 | Concern | Convention |
@@ -224,11 +348,16 @@ No arrow points upward. `src/components/ui` is a leaf: it may import
 | Result codes | Classified in `src/lib/xrpl/result-codes.ts`. A raw `tec`/`tef` string never reaches a screen unclassified. |
 | Irreversible actions | A confirm step naming the exact consequence, per `docs/decisions.md` §4. No exceptions for "obvious" cases. |
 | Unavailable controls | `aria-disabled` with the reason in visible text. Never hidden. |
+| List identity | Row keys come from the item, never an array index — per-row state must not re-bind to a different item after a wallet switch (AD-6, PRD NFR-11). |
+| Imperative one-shot reads | A pre-flight probe inside a submit handler uses `queryClient.fetchQuery` with the AD-4 factory key of the equivalent hook, so the probe and the displayed value cannot disagree. |
+| New colour token | Its pairs are added to `scripts/check-contrast.mjs` in the same change. A token the harness does not measure is a token outside the rule. |
+| Pinning a rendering rule | An `AD` that governs what a screen may show gets a screen-level test that fails when the rule is removed — not a test that merely passes today. |
 | New unlock methods | Wrap the existing master key and unwrap on every attempt. Never derive-and-trust. |
 
 ## Stack
 
-Read from `package.json` on 2026-09-12. Ranges are as declared there.
+Re-read from `package.json` on 2026-09-15; unchanged since 2026-09-12. Ranges
+are as declared there.
 
 | Name | Version |
 | --- | --- |
@@ -245,6 +374,8 @@ Read from `package.json` on 2026-09-12. Ranges are as declared there.
 | idb / idb-keyval | ^8.0.3 / ^6.3.0 |
 | vitest | ^4.1.11 |
 | oxlint | ^1.79.0 |
+| @tailwindcss/vite | ^4.3.3 — must track `tailwindcss` exactly; a drift breaks the build |
+| @vitejs/plugin-react | ^6.1.0 |
 
 Radix primitives, `lucide-react`, `qrcode`, `class-variance-authority`,
 `clsx`, `tailwind-merge` are present and unpinned beyond their ranges; none of
@@ -256,21 +387,26 @@ them carry an invariant.
 src/
   pages/        # routed screens: Onboarding, Unlock, Main + tabs/
   components/
-    ui/         # shadcn primitives — leaf layer, imports @/lib/utils only
-    wallet/     # domain widgets: AddressLink, TxLink, AmountInput, SeedReveal
+    ui/         # shadcn primitives — leaf layer: @/lib/utils, @/lib/notice-tone,
+                #   and siblings only
+    wallet/     # domain widgets: AddressLink, TxLink, AmountInput, SeedReveal,
+                #   QueryErrorState (the AD-8 inline failure surface)
   hooks/        # one query or one lifecycle concern each
   store/        # app-store (selection + session), notice-store
   lib/
     xrpl/       # SEALED — client, reads, writes, money, networks, result-codes
     crypto/     # SEALED — auth (wrap/unwrap), keystore, db, aes, webauthn, pin
-    notify.tsx  # the only path to the Annunciator
-    teardown.ts # the one place that clears caches, session and vault
+    notify.tsx      # the only path to the Annunciator
+    notice-tone.ts  # tone vocabulary, so lib/store never import a component
+    teardown.ts     # the one place that clears caches, session and vault
 ```
 
 Deployment: static assets built by Vite and served from a CDN pull zone per
 environment. Three branches, `dev` → `stage` → `prod`, promoted on tree
-equality. No server-side component exists in any environment; the ledger's
-public RPC endpoints are the only backend the app talks to.
+equality. No server-side component exists in any environment. Outbound traffic
+is the ledger's public RPC endpoints, plus two named exceptions under AD-2: the
+Testnet Faucet, and the same-origin Release Manifest that makes user-controlled
+updates possible.
 
 ## Capability → Architecture Map
 
@@ -284,6 +420,11 @@ public RPC endpoints are the only backend the app talks to.
 | Explorer cross-check (FR-42..FR-44) | `components/wallet/AddressLink.tsx`, `TxLink.tsx` | AD-10 |
 | Versioning and updates (FR-46..FR-52) | `lib/sw-register.ts`, `hooks/useAppUpdate.ts` | AD-11, AD-9 |
 | Money formatting and arithmetic (NFR-1) | `lib/xrpl/money.ts` | AD-7 |
+| Delivered-amount normalisation (FR-57) | `lib/xrpl/reads.ts` | AD-2 |
+| Never setting `tfPartialPayment` (FR-58) | `lib/xrpl/writes.ts` | AD-2, AD-9 |
+| Read-failure reporting | `components/wallet/QueryErrorState.tsx` | AD-8, AD-14, AD-15 |
+| Local teardown on lock, removal and reset | `lib/teardown.ts` | AD-16 |
+| Faucet and release-manifest egress | `lib/xrpl/faucet.ts`, `lib/release-check.ts` | AD-2 |
 
 ## Deferred
 
@@ -294,11 +435,18 @@ public RPC endpoints are the only backend the app talks to.
   the boundary this would sit behind, so the decision can wait until the feature
   is real.
 - **Component-level test strategy.** AD-12 fixes the seam for external
-  resources. Whether screens get tests, and of what kind, is not decided here —
-  the current suite tests pure functions and two components, and that is a
-  coverage question rather than a consistency one.
+  resources. Breadth of screen coverage stays a coverage question, not a
+  consistency one — but it is no longer unpatterned: four screen-level tests now
+  pin the error paths of AD-13, AD-14 and AD-15, each written to fail if the
+  rule is removed. See the Conventions table.
 - **Internationalisation and RTL.** No module owns text direction today. Naming
   the owner is premature until RTL is actually reviewed.
+- **The production origin.** The vault lives in IndexedDB, which is
+  origin-scoped, so attaching a final hostname is not a later improvement — a
+  move to a custom domain is a new origin with no vault, and every user re-imports
+  from Seed while the old origin keeps serving a working, frozen wallet. It is a
+  prerequisite of inviting anyone else, not a deployment detail.
+  `docs/decisions.md` §8.11 is authoritative.
 - **Offline write queueing.** The app is deliberately network-first for ledger
   traffic and refuses to render a balance it cannot verify. Queuing a write
   offline would be a new state machine; not needed and not designed.

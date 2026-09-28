@@ -16,6 +16,7 @@ vi.mock('@/store/app-store', () => ({
 }))
 
 import { HistoryTab } from '../HistoryTab'
+import { TooltipProvider } from '@/components/ui/tooltip'
 
 const EMPTY_COPY = 'No transactions yet'
 
@@ -148,5 +149,84 @@ describe('HistoryTab — a failed read is never an empty account', () => {
     expect(screen.getByRole('alert').textContent).toContain('History unavailable')
     expect(screen.getByText('sent')).toBeTruthy()
     expect(screen.queryByText(EMPTY_COPY)).toBeNull()
+  })
+})
+
+/**
+ * FR-57: a figure the ledger did not report as delivered is a maximum, and the
+ * screen must say so — in text on the row (`≤`) and in words once expanded.
+ */
+describe('HistoryTab — an amount not known to be delivered is an upper bound', () => {
+  const base = {
+    direction: 'received',
+    type: 'Payment',
+    validated: true,
+    date: null,
+    counterparty: 'rBoGUS9uiK9m3Kk6qnGRvWWCwAeN8hF3wR',
+  }
+
+  /** Each fixture has one row; its toggle is the only button with `aria-expanded`. */
+  function expandRow() {
+    const row = screen.getAllByRole('button').find((b) => b.hasAttribute('aria-expanded'))
+    fireEvent.click(row!)
+  }
+
+  it('prefixes an absent-delivery figure with ≤ and states it is a maximum once expanded', () => {
+    const tx = { ...base, hash: 'UPPER', resultCode: 'tesSUCCESS', amountDrops: '5000000', amountIsUpperBound: true }
+    useAccountTxHistory.mockReturnValue(query({ data: page([tx]) }))
+    render(<TooltipProvider><HistoryTab /></TooltipProvider>)
+
+    expect(screen.getByText('≤ 5 XRP')).toBeTruthy()
+    expandRow()
+    expect(screen.getByText('Delivered amount is an upper bound')).toBeTruthy()
+    expect(screen.getByText(/could not report the exact delivered amount/)).toBeTruthy()
+    expect(screen.getByText(/is a\s+maximum/)).toBeTruthy()
+  })
+
+  it('prefixes an issued upper-bound figure with ≤ too', () => {
+    const tx = {
+      ...base,
+      hash: 'UPPERIOU',
+      resultCode: 'tesSUCCESS',
+      amountIssued: { currency: 'USD', issuer: 'rIssuer', value: '10' },
+      amountIsUpperBound: true,
+    }
+    useAccountTxHistory.mockReturnValue(query({ data: page([tx]) }))
+    render(<TooltipProvider><HistoryTab /></TooltipProvider>)
+    expect(screen.getByText('≤ 10 USD')).toBeTruthy()
+  })
+
+  it('shows an exact (partial) delivered figure with no upper-bound label', () => {
+    const tx = { ...base, hash: 'EXACT', resultCode: 'tesSUCCESS', amountDrops: '1000000' }
+    useAccountTxHistory.mockReturnValue(query({ data: page([tx]) }))
+    const { container } = render(<TooltipProvider><HistoryTab /></TooltipProvider>)
+
+    expect(screen.getByText('1 XRP')).toBeTruthy()
+    expandRow()
+    expect(container.textContent).not.toContain('≤')
+    expect(screen.queryByText('Delivered amount is an upper bound')).toBeNull()
+    expect(screen.queryByText(/nothing was delivered/)).toBeNull()
+  })
+
+  it('does not word an unknown-outcome row (empty resultCode) as failed', () => {
+    const tx = { ...base, hash: 'UNKNOWN', resultCode: '', amountDrops: '5000000', amountIsUpperBound: true }
+    useAccountTxHistory.mockReturnValue(query({ data: page([tx]) }))
+    render(<TooltipProvider><HistoryTab /></TooltipProvider>)
+
+    expandRow()
+    expect(screen.getByText('Delivered amount is an upper bound')).toBeTruthy()
+    expect(screen.queryByText(/nothing was delivered/)).toBeNull()
+  })
+
+  it('words a failed payment as failed, not as an unreported amount', () => {
+    const tx = { ...base, hash: 'FAILED', resultCode: 'tecPATH_DRY', amountDrops: '5000000', amountIsUpperBound: true }
+    useAccountTxHistory.mockReturnValue(query({ data: page([tx]) }))
+    render(<TooltipProvider><HistoryTab /></TooltipProvider>)
+
+    expect(screen.getByText('≤ 5 XRP')).toBeTruthy()
+    expandRow()
+    expect(screen.getByText(/This payment failed — nothing was delivered/)).toBeTruthy()
+    expect(screen.getByText(/the amount that was requested/)).toBeTruthy()
+    expect(screen.queryByText(/could not report the exact delivered amount/)).toBeNull()
   })
 })

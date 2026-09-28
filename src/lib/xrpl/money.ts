@@ -86,6 +86,20 @@ export function isPositiveDecimalString(value: string): boolean {
 }
 
 /**
+ * True if a LEDGER-REPORTED issued-currency value (e.g. a `delivered_amount`
+ * `value`) is greater than zero. Unlike `isPositiveDecimalString`, which gates
+ * what a user may type and stays strict, this accepts the XRPL exponent
+ * notation rippled emits for very small or very large values (`"1.5e-7"`,
+ * `"1E+20"`). A zero mantissa is zero whatever the exponent. String
+ * inspection only, per guardrail #4 — never `Number()`/`parseFloat()`.
+ */
+export function isPositiveLedgerDecimalString(value: string): boolean {
+  const match = /^(\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?$/.exec(value)
+  if (!match) return false
+  return /[1-9]/.test(match[1])
+}
+
+/**
  * Compares two non-negative DECIMAL amount strings without floating point.
  * Returns -1, 0 or 1. Used to check an issued-currency amount against a held
  * balance — those are decimal strings, so BigInt would throw on them and

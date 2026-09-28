@@ -149,16 +149,27 @@ export function HistoryTab() {
                 <p className="mt-2.5 text-sm leading-snug text-muted-foreground">{describeResultCode(tx.resultCode)}</p>
                 {/* The most consequential sentence on this surface: the figure
                     above is only an upper bound. It gets the caution lamp, not
-                    a colour-only tint. */}
-                {tx.amountIsUpperBound && (
-                  <Alert variant="warning" className="mt-2.5">
-                    <AlertTitle>Delivered amount is an upper bound</AlertTitle>
-                    <AlertDescription>
-                      The ledger could not report the exact delivered amount for this transaction, so the figure above is a
-                      maximum — less may have actually arrived.
-                    </AlertDescription>
-                  </Alert>
-                )}
+                    a colour-only tint, and is worded by cause — a failed
+                    payment delivered nothing, which is a different fact from
+                    the ledger not reporting what arrived. */}
+                {tx.amountIsUpperBound &&
+                  (tx.resultCode && tx.resultCode !== 'tesSUCCESS' ? (
+                    <Alert variant="warning" className="mt-2.5">
+                      <AlertTitle>This payment failed — nothing was delivered</AlertTitle>
+                      <AlertDescription>
+                        The figure above is the amount that was requested, not an amount that arrived. No funds moved
+                        to the destination.
+                      </AlertDescription>
+                    </Alert>
+                  ) : (
+                    <Alert variant="warning" className="mt-2.5">
+                      <AlertTitle>Delivered amount is an upper bound</AlertTitle>
+                      <AlertDescription>
+                        The ledger could not report the exact delivered amount for this transaction, so the figure above
+                        is a maximum — less may have actually arrived.
+                      </AlertDescription>
+                    </Alert>
+                  ))}
               </div>
             )}
           </div>

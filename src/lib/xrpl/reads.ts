@@ -1,4 +1,5 @@
 import { getXrplClient } from './client'
+import { isPositiveLedgerDecimalString } from './money'
 import type { NetworkId } from './networks'
 
 export interface AccountState {
@@ -132,10 +133,12 @@ export interface TxSummary {
   counterparty: string
   amountDrops?: string
   amountIssued?: { currency: string; issuer: string; value: string }
-  /** True when the ledger could not tell us the exact delivered amount
-   * (`delivered_amount: "unavailable"`, only possible for very old partial
-   * payments). The amount shown is then an UPPER BOUND, not what actually
-   * arrived — the skill's security guidance says to treat it as partial. */
+  /** True when the figure is NOT a known delivered amount but the requested
+   * `DeliverMax`/`Amount` shown in its place — an UPPER BOUND, not what
+   * actually arrived. Set for every Payment without a positive, well-formed
+   * `delivered_amount`: the legacy `"unavailable"`, a missing field, a zero or
+   * negative figure, a malformed one, and any failed (non-`tesSUCCESS`)
+   * Payment, where nothing arrived at all. See `paymentAmountOf`. */
   amountIsUpperBound?: boolean
   /** Unix epoch seconds, or undefined when the ledger didn't supply a date
    * (rendering 0 would date the row to 1970/2000). */
@@ -178,21 +181,12 @@ export async function fetchAccountTx(
     // Payments. Filtering to Payment hid the wallet's own TrustSet activity
     // entirely, and made `limit`-based pagination return near-empty pages.
     const isSender = tx.Account === address
-    const isPayment = tx.TransactionType === 'Payment'
-    const delivered = (meta as any).delivered_amount
-    const deliveredUnavailable = delivered === 'unavailable'
-    const amount = isPayment ? (delivered && !deliveredUnavailable ? delivered : (tx.DeliverMax ?? tx.Amount)) : undefined
     items.push({
       hash: (entry as any).hash ?? tx.hash ?? '',
       type: tx.TransactionType,
       direction: isSender ? 'sent' : 'received',
       counterparty: isSender ? (tx.Destination ?? '') : tx.Account,
-      amountDrops: typeof amount === 'string' ? amount : undefined,
-      amountIssued:
-        typeof amount === 'object' && amount
-          ? { currency: amount.currency, issuer: amount.issuer, value: amount.value }
-          : undefined,
-      amountIsUpperBound: isPayment && deliveredUnavailable ? true : undefined,
+      ...paymentAmountOf(tx, meta),
       date: typeof tx.date === 'number' ? tx.date + 946684800 : undefined, // ripple epoch -> unix epoch
       validated: !!entry.validated,
       resultCode: typeof meta === 'object' ? (meta as any).TransactionResult ?? '' : '',
@@ -204,8 +198,69 @@ export async function fetchAccountTx(
   return { items, marker: res.result.marker }
 }
 
-/** Wraps `tx` for a single transaction's full detail. */
+/** Wraps `tx` for a single transaction's full detail. The raw response is
+ * returned unchanged, with the same normalised payment amount `fetchAccountTx`
+ * produces laid beside it — so no caller ever reads a raw `DeliverMax` as if
+ * it arrived. There is no account here, so there is no direction. */
 export async function fetchTx(network: NetworkId, hash: string) {
   const client = await getXrplClient(network)
-  return client.request({ command: 'tx', transaction: hash })
+  const res = await client.request({ command: 'tx', transaction: hash })
+  // API v2 nests the transaction under `tx_json`; v1 lays it flat on `result`.
+  const result = res.result as any
+  const tx = result?.tx_json ?? result
+  return { ...res, ...paymentAmountOf(tx, result?.meta) }
+}
+
+export type PaymentAmount = Pick<TxSummary, 'amountDrops' | 'amountIssued' | 'amountIsUpperBound'>
+
+type IssuedAmount = NonNullable<TxSummary['amountIssued']>
+
+/** A drops string that is a whole number greater than zero. */
+function isPositiveDrops(value: unknown): value is string {
+  if (typeof value !== 'string' || !/^\d+$/.test(value)) return false
+  return BigInt(value) > 0n
+}
+
+/** An issued-currency amount object with all three fields as strings. MPT
+ * amounts (`mpt_issuance_id`) have no currency/issuer and are not rendered. */
+function asIssued(value: unknown): IssuedAmount | undefined {
+  if (typeof value !== 'object' || value === null) return undefined
+  const { currency, issuer, value: v } = value as Record<string, unknown>
+  if (typeof currency !== 'string' || typeof issuer !== 'string' || typeof v !== 'string') return undefined
+  return { currency, issuer, value: v }
+}
+
+/** Maps a raw ledger amount (drops string or issued object) to the summary
+ * fields, dropping anything that is neither. */
+function toSummaryAmount(amount: unknown): Pick<TxSummary, 'amountDrops' | 'amountIssued'> {
+  if (typeof amount === 'string') return { amountDrops: amount }
+  const issued = asIssued(amount)
+  return issued ? { amountIssued: issued } : {}
+}
+
+/**
+ * The one place that decides what figure a Payment shows and whether that
+ * figure is exact (FR-57, docs/agents/money.md).
+ *
+ * Only a successful Payment with a POSITIVE, well-formed `delivered_amount` is
+ * exact: drops by `BigInt > 0n`, an issued `value` by string inspection that
+ * also accepts the ledger's exponent notation. Anything else — the legacy
+ * `"unavailable"`, a missing, zero, negative or malformed field, or a failed
+ * Payment (which delivers nothing) — falls back to the requested
+ * `DeliverMax`/`Amount`, flagged as an upper bound. A non-Payment gets no
+ * amount and no flag.
+ */
+export function paymentAmountOf(tx: any, meta: unknown): PaymentAmount {
+  if (!tx || tx.TransactionType !== 'Payment') return {}
+  const m = typeof meta === 'object' && meta !== null ? (meta as Record<string, unknown>) : {}
+  const succeeded = m.TransactionResult === 'tesSUCCESS'
+  const delivered = m.delivered_amount
+
+  if (succeeded) {
+    if (isPositiveDrops(delivered)) return { amountDrops: delivered }
+    const issued = asIssued(delivered)
+    if (issued && isPositiveLedgerDecimalString(issued.value)) return { amountIssued: issued }
+  }
+
+  return { ...toSummaryAmount(tx.DeliverMax ?? tx.Amount), amountIsUpperBound: true }
 }

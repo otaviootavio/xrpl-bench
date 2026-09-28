@@ -118,3 +118,16 @@ Pass 1, 2026-09-28. Three layers (blind hunter, edge-case hunter, verification g
 **Result, 2026-09-28:** all four gates exit 0 (327 tests). Mutation checks: restoring `=== 'unavailable'` as the only trigger fails 19 tests, including the absent-delivery case and the `fetchAccountTx` regression. Dropping the `tx.resultCode &&` guard in `HistoryTab.tsx` fails the empty-`resultCode` case.
 
 **Manual check: NOT RUN.** No browser or Testnet pass has been made on History, so the two alert wordings are pinned by tests, not seen on screen.
+
+**Browser pass, 2026-09-28: RUN, ONE CRITERION NOT MET AT MOBILE WIDTHS. Status stays `review`.**
+
+- **How it was run:** the same session as 5.3's pass (Playwright Chromium with a virtual authenticator, Testnet), on `f229db1`. Real ledger transactions, none forced:
+  - a failed Payment, 0.5 XRP to an unfunded address, `tecNO_DST_INSUF_XRP`
+  - a normal 50 EUR payment
+  - a true partial payment (`tfPartialPayment`, 100 EUR requested, 30 EUR delivered), sent from a script-controlled issuer
+- **Met:**
+  - The failed Payment shows `≤ 0.5 XRP` beside the "Failed — fee charged" badge. Expanded, it reads "This payment failed — nothing was delivered", with no "could not report" wording.
+  - The partial payment shows 30 EUR, the delivered figure, with no `≤` and no upper-bound alert.
+  - Desktop layout is correct in both themes.
+- **Not met at 320 and 390 px:** on the failed row, the collapsed amount (`≤ 0.5 XRP`) is not visible. The long status badge does not wrap, so the row's content is 417 px wide inside a 229 px (at 320) or 299 px (at 390) button, and the amount sits at x=374–463, clipped by the tab panel's scroll container. The upper-bound label is therefore absent on mobile for exactly the failed rows this story flags. The layout predates 5.4; successful rows fit.
+- **Not observed:** the "Received" toast. None was captured after the two incoming EUR payments, which may mean it had already expired. Neither confirmed nor refuted.

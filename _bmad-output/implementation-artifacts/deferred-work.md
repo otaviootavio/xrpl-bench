@@ -101,3 +101,15 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-5-4-amount-upper-bound.md`
   summary: `docs/agents/money.md` does not record the split between `isPositiveDecimalString` (strict, what a user types) and `isPositiveLedgerDecimalString` (lenient, what the ledger reports), or that `amountIsUpperBound` now also covers failed, zero and malformed deliveries.
   evidence: money.md:37-39 still describes the flag only as "when the ledger could not report it". Without the note, a later change may merge the two checks back together. Agent-context file, so it is recorded here rather than patched.
+
+## Deferred from: browser pass of stories 5.3 and 5.4 (2026-09-28)
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-5-4-amount-upper-bound.md`
+  summary: On History at 320 and 390 px, a failed payment's collapsed amount (and its `≤` label) is pushed off-screen by the unwrapped status badge.
+  evidence: Measured in the browser: the row's content is 417 px wide in a 229/299 px button, with the amount at x=374–463. Seen on a real `tecNO_DST_INSUF_XRP` row. Blocks 5.4 leaving review.
+- source_spec: `_bmad-output/implementation-artifacts/spec-5-3-fee-read-not-zero.md`
+  summary: The Send confirm dialog states the network fee as the recommended figure (0.00001 XRP), but the submitted transaction was charged 0.000012 XRP.
+  evidence: In the browser pass, the dialog read "plus a network fee of 0.00001 XRP". After a failed send the balance went from 99 to 98.999988, and History's Fee field reads 0.000012 XRP. The dialog and the fee autofilled at submission disagree.
+- source_spec: `_bmad-output/implementation-artifacts/spec-5-3-fee-read-not-zero.md`
+  summary: Sending a token back to its own issuer shows "Recipient can't hold this token", but an issuer needs no trust line to receive its own token.
+  evidence: In the browser pass, selecting EUR with the EUR issuer's address as destination showed that warning. The destination check reads `hasTrustLine` without treating destination === issuer as holding.

@@ -293,3 +293,16 @@ and 390px, in both themes; and the both-reads-failed case, which renders two
 error panels and two unavailable rows in one column. `check:contrast` passing
 is not that claim. Closing this needs a browser with a virtual authenticator
 (CDP `WebAuthn.addVirtualAuthenticator`) or a human running it locally.
+
+**Browser pass, 2026-09-28: RUN, TWO CRITERIA NOT MET. Status stays `review`.**
+
+- **How it was run:** Playwright Chromium 151, with a CDP virtual authenticator (`WebAuthn.addVirtualAuthenticator`, ctap2, internal, resident key, PRF). That cleared the passkey block described above. Two Testnet wallets, one funded. The fee and reserve states were forced with a temporary `localStorage` switch in `reads.ts`, reverted afterwards; the tree was clean at the end. The code under test was `f229db1`, which contains 5.3 as merged to `dev`.
+- **Met:**
+  - Fee failed: the row reads "Unavailable" in words, with a `QueryErrorState` "Try again" beneath it.
+  - An XRP amount of 5, inside the 99 XRP spendable balance, is refused, and the reason names the fee.
+  - The retry is one Tab from the amount field. Enter re-reads the fee, and on success the form matches the pre-story behaviour.
+  - A token send stays permitted, and the confirm dialog says "plus a network fee that could not be read".
+  - At 320, 390 and 1280 px, in both themes, no page-level overflow.
+- **Not met, AC 2 (fee in flight):** the refusal wording is right ("still being read"), but the amount field is painted destructive and carries `aria-invalid="true"`, so a failure is shown on screen. This is the open `[Review][Patch]` above (`AmountInput` pending treatment), now observed in a browser rather than inferred.
+- **Differs from this file's own Verification text:** with both reads failed, one error panel renders (the fee's), not two. The reserve has "Unavailable" on its row and no retry. That is the open 5.2/5.3 item above (`retryReserves` unused); the earlier "two error panels" expectation was wrong.
+- **Cosmetic:** at 320 px, the `QueryErrorState` title badge "Network fee could not be read" wraps to two lines inside its pill, and the second line sits under the dot, not under the text.

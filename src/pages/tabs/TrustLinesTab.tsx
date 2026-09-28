@@ -7,14 +7,16 @@ import { Label } from '@/components/ui/label'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription, DialogTrigger } from '@/components/ui/dialog'
 import { Skeleton } from '@/components/ui/skeleton'
 import { TrustLineRow } from '@/components/wallet/TrustLineRow'
+import { QueryErrorState } from '@/components/wallet/QueryErrorState'
 import { useAppStore, useActiveWallet } from '@/store/app-store'
 import { useTrustLines } from '@/hooks/useTrustLines'
 import { useServerReserves } from '@/hooks/useServerReserves'
 import { useSpendableBalance } from '@/hooks/useSpendableBalance'
 import { submitTrustSet } from '@/lib/xrpl/writes'
 import { unlockWalletForSigning } from '@/lib/crypto/keystore'
-import { formatXrp, displayCurrencyCode } from '@/lib/xrpl/money'
+import { formatXrp, displayCurrencyCode, coversOwnerReserve } from '@/lib/xrpl/money'
 import { describeResultCode } from '@/lib/xrpl/result-codes'
+import { queryKeys } from '@/lib/xrpl/query-keys'
 import { useQueryClient } from '@tanstack/react-query'
 import { toast } from '@/lib/notify'
 
@@ -55,8 +57,8 @@ export function TrustLinesTab() {
       } else {
         toast.error(describeResultCode(result.resultCode))
       }
-      await queryClient.invalidateQueries({ queryKey: ['trustLines', network, wallet.address] })
-      await queryClient.invalidateQueries({ queryKey: ['accountState', network, wallet.address] })
+      await queryClient.invalidateQueries({ queryKey: queryKeys.trustLines(network, wallet.address) })
+      await queryClient.invalidateQueries({ queryKey: queryKeys.accountState(network, wallet.address) })
     } catch (err: any) {
       toast.error(err?.message ?? 'Failed to update trust line.')
     } finally {
@@ -65,7 +67,7 @@ export function TrustLinesTab() {
   }
 
   const reserveCostDrops = reserves.data?.ownerReserveDrops ?? '200000'
-  const canAffordNewLine = spendableDrops ? BigInt(spendableDrops) >= BigInt(reserveCostDrops) : false
+  const canAffordNewLine = spendableDrops ? coversOwnerReserve(spendableDrops, reserveCostDrops) : false
   // XRPL currency codes are either a 3-character code or a 40-char hex code.
   const issuerValid = isValidClassicAddress(issuer)
   const currencyValid = /^[A-Za-z0-9]{3}$/.test(currency) || /^[0-9A-Fa-f]{40}$/.test(currency)
@@ -141,7 +143,18 @@ export function TrustLinesTab() {
       </CardHeader>
       <CardContent className="flex flex-col gap-2">
         {trustLines.isLoading && <Skeleton className="h-16 w-full" />}
-        {trustLines.data?.length === 0 && (
+        {/* On a first failed read there is no data at all and the list renders
+            as nothing; on a failed refetch TanStack keeps the previous data, so
+            the empty branch below CAN fire beside this one. Both cases need the
+            failure said out loud, and the empty branch gated on it. */}
+        {trustLines.isError && (
+          <QueryErrorState
+            title="Trust lines unavailable"
+            description="The trust lines for this account could not be read from the ledger. The list below is not empty — the app simply does not know what is on it."
+            onRetry={() => trustLines.refetch()}
+          />
+        )}
+        {trustLines.data?.length === 0 && !trustLines.isError && (
           <div className="flex flex-col gap-1">
             <p className="text-sm font-medium">No trust lines yet</p>
             <p className="text-sm text-muted-foreground">

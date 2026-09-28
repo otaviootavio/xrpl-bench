@@ -10,6 +10,10 @@ import {
   isPositiveDecimalString,
   compareDecimalStrings,
   displayCurrencyCode,
+  reserveRequirementDrops,
+  spendableAfterReserve,
+  amountPlusFeeFits,
+  coversOwnerReserve,
 } from '../money'
 
 describe('dropsToXrpString', () => {
@@ -108,5 +112,63 @@ describe('displayCurrencyCode', () => {
     const hex = Buffer.from('TESTCOIN').toString('hex').toUpperCase().padEnd(40, '0')
     expect(displayCurrencyCode(hex)).toBe('TESTCOIN')
     expect(displayCurrencyCode('FF'.repeat(20))).toContain('…')
+  })
+})
+
+// The spendable/funds rules the screens used to compute inline. Every row of
+// the epic-4 I/O matrix is pinned here, because "identical to the drop" is the
+// only acceptance this refactor has.
+describe('reserveRequirementDrops', () => {
+  it('is the base reserve plus one owner reserve per owned object', () => {
+    expect(reserveRequirementDrops('1000000', '200000', 0)).toBe('1000000')
+    expect(reserveRequirementDrops('1000000', '200000', 3)).toBe('1600000')
+  })
+})
+
+describe('spendableAfterReserve', () => {
+  it('subtracts the reserve requirement from the balance', () => {
+    expect(spendableAfterReserve('10000000', '1600000')).toBe('8400000')
+  })
+
+  it('clamps to zero when the balance is below the reserve — never a negative string', () => {
+    expect(spendableAfterReserve('500000', '1000000')).toBe('0')
+    expect(spendableAfterReserve('0', '1000000')).toBe('0')
+  })
+
+  it('is exactly zero when the balance equals the reserve', () => {
+    expect(spendableAfterReserve('1000000', '1000000')).toBe('0')
+  })
+
+  it('keeps full precision on a balance a float would corrupt', () => {
+    expect(spendableAfterReserve('100000000000000001', '1000000')).toBe('99999999999000001')
+  })
+})
+
+describe('amountPlusFeeFits', () => {
+  it('requires the fee on top of the amount', () => {
+    expect(amountPlusFeeFits('9000000', '12', '10000000')).toBe(true)
+    expect(amountPlusFeeFits('10000000', '12', '10000000')).toBe(false)
+  })
+
+  it('accepts the exactly-equal case — inclusive, not an off-by-one rejection', () => {
+    expect(amountPlusFeeFits('9999988', '12', '10000000')).toBe(true)
+  })
+
+  it('treats a zero spendable balance as affording nothing', () => {
+    expect(amountPlusFeeFits('1', '0', '0')).toBe(false)
+    expect(amountPlusFeeFits('0', '0', '0')).toBe(true)
+  })
+})
+
+describe('coversOwnerReserve', () => {
+  it('is true when spendable is greater than or equal to one owner reserve', () => {
+    expect(coversOwnerReserve('200000', '200000')).toBe(true)
+    expect(coversOwnerReserve('200001', '200000')).toBe(true)
+    expect(coversOwnerReserve('199999', '200000')).toBe(false)
+  })
+
+  it('works against the 200000-drop fallback the trust-line tab uses before reserves load', () => {
+    expect(coversOwnerReserve('0', '200000')).toBe(false)
+    expect(coversOwnerReserve('5000000', '200000')).toBe(true)
   })
 })

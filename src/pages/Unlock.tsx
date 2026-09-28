@@ -7,6 +7,7 @@ import { Label } from '@/components/ui/label'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { FingerprintIcon } from 'lucide-react'
 import { getLockoutState, hasPasskeyRegistered, unlockVault } from '@/lib/crypto/auth'
+import { queryKeys } from '@/lib/xrpl/query-keys'
 import { ChassisShell } from '@/components/ChassisShell'
 import { tearDownAllLocalState } from '@/lib/teardown'
 import { useQueryClient } from '@tanstack/react-query'
@@ -27,8 +28,8 @@ export function Unlock() {
 
   // Async local-vault reads go through the same query layer as everything
   // else, rather than setState-inside-useEffect.
-  const passkeyQuery = useQuery({ queryKey: ['passkeyRegistered'], queryFn: hasPasskeyRegistered })
-  const lockoutQuery = useQuery({ queryKey: ['lockoutState'], queryFn: getLockoutState })
+  const passkeyQuery = useQuery({ queryKey: queryKeys.passkeyRegistered(), queryFn: hasPasskeyRegistered })
+  const lockoutQuery = useQuery({ queryKey: queryKeys.lockoutState(), queryFn: getLockoutState })
   const passkeyAvailable = passkeyQuery.data ?? false
   const hardLocked = lockoutQuery.data?.hardLocked ?? false
 

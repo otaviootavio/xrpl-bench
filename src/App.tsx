@@ -7,6 +7,19 @@ import { Main } from '@/pages/Main'
 import { useAppStore } from '@/store/app-store'
 import { listWallets } from '@/lib/crypto/keystore'
 import { restoreSession } from '@/lib/crypto/auth'
+import { setTxInFlightReporter } from '@/lib/xrpl/writes'
+
+/**
+ * Wires the write choke point's in-flight signal to the app store — AD-1:
+ * `lib/xrpl/writes.ts` reports upward, it does not reach into the store.
+ *
+ * Installed at MODULE scope, not in an effect, for the same reason
+ * `useAppUpdate` registers its worker there: StrictMode double-invokes
+ * effects, and an effect would also leave a window in which a submit could
+ * run before the reporter was installed. FR-48 (no update activates
+ * mid-transaction) depends on this line being in place.
+ */
+setTxInFlightReporter((inFlight) => useAppStore.getState().setTxInFlight(inFlight))
 
 const queryClient = new QueryClient({
   defaultOptions: {

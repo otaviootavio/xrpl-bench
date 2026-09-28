@@ -76,6 +76,13 @@ src/plugins/impeccable-live.client.ts
 .claude/
 .agents/
 
+# BMad installation. Ignored for the same reason as `.claude/` above: `_bmad/`
+# is vendored third-party workflow text, and shipping it under this repo's root
+# FSL grant muddies a licensing posture this project treats as load-bearing.
+# The artifacts BMad *produces* about this repo (`_bmad-output/`) are this
+# project's own documentation and are committed.
+_bmad/
+
 # Impeccable live-mode config: tooling settings for a tool that is not part of
 # the product. No secret in it (the session token lives in the already-ignored
 # live/server.json), but it is machine workflow config, not project docs.

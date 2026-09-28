@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import type { NoticeTone } from '@/components/ui/alert'
+import type { NoticeTone } from '@/lib/notice-tone'
 
 /**
  * One outstanding notice on the annunciator.

@@ -15,10 +15,9 @@ import { Separator } from '@/components/ui/separator'
 import { SeedReveal } from '@/components/wallet/SeedReveal'
 import { AddressLink } from '@/components/wallet/AddressLink'
 import { useAppStore } from '@/store/app-store'
-import { generateAndStoreWallet, importAndStoreWallet, listWallets, removeWallet, revealSeed } from '@/lib/crypto/keystore'
+import { addressFromSeed, generateAndStoreWallet, importAndStoreWallet, listWallets, removeWallet, revealSeed } from '@/lib/crypto/keystore'
 import { tearDownAllLocalState, clearCachedAccountData } from '@/lib/teardown'
 import { fetchAccountStateOnce } from '@/lib/xrpl/query-reads'
-import { Wallet } from 'xrpl'
 import { toast } from '@/lib/notify'
 import { useQueryClient } from '@tanstack/react-query'
 
@@ -71,8 +70,8 @@ export function SettingsTab() {
         // docs/decisions.md §2 states the disabled-master-key check for import
         // unconditionally — it must not be limited to the onboarding path.
         const seedInput = seedInputRef.current?.value ?? ''
-        const probe = Wallet.fromSeed(seedInput)
-        const state = await fetchAccountStateOnce(queryClient, network, probe.address)
+        const probeAddress = addressFromSeed(seedInput)
+        const state = await fetchAccountStateOnce(queryClient, network, probeAddress)
         const meta = await importAndStoreWallet(label || 'Wallet', seedInput, vaultKey)
         await refreshWallets()
         setActiveWalletId(meta.id)

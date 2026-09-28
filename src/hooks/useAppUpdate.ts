@@ -1,10 +1,15 @@
 import { useCallback, useEffect, useState } from 'react'
-import { registerSW } from '@/lib/sw-register'
+import {
+  registerServiceWorker,
+  getServiceWorkerRegistration,
+  isUpdateWaiting,
+  subscribeToWaitingUpdate,
+  type UpdateSW,
+} from '@/lib/sw-register'
 import { useAppStore } from '@/store/app-store'
 import { checkForRelease, type ReleaseManifest } from '@/lib/release-check'
 import { BUILD } from '@/lib/build-info'
 import { notify } from '@/lib/notify'
-import { useNoticeStore } from '@/store/notice-store'
 
 /**
  * User-controlled updates — app-versioning-and-updates.md US-2/US-3/US-4/US-5.
@@ -17,15 +22,13 @@ import { useNoticeStore } from '@/store/notice-store'
  * Deliberately NOT a TanStack Query hook: guardrail #1 governs *ledger* reads,
  * and this is a service-worker lifecycle subscription with no ledger involved.
  *
- * `registerSW` is called once at module scope rather than inside the effect, so
- * React StrictMode's double-invoke cannot register two workers.
+ * Registration happens once at module scope rather than inside the effect, so
+ * React StrictMode's double-invoke cannot register two workers — and it goes
+ * through `@/lib/sw-register`, which owns the single registration shared with
+ * the app entry point (AD-11). The waiting-worker state and the registration
+ * itself are read back from there rather than tracked again here.
  */
-type UpdateFn = (reload?: boolean) => Promise<void>
-
-let updateSW: UpdateFn | null = null
-let registration: ServiceWorkerRegistration | undefined
-let waiting = false
-const listeners = new Set<(v: boolean) => void>()
+let updateSW: UpdateSW | null = null
 
 /**
  * US-6/V4: "a major release presents the update more insistently — a
@@ -41,27 +44,14 @@ const listeners = new Set<(v: boolean) => void>()
 let insistentNoticeCommit: string | null = null
 let insistentNoticeId: string | null = null
 
-function setWaiting(v: boolean) {
-  waiting = v
-  listeners.forEach((l) => l(v))
-}
-
-if (typeof window !== 'undefined' && !updateSW) {
-  updateSW = registerSW({
-    immediate: true,
-    onRegisteredSW(_url, reg) {
-      registration = reg
-    },
-    onNeedRefresh() {
-      // A new version is ready and waiting. We only record it — we never apply
-      // it. US-2: "the running code is not replaced".
-      setWaiting(true)
-    },
-  })
+if (typeof window !== 'undefined') {
+  // A new version that installs is only recorded as waiting, never applied.
+  // US-2: "the running code is not replaced".
+  updateSW = registerServiceWorker()
 }
 
 export function useAppUpdate() {
-  const [updateReady, setUpdateReady] = useState(waiting)
+  const [updateReady, setUpdateReady] = useState(isUpdateWaiting)
   const [applying, setApplying] = useState(false)
   const [checking, setChecking] = useState(false)
   const [checkError, setCheckError] = useState(false)
@@ -70,12 +60,7 @@ export function useAppUpdate() {
   const declinedVersions = useAppStore((s) => s.declinedUpdateVersions)
   const declineUpdateVersion = useAppStore((s) => s.declineUpdateVersion)
 
-  useEffect(() => {
-    listeners.add(setUpdateReady)
-    return () => {
-      listeners.delete(setUpdateReady)
-    }
-  }, [])
+  useEffect(() => subscribeToWaitingUpdate(setUpdateReady), [])
 
   // Metadata (version/notes/bump/security — US-6) is only worth fetching once
   // the service worker has actually found something waiting; this never
@@ -121,11 +106,11 @@ export function useAppUpdate() {
     setChecking(true)
     setCheckError(false)
     try {
-      await registration?.update()
+      await getServiceWorkerRegistration()?.update()
       const result = await checkForRelease()
       if (result.ok && result.manifest.commit !== BUILD.commitSha) {
         setPendingRelease(result.manifest)
-      } else if (!result.ok && !registration) {
+      } else if (!result.ok && !getServiceWorkerRegistration()) {
         // No registration at all (never registered, e.g. no PWA support) AND
         // no manifest reachable — genuinely could not tell, not "no update".
         setCheckError(true)
@@ -166,7 +151,7 @@ export function useAppUpdate() {
     // notice that outlives the decline it responds to. A newer release still
     // gets its own notice; this only silences the one just declined.
     if (insistentNoticeCommit === declineKey && insistentNoticeId) {
-      useNoticeStore.getState().dismiss(insistentNoticeId)
+      notify.dismiss(insistentNoticeId)
       insistentNoticeId = null
     }
   }, [declineKey, declineUpdateVersion])

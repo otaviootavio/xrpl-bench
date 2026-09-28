@@ -1,0 +1,102 @@
+# STATUS DEFINITIONS:
+# ==================
+# Epic Status:
+#   - backlog: Epic not yet started
+#   - in-progress: Epic actively being worked on
+#   - done: All stories in epic completed
+
+# Story Status:
+#   - backlog: Story only exists in epic file
+#   - ready-for-dev: Story file created, ready for development
+#   - in-progress: Developer actively working on implementation
+#   - review: Implementation complete, ready for review
+#   - done: Story completed
+
+# Retrospective Status:
+#   - optional: Can be completed but not required
+#   - done: Retrospective has been completed
+
+# Action Item Status:
+#   - open: Committed during a retrospective, not yet addressed
+#   - in-progress: Actively being worked on
+#   - done: Completed
+
+# WORKFLOW NOTES:
+# ===============
+# - Epic transitions to 'in-progress' automatically when its first story starts (via build's sprint sync)
+# - Stories can be worked in parallel if team capacity allows
+# - Developer typically creates the next story after the previous one is 'done' to incorporate learnings
+# - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
+# - Retrospective appends its action items to action_items; the status view surfaces open ones
+generated: 09-15-2026 21:01
+last_updated: '2026-09-28'
+project: xrpl-wallet
+project_key: NOKEY
+tracking_system: file-system
+story_location: _bmad-output/implementation-artifacts
+development_status:
+  epic-1: done
+  1-1-one-module-produces-every-account-scoped-cache-label: done
+  1-2-invalidation-uses-the-same-labels-as-the-reads: done
+  1-3-reads-that-are-not-account-scoped-say-so-on-the-factory: done
+  1-4-a-new-hand-written-cache-label-cannot-be-merged: done
+  epic-1-retrospective: optional
+
+  epic-2: done
+  2-1-no-screen-turns-a-seed-into-a-signer: done
+  2-2-the-write-path-no-longer-reaches-into-the-store: done
+  2-3-the-ledger-client-can-be-substituted-in-a-test: done
+  2-4-the-failover-path-is-proven-by-a-test: done
+  epic-2-retrospective: optional
+
+  epic-3: done
+  3-1-the-notice-vocabulary-stops-living-in-a-ui-component: done
+  3-2-dismissing-a-notice-goes-through-the-same-door-as-raising-on: done
+  3-3-every-failure-appears-where-the-rule-says-it-will: done
+  epic-3-retrospective: optional
+
+  epic-4: done
+  4-1-the-secrets-rule-says-what-it-means: done
+  4-2-drops-arithmetic-lives-in-one-module: done
+  4-3-every-explorer-link-goes-through-the-shared-component: done
+  4-4-the-service-worker-registers-once: done
+  epic-4-retrospective: optional
+
+  epic-5: in-progress
+  5-1-a-destination-check-that-failed-cannot-permit-a-send: done
+  5-2-a-failed-reserve-read-is-reported-not-silently-subtracted: done
+  5-3-a-fee-that-could-not-be-read-does-not-become-a-fee-of-zero: review
+  5-4-an-amount-not-known-to-be-delivered-renders-as-an-upper-boun: backlog
+  5-5-invalidating-account-scoped-data-goes-through-one-named-grou: backlog
+  epic-5-retrospective: optional
+
+  epic-6: backlog
+  6-1-a-reset-that-claims-to-remove-everything-clears-the-persiste: backlog
+  6-2-locking-the-app-does-not-delete-the-app-shell: backlog
+  epic-6-retrospective: optional
+
+  epic-7: backlog
+  7-1-any-transaction-type-can-reach-the-write-choke-point: backlog
+  7-2-two-overlapping-writes-cannot-clear-each-other-s-in-flight-s: backlog
+  7-3-a-failed-update-activation-keeps-telling-the-truth-about-wha: backlog
+  epic-7-retrospective: optional
+
+  epic-8: backlog
+  8-1-a-connection-the-app-has-stopped-using-is-closed: backlog
+  8-2-concurrent-callers-share-one-connection-attempt: backlog
+  epic-8-retrospective: optional
+
+  epic-9: backlog
+  9-1-a-saved-address-carries-the-tag-that-makes-a-payment-arrive: backlog
+  9-2-the-send-screen-warns-on-the-pair-and-the-list-stops-inventi: backlog
+  epic-9-retrospective: optional
+
+  epic-10: backlog
+  10-1-the-query-key-guard-sees-a-key-that-was-bound-to-a-variable: backlog
+  10-2-money-arithmetic-and-explorer-links-get-gates-of-their-own: backlog
+  epic-10-retrospective: optional
+
+  epic-11: backlog
+  11-1-the-warning-comes-before-the-write-on-both-import-paths: backlog
+  11-2-a-pasted-seed-is-not-rejected-for-its-whitespace: backlog
+  epic-11-retrospective: optional

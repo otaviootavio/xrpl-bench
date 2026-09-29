@@ -122,3 +122,9 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-5-5-one-invalidation-group.md`
   summary: `docs/decisions.md` §4 (enforced patterns) and `docs/agents/ledger-io.md` do not record that account-scoped data is discarded only through `invalidateAccountScoped`, or why.
   evidence: The rule and its reason live only in `query-keys.ts` comments and a vitest scan. CLAUDE.md makes `decisions.md` the home of the reasoning. Agent-context and decision docs, so recorded here, not patched.
+
+## Deferred from: browser pass of story 5.5 (2026-09-29)
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-5-5-one-invalidation-group.md`
+  summary: When `account_tx` is answered by a node whose history doesn't reach the account's transactions, History states "No transactions yet" or shows a truncated list as the complete one.
+  evidence: The account `rGMSiqR8SFRv9seNALxCMNdySHNbjZ574V` was checked on both nodes. `wss://s.altnet.rippletest.net:51233` returns 6 transactions (`complete_ledgers` 13075065-21133873). `wss://testnet.xrpl-labs.com`, the backup, returns 0 (`complete_ledgers` 21132193-21133873). The app used both within one load: after a faucet refresh, History went from 6 rows to 1. `account_tx` reports `ledger_index_min`, which shows the searched range starting after the account's first transaction, so the gap can be detected. High: the app states a falsehood about the account, and the wallet's own rule says a failure and an empty result are never the same fact. It overlaps with the connection work in epic 8.

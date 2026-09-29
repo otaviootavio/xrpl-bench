@@ -118,4 +118,15 @@ Pass 1, 2026-09-29. Three layers (blind hunter, edge-case hunter, verification g
 | SendTab invalidates for `destination` | 2 send tests fail |
 | `handleTransaction` no longer invalidates | the live-update test fails |
 
-**Manual check: NOT RUN.** The Testnet refresh after a send, a trust-line change, the faucet and a live payment has not been seen in a browser. The four sites are pinned by tests that run them against a mocked client.
+**Manual check, 2026-09-29: RUN, ALL FOUR PASS.** Build `48845cd`, Playwright Chromium with a CDP virtual authenticator, Testnet. Every websocket frame the page sent was logged, and reads were counted per action. `account_tx` serves both history and the incoming-payment watch; an inactive history query is invalidated and re-read on the next visit.
+
+| Action | Reads after it (`account_info` / `account_lines` / `account_tx`) | On screen |
+|---|---|---|
+| Faucet | 2 / 2 / 2 (1 stream event) | balance 99.999964 → 199.999964; History, on visit, re-reads and shows the 100 XRP payment on top |
+| Trust-line limit 1000 → 900 | 4 / 3 / 2 (1 stream event) | Tokens shows 900; History shows the TrustSet on top |
+| Send 1 XRP | 3 / 2 / 2 (1 stream event) | outcome Validated; balance 199.999952 → 198.99994; History shows the send on top |
+| Live payment, 5 EUR from a script, app idle | 1 / 1 / 2 | EUR 80 → 85 with no user action; History shows it on top |
+
+The doubled counts are the site's own group call plus the live stream's, as intended.
+
+**Found during the pass, not caused by 5.5:** one page load opened six sockets to the primary Testnet node and one to the backup (stories 8.1/8.2). The backup, `testnet.xrpl-labs.com`, holds about 1,700 recent ledgers. When it answers `account_tx`, History renders "No transactions yet", or a truncated list (1 row where there were 6), as fact. Recorded in `deferred-work.md`.

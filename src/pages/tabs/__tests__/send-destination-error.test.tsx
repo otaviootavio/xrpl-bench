@@ -10,6 +10,8 @@ const fetchQuery = vi.fn()
 const submitXrpPayment = vi.fn()
 const submitIssuedPayment = vi.fn()
 const unlockWalletForSigning = vi.fn()
+/** Named, so a test can see what a send discards and for whom. */
+const invalidateQueries = vi.fn()
 
 vi.mock('@/hooks/useDestinationInfo', () => ({ useDestinationInfo: () => useDestinationInfo() }))
 vi.mock('@/hooks/useRecommendedFee', () => ({ useRecommendedFee: () => useRecommendedFee() }))
@@ -31,7 +33,7 @@ vi.mock('@/components/ui/select', () => ({
 }))
 vi.mock('@/hooks/useSpendableBalance', () => ({ useSpendableBalance: () => useSpendableBalance() }))
 vi.mock('@tanstack/react-query', () => ({
-  useQueryClient: () => ({ invalidateQueries: vi.fn(), fetchQuery }),
+  useQueryClient: () => ({ invalidateQueries, fetchQuery }),
 }))
 vi.mock('@/lib/crypto/keystore', () => ({
   unlockWalletForSigning: (...args: unknown[]) => unlockWalletForSigning(...args),
@@ -815,6 +817,36 @@ describe('SendTab — the submit path re-checks before it spends', () => {
 
     expect(screen.queryByRole('button', { name: 'Confirm and send' })).toBeNull()
     expect(screen.getByText('Destination check is out of date')).toBeTruthy()
+  })
+
+  /** A send discards the whole account-scoped group, for the sender — never the
+   * destination — whatever the outcome: a `tec*` claim still moved the fee. */
+  function expectAccountGroupInvalidated() {
+    for (const key of [
+      queryKeys.accountState('testnet', WALLET_ADDRESS),
+      queryKeys.accountTx('testnet', WALLET_ADDRESS),
+      queryKeys.trustLines('testnet', WALLET_ADDRESS),
+      queryKeys.incomingPaymentWatch('testnet', WALLET_ADDRESS),
+    ]) {
+      expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: key })
+    }
+  }
+
+  it('invalidates every account-scoped entry for the sender after a validated send', async () => {
+    render(<SendTab />)
+    await reviewAndConfirm()
+
+    expect(submitXrpPayment).toHaveBeenCalledOnce()
+    expectAccountGroupInvalidated()
+  })
+
+  it('invalidates every account-scoped entry for the sender after a claimed send', async () => {
+    submitXrpPayment.mockResolvedValue({ status: 'claimed', resultCode: 'tecUNFUNDED_PAYMENT', hash: 'AB' })
+    render(<SendTab />)
+    await reviewAndConfirm()
+
+    expect(submitXrpPayment).toHaveBeenCalledOnce()
+    expectAccountGroupInvalidated()
   })
 })
 

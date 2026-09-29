@@ -113,3 +113,12 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-5-3-fee-read-not-zero.md`
   summary: Sending a token back to its own issuer shows "Recipient can't hold this token", but an issuer needs no trust line to receive its own token.
   evidence: In the browser pass, selecting EUR with the EUR issuer's address as destination showed that warning. The destination check reads `hasTrustLine` without treating destination === issuer as holding.
+
+## Deferred from: code review of story-5.5 (2026-09-29)
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-5-5-one-invalidation-group.md`
+  summary: When `submitXrpPayment`/`submitTrustSet` throws (timeout, dropped socket, unknown outcome), SendTab and TrustLinesTab invalidate nothing, although the transaction may have applied.
+  evidence: `invalidateAccountScoped` sits on the `try` path after the result toast; the `catch` only toasts. Pre-existing: before 5.5 the `catch` also invalidated nothing. The live subscription usually covers it, but not when the socket is what failed. Medium: balance and history can stay pre-submit until a poll.
+- source_spec: `_bmad-output/implementation-artifacts/spec-5-5-one-invalidation-group.md`
+  summary: `docs/decisions.md` §4 (enforced patterns) and `docs/agents/ledger-io.md` do not record that account-scoped data is discarded only through `invalidateAccountScoped`, or why.
+  evidence: The rule and its reason live only in `query-keys.ts` comments and a vitest scan. CLAUDE.md makes `decisions.md` the home of the reasoning. Agent-context and decision docs, so recorded here, not patched.

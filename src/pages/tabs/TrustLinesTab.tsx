@@ -16,7 +16,7 @@ import { submitTrustSet } from '@/lib/xrpl/writes'
 import { unlockWalletForSigning } from '@/lib/crypto/keystore'
 import { formatXrp, displayCurrencyCode, coversOwnerReserve } from '@/lib/xrpl/money'
 import { describeResultCode } from '@/lib/xrpl/result-codes'
-import { queryKeys } from '@/lib/xrpl/query-keys'
+import { invalidateAccountScoped } from '@/lib/xrpl/query-keys'
 import { useQueryClient } from '@tanstack/react-query'
 import { toast } from '@/lib/notify'
 
@@ -57,8 +57,7 @@ export function TrustLinesTab() {
       } else {
         toast.error(describeResultCode(result.resultCode))
       }
-      await queryClient.invalidateQueries({ queryKey: queryKeys.trustLines(network, wallet.address) })
-      await queryClient.invalidateQueries({ queryKey: queryKeys.accountState(network, wallet.address) })
+      await invalidateAccountScoped(queryClient, network, wallet.address)
     } catch (err: any) {
       toast.error(err?.message ?? 'Failed to update trust line.')
     } finally {

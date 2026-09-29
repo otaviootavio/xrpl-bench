@@ -1,11 +1,13 @@
 import { QueryClient } from '@tanstack/react-query'
 import { describe, expect, it } from 'vitest'
-import { queryKeys } from '../query-keys'
+import { invalidateAccountScoped, queryKeys } from '../query-keys'
 
 // The matrix row this covers: the account-scoped entries are invalidated using
-// factory-built keys. The set asserted below is the one `useAccountLiveUpdates`
-// invalidates; `SendTab` invalidates three of them and leaves
-// `incomingPaymentWatch` alone.
+// factory-built keys. Every site that discards account data — the live
+// subscription, a send, a trust-line change and the faucet — calls
+// `invalidateAccountScoped()`, so each discards the same whole group: the four
+// entries seeded below. Before that function, each site invalidated its own
+// hand-picked subset and a missing member was only visible by comparing sites.
 //
 // The defect guarded against is not "invalidation was forgotten" but "the
 // invalidation key was retyped and no longer matches the read key", which
@@ -74,5 +76,87 @@ describe('invalidating with factory-built keys', () => {
     client.setQueryData(queryKeys.serverReserves(NETWORK), { baseReserveDrops: '1000000' })
     client.invalidateQueries({ queryKey: queryKeys.accountState(NETWORK, ADDRESS) })
     expect(isInvalidated(client, queryKeys.serverReserves(NETWORK))).toBe(false)
+  })
+})
+
+/** Every builder in the factory whose key has the account-scoped shape
+ * `[name, network, address]` — found from the public factory rather than from a
+ * second list, so a fifth account-scoped builder is covered here unedited. */
+function accountScopedBuilders() {
+  return Object.entries(queryKeys).filter(([, build]) => {
+    if (build.length !== 2) return false
+    const key = (build as (n: typeof NETWORK, a: string) => readonly unknown[])(NETWORK, 'rProbe')
+    return key.length === 3 && key[1] === NETWORK && key[2] === 'rProbe'
+  }) as [string, (n: typeof NETWORK, a: string | null) => readonly unknown[]][]
+}
+
+describe('invalidateAccountScoped', () => {
+  it('invalidates all four account-scoped entries for the address', async () => {
+    const client = seededClient()
+    await invalidateAccountScoped(client, NETWORK, ADDRESS)
+    expect(isInvalidated(client, queryKeys.accountState(NETWORK, ADDRESS))).toBe(true)
+    expect(isInvalidated(client, queryKeys.accountTx(NETWORK, ADDRESS))).toBe(true)
+    expect(isInvalidated(client, queryKeys.trustLines(NETWORK, ADDRESS))).toBe(true)
+    expect(isInvalidated(client, queryKeys.incomingPaymentWatch(NETWORK, ADDRESS))).toBe(true)
+  })
+
+  it('invalidates every account-scoped builder the factory has, not a fixed four', async () => {
+    const client = new QueryClient()
+    const builders = accountScopedBuilders()
+    // At least the four known members; a fifth builder joins without an edit.
+    expect(builders.map(([name]) => name)).toEqual(
+      expect.arrayContaining(['accountState', 'accountTx', 'incomingPaymentWatch', 'trustLines']),
+    )
+    for (const [, build] of builders) client.setQueryData(build(NETWORK, ADDRESS), {})
+    await invalidateAccountScoped(client, NETWORK, ADDRESS)
+    for (const [, build] of builders) expect(isInvalidated(client, build(NETWORK, ADDRESS))).toBe(true)
+  })
+
+  it('leaves another wallet, another network and every non-account key untouched', async () => {
+    const client = seededClient()
+    const untouched = [
+      queryKeys.accountState(NETWORK, 'rOther'),
+      queryKeys.accountTx(NETWORK, 'rOther'),
+      queryKeys.trustLines(NETWORK, 'rOther'),
+      queryKeys.incomingPaymentWatch(NETWORK, 'rOther'),
+      queryKeys.accountState('mainnet', ADDRESS),
+      queryKeys.accountTx('mainnet', ADDRESS),
+      queryKeys.trustLines('mainnet', ADDRESS),
+      queryKeys.incomingPaymentWatch('mainnet', ADDRESS),
+      queryKeys.serverReserves(NETWORK),
+      queryKeys.recommendedFee(NETWORK),
+      queryKeys.destinationInfo(NETWORK, 'rDestination', 'XRP'),
+      queryKeys.passkeyRegistered(),
+      queryKeys.lockoutState(),
+    ]
+    for (const key of untouched) client.setQueryData(key, {})
+    await invalidateAccountScoped(client, NETWORK, ADDRESS)
+    for (const key of untouched) expect(isInvalidated(client, key), JSON.stringify(key)).toBe(false)
+  })
+
+  it('resolves only after every member has resolved', async () => {
+    const pending: { key: readonly unknown[]; resolve: () => void }[] = []
+    const client = {
+      invalidateQueries: ({ queryKey }: { queryKey: readonly unknown[] }) =>
+        new Promise<void>((resolve) => pending.push({ key: queryKey, resolve })),
+    }
+    let settled = false
+    const done = invalidateAccountScoped(client as never, NETWORK, ADDRESS).then(() => {
+      settled = true
+    })
+
+    expect(pending.map((p) => p.key)).toEqual(
+      expect.arrayContaining(accountScopedBuilders().map(([, build]) => build(NETWORK, ADDRESS))),
+    )
+    expect(pending).toHaveLength(accountScopedBuilders().length)
+    for (const p of pending.slice(0, -1)) {
+      p.resolve()
+      // A macrotask, so every queued microtask has run before the check.
+      await new Promise((r) => setTimeout(r, 0))
+      expect(settled).toBe(false)
+    }
+    pending[pending.length - 1].resolve()
+    await done
+    expect(settled).toBe(true)
   })
 })

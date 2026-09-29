@@ -1,17 +1,23 @@
 /** @vitest-environment jsdom */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 
 const useAccountState = vi.fn()
 const useTrustLines = vi.fn()
 const useServerReserves = vi.fn()
 const useSpendableBalance = vi.fn()
+/** Named, so a test can see what the faucet discards and for whom. */
+const invalidateQueries = vi.fn()
+const requestTestnetFunds = vi.fn()
 
 vi.mock('@/hooks/useAccountState', () => ({ useAccountState: () => useAccountState() }))
 vi.mock('@/hooks/useTrustLines', () => ({ useTrustLines: () => useTrustLines() }))
 vi.mock('@/hooks/useServerReserves', () => ({ useServerReserves: () => useServerReserves() }))
 vi.mock('@/hooks/useSpendableBalance', () => ({ useSpendableBalance: () => useSpendableBalance() }))
-vi.mock('@tanstack/react-query', () => ({ useQueryClient: () => ({ invalidateQueries: vi.fn() }) }))
+vi.mock('@tanstack/react-query', () => ({ useQueryClient: () => ({ invalidateQueries }) }))
+vi.mock('@/lib/xrpl/faucet', () => ({
+  requestTestnetFunds: (...args: unknown[]) => requestTestnetFunds(...args),
+}))
 vi.mock('@/components/wallet/AddressDisplay', () => ({ AddressDisplay: () => <div /> }))
 vi.mock('@/store/app-store', () => ({
   useAppStore: (selector: (s: { network: string }) => unknown) => selector({ network: 'testnet' }),
@@ -20,6 +26,9 @@ vi.mock('@/store/app-store', () => ({
 
 import { BalancesTab } from '../BalancesTab'
 import type { SpendableBalance } from '@/hooks/useSpendableBalance'
+import { queryKeys } from '@/lib/xrpl/query-keys'
+
+const WALLET_ADDRESS = 'rBoGUS9uiK9m3Kk6qnGRvWWCwAeN8hF3wR'
 
 function query(overrides: Record<string, unknown> = {}) {
   return { data: undefined, isLoading: false, isError: false, refetch: vi.fn(), ...overrides }
@@ -55,8 +64,30 @@ beforeEach(() => {
   useTrustLines.mockReturnValue(ok())
   useServerReserves.mockReturnValue(reservesOk())
   useSpendableBalance.mockReturnValue(spendable())
+  invalidateQueries.mockClear()
+  requestTestnetFunds.mockReset()
 })
 afterEach(cleanup)
+
+describe('BalancesTab — the faucet discards the whole account group', () => {
+  it('invalidates every account-scoped entry for the active wallet after funding', async () => {
+    requestTestnetFunds.mockResolvedValue({ amountXrp: '100' })
+    render(<BalancesTab />)
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Fund with Testnet XRP' }))
+    })
+
+    expect(requestTestnetFunds).toHaveBeenCalledWith('testnet', WALLET_ADDRESS)
+    for (const key of [
+      queryKeys.accountState('testnet', WALLET_ADDRESS),
+      queryKeys.accountTx('testnet', WALLET_ADDRESS),
+      queryKeys.trustLines('testnet', WALLET_ADDRESS),
+      queryKeys.incomingPaymentWatch('testnet', WALLET_ADDRESS),
+    ]) {
+      expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: key })
+    }
+  })
+})
 
 /**
  * The two reads this screen makes can each fail on their own, and each used to

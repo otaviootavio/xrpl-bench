@@ -51,7 +51,11 @@ export function useIncomingPaymentNotifications(network: NetworkId, address: str
     // Ignore data that arrived for a previous account before the reset above.
     if (watchKey.current !== `${network}:${address}`) return
 
-    const incoming = query.data.items.filter((tx) => tx.direction === 'received' && tx.validated && tx.type === 'Payment')
+    // Only a successful payment is announced as received: a failed incoming
+    // Payment delivered nothing, and "Received …" would state the opposite.
+    const incoming = query.data.items.filter(
+      (tx) => tx.direction === 'received' && tx.validated && tx.type === 'Payment' && tx.resultCode === 'tesSUCCESS',
+    )
 
     if (isFirstLoad.current) {
       incoming.forEach((tx) => seenHashes.current.add(tx.hash))

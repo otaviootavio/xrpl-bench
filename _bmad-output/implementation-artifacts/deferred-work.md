@@ -92,3 +92,24 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-5-1-destination-check-guard.md`
   summary: No decision record names `DESTINATION_CHECK_FRESHNESS_MS`, its 30-second value, the third ("out of date") state the Send form now has, the post-unlock placement of the re-check, or the deliberate choice not to refetch when a check goes stale.
   evidence: All five are new rules on the money path, and the code comments in `query-reads.ts:29` and `SendTab.tsx:154` cite them as already decided. `docs/decisions.md` §12 mentions a "freshness window" in passing but names none of them. Deferred because the fix edits §12, a rules file this workflow routes away from a build story.
+
+## Deferred from: code review of story-5.4 (2026-09-28)
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-5-4-amount-upper-bound.md`
+  summary: An issued-currency value in XRPL exponent notation (`1e-7`, `1234567890123456e-30`) is rendered raw by `formatAmountString`, and a digit run before `e` gets thousands separators (`1,234e5`).
+  evidence: `money.ts:36-43` splits only on `.` and applies separators to the whole integer part. rippled's `STAmount::getText` uses scientific notation for very small or very large IOU values. Pre-existing: before story 5.4, any truthy `delivered_amount` reached the same formatter. Story 5.4 now classifies such values as exact (`isPositiveLedgerDecimalString`), so they are correctly unflagged but still misformatted. Medium: a misread token figure on History and in the "Received" toast.
+- source_spec: `_bmad-output/implementation-artifacts/spec-5-4-amount-upper-bound.md`
+  summary: `docs/agents/money.md` does not record the split between `isPositiveDecimalString` (strict, what a user types) and `isPositiveLedgerDecimalString` (lenient, what the ledger reports), or that `amountIsUpperBound` now also covers failed, zero and malformed deliveries.
+  evidence: money.md:37-39 still describes the flag only as "when the ledger could not report it". Without the note, a later change may merge the two checks back together. Agent-context file, so it is recorded here rather than patched.
+
+## Deferred from: browser pass of stories 5.3 and 5.4 (2026-09-28)
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-5-4-amount-upper-bound.md`
+  summary: On History at 320 and 390 px, a failed payment's collapsed amount (and its `≤` label) is pushed off-screen by the unwrapped status badge.
+  evidence: Measured in the browser: the row's content is 417 px wide in a 229/299 px button, with the amount at x=374–463. Seen on a real `tecNO_DST_INSUF_XRP` row. Blocks 5.4 leaving review.
+- source_spec: `_bmad-output/implementation-artifacts/spec-5-3-fee-read-not-zero.md`
+  summary: The Send confirm dialog states the network fee as the recommended figure (0.00001 XRP), but the submitted transaction was charged 0.000012 XRP.
+  evidence: In the browser pass, the dialog read "plus a network fee of 0.00001 XRP". After a failed send the balance went from 99 to 98.999988, and History's Fee field reads 0.000012 XRP. The dialog and the fee autofilled at submission disagree.
+- source_spec: `_bmad-output/implementation-artifacts/spec-5-3-fee-read-not-zero.md`
+  summary: Sending a token back to its own issuer shows "Recipient can't hold this token", but an issuer needs no trust line to receive its own token.
+  evidence: In the browser pass, selecting EUR with the EUR issuer's address as destination showed that warning. The destination check reads `hasTrustLine` without treating destination === issuer as holding.

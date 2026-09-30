@@ -1,3 +1,4 @@
+import type { QueryClient } from '@tanstack/react-query'
 import type { NetworkId } from './networks'
 
 /**
@@ -14,6 +15,13 @@ import type { NetworkId } from './networks'
  * active wallet's address, so a key cannot be built without them. A read that
  * is genuinely account-independent or device-scoped is a named function here,
  * so the exception is visible in this file rather than implied at a call site.
+ *
+ * Discarding cached account data goes through one path only:
+ * `invalidateAccountScoped()`, below. No call site names an account-scoped key
+ * to `invalidateQueries` — four sites that each picked their own subset left
+ * history stale after a trust-line change and the incoming-payment watch stale
+ * after a send. `src/lib/xrpl/__tests__/account-invalidation-sites.test.ts` is
+ * the guard that enforces this one-path rule.
  *
  * `scripts/check-query-keys.mjs`, run by `bun run lint`, rejects any key
  * literal written outside this module.
@@ -45,6 +53,31 @@ const accountScoped = {
   incomingPaymentWatch: (network: NetworkId, address: string | null) =>
     ['incomingPaymentWatch', network, address] as const,
 } satisfies Record<string, AccountScopedKeyBuilder>
+
+/**
+ * Invalidates every account-scoped entry for one network and one address, and
+ * resolves once each member's invalidation has resolved.
+ *
+ * The group is `accountScoped` itself, so a builder added there joins it with
+ * no call site edited. Network-, destination- and device-scoped keys are not in
+ * that table and are never touched; neither is another wallet or network.
+ *
+ * This is a function that performs the loop, not an exported list of keys for
+ * callers to iterate: a key bound to a variable at a call site is invisible to
+ * `check-query-keys.mjs`, so handing the set out would recreate four
+ * unguarded invalidation sites.
+ */
+export async function invalidateAccountScoped(
+  client: Pick<QueryClient, 'invalidateQueries'>,
+  network: NetworkId,
+  address: string | null,
+): Promise<void> {
+  await Promise.all(
+    Object.values(accountScoped).map((build) =>
+      client.invalidateQueries({ queryKey: build(network, address) }),
+    ),
+  )
+}
 
 export const queryKeys = {
   ...accountScoped,

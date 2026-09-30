@@ -28,7 +28,7 @@ import {
   amountPlusFeeFits,
 } from '@/lib/xrpl/money'
 import { describeResultCode } from '@/lib/xrpl/result-codes'
-import { queryKeys } from '@/lib/xrpl/query-keys'
+import { invalidateAccountScoped } from '@/lib/xrpl/query-keys'
 import {
   DESTINATION_CHECK_FRESHNESS_MS,
   fetchDestinationInfoOnce,
@@ -450,9 +450,7 @@ export function SendTab() {
       } else {
         toast.error(describeResultCode(result.resultCode))
       }
-      await queryClient.invalidateQueries({ queryKey: queryKeys.accountState(network, wallet.address) })
-      await queryClient.invalidateQueries({ queryKey: queryKeys.accountTx(network, wallet.address) })
-      await queryClient.invalidateQueries({ queryKey: queryKeys.trustLines(network, wallet.address) })
+      await invalidateAccountScoped(queryClient, network, wallet.address)
     } catch (err: any) {
       toast.error(err?.message ?? 'Send failed.')
       // The intent to confirm goes too, deliberately rather than as a side

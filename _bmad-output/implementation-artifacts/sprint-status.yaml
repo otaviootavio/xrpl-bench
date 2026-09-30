@@ -65,7 +65,7 @@ development_status:
   epic-5: in-progress
   5-1-a-destination-check-that-failed-cannot-permit-a-send: done
   5-2-a-failed-reserve-read-is-reported-not-silently-subtracted: done
-  5-3-a-fee-that-could-not-be-read-does-not-become-a-fee-of-zero: review
+  5-3-a-fee-that-could-not-be-read-does-not-become-a-fee-of-zero: done
   5-4-an-amount-not-known-to-be-delivered-renders-as-an-upper-boun: done
   5-5-invalidating-account-scoped-data-goes-through-one-named-grou: done
   epic-5-retrospective: optional

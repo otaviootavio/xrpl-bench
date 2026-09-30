@@ -851,6 +851,24 @@ describe('SendTab — the submit path re-checks before it spends', () => {
 })
 
 /**
+ * The amount field's own state: whether it is announced invalid, and the tone
+ * of the message it points at. A read still in flight must reach neither the
+ * destructive tone nor `aria-invalid` (story 5.3 AC 2) — the wording alone
+ * being right is not enough, because the field still said "failure".
+ */
+function amountFieldState() {
+  const field = screen.getByLabelText('Amount')
+  const describedBy = field.getAttribute('aria-describedby')
+  const message = describedBy ? document.getElementById(describedBy) : null
+  return {
+    invalid: field.getAttribute('aria-invalid') === 'true',
+    message: message?.textContent ?? null,
+    destructive: !!message?.className.includes('text-text-destructive'),
+    muted: !!message?.className.includes('text-muted-foreground'),
+  }
+}
+
+/**
  * The affordability check used to `return undefined` the moment there was no
  * spendable figure — "no figure, so no objection" — and an amount was then
  * declared affordable against a balance the app had never worked out. The read
@@ -871,6 +889,27 @@ describe('the affordability check fails closed without a spendable figure', () =
     expect(reviewButton().disabled).toBe(true)
     expect(screen.getByText(/still being read/i)).toBeTruthy()
     expect(screen.queryByText(/could not be read/i)).toBeNull()
+    // The field says "not yet", not "invalid".
+    expect(amountFieldState()).toEqual({
+      invalid: false,
+      message: expect.stringMatching(/still being read/i),
+      destructive: false,
+      muted: true,
+    })
+  })
+
+  it('keeps a failed balance read destructive and invalid on the amount field', () => {
+    useSpendableBalance.mockReturnValue(spendable({ status: 'unavailable', spendableDrops: null, reservedDrops: null }))
+    render(<SendTab />)
+    fireEvent.change(screen.getByLabelText('Destination address'), { target: { value: DESTINATION } })
+    fireEvent.change(screen.getByLabelText('Amount'), { target: { value: '1000' } })
+    settleClock()
+    expect(amountFieldState()).toEqual({
+      invalid: true,
+      message: expect.stringMatching(/spendable balance could not be read/i),
+      destructive: true,
+      muted: false,
+    })
   })
 
   it('says an account that does not exist yet has nothing to check against', () => {
@@ -882,6 +921,8 @@ describe('the affordability check fails closed without a spendable figure', () =
 
     expect(reviewButton().disabled).toBe(true)
     expect(screen.getByText(/isn't activated yet/i)).toBeTruthy()
+    // Not a pending read: nothing is still coming, so the field stays an error.
+    expect(amountFieldState()).toMatchObject({ invalid: true, destructive: true, muted: false })
     expect(screen.queryByText(/could not be read/i)).toBeNull()
   })
 
@@ -973,7 +1014,29 @@ describe('the affordability check fails closed without a fee figure', () => {
     // In flight has not failed, and nothing on screen may say it has.
     expect(screen.queryByText(/network fee could not be read/i)).toBeNull()
     expect(screen.queryByRole('button', { name: 'Try again' })).toBeNull()
+    expect(amountFieldState()).toEqual({
+      invalid: false,
+      message: expect.stringMatching(/network fee is still being read/i),
+      destructive: false,
+      muted: true,
+    })
   })
+
+  it('keeps a failed fee read destructive and invalid on the amount field', () => {
+    // The mirror of the in-flight case: only "not yet" is muted. A failure is
+    // still a failure, on the field as well as in the words.
+    useRecommendedFee.mockReturnValue(feeRead({ data: undefined, isError: true }))
+    render(<SendTab />)
+    fillWellWithinBalance()
+    settleClock()
+    expect(amountFieldState()).toEqual({
+      invalid: true,
+      message: expect.stringMatching(/network fee could not be read/i),
+      destructive: true,
+      muted: false,
+    })
+  })
+
 
   it('drops a retained figure while the read is in error', () => {
     // §12 rule 2: a failed refetch that kept an earlier answer is still a

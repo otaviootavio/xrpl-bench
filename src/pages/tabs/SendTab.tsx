@@ -224,8 +224,13 @@ export function SendTab() {
   const tagValid = tagValue === undefined || (Number.isInteger(tagValue) && tagValue >= 0 && tagValue <= MAX_DESTINATION_TAG)
 
   /** Funds check done in the form, so a too-large send fails here with a clear
-   * reason instead of costing a fee and coming back as tecUNFUNDED_PAYMENT. */
-  const fundsError = (() => {
+   * reason instead of costing a fee and coming back as tecUNFUNDED_PAYMENT.
+   *
+   * `pending` marks a reason that is a read still in flight rather than a
+   * fault. The send is refused either way, but a read that has not landed has
+   * not failed, so the amount field must not be painted or announced as
+   * invalid for it (story 5.3 AC 2; 5.2's loading case is the same). */
+  const fundsCheck = ((): { reason: string; pending: boolean } | undefined => {
     if (!amountValidation.valid) return undefined
     if (asset === 'XRP') {
       // Fails CLOSED. This used to `return undefined` — "no figure, so no
@@ -234,22 +239,26 @@ export function SendTab() {
       // with `retry: 1`, so a single failed poll reaches here on a form the
       // operator is already filling in. Absence of a prohibition is not
       // permission (docs/decisions.md §12 rule 1).
-      if (!spendableDrops) return spendableUnknownReason
+      if (!spendableDrops) return { reason: spendableUnknownReason, pending: spendable.status === 'loading' }
       // Fails CLOSED on the fee as well, and for the same reason. There is no
       // "safe" substitute figure: a fabricated fee is what let an amount that
       // does not fit be declared affordable.
-      if (!feeDrops) return feeUnknownReason
+      if (!feeDrops) return { reason: feeUnknownReason, pending: !fee.isError }
       // The fee comes out on top of the amount, so both must fit (money.ts).
       if (!amountPlusFeeFits(xrpToDropsString(amount), feeDrops, spendableDrops)) {
-        return `That's more than your spendable balance (${formatXrp(spendableDrops)}) once the network fee is included.`
+        return {
+          reason: `That's more than your spendable balance (${formatXrp(spendableDrops)}) once the network fee is included.`,
+          pending: false,
+        }
       }
       return undefined
     }
     if (selectedLine && compareDecimalStrings(amount, selectedLine.balance) > 0) {
-      return `You only hold ${selectedLine.balance} ${displayCurrencyCode(selectedLine.currency)}.`
+      return { reason: `You only hold ${selectedLine.balance} ${displayCurrencyCode(selectedLine.currency)}.`, pending: false }
     }
     return undefined
   })()
+  const fundsError = fundsCheck?.reason
 
   const canSend =
     destinationValid &&
@@ -671,7 +680,8 @@ export function SendTab() {
             onChange={setAmount}
             kind={asset === 'XRP' ? 'xrp' : 'issued'}
             suffix={asset === 'XRP' ? 'XRP' : displayCurrencyCode(asset.split('|')[0])}
-            error={amount.length > 0 ? (amountValidation.error ?? fundsError) : undefined}
+            error={amount.length > 0 ? (amountValidation.error ?? (fundsCheck?.pending ? undefined : fundsError)) : undefined}
+            pending={amount.length > 0 && !amountValidation.error && fundsCheck?.pending ? fundsCheck.reason : undefined}
           />
 
           {/* A reading, so it is shown in the panel's well rather than a grey

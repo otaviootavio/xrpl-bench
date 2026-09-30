@@ -218,6 +218,41 @@ describe('HistoryTab — an amount not known to be delivered is an upper bound',
     expect(screen.queryByText(/nothing was delivered/)).toBeNull()
   })
 
+  it('keeps a failed row\'s legend and its ≤ amount, with the result code unbreakable', () => {
+    const tx = {
+      ...base,
+      hash: 'FAILEDROW',
+      direction: 'sent',
+      resultCode: 'tecNO_DST_INSUF_XRP',
+      amountDrops: '500000',
+      amountIsUpperBound: true,
+    }
+    useAccountTxHistory.mockReturnValue(query({ data: page([tx]) }))
+    render(<TooltipProvider><HistoryTab /></TooltipProvider>)
+
+    const row = screen.getAllByRole('button').find((b) => b.hasAttribute('aria-expanded'))!
+    expect(row.textContent).toContain('Failed — fee charged (tecNO_DST_INSUF_XRP)')
+    expect(screen.getByText('≤ 0.5 XRP')).toBeTruthy()
+    // Only the code is kept on one line; the words before it may wrap. The
+    // layout itself (the amount staying visible at 320px) is a browser check.
+    const code = screen.getByText('(tecNO_DST_INSUF_XRP)')
+    expect(code.className).toContain('whitespace-nowrap')
+    // No ancestor, up to and including the legend root, may be nowrap: that is
+    // the legend-wide overflow this row used to have.
+    const nowrapAncestor = code.parentElement?.closest('.whitespace-nowrap')
+    expect(nowrapAncestor && row.contains(nowrapAncestor)).toBeFalsy()
+  })
+
+  it('keeps the result code on a non-tec failure too', () => {
+    const tx = { ...base, hash: 'TEFROW', direction: 'sent', resultCode: 'tefPAST_SEQ', amountDrops: '500000' }
+    useAccountTxHistory.mockReturnValue(query({ data: page([tx]) }))
+    render(<TooltipProvider><HistoryTab /></TooltipProvider>)
+
+    const row = screen.getAllByRole('button').find((b) => b.hasAttribute('aria-expanded'))!
+    expect(row.textContent).toContain('Failed (tefPAST_SEQ)')
+    expect(screen.getByText('(tefPAST_SEQ)').className).toContain('whitespace-nowrap')
+  })
+
   it('words a failed payment as failed, not as an unreported amount', () => {
     const tx = { ...base, hash: 'FAILED', resultCode: 'tecPATH_DRY', amountDrops: '5000000', amountIsUpperBound: true }
     useAccountTxHistory.mockReturnValue(query({ data: page([tx]) }))

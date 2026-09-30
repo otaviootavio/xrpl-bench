@@ -52,8 +52,12 @@ function Lamp({ tone = 'neutral', className, ...props }: React.ComponentProps<'s
  * it is the reason the tone is not simply inherited.
  *
  * Wrapping is the caller's call: the default wraps, because most legends are
- * one or two words inside `flex-wrap` rows. Pass `whitespace-nowrap` where the
- * text is a long result code that must not break mid-token.
+ * one or two words inside `flex-wrap` rows. Where the text carries a long
+ * result code that must not break mid-token, put the text in one child span and
+ * wrap only the code in a `whitespace-nowrap` span inside it. Do not make the
+ * whole legend `whitespace-nowrap`: it then cannot wrap and overflows narrow
+ * rows. Loose text children of this `inline-flex` each become their own flex
+ * item and cannot wrap under one another, which is why the single span matters.
  */
 function StatusLegend({
   tone,

@@ -87,29 +87,36 @@ export function HistoryTab() {
         )}
         {items.map((tx) => (
           <div key={tx.hash} className="panel-plate rounded-md p-3">
+            {/* Three lines below `sm`: direction and amount, then the status
+                legend on its own full-width line, then the date. A failed row's
+                legend carries an unbreakable result code that cannot fit beside
+                the amount at 320px, and the amount (with its `≤`) must never be
+                pushed off-screen. From `sm` up the grid places the legend back
+                beside the direction and centres the amount across both lines,
+                as before. DOM order is the same at every width (DESIGN.md). */}
             <button
-              className="flex w-full items-center justify-between gap-2 rounded-sm text-left"
+              className="grid w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-x-2 rounded-sm text-left sm:grid-cols-[auto_minmax(0,1fr)_auto]"
               aria-expanded={expanded === tx.hash}
               onClick={() => setExpanded(expanded === tx.hash ? null : tx.hash)}
             >
-              <div>
-                <div className="flex items-center gap-2">
-                  <span className="font-legend text-sm font-semibold uppercase tracking-[0.09em]">{tx.direction}</span>
-                  {/* Non-Payment types (e.g. the wallet's own TrustSet) are
-                      listed too, so name the type when it isn't a payment. */}
-                  {tx.type !== 'Payment' && <span className="text-xs text-muted-foreground">{tx.type}</span>}
-                  <TxStatusBadge resultCode={tx.resultCode} validated={tx.validated} />
-                </div>
-                <div className="text-xs text-muted-foreground">
-                  {tx.date ? new Date(tx.date * 1000).toLocaleString() : 'Date unknown'}
-                </div>
+              <div className="flex min-w-0 items-center gap-2 sm:col-start-1 sm:row-start-1">
+                <span className="font-legend text-sm font-semibold uppercase tracking-[0.09em]">{tx.direction}</span>
+                {/* Non-Payment types (e.g. the wallet's own TrustSet) are
+                    listed too, so name the type when it isn't a payment. */}
+                {tx.type !== 'Payment' && <span className="text-xs text-muted-foreground">{tx.type}</span>}
               </div>
-              <div className="shrink-0 text-right font-data text-base tracking-tight">
+              <div className="text-right font-data text-base tracking-tight sm:col-start-3 sm:row-span-2 sm:row-start-1">
                 {tx.amountDrops
                   ? `${tx.amountIsUpperBound ? '≤ ' : ''}${formatXrp(tx.amountDrops)}`
                   : tx.amountIssued
                     ? `${tx.amountIsUpperBound ? '≤ ' : ''}${formatAmountString(tx.amountIssued.value)} ${displayCurrencyCode(tx.amountIssued.currency)}`
                     : '—'}
+              </div>
+              <div className="col-span-2 flex min-w-0 sm:col-span-1 sm:col-start-2 sm:row-start-1">
+                <TxStatusBadge resultCode={tx.resultCode} validated={tx.validated} />
+              </div>
+              <div className="col-span-2 text-xs text-muted-foreground sm:col-start-1 sm:row-start-2">
+                {tx.date ? new Date(tx.date * 1000).toLocaleString() : 'Date unknown'}
               </div>
             </button>
             {expanded === tx.hash && (

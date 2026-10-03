@@ -29,7 +29,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 # - Retrospective appends its action items to action_items; the status view surfaces open ones
 generated: 09-15-2026 21:01
-last_updated: '2026-09-30'
+last_updated: '10-02-2026 23:35'
 project: xrpl-wallet
 project_key: NOKEY
 tracking_system: file-system
@@ -62,13 +62,13 @@ development_status:
   4-4-the-service-worker-registers-once: done
   epic-4-retrospective: optional
 
-  epic-5: in-progress
+  epic-5: done
   5-1-a-destination-check-that-failed-cannot-permit-a-send: done
   5-2-a-failed-reserve-read-is-reported-not-silently-subtracted: done
   5-3-a-fee-that-could-not-be-read-does-not-become-a-fee-of-zero: done
   5-4-an-amount-not-known-to-be-delivered-renders-as-an-upper-boun: done
   5-5-invalidating-account-scoped-data-goes-through-one-named-grou: done
-  epic-5-retrospective: optional
+  epic-5-retrospective: done
 
   epic-6: backlog
   6-1-a-reset-that-claims-to-remove-everything-clears-the-persiste: backlog
@@ -100,3 +100,76 @@ development_status:
   11-1-the-warning-comes-before-the-write-on-both-import-paths: backlog
   11-2-a-pasted-seed-is-not-rejected-for-its-whitespace: backlog
   epic-11-retrospective: optional
+action_items:
+  - id: "epic-5-retro-item-1-make-send-s-token-path-fail-closed-on-a"
+    epic: 5
+    action: "Make Send's token path fail closed on a failed or stale trust-line read
+      (refuse on trustLines.isError or missing selectedLine, no retained lines in
+      the picker, reset asset on wallet/network change); move isPositiveDrops into
+      money.ts. Ships before epic 6."
+    owner: "dev"
+    status: open
+    ref: "_bmad-output/implementation-artifacts/epic-5-retro-2026-09-30.md"
+  - id: "epic-5-retro-item-2-let-a-failed-read-outrank-a-pending-one"
+    epic: 5
+    action: "Let a failed read outrank a pending one in Send's funds check, so a failed
+      fee is stated while spendable is loading."
+    owner: "dev"
+    status: open
+    ref: "_bmad-output/implementation-artifacts/epic-5-retro-2026-09-30.md"
+  - id: "epic-5-retro-item-3-fetchaccounttx-treats-actnotfound-as-an"
+    epic: 5
+    action: "fetchAccountTx treats actNotFound as an empty result, so History stops
+      calling an unactivated account a failed read."
+    owner: "dev"
+    status: open
+    ref: "_bmad-output/implementation-artifacts/epic-5-retro-2026-09-30.md"
+  - id: "epic-5-retro-item-4-gate-send-s-confirm-dialog-on-cansend-no"
+    epic: 5
+    action: "Gate Send's confirm dialog on canSend, not only on the destination check."
+    owner: "dev"
+    status: open
+    ref: "_bmad-output/implementation-artifacts/epic-5-retro-2026-09-30.md"
+  - id: "epic-5-retro-item-5-refresh-the-destination-check-after-a-va"
+    epic: 5
+    action: "Refresh the destination check after a validated send through a named
+      single-entry helper on the key factory."
+    owner: "dev"
+    status: open
+    ref: "_bmad-output/implementation-artifacts/epic-5-retro-2026-09-30.md"
+  - id: "epic-5-retro-item-6-run-the-missing-testnet-browser-passes-f"
+    epic: 5
+    action: "Run the missing Testnet browser passes for stories 5.1 and 5.2 with the
+      virtual-authenticator setup."
+    owner: "Otavio / dev"
+    status: open
+    ref: "_bmad-output/implementation-artifacts/epic-5-retro-2026-09-30.md"
+  - id: "epic-5-retro-item-7-make-a-browser-pass-with-opened-screensh"
+    epic: 5
+    action: "Make a browser pass with opened screenshots part of every UI story's
+      definition of done, and record the CDP virtual-authenticator recipe in docs/agents/verifying-your-work.md."
+    owner: "Otavio"
+    status: open
+    ref: "_bmad-output/implementation-artifacts/epic-5-retro-2026-09-30.md"
+  - id: "epic-5-retro-item-8-before-epic-7-split-sendtab-tsx-807-line"
+    epic: 5
+    action: "Before epic 7, split SendTab.tsx (807 lines, 13 responsibilities) and
+      introduce one shared read-state primitive for readouts and the amount field."
+    owner: "architect"
+    status: open
+    ref: "_bmad-output/implementation-artifacts/epic-5-retro-2026-09-30.md"
+  - id: "epic-5-retro-item-9-promote-the-account-invalidation-source"
+    epic: 5
+    action: "Promote the account-invalidation source scan to a scripts/check-*.mjs
+      guard run by lint, with fixture tests."
+    owner: "dev"
+    status: open
+    ref: "_bmad-output/implementation-artifacts/epic-5-retro-2026-09-30.md"
+  - id: "epic-5-retro-item-10-triage-deferred-work-md-before-epic-6-ba"
+    epic: 5
+    action: "Triage deferred-work.md before epic 6 (backup-node partial history and
+      thrown-submit invalidation first), adding the HistoryTab and TrustLinesTab retained-rows
+      findings."
+    owner: "Otavio"
+    status: open
+    ref: "_bmad-output/implementation-artifacts/epic-5-retro-2026-09-30.md"

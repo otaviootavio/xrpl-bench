@@ -137,3 +137,7 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-5-4-history-failed-row-clipping.md`
   summary: On History below `sm`, a very long amount (e.g. a 20+ character issued-currency figure) squeezes the direction column to zero, and "SENT"/"RECEIVED" can paint over the amount.
   evidence: The row grid is `grid-cols-[minmax(0,1fr)_auto]` with a `min-w-0` direction cell, so an `auto` amount wider than the row minus the direction wins. Pre-existing in another form: the old flex layout pushed the amount off-screen in the same case. Medium: a long token amount on a phone is unreadable either way. Needs a design choice (let the amount wrap, or give it its own line).
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-retro-5-send-guards-fail-closed.md`
+  summary: After the unlock, Send re-checks only the destination; a trust-line, fee or spendable read that fails or changes during the unlock does not stop a token or XRP payment from being submitted.
+  evidence: `doSend` re-reads only `fetchDestinationInfoOnce` after `unlockWalletForSigning`; the Epic 5 retro (F6) deferred widening the probe to the `SendTab` split (action item 8).

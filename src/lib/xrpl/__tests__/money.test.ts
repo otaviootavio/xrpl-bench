@@ -7,6 +7,7 @@ import {
   subtractDrops,
   multiplyDropsByCount,
   isNonNegativeDrops,
+  isPositiveDrops,
   isPositiveDecimalString,
   compareDecimalStrings,
   displayCurrencyCode,
@@ -71,6 +72,28 @@ describe('drops arithmetic', () => {
     expect(isNonNegativeDrops('0')).toBe(true)
     expect(isNonNegativeDrops('-1')).toBe(false)
     expect(isNonNegativeDrops('nonsense')).toBe(false)
+  })
+})
+
+describe('isPositiveDrops', () => {
+  it('accepts a whole number of drops greater than zero', () => {
+    expect(isPositiveDrops('1')).toBe(true)
+    // Past Number.MAX_SAFE_INTEGER: decided in BigInt, never as a float.
+    expect(isPositiveDrops('100000000000000001')).toBe(true)
+  })
+
+  it('rejects zero, negatives and fractions', () => {
+    expect(isPositiveDrops('0')).toBe(false)
+    expect(isPositiveDrops('-1')).toBe(false)
+    // Drops are indivisible; a decimal here is not a drops figure at all.
+    expect(isPositiveDrops('1.5')).toBe(false)
+  })
+
+  it('rejects anything that is not a string', () => {
+    for (const value of [1, null, undefined, { currency: 'USD', issuer: 'r', value: '1' }]) {
+      expect(isPositiveDrops(value)).toBe(false)
+    }
+    expect(isPositiveDrops('unavailable')).toBe(false)
   })
 })
 

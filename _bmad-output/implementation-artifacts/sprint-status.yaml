@@ -108,14 +108,14 @@ action_items:
       the picker, reset asset on wallet/network change); move isPositiveDrops into
       money.ts. Ships before epic 6."
     owner: "dev"
-    status: open
+    status: done
     ref: "_bmad-output/implementation-artifacts/epic-5-retro-2026-09-30.md"
   - id: "epic-5-retro-item-2-let-a-failed-read-outrank-a-pending-one"
     epic: 5
     action: "Let a failed read outrank a pending one in Send's funds check, so a failed
       fee is stated while spendable is loading."
     owner: "dev"
-    status: open
+    status: done
     ref: "_bmad-output/implementation-artifacts/epic-5-retro-2026-09-30.md"
   - id: "epic-5-retro-item-3-fetchaccounttx-treats-actnotfound-as-an"
     epic: 5
@@ -128,7 +128,7 @@ action_items:
     epic: 5
     action: "Gate Send's confirm dialog on canSend, not only on the destination check."
     owner: "dev"
-    status: open
+    status: done
     ref: "_bmad-output/implementation-artifacts/epic-5-retro-2026-09-30.md"
   - id: "epic-5-retro-item-5-refresh-the-destination-check-after-a-va"
     epic: 5

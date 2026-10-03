@@ -1,6 +1,6 @@
 /** @vitest-environment jsdom */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 
 const useDestinationInfo = vi.fn()
 const useSpendableBalance = vi.fn()
@@ -20,17 +20,28 @@ vi.mock('@/hooks/useTrustLines', () => ({ useTrustLines: () => useTrustLines() }
  * asset picker is a means to an end here: the token-send assertions are about
  * the fee, not about the listbox. A native select keeps the same contract —
  * `value` in, `onValueChange` out — with none of that apparatus. */
-vi.mock('@/components/ui/select', () => ({
-  Select: ({ value, onValueChange, children }: any) => (
-    <select data-testid="asset" value={value} onChange={(e) => onValueChange(e.target.value)}>
-      {children}
-    </select>
-  ),
-  SelectTrigger: () => null,
-  SelectValue: () => null,
-  SelectContent: ({ children }: any) => <>{children}</>,
-  SelectItem: ({ value, children }: any) => <option value={value}>{children}</option>,
-}))
+vi.mock('@/components/ui/select', () => {
+  // The trigger (and the `SelectValue` label inside it) renders beside the
+  // native select rather than in it: a `<span>` is not valid inside `<select>`.
+  const SelectTrigger = ({ children }: any) => <>{children}</>
+  return {
+    Select: ({ value, onValueChange, children }: any) => {
+      const all = Array.isArray(children) ? children : [children]
+      return (
+        <>
+          <select data-testid="asset" value={value} onChange={(e) => onValueChange(e.target.value)}>
+            {all.filter((c: any) => c?.type !== SelectTrigger)}
+          </select>
+          {all.filter((c: any) => c?.type === SelectTrigger)}
+        </>
+      )
+    },
+    SelectTrigger,
+    SelectValue: ({ children }: any) => <span data-testid="asset-label">{children}</span>,
+    SelectContent: ({ children }: any) => <>{children}</>,
+    SelectItem: ({ value, children }: any) => <option value={value}>{children}</option>,
+  }
+})
 vi.mock('@/hooks/useSpendableBalance', () => ({ useSpendableBalance: () => useSpendableBalance() }))
 vi.mock('@tanstack/react-query', () => ({
   useQueryClient: () => ({ invalidateQueries, fetchQuery }),
@@ -48,15 +59,17 @@ vi.mock('@/components/wallet/AddressLink', () => ({
   TxLink: ({ hash }: { hash: string }) => <span>{hash}</span>,
   AddressLink: ({ address }: { address: string }) => <span>{address}</span>,
 }))
-/** Mutable so one test can switch networks under a rendered form. */
+/** Mutable so a test can switch networks, or wallets, under a rendered form.
+ * `SendTab` is not remounted by either switch in the app, and is not here. */
 let network = 'testnet'
+let walletAddress = 'r4NagxniGTmPRr8yBRXRD6NNpZP7FfP4KR'
 
 vi.mock('@/store/app-store', () => ({
   useAppStore: (selector: (s: Record<string, unknown>) => unknown) =>
     // A real vaultKey: with `null` here `doSend` returns at its first line and
     // every submit-path assertion below would pass without reaching the guard.
     selector({ network, vaultKey: {}, addressBook: [], addAddressBookEntry: vi.fn() }),
-  useActiveWallet: () => ({ id: 'w1', address: 'r4NagxniGTmPRr8yBRXRD6NNpZP7FfP4KR', label: 'Test' }),
+  useActiveWallet: () => ({ id: 'w1', address: walletAddress, label: 'Test' }),
 }))
 
 import { SendTab } from '../SendTab'
@@ -162,6 +175,7 @@ function settleClock() {
 
 beforeEach(() => {
   network = 'testnet'
+  walletAddress = WALLET_ADDRESS
   vi.useFakeTimers()
   vi.setSystemTime(NOW)
   useDestinationInfo.mockReturnValue(query())
@@ -588,24 +602,27 @@ describe('SendTab — the submit path re-checks before it spends', () => {
     expect(screen.getByText('Payment not sent — this address now requires a destination tag')).toBeTruthy()
   })
 
-  it('does not submit when the form guard is closed and the control is activated anyway', async () => {
+  it('takes the confirm step away for good when the amount stops fitting under it', async () => {
     render(<SendTab />)
     fillValidForm()
     settleClock()
     fireEvent.click(reviewButton())
+    expect(screen.getByRole('button', { name: 'Confirm and send' })).toBeTruthy()
 
-    // The amount stops fitting while the confirm dialog is open — the window in
-    // which a dimmed Review button protects nothing at all, since the control
-    // inside the dialog is not the one that was dimmed.
+    // The amount stops fitting while the confirm dialog is open. The control
+    // inside the dialog is not the one a closed guard dims, so the dialog
+    // itself has to go: "Confirm and send" over a form that no longer passes
+    // is a permission the screen has already withdrawn.
     fireEvent.change(screen.getByLabelText('Amount'), { target: { value: '1000' } })
-    await act(async () => {
-      fireEvent.click(screen.getByRole('button', { name: 'Confirm and send' }))
-    })
+    expect(screen.queryByRole('button', { name: 'Confirm and send' })).toBeNull()
 
+    // Typed back to an amount that fits: the guard reopens, the intent does
+    // not. Only pressing Review payment again asks for the confirm step.
+    fireEvent.change(screen.getByLabelText('Amount'), { target: { value: '1' } })
+    expect(reviewButton().disabled).toBe(false)
+    expect(screen.queryByRole('button', { name: 'Confirm and send' })).toBeNull()
     expect(unlockWalletForSigning).not.toHaveBeenCalled()
     expect(submitXrpPayment).not.toHaveBeenCalled()
-    // And says so, rather than closing the dialog on a press that did nothing.
-    expect(screen.getByText('Payment not sent — the form was no longer ready')).toBeTruthy()
   })
 
   it('keeps the confirm step up while a send it already authorised is in flight', async () => {
@@ -669,25 +686,6 @@ describe('SendTab — the submit path re-checks before it spends', () => {
 
     expect(screen.queryByText('Payment not sent — this address now requires a destination tag')).toBeNull()
     // And nothing else changed: no other input was touched.
-    expect(reviewButton().disabled).toBe(false)
-  })
-
-  it('retires the guard-closed refusal once the form is ready again', async () => {
-    render(<SendTab />)
-    fillValidForm()
-    settleClock()
-    fireEvent.click(reviewButton())
-    fireEvent.change(screen.getByLabelText('Amount'), { target: { value: '1000' } })
-    await act(async () => {
-      fireEvent.click(screen.getByRole('button', { name: 'Confirm and send' }))
-    })
-    expect(screen.getByText('Payment not sent — the form was no longer ready')).toBeTruthy()
-
-    // "What is outstanding is shown on the form" — with nothing outstanding,
-    // the panel is a false statement about the form.
-    fireEvent.change(screen.getByLabelText('Amount'), { target: { value: '1' } })
-
-    expect(screen.queryByText('Payment not sent — the form was no longer ready')).toBeNull()
     expect(reviewButton().disabled).toBe(false)
   })
 
@@ -1139,8 +1137,8 @@ describe('the affordability check fails closed without a fee figure', () => {
 
   it('keeps the confirm step out of reach while the fee read has failed', () => {
     // The matrix row says the dialog is unreachable, and the mechanism is
-    // `fundsError` closing `canSend` — not the dialog's own open condition,
-    // which consults the destination check alone. Asserted on the dialog, so a
+    // `fundsError` closing `canSend`, which both disables Review payment and
+    // gates the dialog's own open condition. Asserted on the dialog, so a
     // future change that opens it another way fails here.
     useRecommendedFee.mockReturnValue(feeRead({ data: undefined, isError: true }))
     render(<SendTab />)
@@ -1215,5 +1213,352 @@ describe('a failed fee read does not block a token send', () => {
 
     expect(screen.getByText(/plus a network fee that could not be read/i)).toBeTruthy()
     expect(screen.queryByText(/the current rate/i)).toBeNull()
+  })
+})
+
+/** A trust-line read, as the form sees it: a list that was read, a read in
+ * flight (no data, no error), or a read that failed — with or without an
+ * earlier answer retained, since TanStack keeps one across a failed poll. */
+function trustLinesRead(overrides: { data?: unknown; isError?: boolean; refetch?: () => unknown } = {}) {
+  const { isError = false, refetch = vi.fn().mockResolvedValue({}) } = overrides
+  const data = 'data' in overrides ? overrides.data : [heldToken()]
+  return { data, isError, refetch }
+}
+
+const assetOptions = () =>
+  within(screen.getByTestId('asset'))
+    .getAllByRole('option')
+    .map((o) => (o as HTMLOptionElement).value)
+
+/**
+ * The token branch of the funds check used to be `if (selectedLine && …)`, so
+ * every state with no line — a failed read, a read in flight, a line zeroed or
+ * frozen since it was picked — reached `undefined`, "no objection", and the
+ * issued payment was submitted to fail `tec*` on the ledger at the cost of the
+ * fee. Each row here refuses; the first is the control that a held line with
+ * enough in it still sends.
+ */
+describe('a token amount is checked only against a line a successful read holds now', () => {
+  /** Pick the token while the read holds it, with a destination answer stamped
+   * for that token, then hand back `rerender` so a row can change the read. */
+  function renderTokenForm(amount = '1') {
+    useTrustLines.mockReturnValue(trustLinesRead())
+    useDestinationInfo.mockReturnValue(query({ data: info({ asset: TOKEN_ASSET, hasTrustLine: true }) }))
+    const utils = render(<SendTab />)
+    fireEvent.change(screen.getByTestId('asset'), { target: { value: TOKEN_ASSET } })
+    fireEvent.change(screen.getByLabelText('Destination address'), { target: { value: DESTINATION } })
+    fireEvent.change(screen.getByLabelText('Amount'), { target: { value: amount } })
+    settleClock()
+    return utils
+  }
+
+  it('permits a token amount the read line covers', () => {
+    renderTokenForm('50')
+
+    expect(reviewButton().disabled).toBe(false)
+    expect(amountFieldState().message).toBeNull()
+  })
+
+  it('refuses a token amount larger than the line holds', () => {
+    renderTokenForm('50.5')
+
+    expect(reviewButton().disabled).toBe(true)
+    expect(amountFieldState()).toMatchObject({ invalid: true, message: 'You only hold 50 USD.' })
+  })
+
+  it('refuses when the trust-line read failed, says so, and offers only XRP', () => {
+    const refetch = vi.fn().mockResolvedValue({})
+    const { rerender } = renderTokenForm()
+
+    // A failed poll that kept its earlier answer: the retained line is exactly
+    // what the old check went on trusting.
+    useTrustLines.mockReturnValue(trustLinesRead({ isError: true, refetch }))
+    rerender(<SendTab />)
+
+    expect(reviewButton().disabled).toBe(true)
+    // A failure, not a read in flight: destructive and invalid.
+    expect(amountFieldState()).toEqual({
+      invalid: true,
+      message: expect.stringMatching(/token balances could not be read/i),
+      destructive: true,
+      muted: false,
+    })
+    // Nothing from the retained answer stays on screen (§12 rule 2): no token
+    // offered, no balance shown.
+    expect(assetOptions()).toEqual(['XRP'])
+    expect(screen.queryByText(/balance 50/)).toBeNull()
+    // The trigger still names the operator's own choice, never a balance.
+    expect(screen.getByTestId('asset-label').textContent).toBe('USD')
+
+    expect(screen.getByText('Token balances could not be read')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'Try again' }))
+    expect(refetch).toHaveBeenCalledOnce()
+  })
+
+  it('refuses while the trust-line read is in flight, without calling it a failure', () => {
+    const { rerender } = renderTokenForm()
+
+    useTrustLines.mockReturnValue(trustLinesRead({ data: undefined }))
+    rerender(<SendTab />)
+
+    expect(reviewButton().disabled).toBe(true)
+    expect(amountFieldState()).toEqual({
+      invalid: false,
+      message: expect.stringMatching(/token balances are still being read/i),
+      destructive: false,
+      muted: true,
+    })
+    expect(screen.queryByText('Token balances could not be read')).toBeNull()
+  })
+
+  it.each([
+    ['gone', []],
+    ['zeroed', [{ ...heldToken(), balance: '0' }]],
+    ['frozen by the issuer', [{ ...heldToken(), freezePeer: true }]],
+    ['frozen by this account', [{ ...heldToken(), freeze: true }]],
+  ])('refuses when a successful read no longer holds the line (%s)', (_label, lines) => {
+    const { rerender } = renderTokenForm()
+
+    useTrustLines.mockReturnValue(trustLinesRead({ data: lines }))
+    rerender(<SendTab />)
+
+    expect(reviewButton().disabled).toBe(true)
+    // A fact about the ledger, not a read in flight: the field is an error.
+    expect(amountFieldState()).toEqual({
+      invalid: true,
+      message: expect.stringMatching(/hold none of this token that can be sent/i),
+      destructive: true,
+      muted: false,
+    })
+    // And not a failure either: no read failed, so no read-failure panel.
+    expect(screen.queryByText('Token balances could not be read')).toBeNull()
+    expect(screen.getByTestId('asset-label').textContent).toBe('USD')
+  })
+
+  it('does not hold an XRP send on a failed trust-line read', () => {
+    // The control for the panel's own wording: "sending XRP does not depend on
+    // it and is not held". A change that made this read block XRP fails here.
+    useTrustLines.mockReturnValue(trustLinesRead({ isError: true }))
+    render(<SendTab />)
+    fillValidForm()
+    settleClock()
+
+    expect(screen.getByText('Token balances could not be read')).toBeTruthy()
+    expect(reviewButton().disabled).toBe(false)
+  })
+})
+
+/**
+ * `SendTab` stays mounted across a wallet or network switch, so a token picked
+ * on one account used to stay picked on the next — where nothing had said that
+ * account holds it. The trust-line read here still returns the same line for
+ * the new account, so only the stamp can be what turns the asset back.
+ */
+describe('a picked token does not follow the operator to another account', () => {
+  function pickToken() {
+    useTrustLines.mockReturnValue(trustLinesRead())
+    const utils = render(<SendTab />)
+    fireEvent.change(screen.getByTestId('asset'), { target: { value: TOKEN_ASSET } })
+    expect((screen.getByTestId('asset') as HTMLSelectElement).value).toBe(TOKEN_ASSET)
+    return utils
+  }
+
+  it('reads back as XRP after a wallet switch', () => {
+    const { rerender } = pickToken()
+
+    walletAddress = OTHER_DESTINATION
+    rerender(<SendTab />)
+
+    expect((screen.getByTestId('asset') as HTMLSelectElement).value).toBe('XRP')
+  })
+
+  it('reads back as XRP after a network switch', () => {
+    const { rerender } = pickToken()
+
+    network = 'mainnet'
+    rerender(<SendTab />)
+
+    expect((screen.getByTestId('asset') as HTMLSelectElement).value).toBe('XRP')
+  })
+
+  it('clears a token amount rather than rereading it as XRP', () => {
+    const { rerender } = pickToken()
+    fireEvent.change(screen.getByLabelText('Amount'), { target: { value: '1000' } })
+
+    // "1000" typed as USD must not become 1000 XRP on the next account.
+    walletAddress = OTHER_DESTINATION
+    rerender(<SendTab />)
+
+    expect((screen.getByLabelText('Amount') as HTMLInputElement).value).toBe('')
+  })
+
+  it('keeps an XRP amount across a switch: nothing about it was token-specific', () => {
+    render(<SendTab />)
+    fireEvent.change(screen.getByTestId('asset'), { target: { value: 'XRP' } })
+    fireEvent.change(screen.getByLabelText('Amount'), { target: { value: '5' } })
+
+    network = 'mainnet'
+    act(() => {
+      fireEvent.change(screen.getByLabelText('Destination address'), { target: { value: DESTINATION } })
+    })
+
+    expect((screen.getByLabelText('Amount') as HTMLInputElement).value).toBe('5')
+  })
+
+  it('stays XRP after switching back: the token is not put back unasked', () => {
+    const { rerender } = pickToken()
+
+    walletAddress = OTHER_DESTINATION
+    rerender(<SendTab />)
+    walletAddress = WALLET_ADDRESS
+    rerender(<SendTab />)
+
+    expect((screen.getByTestId('asset') as HTMLSelectElement).value).toBe('XRP')
+  })
+})
+
+/**
+ * With two figures missing, the amount field used to name whichever was
+ * checked first — so a fee read that had FAILED was announced as "still being
+ * read" because the spendable read happened to be in flight, and the operator
+ * was told to wait for something that will not come back on its own.
+ */
+describe('a failed figure outranks one still being read', () => {
+  function fillWellWithinBalance() {
+    fireEvent.change(screen.getByLabelText('Destination address'), { target: { value: DESTINATION } })
+    fireEvent.change(screen.getByLabelText('Amount'), { target: { value: '1' } })
+  }
+
+  it('names the failed fee while the spendable balance is still being read', () => {
+    useRecommendedFee.mockReturnValue(feeRead({ data: undefined, isError: true }))
+    useSpendableBalance.mockReturnValue(spendable({ status: 'loading', isLoading: true, spendableDrops: null, reservedDrops: null }))
+    render(<SendTab />)
+    fillWellWithinBalance()
+    settleClock()
+
+    expect(reviewButton().disabled).toBe(true)
+    expect(amountFieldState()).toEqual({
+      invalid: true,
+      message: expect.stringMatching(/network fee could not be read/i),
+      destructive: true,
+      muted: false,
+    })
+  })
+
+  it('names the failed spendable balance while the fee is still being read', () => {
+    useRecommendedFee.mockReturnValue(feeRead({ data: undefined }))
+    useSpendableBalance.mockReturnValue(spendable({ status: 'unavailable', spendableDrops: null, reservedDrops: null }))
+    render(<SendTab />)
+    fillWellWithinBalance()
+    settleClock()
+
+    expect(reviewButton().disabled).toBe(true)
+    expect(amountFieldState()).toEqual({
+      invalid: true,
+      message: expect.stringMatching(/spendable balance could not be read/i),
+      destructive: true,
+      muted: false,
+    })
+  })
+})
+
+/**
+ * The confirm dialog used to be gated on the destination check alone, so a fee,
+ * spendable or trust-line read failing under an open dialog left "Confirm and
+ * send" on screen over a form whose guard had closed. Each row opens the
+ * dialog on a good form, fails one read under it, then lets the read recover:
+ * the dialog must go, and must not come back on the recovery.
+ */
+describe('the confirm step closes with the guard and does not revive', () => {
+  const confirmButton = () => screen.queryByRole('button', { name: 'Confirm and send' })
+
+  function openOnXrpForm() {
+    const utils = render(<SendTab />)
+    fillValidForm()
+    settleClock()
+    fireEvent.click(reviewButton())
+    expect(confirmButton()).toBeTruthy()
+    return utils
+  }
+
+  function openOnTokenForm() {
+    useTrustLines.mockReturnValue(trustLinesRead())
+    useDestinationInfo.mockReturnValue(query({ data: info({ asset: TOKEN_ASSET, hasTrustLine: true }) }))
+    const utils = render(<SendTab />)
+    fireEvent.change(screen.getByTestId('asset'), { target: { value: TOKEN_ASSET } })
+    fillValidForm()
+    settleClock()
+    fireEvent.click(reviewButton())
+    expect(confirmButton()).toBeTruthy()
+    return utils
+  }
+
+  it('on a failed fee read', () => {
+    const { rerender } = openOnXrpForm()
+
+    useRecommendedFee.mockReturnValue(feeRead({ data: undefined, isError: true }))
+    rerender(<SendTab />)
+    expect(confirmButton()).toBeNull()
+
+    useRecommendedFee.mockReturnValue(feeRead())
+    rerender(<SendTab />)
+    expect(reviewButton().disabled).toBe(false)
+    expect(confirmButton()).toBeNull()
+  })
+
+  it('on a failed spendable read', () => {
+    const { rerender } = openOnXrpForm()
+
+    useSpendableBalance.mockReturnValue(spendable({ status: 'unavailable', spendableDrops: null, reservedDrops: null }))
+    rerender(<SendTab />)
+    expect(confirmButton()).toBeNull()
+
+    useSpendableBalance.mockReturnValue(spendable())
+    rerender(<SendTab />)
+    expect(reviewButton().disabled).toBe(false)
+    expect(confirmButton()).toBeNull()
+  })
+
+  it('on a failed trust-line read', () => {
+    const { rerender } = openOnTokenForm()
+
+    useTrustLines.mockReturnValue(trustLinesRead({ isError: true }))
+    rerender(<SendTab />)
+    expect(confirmButton()).toBeNull()
+
+    useTrustLines.mockReturnValue(trustLinesRead())
+    rerender(<SendTab />)
+    expect(reviewButton().disabled).toBe(false)
+    expect(confirmButton()).toBeNull()
+  })
+
+  it('opens again only when the operator presses Review payment', () => {
+    // The other half: withdrawn is not disabled for good.
+    const { rerender } = openOnXrpForm()
+    useRecommendedFee.mockReturnValue(feeRead({ data: undefined, isError: true }))
+    rerender(<SendTab />)
+    useRecommendedFee.mockReturnValue(feeRead())
+    rerender(<SendTab />)
+
+    fireEvent.click(reviewButton())
+    expect(confirmButton()).toBeTruthy()
+  })
+
+  it('keeps "Sending…" on screen when a read fails during a send already under way', async () => {
+    let release: (w: unknown) => void = () => {}
+    unlockWalletForSigning.mockImplementationOnce(() => new Promise((r) => (release = r)))
+    const { rerender } = openOnXrpForm()
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm and send' }))
+
+    useRecommendedFee.mockReturnValue(feeRead({ data: undefined, isError: true }))
+    useSpendableBalance.mockReturnValue(spendable({ status: 'unavailable', spendableDrops: null, reservedDrops: null }))
+    await act(async () => {
+      rerender(<SendTab />)
+    })
+    expect(screen.getByRole('button', { name: 'Sending…' })).toBeTruthy()
+
+    await act(async () => {
+      release({ address: WALLET_ADDRESS })
+    })
   })
 })

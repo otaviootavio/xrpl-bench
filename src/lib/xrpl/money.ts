@@ -72,6 +72,14 @@ export function isNonNegativeDrops(drops: string): boolean {
   }
 }
 
+/** A drops string that is a whole number greater than zero. Takes `unknown`
+ * because its callers hand it raw ledger fields, which may be missing, a
+ * number, an issued-currency object or the legacy `"unavailable"`. */
+export function isPositiveDrops(value: unknown): value is string {
+  if (typeof value !== 'string' || !/^\d+$/.test(value)) return false
+  return BigInt(value) > 0n
+}
+
 /**
  * True if a DECIMAL amount string (issued-currency balance/limit, e.g. "10.5")
  * is greater than zero. Issued-currency values are decimal strings, so they

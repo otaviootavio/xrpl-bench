@@ -1,5 +1,5 @@
 import { getXrplClient } from './client'
-import { isPositiveLedgerDecimalString } from './money'
+import { isPositiveDrops, isPositiveLedgerDecimalString } from './money'
 import type { NetworkId } from './networks'
 
 export interface AccountState {
@@ -214,12 +214,6 @@ export async function fetchTx(network: NetworkId, hash: string) {
 export type PaymentAmount = Pick<TxSummary, 'amountDrops' | 'amountIssued' | 'amountIsUpperBound'>
 
 type IssuedAmount = NonNullable<TxSummary['amountIssued']>
-
-/** A drops string that is a whole number greater than zero. */
-function isPositiveDrops(value: unknown): value is string {
-  if (typeof value !== 'string' || !/^\d+$/.test(value)) return false
-  return BigInt(value) > 0n
-}
 
 /** An issued-currency amount object with all three fields as strings. MPT
  * amounts (`mpt_issuance_id`) have no currency/issuer and are not rendered. */

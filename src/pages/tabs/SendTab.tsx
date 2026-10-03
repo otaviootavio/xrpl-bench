@@ -54,20 +54,38 @@ export function SendTab() {
   const queryClient = useQueryClient()
 
   const [destination, setDestination] = useState('')
-  const [asset, setAsset] = useState('XRP')
+  /** The asset picked, stamped with the `(network, address)` it was picked
+   * for, and read back only while both still match — `'XRP'` otherwise.
+   *
+   * `SendTab` is not remounted by a wallet or network switch (Main keys it by
+   * tab), so a bare string would carry a token picked on one account into
+   * another, where nothing has said that account holds it. The stamp retires
+   * the choice for every way the account can change, in the render itself,
+   * on the same pattern as `preflightReport` below. A retired choice is then
+   * cleared, so switching back does not quietly put the token back on the
+   * form: picking it again is an act the operator takes. */
+  const [assetChoice, setAssetChoice] = useState<{ network: NetworkId; address: string; asset: string } | null>(null)
   const [amount, setAmount] = useState('')
+  const assetChoiceMatches = !!assetChoice && assetChoice.network === network && assetChoice.address === wallet?.address
+  // A same-component state adjustment during render; it clears its own
+  // condition. A retired TOKEN choice takes its amount with it: "1000" typed
+  // as USD would otherwise be reread as 1000 XRP on the next account.
+  if (assetChoice && !assetChoiceMatches) {
+    if (assetChoice.asset !== 'XRP') setAmount('')
+    setAssetChoice(null)
+  }
+  const asset = assetChoice && assetChoiceMatches ? assetChoice.asset : 'XRP'
+  const setAsset = (next: string) => setAssetChoice({ network, address: wallet?.address ?? '', asset: next })
   const [destTag, setDestTag] = useState('')
   /** The operator's intent to confirm, pinned to the exact check that was on
    * screen when they asked for it — `destQuery.dataUpdatedAt`, or `null` for
    * no intent at all.
    *
-   * A bare boolean could not retire: the dialog's open state is computed from
-   * the guard, so a check that failed or aged out under an open dialog took
-   * the dialog away while leaving the intent behind, and the next thing to
-   * reopen the guard — a successful "Check again" — put the spend confirmation
-   * back on screen with nobody asking for it. Pinning the intent to the
-   * reading it was formed against retires it with that reading, in the render
-   * itself rather than in an effect that would have to chase it. */
+   * The intent is withdrawn outright whenever the guard closes outside a send
+   * (below, beside `confirmOpen`). The pin adds the case the guard alone does
+   * not see: a destination reading replaced by a newer one without the guard
+   * ever closing. `dataUpdatedAt` only increases, so an intent formed against
+   * an older reading can never match again. */
   const [confirmingFor, setConfirmingFor] = useState<number | null>(null)
   const [busy, setBusy] = useState(false)
   const [outcome, setOutcome] = useState<SubmitOutcome | null>(null)
@@ -213,9 +231,30 @@ export function SendTab() {
   }, [])
 
   // Frozen assets can't be moved, so they're not offerable (decisions.md §2).
-  // Balances are DECIMAL strings — never BigInt them.
-  const heldTokens = (trustLines.data ?? []).filter((l) => isPositiveDecimalString(l.balance) && !l.freezePeer && !l.freeze)
+  // Balances are DECIMAL strings — never BigInt them. Empty while the read is
+  // in error, even over a retained earlier answer: no balance from a read that
+  // has stopped succeeding is offered or checked against (§12 rule 2).
+  const heldTokens = trustLines.isError
+    ? []
+    : (trustLines.data ?? []).filter((l) => isPositiveDecimalString(l.balance) && !l.freezePeer && !l.freeze)
   const selectedLine = asset === 'XRP' ? null : heldTokens.find((l) => `${l.currency}|${l.account}` === asset)
+  /** Why there is no line to check a token amount against — the same
+   * three-way shape as the spendable and fee reasons above. `useTrustLines`
+   * is enabled whenever there is a wallet, so no data and no error is a read
+   * in flight. A read that succeeded without the line is a fact about the
+   * ledger, not a failure: the balance went to zero, the line was frozen, or
+   * the line is gone. */
+  const tokenLineUnknown: { reason: string; pending: boolean } = trustLines.isError
+    ? { reason: 'Your token balances could not be read, so this amount cannot be checked against what you hold.', pending: false }
+    : !trustLines.data
+      ? {
+          reason: 'Your token balances are still being read, so this amount cannot be checked against what you hold yet.',
+          pending: true,
+        }
+      : {
+          reason: "You hold none of this token that can be sent: its balance is zero, it is frozen, or the trust line is gone.",
+          pending: false,
+        }
 
   const isKnownDestination = addressBook.some((e) => e.address === destination)
   const isSelfSend = !!wallet && destination === wallet.address
@@ -229,23 +268,31 @@ export function SendTab() {
    * `pending` marks a reason that is a read still in flight rather than a
    * fault. The send is refused either way, but a read that has not landed has
    * not failed, so the amount field must not be painted or announced as
-   * invalid for it (story 5.3 AC 2; 5.2's loading case is the same). */
+   * invalid for it (story 5.3 AC 2; 5.2's loading case is the same).
+   *
+   * Every branch fails CLOSED: with no figure to check against, the amount is
+   * refused, never waved through. Absence of a prohibition is not permission
+   * (docs/decisions.md §12 rule 1). */
   const fundsCheck = ((): { reason: string; pending: boolean } | undefined => {
     if (!amountValidation.valid) return undefined
     if (asset === 'XRP') {
-      // Fails CLOSED. This used to `return undefined` — "no figure, so no
-      // objection" — and an amount was declared affordable against a balance
-      // the app had not worked out. `useAccountState` polls every 15 seconds
-      // with `retry: 1`, so a single failed poll reaches here on a form the
-      // operator is already filling in. Absence of a prohibition is not
-      // permission (docs/decisions.md §12 rule 1).
-      if (!spendableDrops) return { reason: spendableUnknownReason, pending: spendable.status === 'loading' }
-      // Fails CLOSED on the fee as well, and for the same reason. There is no
-      // "safe" substitute figure: a fabricated fee is what let an amount that
-      // does not fit be declared affordable.
-      if (!feeDrops) return { reason: feeUnknownReason, pending: !fee.isError }
-      // The fee comes out on top of the amount, so both must fit (money.ts).
-      if (!amountPlusFeeFits(xrpToDropsString(amount), feeDrops, spendableDrops)) {
+      // Both figures are needed, and there is no "safe" substitute for either:
+      // a fabricated fee or balance is how an amount that does not fit gets
+      // declared affordable. `useAccountState` polls every 15 seconds with
+      // `retry: 1`, so a single failed poll reaches here on a form the
+      // operator is already filling in.
+      const missing: { reason: string; pending: boolean }[] = []
+      if (!spendableDrops) missing.push({ reason: spendableUnknownReason, pending: spendable.status === 'loading' })
+      if (!feeDrops) missing.push({ reason: feeUnknownReason, pending: !fee.isError })
+      // A fault outranks a read in flight. Reporting "still being read" while
+      // the other figure has already failed tells the operator to wait for
+      // something that will not arrive on its own. Between two of the same
+      // kind, the spendable figure is named first.
+      const reported = missing.find((m) => !m.pending) ?? missing[0]
+      if (reported) return reported
+      // Both present (the checks above guarantee it; the guard restates it for
+      // the type). The fee comes out on top of the amount, so both must fit.
+      if (spendableDrops && feeDrops && !amountPlusFeeFits(xrpToDropsString(amount), feeDrops, spendableDrops)) {
         return {
           reason: `That's more than your spendable balance (${formatXrp(spendableDrops)}) once the network fee is included.`,
           pending: false,
@@ -253,7 +300,13 @@ export function SendTab() {
       }
       return undefined
     }
-    if (selectedLine && compareDecimalStrings(amount, selectedLine.balance) > 0) {
+    // A token amount is checked only against a line a successful trust-line
+    // read for this account and network holds now. An errored read (even over
+    // a retained answer), a read in flight, and a read that no longer holds
+    // the line all refuse — each one otherwise ends in a submitted payment
+    // that fails `tec*` on the ledger and still costs the fee.
+    if (!selectedLine) return tokenLineUnknown
+    if (compareDecimalStrings(amount, selectedLine.balance) > 0) {
       return { reason: `You only hold ${selectedLine.balance} ${displayCurrencyCode(selectedLine.currency)}.`, pending: false }
     }
     return undefined
@@ -320,18 +373,31 @@ export function SendTab() {
       : null
 
   /**
-   * The confirm step's open state, derived — intent and guard together, so the
-   * two can never disagree.
+   * An intent the guard has withdrawn is gone, not suspended.
    *
-   * `canSend` is deliberately NOT the condition — it goes false on `busy` the
-   * moment the send starts. `|| busy` holds the dialog open once a send is
-   * under way: the expiry timer is independent of `busy`, so without it a
-   * check aging out during the unlock would pull "Sending…" off the screen
-   * mid-submission and leave the operator with no sign that a payment was in
-   * flight. Outside `busy` the intent must still be about the reading it was
-   * formed against, which is what stops a recovered check reopening it.
+   * Whenever the guard closes outside a send — the amount stops fitting, the
+   * fee, spendable or trust-line read fails, the destination check ages out —
+   * the intent is cleared during this render (a same-component state
+   * adjustment, no effect and no read). Without it, the guard reopening on
+   * its own — a read recovering on its next poll, the amount typed back —
+   * would put "Confirm and send" back on screen with nobody having asked.
+   * It terminates because it clears its own condition.
    */
-  const confirmOpen = confirmingFor !== null && (busy || (destCheckOk && confirmingFor === checkedAt))
+  if (confirmingFor !== null && !busy && !canSend) setConfirmingFor(null)
+
+  /**
+   * The confirm step's open state, derived — intent and the whole send guard
+   * together, so the last thing on screen before "Confirm and send" can never
+   * be a permission the form has already withdrawn.
+   *
+   * `canSend` itself goes false on `busy` the moment the send starts, so
+   * `busy ||` holds the dialog open once a send is under way: a read failing
+   * or a check aging out during the unlock must not pull "Sending…" off the
+   * screen mid-submission and leave the operator with no sign that a payment
+   * is in flight. Outside `busy` the intent must also still be about the
+   * destination reading it was formed against.
+   */
+  const confirmOpen = confirmingFor !== null && (busy || (canSend && confirmingFor === checkedAt))
 
   async function doSend() {
     if (!wallet || !vaultKey) return
@@ -356,6 +422,10 @@ export function SendTab() {
     // defence-in-depth against that attribute being dropped, on the same
     // reasoning that kept `!destCheckOk`.
     if (busy) return
+    // Unreachable from the dialog as well: it is open only while `canSend`
+    // holds, and a closed guard withdraws the intent in the same render. Kept,
+    // and kept reporting, as defence-in-depth against the dialog's condition
+    // drifting from this one — this handler is what actually spends money.
     if (!canSend || !destCheckOk) {
       report('guard-closed')
       setConfirmingFor(null)
@@ -660,7 +730,14 @@ export function SendTab() {
             <Label>Asset</Label>
             <Select value={asset} onValueChange={setAsset}>
               <SelectTrigger>
-                <SelectValue />
+                {/* A token no longer offered — the read failed, or no longer
+                    holds the line — has no item to name it, and the trigger
+                    would go blank while the amount suffix still says the
+                    token. Named from the operator's own choice, never from
+                    the read: no balance is shown for it. */}
+                <SelectValue>
+                  {asset !== 'XRP' && !selectedLine ? displayCurrencyCode(asset.split('|')[0]) : undefined}
+                </SelectValue>
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="XRP">XRP</SelectItem>
@@ -672,6 +749,18 @@ export function SendTab() {
               </SelectContent>
             </Select>
           </div>
+
+          {/* Reported where the token list would have been. Not gated on the
+              asset, like the fee panel below: one read, one statement, which
+              does not come and go with the picker. Worded so it does not
+              assert a hold on XRP, which never uses this read. */}
+          {trustLines.isError && (
+            <QueryErrorState
+              title="Token balances could not be read"
+              description="Your trust lines could not be read from the ledger, so the tokens you hold cannot be listed and a token amount cannot be checked against your balance. Sending a token is held until this read succeeds; sending XRP does not depend on it and is not held."
+              onRetry={() => trustLines.refetch()}
+            />
+          )}
 
           <AmountInput
             id="amount"
@@ -758,14 +847,14 @@ export function SendTab() {
           stating the exact consequence (§4) — not only for unknown addresses.
           A first-send additionally escalates the warning, since the address
           book auto-records every successful destination. */}
-      {/* The confirm step is gated on the guard itself, not merely on the
-          control that opened it, so the last thing on screen before "Confirm
-          and send" can never be a permission the submit path is already going
-          to refuse. A check that fails or ages out while the dialog is up takes
-          the dialog down with it, and the intent to confirm with it: the intent
-          is pinned to the reading that formed it, and every path that restores
-          `destCheckOk` is a successful fetch, which strictly increases
-          `dataUpdatedAt`. A withdrawn intent therefore cannot revive. */}
+      {/* The confirm step is gated on the whole send guard (`canSend`), not
+          merely on the control that opened it, so the last thing on screen
+          before "Confirm and send" can never be a permission the submit path
+          is already going to refuse. Anything that closes the guard while the
+          dialog is up — a failed fee, spendable or trust-line read, an amount
+          that stops fitting, a check that ages out — takes the dialog down and
+          withdraws the intent in the same render, so the guard reopening does
+          not bring it back. Only an explicit "Review payment" does. */}
       <Dialog open={confirmOpen} onOpenChange={(o) => !o && setConfirmingFor(null)}>
         <DialogContent>
           <DialogHeader>

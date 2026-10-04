@@ -1,5 +1,4 @@
-import { useEffect, useState } from 'react'
-import { isValidClassicAddress } from 'xrpl'
+import { useState } from 'react'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -13,27 +12,19 @@ import { TxStatusBadge } from '@/components/wallet/TxStatusBadge'
 import { QueryErrorState } from '@/components/wallet/QueryErrorState'
 import { useAppStore, useActiveWallet } from '@/store/app-store'
 import type { NetworkId } from '@/lib/xrpl/networks'
+import { ReadingValue } from '@/components/wallet/ReadingValue'
 import { useSpendableBalance } from '@/hooks/useSpendableBalance'
 import { useRecommendedFee } from '@/hooks/useRecommendedFee'
 import { useTrustLines } from '@/hooks/useTrustLines'
-import { useDestinationInfo } from '@/hooks/useDestinationInfo'
+import { useDestinationCheck } from '@/hooks/useDestinationCheck'
 import { submitXrpPayment, submitIssuedPayment, type SubmitOutcome } from '@/lib/xrpl/writes'
 import { unlockWalletForSigning } from '@/lib/crypto/keystore'
-import {
-  formatXrp,
-  xrpToDropsString,
-  displayCurrencyCode,
-  isPositiveDecimalString,
-  compareDecimalStrings,
-  amountPlusFeeFits,
-} from '@/lib/xrpl/money'
+import { formatXrp, xrpToDropsString, displayCurrencyCode } from '@/lib/xrpl/money'
+import { checkFunds, heldTokenLines, selectedTokenLine, spendableReadState, tokenAssetKey } from '@/lib/xrpl/funds-check'
+import { readStateOf, type ReadState } from '@/lib/read-state'
 import { describeResultCode } from '@/lib/xrpl/result-codes'
 import { invalidateAccountScoped, invalidateDestinationCheck } from '@/lib/xrpl/query-keys'
-import {
-  DESTINATION_CHECK_FRESHNESS_MS,
-  fetchDestinationInfoOnce,
-  type DestinationInfo,
-} from '@/lib/xrpl/query-reads'
+import { DESTINATION_CHECK_FRESHNESS_MS, fetchDestinationInfoOnce, type DestinationInfo } from '@/lib/xrpl/query-reads'
 import { useQueryClient } from '@tanstack/react-query'
 import { toast } from '@/lib/notify'
 
@@ -104,157 +95,35 @@ export function SendTab() {
     asset: string
     reason: PreflightReason
   } | null>(null)
-  /** The last clock reading the form has actually taken, written only by the
-   * timer below. Rendering never calls `Date.now()` itself: a render that reads
-   * the clock answers differently each time it runs, and a guard that cannot be
-   * reasoned about or pinned by a test is not a guard. It starts at mount time
-   * rather than 0, so an answer restored from the cache already older than the
-   * window is refused on the FIRST render rather than on the timer's. */
-  const [observedNow, setObservedNow] = useState(Date.now)
-
+  /**
+   * The three reads the amount is checked against, each as the shared read
+   * state (`lib/read-state.ts`): a figure that was read, a read in flight, a
+   * read that failed, or an account that does not exist yet. The funds check,
+   * the amount field and the readout rows all consume these, so the four facts
+   * are told apart in one place rather than re-derived per consumer.
+   */
   const spendable = useSpendableBalance(network, wallet?.address ?? null)
-  const spendableDrops = spendable.spendableDrops
-  /**
-   * Why there is no figure, in the form's own words.
-   *
-   * All three states stop an amount being declared affordable — absence of a
-   * prohibition is not permission — but they are not the same fact, and this
-   * epic exists because a screen that cannot tell them apart says the wrong
-   * one. A read still in flight has not failed, and an account that does not
-   * exist yet has nothing to fail about.
-   */
-  const spendableUnknownReason =
-    spendable.status === 'loading'
-      ? 'Your spendable balance is still being read, so this amount cannot be checked against it yet.'
-      : spendable.status === 'not-activated'
-        ? "This account isn't activated yet, so there is no spendable balance to check this against."
-        : 'Your spendable balance could not be read, so this amount cannot be checked against it.'
+  const spendableState = spendableReadState(spendable)
   const fee = useRecommendedFee(network)
-  /**
-   * The fee, in drops, only when it was actually read for the network on
-   * screen now — never a fabricated one.
-   *
-   * `fee.data ?? '0'` used to reach `amountPlusFeeFits`, so a read that failed
-   * or had not landed yet was substituted with a fee of zero and an amount that
-   * does not fit was declared affordable. A retained value is dropped while the
-   * read is in error too: while a read is in error, nothing from an earlier
-   * success stays on screen (docs/decisions.md §12, rule 2).
-   */
-  const feeDrops = !fee.isError && fee.data ? fee.data : null
-  /**
-   * Why there is no fee figure, in the form's own words — the same three-state
-   * shape the spendable figure uses above. The hook has no `enabled`, so no
-   * data and no error really does mean a read still in flight, and a read in
-   * flight has not failed.
-   */
-  const feeUnknownReason = fee.isError
-    ? 'The network fee could not be read, so this amount cannot be checked against your spendable balance.'
-    : 'The network fee is still being read, so this amount cannot be checked against your spendable balance yet.'
+  /** The fee, only when it was actually read for the network on screen now —
+   * never a fabricated one, and never a value retained under a read in error
+   * (docs/decisions.md §12, rule 2). */
+  const feeState: ReadState<string> = readStateOf(fee)
   const trustLines = useTrustLines(network, wallet?.address ?? null)
-  // Ledger reads go through a query hook, never an onBlur handler (§4).
-  const destQuery = useDestinationInfo(network, destination, asset)
-  const destInfo = destQuery.data
-  const destinationValid = isValidClassicAddress(destination)
+  const trustLinesState = readStateOf(trustLines)
 
-  const destCheckMatchesInput =
-    !!destInfo && destInfo.network === network && destInfo.destination === destination && destInfo.asset === asset
-  const checkedAt = destQuery.dataUpdatedAt || 0
-  const checkExpiresAt = destCheckMatchesInput && checkedAt > 0 ? checkedAt + DESTINATION_CHECK_FRESHNESS_MS : null
-  const destCheckFresh = checkExpiresAt !== null && observedNow < checkExpiresAt
-  /**
-   * The send guard, stated positively: a read SUCCEEDED for the input on screen
-   * now and is still fresh.
-   *
-   * It used to be `!destCheckFailed`, where `destCheckFailed` was
-   * `destQuery.isError && !destQuery.data` — "no failure seen" — and three
-   * states passed it that are not permission: a failed refetch that
-   * kept an earlier answer, an answer about a different address or asset while
-   * the new read is in flight, and a successful answer older than its window.
-   * Each ends the same way: `!destInfo?.requireDestTag` is satisfied, the label
-   * says "(optional)", and a tagless payment goes to an address that requires a
-   * tag — credited to nobody, unrecoverable from here. Absence of a prohibition
-   * is not permission (docs/decisions.md §12, rule 1).
-   */
-  const destCheckOk = !destQuery.isError && destCheckMatchesInput && destCheckFresh
+  const destCheck = useDestinationCheck(network, destination, asset)
+  const destQuery = destCheck.query
+  const destInfo = destCheck.info
+  const destinationValid = destCheck.destinationValid
+  const checkedAt = destCheck.checkedAt
+  /** The send guard's destination half; see `useDestinationCheck`. */
+  const destCheckOk = destCheck.ok
+  const destCheckStale = destCheck.stale
+  const destCheckPending = destCheck.pending
 
-  /** A check that succeeded for this input and then aged out. It did not FAIL,
-   * and must not say it did (AD-15) — it is out of date, and re-readable. */
-  const destCheckStale = !destQuery.isError && destCheckMatchesInput && !destCheckFresh
-  /** Nothing is known yet for what is in the field: the read is in flight, or
-   * has not started, or the retained answer is about a different input. */
-  const destCheckPending = destinationValid && !destQuery.isError && !destCheckMatchesInput
-
-  // Take one clock reading when this check expires — and immediately, if it was
-  // already old when it arrived from the cache. No fetch and no interval: the
-  // app does not re-read on going stale and does not poll to keep the answer
-  // warm; this only stops the screen claiming a permission it no longer has.
-  //
-  // The reading is the LATEST of the three moments known here, never just
-  // `Date.now()`: a browser that fires a backgrounded timeout late gives a
-  // clock later than the expiry, and a fake or coarsened clock that reports
-  // the callback as early still cannot un-expire a check whose own expiry
-  // moment has arrived. `setObservedNow` takes the previous reading too, so
-  // this clock only ever moves forward.
-  useEffect(() => {
-    if (checkExpiresAt === null) return
-    const timer = setTimeout(
-      () => setObservedNow((prev) => Math.max(prev, checkExpiresAt, Date.now())),
-      Math.max(0, checkExpiresAt - Date.now()),
-    )
-    return () => clearTimeout(timer)
-  }, [checkExpiresAt])
-
-  // The other way the clock moves: the tab coming back into view.
-  //
-  // A `setTimeout` is not a promise that it fires. A hidden tab that the
-  // browser froze, or whose timers it throttled, can outlive the freshness
-  // window, and the form would then render an expired check as permission
-  // until the timeout eventually ran. This catches exactly one moment — the
-  // tab becoming visible again — and claims no more: a machine resuming with
-  // this tab already in view fires no `visibilitychange` and is left to the
-  // timeout.
-  //
-  // That one moment survives `useAutoLock`'s own 30 s background grace, so it
-  // is not dead code behind the lock: hidden at t=25 s and visible again at
-  // t=45 s is 20 s away — too short to lock the app — while the check is 45 s
-  // old and its timer never fired.
-  //
-  // Event-driven, so there is still no interval and still no read: this only
-  // takes a reading (docs/decisions.md §12).
-  useEffect(() => {
-    function readClockOnReturn() {
-      if (document.visibilityState !== 'visible') return
-      setObservedNow((prev) => Math.max(prev, Date.now()))
-    }
-    document.addEventListener('visibilitychange', readClockOnReturn)
-    return () => document.removeEventListener('visibilitychange', readClockOnReturn)
-  }, [])
-
-  // Frozen assets can't be moved, so they're not offerable (decisions.md §2).
-  // Balances are DECIMAL strings — never BigInt them. Empty while the read is
-  // in error, even over a retained earlier answer: no balance from a read that
-  // has stopped succeeding is offered or checked against (§12 rule 2).
-  const heldTokens = trustLines.isError
-    ? []
-    : (trustLines.data ?? []).filter((l) => isPositiveDecimalString(l.balance) && !l.freezePeer && !l.freeze)
-  const selectedLine = asset === 'XRP' ? null : heldTokens.find((l) => `${l.currency}|${l.account}` === asset)
-  /** Why there is no line to check a token amount against — the same
-   * three-way shape as the spendable and fee reasons above. `useTrustLines`
-   * is enabled whenever there is a wallet, so no data and no error is a read
-   * in flight. A read that succeeded without the line is a fact about the
-   * ledger, not a failure: the balance went to zero, the line was frozen, or
-   * the line is gone. */
-  const tokenLineUnknown: { reason: string; pending: boolean } = trustLines.isError
-    ? { reason: 'Your token balances could not be read, so this amount cannot be checked against what you hold.', pending: false }
-    : !trustLines.data
-      ? {
-          reason: 'Your token balances are still being read, so this amount cannot be checked against what you hold yet.',
-          pending: true,
-        }
-      : {
-          reason: "You hold none of this token that can be sent: its balance is zero, it is frozen, or the trust line is gone.",
-          pending: false,
-        }
+  const heldTokens = heldTokenLines(trustLinesState)
+  const selectedLine = selectedTokenLine(trustLinesState, asset)
 
   const isKnownDestination = addressBook.some((e) => e.address === destination)
   const isSelfSend = !!wallet && destination === wallet.address
@@ -264,53 +133,15 @@ export function SendTab() {
 
   /** Funds check done in the form, so a too-large send fails here with a clear
    * reason instead of costing a fee and coming back as tecUNFUNDED_PAYMENT.
-   *
-   * `pending` marks a reason that is a read still in flight rather than a
-   * fault. The send is refused either way, but a read that has not landed has
-   * not failed, so the amount field must not be painted or announced as
-   * invalid for it (story 5.3 AC 2; 5.2's loading case is the same).
-   *
-   * Every branch fails CLOSED: with no figure to check against, the amount is
-   * refused, never waved through. Absence of a prohibition is not permission
-   * (docs/decisions.md §12 rule 1). */
-  const fundsCheck = ((): { reason: string; pending: boolean } | undefined => {
-    if (!amountValidation.valid) return undefined
-    if (asset === 'XRP') {
-      // Both figures are needed, and there is no "safe" substitute for either:
-      // a fabricated fee or balance is how an amount that does not fit gets
-      // declared affordable. `useAccountState` polls every 15 seconds with
-      // `retry: 1`, so a single failed poll reaches here on a form the
-      // operator is already filling in.
-      const missing: { reason: string; pending: boolean }[] = []
-      if (!spendableDrops) missing.push({ reason: spendableUnknownReason, pending: spendable.status === 'loading' })
-      if (!feeDrops) missing.push({ reason: feeUnknownReason, pending: !fee.isError })
-      // A fault outranks a read in flight. Reporting "still being read" while
-      // the other figure has already failed tells the operator to wait for
-      // something that will not arrive on its own. Between two of the same
-      // kind, the spendable figure is named first.
-      const reported = missing.find((m) => !m.pending) ?? missing[0]
-      if (reported) return reported
-      // Both present (the checks above guarantee it; the guard restates it for
-      // the type). The fee comes out on top of the amount, so both must fit.
-      if (spendableDrops && feeDrops && !amountPlusFeeFits(xrpToDropsString(amount), feeDrops, spendableDrops)) {
-        return {
-          reason: `That's more than your spendable balance (${formatXrp(spendableDrops)}) once the network fee is included.`,
-          pending: false,
-        }
-      }
-      return undefined
-    }
-    // A token amount is checked only against a line a successful trust-line
-    // read for this account and network holds now. An errored read (even over
-    // a retained answer), a read in flight, and a read that no longer holds
-    // the line all refuse — each one otherwise ends in a submitted payment
-    // that fails `tec*` on the ledger and still costs the fee.
-    if (!selectedLine) return tokenLineUnknown
-    if (compareDecimalStrings(amount, selectedLine.balance) > 0) {
-      return { reason: `You only hold ${selectedLine.balance} ${displayCurrencyCode(selectedLine.currency)}.`, pending: false }
-    }
-    return undefined
-  })()
+   * Fails closed on every read that is not `ok`; see `checkFunds`. */
+  const fundsCheck = checkFunds({
+    amount,
+    amountValid: amountValidation.valid,
+    asset,
+    spendable: spendableState,
+    fee: feeState,
+    trustLines: trustLinesState,
+  })
   const fundsError = fundsCheck?.reason
 
   const canSend =
@@ -750,7 +581,7 @@ export function SendTab() {
               <SelectContent>
                 <SelectItem value="XRP">XRP</SelectItem>
                 {heldTokens.map((l) => (
-                  <SelectItem key={`${l.account}-${l.currency}`} value={`${l.currency}|${l.account}`}>
+                  <SelectItem key={`${l.account}-${l.currency}`} value={tokenAssetKey(l)}>
                     {displayCurrencyCode(l.currency)} (balance {l.balance})
                   </SelectItem>
                 ))}
@@ -762,7 +593,7 @@ export function SendTab() {
               asset, like the fee panel below: one read, one statement, which
               does not come and go with the picker. Worded so it does not
               assert a hold on XRP, which never uses this read. */}
-          {trustLines.isError && (
+          {trustLinesState.status === 'failed' && (
             <QueryErrorState
               title="Token balances could not be read"
               description="Your trust lines could not be read from the ledger, so the tokens you hold cannot be listed and a token amount cannot be checked against your balance. Sending a token is held until this read succeeds; sending XRP does not depend on it and is not held."
@@ -784,31 +615,27 @@ export function SendTab() {
           {/* A reading, so it is shown in the panel's well rather than a grey
               box: these two numbers are what decide whether the send fits. */}
           <dl className="panel-well flex flex-wrap gap-x-8 gap-y-2 rounded-md px-3 py-2.5">
-            {/* Three outcomes, three renderings. The ellipsis is the PENDING
-                treatment and may not stand in for a failure — that is exactly
-                how this read used to hide. */}
             <div>
               <dt className="panel-legend text-readout-muted">Network fee</dt>
-              {feeDrops ? (
-                <dd className="font-data text-base tracking-tight">{formatXrp(feeDrops)}</dd>
-              ) : fee.isError ? (
-                <dd className="font-legend text-sm text-readout-muted">Unavailable</dd>
-              ) : (
-                <dd className="font-data text-base tracking-tight">…</dd>
-              )}
+              <ReadingValue state={feeState} format={formatXrp} />
             </div>
             {/* The row stays when there is no figure and says so. Removing it
                 left the operator with a fee and nothing to weigh it against,
-                and no hint that anything was missing. Words, not a numeral, so
-                the data face and tabular numerals step aside. */}
+                and no hint that anything was missing.
+
+                Every state without a figure — a read in flight included — is
+                rendered as "Unavailable" here, unlike the fee row. That is
+                the row's behaviour as it stands, kept on purpose by the split
+                that introduced the read state, and recorded as deferred in
+                deferred-work.md: rendering `spendableState` as it is would be
+                the one-line fix. */}
             {asset === 'XRP' && (
               <div>
                 <dt className="panel-legend text-readout-muted">Spendable</dt>
-                {spendableDrops ? (
-                  <dd className="font-data text-base tracking-tight">{formatXrp(spendableDrops)}</dd>
-                ) : (
-                  <dd className="font-legend text-sm text-readout-muted">Unavailable</dd>
-                )}
+                <ReadingValue
+                  state={spendableState.status === 'ok' ? spendableState : { status: 'failed' }}
+                  format={formatXrp}
+                />
               </div>
             )}
           </dl>
@@ -819,7 +646,7 @@ export function SendTab() {
               for as long as the screen is open. Worded so it does not assert a
               hold that is not in force: a token send never uses this figure and
               is deliberately NOT blocked by its absence. */}
-          {fee.isError && (
+          {feeState.status === 'failed' && (
             <QueryErrorState
               title="Network fee could not be read"
               description="The current network fee could not be read from the ledger, so it cannot be shown and an XRP amount cannot be checked against your spendable balance with the fee added. Sending XRP is held until this read succeeds; a token send does not depend on this figure and is not held."
@@ -873,11 +700,11 @@ export function SendTab() {
               {/* "the current rate" named a figure that was never read. An XRP
                   send cannot reach this dialog without one; a token send can,
                   and is told the plain fact instead. */}
-              {feeDrops
-                ? `plus a network fee of ${formatXrp(feeDrops)}`
-                : fee.isError
-                  ? 'plus a network fee that could not be read'
-                  : 'plus a network fee that is still being read'}
+              {feeState.status === 'ok'
+                ? `plus a network fee of ${formatXrp(feeState.value)}`
+                : feeState.status === 'pending'
+                  ? 'plus a network fee that is still being read'
+                  : 'plus a network fee that could not be read'}
               . Payments on the XRP Ledger are irreversible and cannot be cancelled or refunded once sent.
             </DialogDescription>
           </DialogHeader>

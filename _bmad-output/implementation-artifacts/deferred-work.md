@@ -224,3 +224,32 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-epic-11-seed-import.md`
   summary: An error notice ("That seed looks invalid…") stays at the top of the notice band after a later action on the same screen succeeds, so the band shows an error above a completed import.
   evidence: Observed in the epic 11 browser pass, screenshots 03/04/08 (Onboarding warning, Balances after import, Settings after import). Notice-band lifetime is Epic 3's (AD-8) design, not the import flow's. Low: cosmetic but reads as a current failure.
+
+## Re-triaged from: SendTab split (epic 5 retro item 8, 2026-10-04)
+
+Item 8 shipped as a refactor that preserves behaviour (`spec-sendtab-split.md`). The six entries above triaged "defer to epic 5 retro action item 8" would each change what the user sees, so none of them was done there. They are re-homed here so that closing item 8 does not leave them without an owner. Proposed home: one follow-up story, "Send screen behaviour fixes", before epic 7 reopens the write path.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-sendtab-split.md`
+  summary: The Review button still uses native `disabled={!canSend}`. §6.4 wants `aria-disabled`, with a visible reason for each `canSend` term.
+  evidence: `SendTab.tsx:657`. Each term now has one source to name its reason from: `checkFunds` (funds), `useDestinationCheck` (`ok`/`stale`/`pending`), and the tag and amount validation in SendTab.
+  triage: (2026-10-04) defer to the proposed "Send screen behaviour fixes" story. A behaviour change, so not part of a refactor.
+- source_spec: `_bmad-output/implementation-artifacts/spec-sendtab-split.md`
+  summary: A token send still never checks that the account can afford its XRP network fee.
+  evidence: The token branch of `checkFunds` (`funds-check.ts:190-195`) compares the amount against the trust-line balance only. The fix is now one branch in a pure function that already receives `spendable` and `fee` as read states.
+  triage: (2026-10-04) defer to the proposed "Send screen behaviour fixes" story. A behaviour change: it refuses token sends that are permitted today.
+- source_spec: `_bmad-output/implementation-artifacts/spec-sendtab-split.md`
+  summary: There is still no `paused` (offline) state: a read that was never started is reported as "still being read".
+  evidence: `ReadState` (`src/lib/read-state.ts`) has four states, and `readStateOf` reads only `data` and `isError`. Adding `paused` means a fifth state, plus a renderer and wording in each consumer.
+  triage: (2026-10-04) defer to the proposed "Send screen behaviour fixes" story. New behaviour, and a state with no renderer would be dead code.
+- source_spec: `_bmad-output/implementation-artifacts/spec-sendtab-split.md`
+  summary: The Send screen's Spendable row still says "Unavailable" for a read in flight and for an unactivated account.
+  evidence: SendTab deliberately passes `spendableState.status === 'ok' ? spendableState : { status: 'failed' }` to `ReadingValue`. The fix is `state={spendableState}` plus flipping the pinned assertion in `send-destination-error.test.tsx` ("the readout rows render from the read state").
+  triage: (2026-10-04) defer to the proposed "Send screen behaviour fixes" story. A visible wording change.
+- source_spec: `_bmad-output/implementation-artifacts/spec-sendtab-split.md`
+  summary: At 320 px, the Send outcome row (status legend and hash link) still overflows its plate.
+  evidence: `SendTab.tsx:663` is still `flex items-center gap-2`, with no wrap. The split did not touch it.
+  triage: (2026-10-04) defer to the proposed "Send screen behaviour fixes" story. Low; cosmetic.
+- source_spec: `_bmad-output/implementation-artifacts/spec-sendtab-split.md`
+  summary: F6: after the unlock, Send re-checks only the destination. The spendable, fee and trust-line figures it checks against were read before the unlock.
+  evidence: `doSend` still calls only `fetchDestinationInfoOnce`. The split makes widening it cheap: `checkFunds` is pure, so it can be fed fresh `ReadState`s from `fetchQuery` inside `doSend`. It was left as it is because widening it adds new reads and a new refusal.
+  triage: (2026-10-04) defer to the proposed "Send screen behaviour fixes" story, or to epic 7, which owns the write path. The cost is one fee, not funds.

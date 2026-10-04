@@ -215,3 +215,12 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-epic-6-teardown.md`
   summary: Unlocking with no network logs an uncaught page error, "Could not reach the Testnet network (tried wss://s.altnet.rippletest.net:51233 and wss://testnet.xrpl-labs.com)…", in addition to the per-read failure panels.
   evidence: Seen as a Playwright `pageerror` during the epic 6 offline pass (production build, controlling service worker, `context.setOffline(true)`). The screen itself reported each failed read inline, as AD-8 requires. The source is a rejection in the connection layer that nothing catches; the exact call site was not traced. Low: no wrong figure is shown, but an unhandled rejection is noise that can hide a real one.
+
+## Deferred from: build of epic 11 (2026-10-04)
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-epic-11-seed-import.md`
+  summary: Importing a Seed that is already in the vault adds a second, identical wallet entry (same address, new id) on either import screen.
+  evidence: Observed in the epic 11 browser pass — Settings listed `rBtWH1…XsAK` twice after importing the same Seed from Onboarding and then Settings. `storeWallet` (`lib/crypto/keystore.ts`) assigns a fresh `crypto.randomUUID()` with no address check. Pre-existing, outside 11.1/11.2. Low: no funds at risk, but two entries for one account invite removing the "wrong" one.
+- source_spec: `_bmad-output/implementation-artifacts/spec-epic-11-seed-import.md`
+  summary: An error notice ("That seed looks invalid…") stays at the top of the notice band after a later action on the same screen succeeds, so the band shows an error above a completed import.
+  evidence: Observed in the epic 11 browser pass, screenshots 03/04/08 (Onboarding warning, Balances after import, Settings after import). Notice-band lifetime is Epic 3's (AD-8) design, not the import flow's. Low: cosmetic but reads as a current failure.

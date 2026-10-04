@@ -22,6 +22,13 @@ export function fetchAccountStateOnce(
     queryKey: queryKeys.accountState(network, address),
     queryFn: () => fetchAccountState(network, address),
     staleTime: 15_000,
+    // The import screens await this before they either write or warn. Under
+    // the default `'online'` mode a browser that reports itself offline
+    // *pauses* the fetch, and the promise never settles: the screen would sit
+    // at "Checking…" with nothing to tell the operator. `'always'` lets the
+    // read run and fail, so an unreachable ledger reaches the caller as an
+    // error it can report (Epic 11, story 11.1).
+    networkMode: 'always',
   })
 }
 

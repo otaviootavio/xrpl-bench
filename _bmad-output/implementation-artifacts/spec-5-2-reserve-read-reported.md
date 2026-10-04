@@ -280,3 +280,22 @@ unavailable rows reuse the existing `<dl>` flex-wrap marks and the error reuses
 — but it is unobserved, and the gates do not stand in for it. The word
 `Unavailable` is longer than the figures it replaces, so a narrow-width
 inspection of the two marks is the one thing still worth a human eye.
+
+**Browser pass, 2026-10-04 — RUN (Epic 5 retro item 6).** This closes the "Not verified" note above.
+
+Setup:
+- Code under test: `7cb52f8` (branch `fix/retro-5-items-3-5-9`). The reserve handling is unchanged there from `dev`.
+- Playwright Chromium 1148, a fresh isolated context, and a CDP virtual authenticator per `docs/agents/verifying-your-work.md`.
+- Vite on port 5174, Testnet, with a throwaway wallet funded by the in-app faucet (100 XRP; Spendable 99, Reserved 1 before the fault).
+- The reserve read was forced to fail by answering every `server_state` request with an error at the websocket (`page.routeWebSocket`). No app code was changed, and `account_info` was left alone, which is exactly the "reserve fails while `account_info` succeeds" state this story is about. Every screenshot was opened.
+
+| Criterion | Exercised | Observed | Met |
+|---|---|---|---|
+| The reserve read fails while `account_info` succeeds → the XRP balance still renders | Balances, 390 px light | "100 XRP" with its Live lamp (the lamp belongs to the balance read; see Decided above) | yes |
+| Spendable and Reserved report the failure rather than disappearing; the failure goes through `QueryErrorState` | Same | Both rows read "Unavailable"; a "Reserve unavailable" panel with Try again sits under the balance plate | yes |
+| After an earlier success, the derived Spendable figure is not left on screen | Spendable was 99 before the fault | Replaced by "Unavailable" | yes |
+| Narrow and wide, both themes | 320 px dark, 1280 px dark, 390 px light | "Unavailable" fits beside each label; the panel text wraps; Try again is reachable; nothing clipped | yes |
+| Send with the reserve failed | Send, 390 px light, valid destination, tag and amount | Spendable row "Unavailable"; under Amount: "Your spendable balance could not be read, so this amount cannot be checked against it."; Review payment disabled | yes |
+| Recovery | Fault removed, Try again on Balances | The figure returns: Send then showed "Spendable 99 XRP" (seen on Send, not re-captured on Balances) | yes |
+
+Not run: 200% zoom. Send has no retry control of its own for the reserve; that is already recorded in the 5.3 pass.

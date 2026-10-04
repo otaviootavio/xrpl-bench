@@ -122,7 +122,7 @@ action_items:
     action: "fetchAccountTx treats actNotFound as an empty result, so History stops
       calling an unactivated account a failed read."
     owner: "dev"
-    status: open
+    status: done
     ref: "_bmad-output/implementation-artifacts/epic-5-retro-2026-09-30.md"
   - id: "epic-5-retro-item-4-gate-send-s-confirm-dialog-on-cansend-no"
     epic: 5
@@ -135,14 +135,14 @@ action_items:
     action: "Refresh the destination check after a validated send through a named
       single-entry helper on the key factory."
     owner: "dev"
-    status: open
+    status: done
     ref: "_bmad-output/implementation-artifacts/epic-5-retro-2026-09-30.md"
   - id: "epic-5-retro-item-6-run-the-missing-testnet-browser-passes-f"
     epic: 5
     action: "Run the missing Testnet browser passes for stories 5.1 and 5.2 with the
       virtual-authenticator setup."
     owner: "Otavio / dev"
-    status: open
+    status: done
     ref: "_bmad-output/implementation-artifacts/epic-5-retro-2026-09-30.md"
   - id: "epic-5-retro-item-7-make-a-browser-pass-with-opened-screensh"
     epic: 5
@@ -163,7 +163,7 @@ action_items:
     action: "Promote the account-invalidation source scan to a scripts/check-*.mjs
       guard run by lint, with fixture tests."
     owner: "dev"
-    status: open
+    status: done
     ref: "_bmad-output/implementation-artifacts/epic-5-retro-2026-09-30.md"
   - id: "epic-5-retro-item-10-triage-deferred-work-md-before-epic-6-ba"
     epic: 5

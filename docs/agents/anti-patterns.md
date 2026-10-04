@@ -137,3 +137,40 @@ API was rejected as a middle path because it only fires while the tab is alive
 **The shape.** When a feature seems to need a backend, that is a product
 conversation, not an implementation detail. And a partial mechanism that implies
 a guarantee it cannot keep is worse than an absence that is stated honestly.
+
+## 11. Pinning a guard on the fake instead of on the SDK
+
+**What happened.** The 0.01 XRP fee cap was passed as
+`client.autofill(tx, { maxFeeXRP } as any)`. In xrpl.js 5 that second argument
+is `signersCount`, so the object was ignored and every write could pay up to
+2 XRP, for a month. The epic 2 review found the cap unasserted and "patched" it
+with a test named "caps the fee autofill may attach, on every write". That test
+asserted that the fake client had *recorded* `{ maxFeeXRP: '0.01' }`, which is
+the very call that did nothing. It passed under the defect, and it would pass
+under any defect, because it checked the mock's bookkeeping and not what the
+SDK did. The `as any` kept `tsc` from reporting the mismatch, and the fake kept
+the tests from reporting it. *(Epic 7 retrospective F1, F2, A5, P3; fixed in
+PR #42, `docs/decisions.md` §14.)*
+
+**The rule.** A test that claims to pin an SDK-level guard (a fee, a flag, a
+limit, a field the ledger acts on) asserts the SDK's **output**, meaning what
+actually leaves the process. For a write, that is the signed blob, decoded:
+`decode(client.submitted[0]).Fee`. Asserting what a fake was handed may sit
+beside that assertion, as a check on our own call shape, but it never replaces
+it. If the output cannot be observed in a unit test, the guard is unpinned. Say
+so and verify it against the network (a Testnet send), rather than writing a
+test that only looks like coverage.
+
+**Enforced now.** `scripts/check-write-choke-point.mjs` fails lint if xrpl.js
+`autofill`, `sign`, `submit` or `submitAndWait` is reached outside
+`src/lib/xrpl/writes.ts`, so there is one place to pin. `.oxlintrc.json`
+forbids explicit `any` (`as any` and `: any`) in `src/lib/xrpl` outside tests,
+so that cast can no longer hide an argument mismatch at the SDK boundary. The
+guard's header lists what it cannot see. The oxlint rule cannot see the other
+escape hatches: `as never`, `as unknown as T`, `@ts-expect-error` and
+`@ts-ignore`, or any of these outside `src/lib/xrpl` (an xrpl.js call made from
+a hook, for example). Review each one at the SDK boundary as if it were an
+`as any`.
+
+**The shape.** A test proves only what it observes. If the thing observed is
+your own double, you have tested the double.

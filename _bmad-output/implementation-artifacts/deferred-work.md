@@ -277,3 +277,18 @@ Item 8 shipped as a refactor that preserves behaviour (`spec-sendtab-split.md`).
 - source_spec: `_bmad-output/implementation-artifacts/spec-fee-cap-and-shown-fee.md`
   summary: No page-level test makes a submit helper reject with `FeeAboveCapError` and checks that its sentence reaches the operator (Send's and Trust lines' catch blocks toast `err.message`).
   evidence: Raised by review of the fee-cap build. `writes.test.ts` pins the error and its wording; both catch blocks predate the change and pass the message through unchanged, and Send refuses an above-cap fee on the form before the dialog. A regression in either catch would go unnoticed. Low.
+
+## Deferred from: build of the write guards (epic 7 retro items 20–22, 2026-10-04)
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-guards-writes-choke-point.md`
+  summary: The other `tsc` escape hatches (`as never`, `as unknown as T`, `@ts-expect-error`, `@ts-ignore`) are documented as unguarded in `anti-patterns.md` §11 but not banned in `src/lib/xrpl` outside tests.
+  evidence: Raised by review. None remain there today (the build removed the last two `marker as never`), so a ban would cost nothing now and would turn the documented gap into a lint failure. It is a new guard, not part of items 20–22. Medium: each of them can hide an SDK argument mismatch exactly as `as any` did.
+- source_spec: `_bmad-output/implementation-artifacts/spec-guards-writes-choke-point.md`
+  summary: An `account_tx` entry whose `meta` is `null` makes `fetchAccountTx` throw (`typeof null === 'object'`, then `meta.TransactionResult`), failing the whole History page.
+  evidence: Raised by review. Pre-existing: the old `(meta as any).TransactionResult` had the same crash. xrpl.js types `meta` without `null` and rippled is not known to send one, so `maybe-false` on reachability; a fixture from a real response with `meta: null` would settle it. Low-medium if reachable.
+- source_spec: `_bmad-output/implementation-artifacts/spec-guards-writes-choke-point.md`
+  summary: A validated `meta` object with no `TransactionResult` makes `classify(undefined)` throw after a submit, so a possibly validated transaction is reported as an error.
+  evidence: Raised by review. Pre-existing (the old `as any` read was identical) and typed away by xrpl.js, which declares `TransactionResult` required; unverified whether any server omits it. Medium if reachable, because it misreports a money-moving outcome.
+- source_spec: `_bmad-output/implementation-artifacts/spec-guards-writes-choke-point.md`
+  summary: No test pins that the `.oxlintrc.json` `no-explicit-any` override still matches `src/lib/xrpl`; a glob change or an oxlint release that read `overrides` differently would keep lint green.
+  evidence: Raised by the verification-gap review (filed disposition: defer). Checked by hand on 2026-10-04 (oxlint 1.80.0): `as any` in `src/lib/xrpl/zz.ts` fails, in a colocated `zz.test.ts` passes, and the same in `src/hooks` passes. A vitest case spawning oxlint on a fixture would close it.

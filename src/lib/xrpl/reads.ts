@@ -1,5 +1,6 @@
 import { getXrplClient } from './client'
 import { isPositiveDrops, isPositiveLedgerDecimalString } from './money'
+import { isRecord, rippledErrorCode } from './narrow'
 import type { NetworkId } from './networks'
 
 export interface AccountState {
@@ -32,8 +33,8 @@ export async function fetchAccountState(network: NetworkId, address: string): Pr
       disableMasterKey: (flags & 0x00100000) !== 0,
       regularKey: data.RegularKey,
     }
-  } catch (err: any) {
-    if (err?.data?.error === 'actNotFound') {
+  } catch (err: unknown) {
+    if (rippledErrorCode(err) === 'actNotFound') {
       return {
         exists: false,
         address,
@@ -79,7 +80,7 @@ export async function fetchAccountLines(network: NetworkId, address: string): Pr
         command: 'account_lines',
         account: address,
         ledger_index: 'validated',
-        marker: marker as never,
+        marker,
       })
       for (const l of res.result.lines) {
         lines.push({
@@ -96,8 +97,8 @@ export async function fetchAccountLines(network: NetworkId, address: string): Pr
       marker = res.result.marker
     } while (marker !== undefined)
     return lines
-  } catch (err: any) {
-    if (err?.data?.error === 'actNotFound') return []
+  } catch (err: unknown) {
+    if (rippledErrorCode(err) === 'actNotFound') return []
     throw err
   }
 }
@@ -150,6 +151,27 @@ export interface TxSummary {
   feeDrops?: string
 }
 
+/** The fields `fetchAccountTx` reads off a listed transaction. Each is a type
+ * every xrpl.js `Transaction` already satisfies, so an entry is assigned to
+ * this view, not cast. */
+interface ListedTx {
+  Account: string
+  TransactionType: string
+  Destination?: string
+  DestinationTag?: number
+  Fee?: string
+  hash?: string
+  date?: number
+}
+
+/** An `account_tx` entry under either API version: v2 nests the transaction
+ * in `tx_json` beside `hash`, v1 in `tx`. */
+interface ListedEntry {
+  tx_json?: ListedTx
+  tx?: ListedTx
+  hash?: string
+}
+
 /** Wraps `account_tx`, paginated via `marker`.
  *
  * `actNotFound` on the FIRST page is an empty history, not a failed read — the
@@ -176,10 +198,10 @@ export async function fetchAccountTx(
       ledger_index_min: -1,
       ledger_index_max: -1,
       limit: 25,
-      marker: marker as never,
+      marker,
     })
-  } catch (err: any) {
-    if (marker === undefined && err?.data?.error === 'actNotFound') return { items: [], marker: undefined }
+  } catch (err: unknown) {
+    if (marker === undefined && rippledErrorCode(err) === 'actNotFound') return { items: [], marker: undefined }
     throw err
   }
 
@@ -190,8 +212,11 @@ export async function fetchAccountTx(
     // renamed to disambiguate from the actual `delivered_amount` in meta,
     // which differs for partial payments) — verified live against the
     // testnet 2026-08-31; older/raw rippled responses may still use `tx`
-    // and `Amount`, so both are supported here.
-    const tx = (entry as any).tx_json ?? (entry as any).tx
+    // and `Amount`, so both are supported here. xrpl.js types the entry for
+    // v2 only (`tx` is `never`), so it is read through `ListedEntry`, which
+    // admits both, rather than cast.
+    const listed: ListedEntry = entry
+    const tx = listed.tx_json ?? listed.tx
     const meta = entry.meta
     if (!tx || typeof meta !== 'object') continue
     // Every transaction type this account was involved in is listed, not just
@@ -199,14 +224,14 @@ export async function fetchAccountTx(
     // entirely, and made `limit`-based pagination return near-empty pages.
     const isSender = tx.Account === address
     items.push({
-      hash: (entry as any).hash ?? tx.hash ?? '',
+      hash: listed.hash ?? tx.hash ?? '',
       type: tx.TransactionType,
       direction: isSender ? 'sent' : 'received',
       counterparty: isSender ? (tx.Destination ?? '') : tx.Account,
       ...paymentAmountOf(tx, meta),
       date: typeof tx.date === 'number' ? tx.date + 946684800 : undefined, // ripple epoch -> unix epoch
       validated: !!entry.validated,
-      resultCode: typeof meta === 'object' ? (meta as any).TransactionResult ?? '' : '',
+      resultCode: typeof meta === 'object' ? meta.TransactionResult ?? '' : '',
       ledgerIndex: entry.ledger_index ?? undefined,
       destinationTag: tx.DestinationTag,
       feeDrops: tx.Fee,
@@ -223,7 +248,9 @@ export async function fetchTx(network: NetworkId, hash: string) {
   const client = await getXrplClient(network)
   const res = await client.request({ command: 'tx', transaction: hash })
   // API v2 nests the transaction under `tx_json`; v1 lays it flat on `result`.
-  const result = res.result as any
+  // Typed as the two fields read, so a v1 response (no `tx_json`) is admitted
+  // without a cast; `paymentAmountOf` checks whatever arrives.
+  const result: { tx_json?: unknown; meta?: unknown } | undefined = res.result
   const tx = result?.tx_json ?? result
   return { ...res, ...paymentAmountOf(tx, result?.meta) }
 }
@@ -261,9 +288,9 @@ function toSummaryAmount(amount: unknown): Pick<TxSummary, 'amountDrops' | 'amou
  * `DeliverMax`/`Amount`, flagged as an upper bound. A non-Payment gets no
  * amount and no flag.
  */
-export function paymentAmountOf(tx: any, meta: unknown): PaymentAmount {
-  if (!tx || tx.TransactionType !== 'Payment') return {}
-  const m = typeof meta === 'object' && meta !== null ? (meta as Record<string, unknown>) : {}
+export function paymentAmountOf(tx: unknown, meta: unknown): PaymentAmount {
+  if (!isRecord(tx) || tx.TransactionType !== 'Payment') return {}
+  const m = isRecord(meta) ? meta : {}
   const succeeded = m.TransactionResult === 'tesSUCCESS'
   const delivered = m.delivered_amount
 

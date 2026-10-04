@@ -39,6 +39,15 @@ Reasoning: `docs/decisions.md` guardrail #1, #2, #5, §4, §5.4, §5.5, §5.6.
   latest value without re-running, use a ref or `useEffectEvent`. An empty
   dependency array here means a component keeps showing the *previous* wallet or
   network after a switch.
+- **Never** autofill, sign or submit outside `submitAndClassify` in
+  `src/lib/xrpl/writes.ts` (AD-9 in
+  [the architecture spine](../../_bmad-output/planning-artifacts/architecture/architecture-xrpl-wallet-2026-09-12/ARCHITECTURE-SPINE.md#ad-9--every-write-passes-one-choke-point-adopted)). It alone raises the in-flight signal,
+  refuses a fee above the cap and classifies the result. Build the
+  transaction and call it. `bun run check:write-choke-point` (part of `lint`)
+  fails otherwise.
+- **Never** write `any` in `src/lib/xrpl` outside tests; oxlint rejects it.
+  Read loosely typed SDK values through `src/lib/xrpl/narrow.ts` or a typed
+  view, so `tsc` still checks every argument handed to xrpl.js.
 - **Never** re-submit an already-signed blob after a failure. Build a fresh
   transaction with a new sequence number.
 - **Never** offer a frozen asset as sendable. `freezePeer` and `freeze` both

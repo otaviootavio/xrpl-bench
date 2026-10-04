@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import type { Client } from 'xrpl'
 import { resetXrplClientFactory, resetXrplClients, setXrplClientFactory } from '../client'
-import { fetchAccountTx } from '../reads'
+import { fetchAccountLines, fetchAccountState, fetchAccountTx } from '../reads'
 
 /**
  * Epic 5 retro item 3: `account_tx` answering `actNotFound` for an unactivated
@@ -69,4 +69,30 @@ describe('fetchAccountTx and an account the ledger does not hold', () => {
     installRejectingClient(err)
     await expect(fetchAccountTx('testnet', ADDRESS)).rejects.toBe(err)
   })
+})
+
+/** The same reading on `account_info` and `account_lines`: Send's destination
+ * check and the trust-line list. Both now read the code through
+ * `rippledErrorCode` (`narrow.ts`), so these pin that narrowing. */
+describe('fetchAccountState and fetchAccountLines and an account the ledger does not hold', () => {
+  it('answers actNotFound on account_info with a non-existent account', async () => {
+    const requests = installRejectingClient(rippledError('actNotFound'))
+    await expect(fetchAccountState('testnet', ADDRESS)).resolves.toMatchObject({ exists: false, address: ADDRESS })
+    expect(requests[0].command).toBe('account_info')
+  })
+
+  it('answers actNotFound on account_lines with no trust lines', async () => {
+    const requests = installRejectingClient(rippledError('actNotFound'))
+    await expect(fetchAccountLines('testnet', ADDRESS)).resolves.toEqual([])
+    expect(requests[0].command).toBe('account_lines')
+  })
+
+  it.each([rippledError('tooBusy'), new Error('websocket closed'), 'a thrown string', null])(
+    'still fails on anything else (%s)',
+    async (err) => {
+      installRejectingClient(err)
+      await expect(fetchAccountState('testnet', ADDRESS)).rejects.toBe(err)
+      await expect(fetchAccountLines('testnet', ADDRESS)).rejects.toBe(err)
+    },
+  )
 })

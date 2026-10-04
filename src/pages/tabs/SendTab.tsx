@@ -28,7 +28,7 @@ import {
   amountPlusFeeFits,
 } from '@/lib/xrpl/money'
 import { describeResultCode } from '@/lib/xrpl/result-codes'
-import { invalidateAccountScoped } from '@/lib/xrpl/query-keys'
+import { invalidateAccountScoped, invalidateDestinationCheck } from '@/lib/xrpl/query-keys'
 import {
   DESTINATION_CHECK_FRESHNESS_MS,
   fetchDestinationInfoOnce,
@@ -529,7 +529,15 @@ export function SendTab() {
       } else {
         toast.error(describeResultCode(result.resultCode))
       }
-      await invalidateAccountScoped(queryClient, network, wallet.address)
+      await Promise.all([
+        invalidateAccountScoped(queryClient, network, wallet.address),
+        // Only a validated payment can change what the destination check says
+        // (it may just have activated the address); a `tec` claim, an expiry
+        // or a rejection changed nothing on the destination's side. Without
+        // this the form kept saying "not activated" for up to the freshness
+        // window, and the next send's post-unlock probe was served from it.
+        result.status === 'validated' ? invalidateDestinationCheck(queryClient, network, destination) : null,
+      ])
     } catch (err: any) {
       toast.error(err?.message ?? 'Send failed.')
       // The intent to confirm goes too, deliberately rather than as a side

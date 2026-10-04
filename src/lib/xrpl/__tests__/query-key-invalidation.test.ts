@@ -1,6 +1,6 @@
 import { QueryClient } from '@tanstack/react-query'
 import { describe, expect, it } from 'vitest'
-import { invalidateAccountScoped, queryKeys } from '../query-keys'
+import { invalidateAccountScoped, invalidateDestinationCheck, queryKeys } from '../query-keys'
 
 // The matrix row this covers: the account-scoped entries are invalidated using
 // factory-built keys. Every site that discards account data — the live
@@ -158,5 +158,42 @@ describe('invalidateAccountScoped', () => {
     pending[pending.length - 1].resolve()
     await done
     expect(settled).toBe(true)
+  })
+})
+
+describe('invalidateDestinationCheck', () => {
+  const DESTINATION = 'rDestination'
+  const TOKEN = 'USD|rIssuer'
+
+  it("marks every asset's check for that one destination stale", async () => {
+    const client = new QueryClient()
+    const mine = [
+      queryKeys.destinationInfo(NETWORK, DESTINATION, 'XRP'),
+      queryKeys.destinationInfo(NETWORK, DESTINATION, TOKEN),
+    ]
+    for (const key of mine) client.setQueryData(key, {})
+    await invalidateDestinationCheck(client, NETWORK, DESTINATION)
+    // Built by the factory's own builder: if the helper's prefix drifts from
+    // `queryKeys.destinationInfo`, these stop matching and this fails.
+    for (const key of mine) expect(isInvalidated(client, key), JSON.stringify(key)).toBe(true)
+  })
+
+  it("leaves another destination, another network, and the sender's own entries untouched", async () => {
+    const client = seededClient()
+    const untouched = [
+      queryKeys.destinationInfo(NETWORK, 'rSomeoneElse', 'XRP'),
+      queryKeys.destinationInfo('mainnet', DESTINATION, 'XRP'),
+      queryKeys.accountState(NETWORK, ADDRESS),
+      queryKeys.accountTx(NETWORK, ADDRESS),
+      queryKeys.trustLines(NETWORK, ADDRESS),
+      queryKeys.incomingPaymentWatch(NETWORK, ADDRESS),
+      queryKeys.serverReserves(NETWORK),
+      queryKeys.recommendedFee(NETWORK),
+    ]
+    for (const key of untouched) client.setQueryData(key, {})
+    client.setQueryData(queryKeys.destinationInfo(NETWORK, DESTINATION, 'XRP'), {})
+    await invalidateDestinationCheck(client, NETWORK, DESTINATION)
+    expect(isInvalidated(client, queryKeys.destinationInfo(NETWORK, DESTINATION, 'XRP'))).toBe(true)
+    for (const key of untouched) expect(isInvalidated(client, key), JSON.stringify(key)).toBe(false)
   })
 })

@@ -3,7 +3,7 @@ import { createElement, type ReactNode } from 'react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { renderHook, waitFor } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
-import { queryKeys } from '@/lib/xrpl/query-keys'
+import { invalidateDestinationCheck, queryKeys } from '@/lib/xrpl/query-keys'
 import {
   DESTINATION_CHECK_FRESHNESS_MS,
   fetchAccountStateOnce,
@@ -209,6 +209,23 @@ describe('the destination check', () => {
     } finally {
       vi.useRealTimers()
     }
+  })
+
+  it('re-reads after a validated send refreshes the check, however young the cached answer', async () => {
+    // Epic 5 retro item 5. The probe after the unlock must not be served the
+    // "not activated" answer a payment has just made false. Only the TanStack
+    // contract stands between the helper and that: an invalidated entry is
+    // stale whatever its age (`isStaleByTime`). This pins it on a real client.
+    const reads = vi.mocked(fetchAccountState)
+    reads.mockClear()
+    reads.mockResolvedValueOnce({ exists: false, requireDestTag: false } as never)
+    const { client } = harness()
+    expect((await fetchDestinationInfoOnce(client, NETWORK, DESTINATION, 'XRP')).exists).toBe(false)
+
+    await invalidateDestinationCheck(client, NETWORK, DESTINATION)
+    const after = await fetchDestinationInfoOnce(client, NETWORK, DESTINATION, 'XRP')
+    expect(reads).toHaveBeenCalledTimes(2)
+    expect(after.exists).toBe(true)
   })
 })
 

@@ -346,3 +346,22 @@ of the new assertions, and removing the submit-path re-read fails 3 more.
 | All four new/changed panels at 320px, light finish | Rendered and read in a real browser. Nothing clipped, both titles wrap, both retry controls reachable. |
 | The same panels at 640px (1280px at 200% zoom), dark finish | Rendered and read. Both finishes legible; the tone difference is carried by the title text, not by colour alone. |
 | The panels **inside the live Send form**, reached by unlocking a real wallet | **Not done.** Onboarding never gets past "Setting up…" in headless Chromium on this machine — the passkey/key-derivation step does not resolve — so the Send tab could not be reached. The observation above was made by mounting the four panels, with their exact copy, in the same `Card`/`CardContent` vocabulary through a throwaway Vite entry that has since been deleted. What it does **not** prove is how they sit among the form's other elements, or the order they appear in when more than one is live at once. |
+
+**Browser pass, 2026-10-04 — RUN (Epic 5 retro item 6).** This closes the gap in the row above.
+
+Setup:
+- Code under test: `dev` at `3ac02fc` (before epic 8, #33) plus the code diff of branch `fix/retro-5-items-3-5-9` (PR for retro items 3, 5, 9). This story's guard is unchanged there from `dev`.
+- Playwright Chromium 1148, a fresh isolated context, and a CDP virtual authenticator (ctap2, internal, resident key, UV, PRF) per `docs/agents/verifying-your-work.md`.
+- Vite on port 5174, Testnet, with a throwaway wallet created and funded in that context.
+- Destination: `rPupnpAqKZy1b8DMNrajEChEfaLrqcghC8`, funded by a script and given `asfRequireDest` (`AccountSet` `tesSUCCESS`, `Flags` 131072).
+- The failed check was forced by answering that address's `account_info` with an error at the websocket (`page.routeWebSocket`). No app code was changed. Every screenshot was opened.
+
+| Criterion | Exercised | Observed | Met |
+|---|---|---|---|
+| Testnet tag-required destination, check succeeds, no tag → send blocked with the reason in visible text | 390 px light; amount 1 XRP, tag empty | Label reads "Destination tag (required by recipient)"; Review payment is `disabled`. Typing a tag enables it; clearing the tag disables it again. | yes |
+| Fails closed on a check outside its freshness window | Same form left idle 32 s, real clock | "Destination check is out of date" panel with Check again; label "requirement unknown"; Review disabled | yes |
+| Fails closed on a failed read | Check again with `account_info` for the destination forced to an error | "Destination check failed" panel with Try again; label "requirement unknown"; Review stays disabled even with a tag typed | yes |
+| Failed panel inside the live form, narrow and wide | 320 px dark, 1280 px dark | Panel sits between the address and the tag field. Text wraps, Try again is reachable, no page-level horizontal scroll (`scrollWidth` 1280 = `clientWidth`). At 320 px the address input scrolls its own text, as any long input does. | yes |
+| Input-mismatch condition | not exercised in the browser | pinned by `send-destination-error.test.tsx` | — |
+
+Observation, not changed: when a tag is required and missing, the label is the only visible reason. The tag field is not marked invalid, and no sentence beside the disabled button says what is holding the send. The criterion asks for the reason "as it is today", and the label gives it. Whether it deserves a sentence is a design call for Otavio.

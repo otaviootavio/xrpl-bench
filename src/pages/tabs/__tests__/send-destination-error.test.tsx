@@ -846,6 +846,37 @@ describe('SendTab — the submit path re-checks before it spends', () => {
     expect(submitXrpPayment).toHaveBeenCalledOnce()
     expectAccountGroupInvalidated()
   })
+
+  /** The destination's own check — every asset's entry for it — through the
+   * factory's helper. Taken off the builder rather than retyped, so the
+   * expectation cannot drift from the key the form reads. */
+  const DESTINATION_CHECK_PREFIX = queryKeys.destinationInfo('testnet', DESTINATION, 'XRP').slice(0, 3)
+
+  it('refreshes the destination check after a validated send (retro item 5)', async () => {
+    // The payment may just have activated the address: a check left cached
+    // would go on saying "not activated" for up to the freshness window, and
+    // serve the next send's post-unlock probe.
+    render(<SendTab />)
+    await reviewAndConfirm()
+
+    expect(submitXrpPayment).toHaveBeenCalledOnce()
+    expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: DESTINATION_CHECK_PREFIX })
+  })
+
+  it.each([
+    ['claimed', { status: 'claimed', resultCode: 'tecNO_DST_INSUF_XRP', hash: 'AB' }],
+    ['failed', { status: 'failed', resultCode: 'tefPAST_SEQ', hash: 'AB' }],
+    ['expired', { status: 'expired', hash: 'AB' }],
+  ])('leaves the destination check alone after a %s send — nothing changed on its side', async (_s, outcome) => {
+    submitXrpPayment.mockResolvedValue(outcome)
+    render(<SendTab />)
+    await reviewAndConfirm()
+
+    expect(submitXrpPayment).toHaveBeenCalledOnce()
+    // Non-vacuous: the send did reach the invalidation step.
+    expectAccountGroupInvalidated()
+    expect(invalidateQueries).not.toHaveBeenCalledWith({ queryKey: DESTINATION_CHECK_PREFIX })
+  })
 })
 
 /**

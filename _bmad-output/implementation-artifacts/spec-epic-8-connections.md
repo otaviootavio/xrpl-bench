@@ -141,13 +141,24 @@ client.
    (`Promise.resolve().then(() => client.connect())`). This turns a
    synchronous throw from `connect()` into a rejection, so the same abandon
    path handles it. The 10s timer still starts synchronously.
+6. **A write holds its client, so replacing it does not close it under the
+   write (added in review, round 1).** `submitAndWait` keeps polling the
+   client it was given and relies on xrpl.js reconnecting that client after a
+   drop; story 8.1's close-on-replace cancelled that reconnect whenever a
+   concurrent read replaced the dropped client, so a submitted payment could be
+   reported as failed and sent again. `submitAndClassify` (`writes.ts`) now
+   takes its client through `holdXrplClient` and releases it in `finally`. A
+   held client replaced in the cache goes into `abandonOnRelease` and is closed
+   by the last release instead of at replacement; a client nobody holds is still
+   closed on replacement. This changes the signing/submit path.
 
 ## Verification
 
 - All four gates are green: `bun run lint`, `bun run build`, `bun run test`
-  (32 files, 381 tests, re-run after rebasing onto `3ac02fc`), and `bun run check:contrast`.
+  (32 files, 385 tests, re-run after the round-1 review fix, on `dev` at `3ac02fc`), and `bun run check:contrast`.
 - **Mutation check.** I removed each guard on its own and ran
-  `client.test.ts`. Every mutation turned at least one test red:
+  `client.test.ts` (and `writes.test.ts` for the hold guard). Every mutation
+  turned at least one test red:
 
   | Guard removed | Tests failed |
   |---|---|
@@ -161,6 +172,7 @@ client.
   | generation guard | 1 |
   | per-network keying | 1 |
   | reset gaining a disconnect | 1 |
+  | hold guard (close a held client on replacement) | 3 |
 
 - No browser pass was done, because no UI changed.
 - **Gap:** nothing here was verified against a real flaky endpoint. Every test

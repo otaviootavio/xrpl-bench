@@ -25,7 +25,7 @@ the operator reads. Such a story moves from `review` to `done` only after a
 browser pass whose screenshots were opened and whose result is recorded in the
 story spec's Verification section: the build or commit under test, how the
 browser was driven, the widths and themes, and each criterion marked met or not
-met. The four gates do not substitute for it, and neither does a measurement
+met. The gates do not substitute for it, and neither does a measurement
 script. If the pass cannot be run, the story stays in `review` and its spec says
 what blocked it. The passkey is no longer a valid blocker: see the recipe below.
 

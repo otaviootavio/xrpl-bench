@@ -81,7 +81,7 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-5-1-destination-check-guard.md`
   summary: The pre-flight `fetchDestinationInfoOnce` inside `doSend` has no timeout or abort, and the dialog's Cancel is `disabled={busy}`, so a stalled read leaves the confirm dialog showing "Sending…" with no way out while the decrypted signing wallet sits in a local.
   evidence: Verified, and narrower than first filed — `client.ts:43` gives connection a 10s timeout and `App.tsx:24` sets `retry: 1`, so the wait is bounded rather than open-ended; a request that stalls after connect still has none. Deferred because the fix needs a race or abort path plus a cancellable busy state, which is more than a direct correction.
-  triage: (2026-10-04, against origin/dev 3ac02fc) keep. Still true: `fetchDestinationInfoOnce` in `doSend` has no race or abort, and Cancel is `disabled={busy}` (`SendTab.tsx:883`). Bounded by the 10 s connect timeout and `retry: 1`.
+  triage: (2026-10-04, against origin/dev 3ac02fc) keep. Still true: `fetchDestinationInfoOnce` in `doSend` has no race or abort, and Cancel is `disabled={busy}` (`SendTab.tsx:883`). Bounded, but not by the 10 s connect timeout, which only covers opening the socket: once connected, each request is bounded by xrpl.js's own 20 s request timeout (`TIMEOUT = 20` in `xrpl/dist/npm/client/connection.js`), and `retry: 1` (`App.tsx:26`) allows a second attempt, so "Sending…" can hold with Cancel disabled for roughly 40 s plus backoff.
 
 - source_spec: `_bmad-output/implementation-artifacts/spec-5-2-reserve-read-reported.md`
   summary: `TrustLinesTab.tsx:69` falls back to a hardcoded `'200000'` owner reserve when the server-reserve read has no data, so `canAffordNewLine` is decided by a figure that was never read.

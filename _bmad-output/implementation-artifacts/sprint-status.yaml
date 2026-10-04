@@ -208,7 +208,9 @@ action_items:
       changes afterwards (rebase, review fixes), the Verification section says which
       criteria the change could affect, and those are re-run. Add this to the definition
       of done in docs/agents/verifying-your-work.md. Also: a pass checks the state
-      each recorded unattended decision asserts."
+      each recorded unattended decision asserts. ONE RULE WITH epic-10-retro-item-33
+      (the gates half): after a rebase onto a moved dev, re-run the four gates and
+      the affected browser criteria on the rebased tree."
     owner: "Otavio (process)"
     status: open
     ref: "_bmad-output/implementation-artifacts/epic-6-retro-2026-10-04.md"
@@ -243,7 +245,9 @@ action_items:
     epic: 7
     action: "Add a rule to the unattended loop: a finding a build or review marks
       high-severity *and* money-moving blocks the resolver's merge of the *next* epic
-      until a story or PR for it exists and Otavio has seen it. Record it in docs/agents/."
+      until a story or PR for it exists and Otavio has seen it. Record it in docs/agents/.
+      ONE RULE WITH epic-9-retro-item-30: decide and write both triggers together as
+      a single hold rule for money-moving findings."
     owner: "Otavio (process)"
     status: open
     ref: "_bmad-output/implementation-artifacts/epic-7-retro-2026-10-04.md"
@@ -314,7 +318,8 @@ action_items:
     epic: 8
     action: "Make the unattended resolver send every non-blocking reviewer finding
       either to a fix or to a deferred-work.md entry before it squash-merges, and
-      say which in the PR."
+      say which in the PR. ONE RULE WITH epic-10-retro-item-32: findings routed to
+      a fix are also appended to the spec's Review triage; decide them together."
     owner: "Otavio (process)"
     status: open
     ref: "_bmad-output/implementation-artifacts/epic-8-retro-2026-10-04.md"
@@ -350,7 +355,8 @@ action_items:
     action: "In the unattended build loop, do not squash-merge a PR whose reviewer
       raised a \"for Otavio\" decision that weakens a money-moving guard or warning.
       Hold it, or label it and block promotion until Otavio decides. Regenerate the
-      PR body's decision list from the spec whenever a review fix adds a decision."
+      PR body's decision list from the spec whenever a review fix adds a decision. ONE RULE WITH epic-7-retro-item-18 (second
+      trigger of the same hold rule); decide them together."
     owner: "Otavio (process)"
     status: open
     ref: "_bmad-output/implementation-artifacts/epic-9-retro-2026-10-04.md"
@@ -368,14 +374,16 @@ action_items:
     epic: 10
     action: "Unattended runs append the fresh reviewer's findings and the resolver's
       fixes to the spec's Review triage, and refresh its Verification counts, before
-      merge. The spec, not the PR thread, is the record."
+      merge. The spec, not the PR thread, is the record. ONE RULE WITH epic-8-retro-item-26
+      (same moment in the loop); decide them together."
     owner: "Otavio (process)"
     status: open
     ref: "_bmad-output/implementation-artifacts/epic-10-retro-2026-10-04.md"
   - id: "epic-10-retro-item-33-a-resolver-re-runs-all-four-gates-on-the"
     epic: 10
     action: "A resolver re-runs all four gates on the tree it is about to merge (rebased
-      onto current dev), not the tree the PR was last rebased onto."
+      onto current dev), not the tree the PR was last rebased onto. ONE RULE WITH epic-6-retro-item-14
+      (the browser half); decide them together."
     owner: "Otavio (process)"
     status: open
     ref: "_bmad-output/implementation-artifacts/epic-10-retro-2026-10-04.md"

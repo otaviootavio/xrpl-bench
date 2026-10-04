@@ -115,7 +115,7 @@ function discardCalls(text) {
       else if (text[i] === ')') depth--
       i++
     }
-    calls.push({ index: m.index, args: text.slice(DISCARD_CALL.lastIndex, i - 1) })
+    calls.push({ index: m.index, start: DISCARD_CALL.lastIndex, end: i - 1, args: text.slice(DISCARD_CALL.lastIndex, i - 1) })
   }
   return calls
 }
@@ -131,14 +131,19 @@ export function violationsIn(text, builders) {
   const found = []
   for (const name of builders) {
     const named = new RegExp(`\\b${name}\\b`)
-    const direct = calls.filter((c) => named.test(c.args)).map((c) => lineOf(text, c.index))
-    const unsuppressed = direct.filter((line) => !allowed.has(line))
-    if (direct.length > 0) {
+    const directCalls = calls.filter((c) => named.test(c.args))
+    const unsuppressed = directCalls.map((c) => lineOf(text, c.index)).filter((line) => !allowed.has(line))
+    if (unsuppressed.length > 0) {
       for (const line of unsuppressed) found.push({ line, builder: name, kind: 'passed to a discard call' })
       continue
     }
+    // Every direct hit (if any) is allowed: an allowed call must not mask a
+    // key bound to a variable elsewhere in the file, so scan the builds that
+    // sit outside those calls' arguments.
+    const insideDirect = (index) => directCalls.some((c) => index >= c.start && index < c.end)
     const built = new RegExp(`queryKeys\\.${name}\\s*\\(`, 'g')
     for (let m = built.exec(text); m; m = built.exec(text)) {
+      if (insideDirect(m.index)) continue
       const line = lineOf(text, m.index)
       if (!allowed.has(line)) found.push({ line, builder: name, kind: 'built beside a discard call' })
     }

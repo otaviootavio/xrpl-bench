@@ -165,6 +165,25 @@ describe('the account-invalidation guard scans the tree', () => {
       { file: 'src/pages/D.tsx', line: 3, builder: 'trustLines', kind: 'passed to a discard call' },
     ])
   })
+
+  it('does not let an allowed call mask a variable-bound key of the same builder', () => {
+    expect(
+      violationsIn(
+        `// check-account-invalidation-allow\nqc.invalidateQueries({ queryKey: queryKeys.accountState(n, a) })\n` +
+          `const k = queryKeys.accountState(n, b)\nqc.invalidateQueries({ queryKey: k })\n`,
+        ['accountState'],
+      ),
+    ).toEqual([{ line: 3, builder: 'accountState', kind: 'built beside a discard call' }])
+  })
+
+  it('does not flag the key inside an allowed call that spans several lines', () => {
+    expect(
+      violationsIn(
+        `// check-account-invalidation-allow\nqc.invalidateQueries({\n  queryKey: queryKeys.accountState(n, a),\n})\n`,
+        ['accountState'],
+      ),
+    ).toEqual([])
+  })
 })
 
 describe('the account-invalidation guard fails the gate on each reason', () => {

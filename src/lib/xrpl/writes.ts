@@ -1,5 +1,5 @@
 import { Wallet, type Payment, type TrustSet, TrustSetFlags } from 'xrpl'
-import { getXrplClient } from './client'
+import { getXrplClient, holdXrplClient } from './client'
 import type { NetworkId } from './networks'
 
 /**
@@ -56,8 +56,14 @@ async function submitAndClassify(network: NetworkId, wallet: Wallet, tx: Payment
   // signing has effectively already started) and cleared in `finally` so a
   // thrown/expired outcome still releases the flag.
   reportTxInFlight(true)
+  let release: (() => void) | undefined
   try {
-    const client = await getXrplClient(network)
+    // Held, not merely fetched: `submitAndWait` polls on this one client until
+    // the transaction settles, so a read replacing it after a dropped socket
+    // must not close it under the wait (see `holdXrplClient`).
+    const held = await holdXrplClient(network)
+    release = held.release
+    const client = held.client
     const prepared = await client.autofill(tx as any, { maxFeeXRP: MAX_FEE_XRP } as any)
     const signed = wallet.sign(prepared)
     const lastLedgerSequence = (prepared as any).LastLedgerSequence as number | undefined
@@ -85,6 +91,7 @@ async function submitAndClassify(network: NetworkId, wallet: Wallet, tx: Payment
       throw err
     }
   } finally {
+    release?.()
     reportTxInFlight(false)
   }
 }

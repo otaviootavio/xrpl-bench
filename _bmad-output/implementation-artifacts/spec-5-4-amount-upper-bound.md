@@ -131,3 +131,5 @@ Pass 1, 2026-09-28. Three layers (blind hunter, edge-case hunter, verification g
   - Desktop layout is correct in both themes.
 - **Not met at 320 and 390 px:** on the failed row, the collapsed amount (`≤ 0.5 XRP`) is not visible. The long status badge does not wrap, so the row's content is 417 px wide inside a 229 px (at 320) or 299 px (at 390) button, and the amount sits at x=374–463, clipped by the tab panel's scroll container. The upper-bound label is therefore absent on mobile for exactly the failed rows this story flags. The layout predates 5.4; successful rows fit.
 - **Not observed:** the "Received" toast. None was captured after the two incoming EUR payments, which may mean it had already expired. Neither confirmed nor refuted.
+
+**Follow-up, 2026-09-30: the mobile criterion now passes. Status → `done`.** Fixed by `spec-5-4-history-failed-row-clipping.md`. Below `sm` the status legend takes its own line, and only the result code is unbreakable. Browser-verified on a real `tecNO_DST_INSUF_XRP` row at 320, 390 and 1280 px in both themes: `≤ 0.5 XRP` is fully visible, the code is whole, and desktop is pixel-identical to before.

@@ -128,3 +128,18 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-5-5-one-invalidation-group.md`
   summary: When `account_tx` is answered by a node whose history doesn't reach the account's transactions, History states "No transactions yet" or shows a truncated list as the complete one.
   evidence: The account `rGMSiqR8SFRv9seNALxCMNdySHNbjZ574V` was checked on both nodes. `wss://s.altnet.rippletest.net:51233` returns 6 transactions (`complete_ledgers` 13075065-21133873). `wss://testnet.xrpl-labs.com`, the backup, returns 0 (`complete_ledgers` 21132193-21133873). The app used both within one load: after a faucet refresh, History went from 6 rows to 1. `account_tx` reports `ledger_index_min`, which shows the searched range starting after the account's first transaction, so the gap can be detected. High: the app states a falsehood about the account, and the wallet's own rule says a failure and an empty result are never the same fact. It overlaps with the connection work in epic 8.
+
+## Deferred from: code review of the History failed-row fix (2026-09-30)
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-5-4-history-failed-row-clipping.md`
+  summary: At 320 px the Send outcome line (status legend beside the transaction hash link) overflows its plate by about 41 px; the link's external-link icon spills past the edge.
+  evidence: Measured in the browser during the fix's verification. The `SendTab.tsx:729-733` row is `flex items-center gap-2`, with no wrap or shrink. Pre-existing: before the fix the whole legend was nowrap and the overflow was larger.
+- source_spec: `_bmad-output/implementation-artifacts/spec-5-4-history-failed-row-clipping.md`
+  summary: On History below `sm`, a very long amount (e.g. a 20+ character issued-currency figure) squeezes the direction column to zero, and "SENT"/"RECEIVED" can paint over the amount.
+  evidence: The row grid is `grid-cols-[minmax(0,1fr)_auto]` with a `min-w-0` direction cell, so an `auto` amount wider than the row minus the direction wins. Pre-existing in another form: the old flex layout pushed the amount off-screen in the same case. Medium: a long token amount on a phone is unreadable either way. Needs a design choice (let the amount wrap, or give it its own line).
+
+## Deferred from: code review of the Epic 5 retro send-guards fix (2026-10-03)
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-retro-5-send-guards-fail-closed.md`
+  summary: After the unlock, Send re-checks only the destination; a trust-line, fee or spendable read that fails or changes during the unlock does not stop a token or XRP payment from being submitted.
+  evidence: `doSend` re-reads only `fetchDestinationInfoOnce` after `unlockWalletForSigning`; the Epic 5 retro (F6) deferred widening the probe to the `SendTab` split (action item 8).

@@ -214,7 +214,11 @@ to the boundary module.
 
 ---
 
-## G-16 — The write choke point cannot be reached by a new transaction type `AD-9`
+## G-16 — The write choke point cannot be reached by a new transaction type `AD-9` — **CLOSED**
+
+**Closed 2026-10-04 by Epic 7 (story 7.1):** `submitAndClassify` is exported and typed on
+`SubmittableTransaction`; `writes.test.ts` submits an `AccountSet` through it and asserts the
+in-flight signal. The text below is the gap as filed.
 
 **Severity: the rule is unobeyable as written, which is worse than unenforced.**
 
@@ -233,7 +237,11 @@ narrower type is doing no safety work — the two callers already pass concrete
 
 ---
 
-## G-17 — The in-flight signal is a boolean and two writes can overlap `AD-9`
+## G-17 — The in-flight signal is a boolean and two writes can overlap `AD-9` — **CLOSED**
+
+**Closed 2026-10-04 by Epic 7 (story 7.2):** the choke point holds a depth and reports only the
+0→1 and 1→0 transitions; the store's boolean now means "depth above zero". `writes.test.ts`
+pins two overlapping writes (validated, thrown, expired). The text below is the gap as filed.
 
 **Severity: an update can activate mid-transaction — AD-9's stated failure.**
 

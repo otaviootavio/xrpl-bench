@@ -75,10 +75,10 @@ development_status:
   6-2-locking-the-app-does-not-delete-the-app-shell: done
   epic-6-retrospective: optional
 
-  epic-7: backlog
-  7-1-any-transaction-type-can-reach-the-write-choke-point: backlog
-  7-2-two-overlapping-writes-cannot-clear-each-other-s-in-flight-s: backlog
-  7-3-a-failed-update-activation-keeps-telling-the-truth-about-wha: backlog
+  epic-7: done
+  7-1-any-transaction-type-can-reach-the-write-choke-point: done
+  7-2-two-overlapping-writes-cannot-clear-each-other-s-in-flight-s: done
+  7-3-a-failed-update-activation-keeps-telling-the-truth-about-wha: done
   epic-7-retrospective: optional
 
   epic-8: done

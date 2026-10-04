@@ -203,3 +203,110 @@ describe('useAppUpdate — insistent notice for major/security releases', () => 
     expect(updateSW).toHaveBeenCalledWith(true)
   })
 })
+
+const minorRelease = {
+  version: '1.3.0',
+  commit: 'f'.repeat(40),
+  releasedAt: '2026-01-01T00:00:00.000Z',
+  bump: 'minor' as const,
+  security: false,
+  notes: 'https://example.com/notes',
+  verify: 'https://example.com#security',
+}
+
+/**
+ * Story 7.2's second half: `applyUpdate` reads `txInFlight` as its sole
+ * interlock (US-5). The choke point now keeps that flag raised until the LAST
+ * of several overlapping writes settles (`writes.test.ts`); this pins that the
+ * hook, given the raised flag, refuses to activate the waiting worker.
+ */
+describe('useAppUpdate — refuses to activate while a transaction is in flight', () => {
+  beforeEach(() => {
+    vi.resetModules()
+  })
+
+  it('does not activate the waiting worker, and says why, while txInFlight is raised', async () => {
+    const { hook, updateSW } = await setupHook({ txInFlight: true })
+
+    await act(async () => {
+      await hook.result.current.applyUpdate()
+    })
+
+    expect(updateSW, 'US-5/AD-9: an update must never activate with a transaction in flight').not.toHaveBeenCalled()
+    expect(hook.result.current.applying).toBe(false)
+    expect(hook.result.current.blockedReason).toMatch(/transaction is in progress/)
+  })
+})
+
+/**
+ * Story 7.3. When activation fails, two things must hold TOGETHER: the control
+ * becomes available again (`applying` back to false), and the prompt keeps
+ * showing (`updateReady` stays true) — because a worker genuinely is still
+ * waiting. Either half alone is a defect: a stranded control, or a prompt that
+ * claims nothing is waiting while something is (AD-15 inverted; G-26 refuted).
+ */
+describe('useAppUpdate — a failed activation keeps telling the truth about what is waiting', () => {
+  beforeEach(() => {
+    vi.resetModules()
+  })
+
+  it('makes the control available again AND keeps the prompt showing, because the worker is still waiting (AD-15)', async () => {
+    const { hook, updateSW } = await setupHook({
+      updateSW: async () => {
+        throw new Error('activation failed')
+      },
+    })
+
+    await act(async () => {
+      await hook.result.current.applyUpdate()
+    })
+
+    expect(updateSW).toHaveBeenCalledWith(true)
+    expect(hook.result.current.applying, 'after a failed activation the control must be usable again, not stranded').toBe(false)
+    expect(
+      hook.result.current.updateReady,
+      'AD-15: the worker whose activation failed is still waiting — hiding the prompt would claim nothing is waiting while something is (G-26 was refuted for exactly this)',
+    ).toBe(true)
+  })
+})
+
+/**
+ * The same registry/store/release mocks as the first suite's `setup`, with
+ * the store's `txInFlight` and the activation's outcome controllable.
+ */
+async function setupHook(opts: { txInFlight?: boolean; updateSW?: () => Promise<void> } = {}) {
+  let waiting = false
+  const listeners = new Set<(v: boolean) => void>()
+  const updateSW = vi.fn(opts.updateSW ?? (async () => {}))
+  vi.doMock('@/lib/sw-register', () => ({
+    registerServiceWorker: () => updateSW,
+    getServiceWorkerRegistration: () => ({}) as ServiceWorkerRegistration,
+    isUpdateWaiting: () => waiting,
+    subscribeToWaitingUpdate: (listener: (v: boolean) => void) => {
+      listeners.add(listener)
+      if (waiting) listener(true)
+      return () => {
+        listeners.delete(listener)
+      }
+    },
+  }))
+  vi.doMock('@/lib/release-check', () => ({
+    checkForRelease: vi.fn(async () => ({ ok: true, manifest: minorRelease })),
+  }))
+  vi.doMock('@/store/app-store', () => ({
+    useAppStore: (selector: (s: Record<string, unknown>) => unknown) =>
+      selector({ txInFlight: opts.txInFlight ?? false, declinedUpdateVersions: [], declineUpdateVersion: vi.fn() }),
+  }))
+  vi.doMock('@/lib/build-info', () => ({
+    BUILD: { version: '0.0.0-test', commitSha: '0'.repeat(40), builtAt: '2026-01-01T00:00:00.000Z' },
+  }))
+
+  const { useAppUpdate } = await import('../useAppUpdate')
+  const hook = renderHook(() => useAppUpdate())
+  act(() => {
+    waiting = true
+    listeners.forEach((l) => l(true))
+  })
+  await waitFor(() => expect(hook.result.current.updateReady).toBe(true))
+  return { hook, updateSW }
+}

@@ -60,6 +60,16 @@ export function createSwRegistry(registerSW: RegisterSWFn): SwRegistry {
         onNeedRefresh() {
           // Recorded, never applied: US-2 says the running code is not
           // replaced until the user asks.
+          //
+          // Deliberately never set back to false — not even when an
+          // activation fails. After a failed `applyUpdate` the new worker is
+          // genuinely still waiting, so `true` is the true answer; clearing it
+          // would make the app claim no update is waiting while one is, which
+          // is AD-15 ("an empty state is a claim, not a default") inverted.
+          // `useAppUpdate` makes the control usable again instead
+          // (`setApplying(false)`). G-26 proposed the clear and was refuted on
+          // 2026-09-15; `sw-register-core.test.ts` and `useAppUpdate.test.tsx`
+          // fail if it comes back.
           waiting = true
           listeners.forEach((l) => l(true))
         },

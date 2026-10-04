@@ -21,13 +21,16 @@ interface AppState {
   // guardrail #3: no secret ever enters anything serializable).
   vaultKey: CryptoKey | null
   unlocked: boolean
-  /** app-versioning-and-updates.md US-5: true for the exact window a payment
-   * or trust-line transaction is signing, submitted, or awaiting validation.
-   * Session-only and deliberately not derived from any per-tab local state —
-   * Radix unmounts inactive `TabsContent`, so a flag local to `SendTab` would
-   * vanish the moment the user switched away from it mid-send. Set/cleared at
-   * the single choke point every write passes through
-   * (`lib/xrpl/writes.ts#submitAndClassify`). */
+  /** app-versioning-and-updates.md US-5: true while ANY transaction is
+   * signing, submitted, or awaiting validation — true from the moment the
+   * first of possibly several overlapping writes starts until the last one
+   * settles. Session-only and deliberately not derived from any per-tab local
+   * state — Radix unmounts inactive `TabsContent`, so a flag local to
+   * `SendTab` would vanish the moment the user switched away from it mid-send.
+   * Set/cleared at the single choke point every write passes through
+   * (`lib/xrpl/writes.ts#submitAndClassify`), which counts writes and reports
+   * only the 0→1 and 1→0 transitions (AD-9) — so this boolean is "depth above
+   * zero", not "the most recent write's state". */
   txInFlight: boolean
 
   setNetwork: (network: NetworkId) => void

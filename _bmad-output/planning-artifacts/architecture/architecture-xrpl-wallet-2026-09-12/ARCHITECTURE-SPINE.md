@@ -232,8 +232,9 @@ without importing a component (AD-8).
   prevent. The choke point holds a depth, and in-flight means depth above zero.
 - **The choke point must be reachable and wide enough to obey.** A new
   transaction type cannot be required to pass through a function it cannot
-  import or whose parameter type excludes it; today's signature admits only
-  `Payment | TrustSet` (see `GAP-REGISTER.md`).
+  import or whose parameter type excludes it. Since Epic 7 (2026-10-04)
+  `submitAndClassify` is exported and typed on `SubmittableTransaction`, and
+  holds the depth (G-16, G-17 closed — see `GAP-REGISTER.md`).
 
 ### AD-10 — Explorer links only through the shared components `[GATED]`
 

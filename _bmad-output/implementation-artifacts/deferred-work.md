@@ -143,3 +143,12 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-retro-5-send-guards-fail-closed.md`
   summary: After the unlock, Send re-checks only the destination; a trust-line, fee or spendable read that fails or changes during the unlock does not stop a token or XRP payment from being submitted.
   evidence: `doSend` re-reads only `fetchDestinationInfoOnce` after `unlockWalletForSigning`; the Epic 5 retro (F6) deferred widening the probe to the `SendTab` split (action item 8).
+
+## Deferred from: build of epic 8 (2026-10-04)
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-epic-8-connections.md`
+  summary: A connect attempt still in flight when `disconnectAllClients` runs (wallet removal) settles afterwards and writes a connected client into the cache that teardown has just emptied.
+  evidence: `client.ts` `connectNetwork` caches on success; `disconnectAllClients` only closes clients already in the map and does not touch `inflight`. Pre-existing: before epic 8 every concurrent attempt did the same. Not fixed because story 8.1 requires the teardown path's behaviour to stay unchanged. Low: the socket carries no subscription after teardown, but it stays open until the next disconnect.
+- source_spec: `_bmad-output/implementation-artifacts/spec-epic-8-connections.md`
+  summary: After a socket drops, `useAccountLiveUpdates` keeps its `transaction` listener on the client it subscribed through, and nothing re-subscribes on the replacement client. Live updates stop until the hook remounts (network or wallet switch, or reload), and polling is the only fallback.
+  evidence: xrpl.js 5.1.0 `connection.ts` has no subscription tracking, so its own auto-reconnect never re-subscribed either. Epic 8 now closes the replaced client, which ends that client's reconnect loop. The loss itself is pre-existing. Medium: incoming payments appear on the next 15-second poll rather than at once.

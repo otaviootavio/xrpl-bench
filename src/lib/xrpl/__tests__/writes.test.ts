@@ -1,9 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { Wallet } from 'xrpl'
+import { Wallet, type AccountSet } from 'xrpl'
 import { getXrplClient, resetXrplClientFactory, resetXrplClients, setXrplClientFactory } from '../client'
 import {
   resetTxInFlightReporter,
   setTxInFlightReporter,
+  submitAndClassify,
   submitIssuedPayment,
   submitTrustSet,
   submitXrpPayment,
@@ -290,5 +291,145 @@ describe('a write keeps its client open across a drop and a concurrent replaceme
     expect(built).toHaveLength(2)
     expect(built[0].disconnectCalls).toBe(1)
     expect(built[1].disconnectCalls).toBe(0)
+  })
+})
+
+/**
+ * Story 7.1 (G-16): the choke point is exported and typed on
+ * `SubmittableTransaction`, so a transaction type this module has no wrapper
+ * for still passes through it — and therefore still raises the in-flight
+ * signal the update interlock reads. Before, a new type could only bypass it.
+ */
+describe('any transaction type can reach the write choke point', () => {
+  it('submits an AccountSet through the exported choke point and raises the in-flight signal for it', async () => {
+    const client = installFakeClient()
+    const tx: AccountSet = { TransactionType: 'AccountSet', Account: wallet.address }
+
+    const outcome = await submitAndClassify('testnet', wallet, tx)
+
+    expect(outcome.status).toBe('validated')
+    expect(client.autofilled[0].TransactionType).toBe('AccountSet')
+    expect(log[0]).toBe('in-flight:true')
+    expect(log.indexOf('in-flight:true')).toBeLessThan(log.indexOf('autofill'))
+    expect(log.at(-1)).toBe('in-flight:false')
+  })
+})
+
+/**
+ * Story 7.2 (G-17): the in-flight signal counts, it does not toggle. Two
+ * writes can overlap — the flag is global precisely because Radix unmounts
+ * inactive tabs, so a payment and a trust-line change can both be awaiting
+ * validation — and a boolean cleared by whichever settles first would tell
+ * `useAppUpdate` nothing is in flight while the other is still live.
+ */
+describe("two overlapping writes cannot clear each other's in-flight signal", () => {
+  /** A fake client whose `submitAndWait` calls park until the test settles
+   * them, so the test decides which write finishes first. */
+  function installParkedClient(validatedLedgerIndex = 50) {
+    const parked: { resolve: (v: any) => void; reject: (e: unknown) => void }[] = []
+    const client = {
+      isConnected: () => true,
+      connect: async () => {},
+      autofill: async (tx: any) => ({ ...tx, Fee: '12', Sequence: 1, LastLedgerSequence: 100 }),
+      submitAndWait: () =>
+        new Promise((resolve, reject) => {
+          parked.push({ resolve, reject })
+        }),
+      request: async () => ({ result: { ledger_index: validatedLedgerIndex } }),
+    }
+    setXrplClientFactory(() => client as any)
+    return parked
+  }
+
+  const validated = { result: { meta: { TransactionResult: 'tesSUCCESS' }, ledger_index: 42 } }
+
+  async function untilParked(parked: unknown[], n: number) {
+    for (let i = 0; i < 50 && parked.length < n; i++) await new Promise((r) => setTimeout(r, 0))
+    expect(parked).toHaveLength(n)
+  }
+
+  function startBoth() {
+    const payment = submitXrpPayment('testnet', wallet, {
+      destination: 'rPT1Sjq2YGrBMTttX4GZHjKu9dyfzbpAYe',
+      amountDrops: '1000000',
+    })
+    const trustLine = submitTrustSet('testnet', wallet, {
+      currency: 'USD',
+      issuer: 'rPT1Sjq2YGrBMTttX4GZHjKu9dyfzbpAYe',
+      limit: '100',
+    })
+    return { payment, trustLine }
+  }
+
+  const reports = () => log.filter((e) => e.startsWith('in-flight'))
+
+  it('stays raised across the first settlement and clears only when the last write settles', async () => {
+    const parked = installParkedClient()
+    const { payment, trustLine } = startBoth()
+    await untilParked(parked, 2)
+
+    // Both writes are inside the choke point: raised exactly once.
+    expect(reports()).toEqual(['in-flight:true'])
+
+    parked[0].resolve(validated)
+    expect((await payment).status).toBe('validated')
+    // The trust-line change is still awaiting validation: the payment
+    // settling must not have cleared the signal.
+    expect(reports(), 'AD-9: the first of two overlapping writes to settle must not clear the in-flight signal').toEqual([
+      'in-flight:true',
+    ])
+
+    parked[1].resolve(validated)
+    expect((await trustLine).status).toBe('validated')
+    expect(reports()).toEqual(['in-flight:true', 'in-flight:false'])
+  })
+
+  it('stays raised when the first of two overlapping writes throws, and clears when the second settles', async () => {
+    // Validated index 99 < LastLedgerSequence 100: the throw is not an expiry.
+    const parked = installParkedClient(99)
+    const { payment, trustLine } = startBoth()
+    await untilParked(parked, 2)
+
+    parked[0].reject(new Error('socket closed'))
+    await expect(payment).rejects.toThrow('socket closed')
+    expect(reports()).toEqual(['in-flight:true'])
+
+    parked[1].resolve(validated)
+    await trustLine
+    expect(reports()).toEqual(['in-flight:true', 'in-flight:false'])
+  })
+
+  it('stays raised when the first of two overlapping writes expires, and clears when the second settles', async () => {
+    // Validated index 101 > LastLedgerSequence 100: the throw is an expiry.
+    const parked = installParkedClient(101)
+    const { payment, trustLine } = startBoth()
+    await untilParked(parked, 2)
+
+    parked[0].reject(new Error('connection dropped while waiting'))
+    expect((await payment).status).toBe('expired')
+    expect(reports()).toEqual(['in-flight:true'])
+
+    parked[1].reject(new Error('connection dropped while waiting'))
+    expect((await trustLine).status).toBe('expired')
+    expect(reports()).toEqual(['in-flight:true', 'in-flight:false'])
+  })
+
+  it('does not strand the signal: after both throw, the next write is a fresh raise and clear', async () => {
+    const parked = installParkedClient(99)
+    const { payment, trustLine } = startBoth()
+    await untilParked(parked, 2)
+
+    parked[1].reject(new Error('socket closed'))
+    parked[0].reject(new Error('socket closed'))
+    await expect(payment).rejects.toThrow('socket closed')
+    await expect(trustLine).rejects.toThrow('socket closed')
+    expect(reports()).toEqual(['in-flight:true', 'in-flight:false'])
+
+    // Depth is back at zero, so the next write is a new 0→1 transition.
+    const third = submitXrpPayment('testnet', wallet, { destination: 'rPT1Sjq2YGrBMTttX4GZHjKu9dyfzbpAYe', amountDrops: '1' })
+    await untilParked(parked, 3)
+    parked[2].resolve(validated)
+    await third
+    expect(reports()).toEqual(['in-flight:true', 'in-flight:false', 'in-flight:true', 'in-flight:false'])
   })
 })

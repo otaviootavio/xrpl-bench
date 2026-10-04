@@ -129,3 +129,48 @@ describe('the service-worker registry', () => {
     expect(registry.isUpdateWaiting()).toBe(true)
   })
 })
+
+/**
+ * Story 7.3. G-26 filed "the waiting flag never returns to false" as a defect;
+ * it was refuted on 2026-09-15. After an activation that fails, the new worker
+ * is genuinely still waiting, so `true` is the true answer — clearing it would
+ * be AD-15 ("an empty state is a claim, not a default") inverted. These tests
+ * are named for that reason so nobody "fixes" correct behaviour into a lie.
+ */
+describe('a failed update activation keeps telling the truth about what is waiting', () => {
+  function registryWhoseActivationRejects() {
+    let options: SwRegisterOptions | undefined
+    const updateSW: UpdateSW = vi.fn(async () => {
+      throw new Error('activation failed')
+    })
+    const registry = createSwRegistry((o) => {
+      options = o
+      return updateSW
+    })
+    const activate = registry.register()
+    options?.onNeedRefresh?.()
+    return { registry, activate }
+  }
+
+  it('still reports a waiting worker after an activation that rejects, because one still is (AD-15, G-26 refuted)', async () => {
+    const { registry, activate } = registryWhoseActivationRejects()
+    expect(registry.isUpdateWaiting()).toBe(true)
+
+    // The `applyUpdate` path: activate the waiting worker, and it fails.
+    await expect(activate(true)).rejects.toThrow('activation failed')
+
+    expect(
+      registry.isUpdateWaiting(),
+      'AD-15: a worker whose activation failed is still waiting — reporting "nothing waiting" would claim an empty state that was never established (why G-26 was refuted)',
+    ).toBe(true)
+  })
+
+  it('still tells a subscriber that arrives after the failed activation that a worker is waiting (AD-15)', async () => {
+    const { registry, activate } = registryWhoseActivationRejects()
+    await activate(true).catch(() => {})
+
+    const listener = vi.fn()
+    registry.subscribeToWaitingUpdate(listener)
+    expect(listener, 'AD-15: a late subscriber must still learn that the worker is waiting').toHaveBeenCalledWith(true)
+  })
+})

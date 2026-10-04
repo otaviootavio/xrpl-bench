@@ -253,3 +253,9 @@ Item 8 shipped as a refactor that preserves behaviour (`spec-sendtab-split.md`).
   summary: F6: after the unlock, Send re-checks only the destination. The spendable, fee and trust-line figures it checks against were read before the unlock.
   evidence: `doSend` still calls only `fetchDestinationInfoOnce`. The split makes widening it cheap: `checkFunds` is pure, so it can be fed fresh `ReadState`s from `fetchQuery` inside `doSend`. It was left as it is because widening it adds new reads and a new refusal.
   triage: (2026-10-04) defer to the proposed "Send screen behaviour fixes" story, or to epic 7, which owns the write path. The cost is one fee, not funds.
+
+## Deferred from: build of epic 7 (2026-10-04)
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-epic-7-write-path.md`
+  summary: The fee cap on every write has no effect. Writes are capped at xrpl.js's default of 2 XRP, not the intended 0.01 XRP.
+  evidence: `writes.ts` passes `{ maxFeeXRP: '0.01' } as any` as `autofill`'s second argument. In xrpl.js 5.1.0 that argument is `signersCount` (`autofill(transaction, signersCount?, sponsorSignersCount?)`), where an object is ignored because `{} > 0` is false. The cap autofill applies is `client.maxFeeXRP` (`sugar/autofill.js`), which is a `Client` constructor option, and `client.ts:38` constructs `new Client(url)` without it, so `DEFAULT_MAX_FEE_XRP = '2'` applies. The test "caps the fee autofill may attach" only checks that the fake recorded the argument, so it passes either way. Pre-existing. It was not fixed in epic 7 because the fix is in `client.ts` and changes what users pay (rule 5). High: money. A future multi-sign feature would also need a real `signersCount` in that position.

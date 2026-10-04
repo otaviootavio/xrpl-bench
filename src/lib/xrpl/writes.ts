@@ -1,4 +1,4 @@
-import { Wallet, type Payment, type TrustSet, TrustSetFlags } from 'xrpl'
+import { Wallet, type Payment, type SubmittableTransaction, type TrustSet, TrustSetFlags } from 'xrpl'
 import { getXrplClient, holdXrplClient } from './client'
 import type { NetworkId } from './networks'
 
@@ -13,18 +13,31 @@ import type { NetworkId } from './networks'
  * Deliberately module-level and global: AD-9/FR-48 require EVERY write to
  * raise the flag, so there is no per-call override and no way for a caller
  * to opt out.
+ *
+ * The reporter is told a boolean, but the choke point counts (AD-9, G-17):
+ * two writes can overlap — a payment and a trust-line change from different
+ * tabs — and a flag cleared by whichever settles first would report "nothing
+ * in flight" while the other is still live. So the reporter hears `true` on
+ * the 0→1 transition of `inFlightDepth` and `false` on 1→0, and never between.
  */
 export type TxInFlightReporter = (inFlight: boolean) => void
 
 let reportTxInFlight: TxInFlightReporter = () => {}
 
+/** How many writes are inside the choke point right now. In flight means
+ * above zero. Only `submitAndClassify` moves it, and only in matched pairs. */
+let inFlightDepth = 0
+
 export function setTxInFlightReporter(reporter: TxInFlightReporter): void {
   reportTxInFlight = reporter
 }
 
-/** Test seam — restores the default no-op reporter. */
+/** Test seam — restores the default no-op reporter and a zero depth, so a
+ * write a test left hanging cannot hide the next test's 0→1 transition.
+ * Nothing in production zeroes the depth: only a settled write lowers it. */
 export function resetTxInFlightReporter(): void {
   reportTxInFlight = () => {}
+  inFlightDepth = 0
 }
 
 /** Cap on the fee autofill is allowed to attach, so a fee-escalation spike
@@ -48,23 +61,37 @@ function classify(resultCode: string): 'validated' | 'claimed' | 'failed' {
   return 'failed'
 }
 
-async function submitAndClassify(network: NetworkId, wallet: Wallet, tx: Payment | TrustSet): Promise<SubmitOutcome> {
+/**
+ * The write choke point (AD-9): every transaction this app signs is submitted
+ * here, whatever its type. Exported and typed on `SubmittableTransaction` so a
+ * new feature (Escrow, Check, Payment Channel, `AccountSet`, …) obeys AD-9 by
+ * calling it, without editing this module (G-16). The caller builds the
+ * transaction; this function owns the in-flight signal and the classification.
+ */
+export async function submitAndClassify(
+  network: NetworkId,
+  wallet: Wallet,
+  tx: SubmittableTransaction,
+): Promise<SubmitOutcome> {
   // app-versioning-and-updates.md US-5: the single choke point every write
   // passes through, so the update flow always sees an accurate "is anything
-  // in flight right now" signal regardless of which tab is mounted. Set
+  // in flight right now" signal regardless of which tab is mounted. Raised
   // before the first network call (autofill needs the current sequence, so
-  // signing has effectively already started) and cleared in `finally` so a
-  // thrown/expired outcome still releases the flag.
-  reportTxInFlight(true)
+  // signing has effectively already started) and lowered in `finally` so a
+  // thrown/expired outcome still releases it. The increment is the last
+  // statement before `try` and cannot throw, and the report is inside the
+  // `try`, so nothing can raise the depth without the `finally` lowering it.
+  inFlightDepth += 1
   let release: (() => void) | undefined
   try {
+    if (inFlightDepth === 1) reportTxInFlight(true)
     // Held, not merely fetched: `submitAndWait` polls on this one client until
     // the transaction settles, so a read replacing it after a dropped socket
     // must not close it under the wait (see `holdXrplClient`).
     const held = await holdXrplClient(network)
     release = held.release
     const client = held.client
-    const prepared = await client.autofill(tx as any, { maxFeeXRP: MAX_FEE_XRP } as any)
+    const prepared = await client.autofill(tx, { maxFeeXRP: MAX_FEE_XRP } as any)
     const signed = wallet.sign(prepared)
     const lastLedgerSequence = (prepared as any).LastLedgerSequence as number | undefined
     try {
@@ -91,8 +118,14 @@ async function submitAndClassify(network: NetworkId, wallet: Wallet, tx: Payment
       throw err
     }
   } finally {
-    release?.()
-    reportTxInFlight(false)
+    // Nested so the depth is lowered even if releasing the client throws: a
+    // depth stranded above zero would refuse every update for the session.
+    try {
+      release?.()
+    } finally {
+      inFlightDepth -= 1
+      if (inFlightDepth === 0) reportTxInFlight(false)
+    }
   }
 }
 

@@ -96,8 +96,14 @@ the reason, whose failure messages name AD-15.
   that pin it. The comment was the only change.
 - `src/lib/xrpl/__tests__/writes.test.ts`: one 7.1 test and four 7.2 overlap
   tests, which use a fake client whose `submitAndWait` calls wait until the
-  test settles them.
+  test settles them. Two more tests pin the depth guards: one with a reporter
+  that throws on the raise, and one (an isolated `describe` that uses
+  `vi.doMock('../client')`) with a `release()` that throws.
 - `src/lib/__tests__/sw-register-core.test.ts`: two 7.3 tests.
+- `ARCHITECTURE-SPINE.md` (AD-9's last bullet) and `GAP-REGISTER.md` (G-16
+  and G-17 headings marked **CLOSED**, each with a closure note): this change
+  made both untrue, and Epic 10 set the precedent of closing gaps in the
+  same change.
 - `src/hooks/__tests__/useAppUpdate.test.tsx`: one interlock test (7.2, second
   AC) and one test for the failed activation (7.3). They share a small
   `setupHook` helper so the existing `setup` stays untouched.
@@ -196,6 +202,8 @@ None of these is visible to a user.
   | Remove `setApplying(false)` from the catch | 7.3 hook test red |
   | Add `setUpdateReady(false)` to the catch | 7.3 hook test red, message names AD-15 |
   | Wrap activation in the registry to set `waiting = false` on failure | both 7.3 core tests red, messages name AD-15 |
+  | Move the `true` report above the `try` | "does not strand the depth when the reporter itself throws…" red |
+  | Un-nest the `finally` around `release()` | "still lowers the depth and clears the signal when release() throws" red |
 
 - **No browser pass.** Step 6 applies to UI changes, and this change has none:
   no component, copy or token changed. The runtime change is the depth
@@ -213,8 +221,8 @@ None of these is visible to a user.
 
 | Finding | Disposition |
 |---|---|
-| A throwing `release()` in `finally` could skip the decrement | **Fixed.** Nested `try/finally`. |
-| A throwing reporter on `true` between the increment and `try` | **Fixed by placement.** The increment is the last statement before `try` and cannot throw, and the report is inside the `try`. |
+| A throwing `release()` in `finally` could skip the decrement | **Fixed.** Nested `try/finally`, pinned by a test that mocks `../client`. |
+| A throwing reporter on `true` between the increment and `try` | **Fixed by placement.** The increment is the last statement before `try` and cannot throw, and the report is inside the `try`. Pinned by a test. |
 | A test that leaves a write hanging strands the depth for later tests | **Fixed.** The test seam zeroes the depth. |
 | Re-entrancy: a reporter that starts another write synchronously | **Accepted.** The reporter is a zustand `set`, so this cannot happen. The depth would stay consistent anyway, because increments and decrements are paired. |
 | The fee cap is not in effect | **Reported, not fixed.** See Findings. |

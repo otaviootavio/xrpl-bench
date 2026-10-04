@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { Wallet, type AccountSet } from 'xrpl'
 import { getXrplClient, resetXrplClientFactory, resetXrplClients, setXrplClientFactory } from '../client'
 import {
@@ -431,5 +431,69 @@ describe("two overlapping writes cannot clear each other's in-flight signal", ()
     parked[2].resolve(validated)
     await third
     expect(reports()).toEqual(['in-flight:true', 'in-flight:false', 'in-flight:true', 'in-flight:false'])
+  })
+
+  it('does not strand the depth when the reporter itself throws on the raise', async () => {
+    installFakeClient()
+    let throwOnce = true
+    setTxInFlightReporter((inFlight) => {
+      if (inFlight && throwOnce) {
+        throwOnce = false
+        throw new Error('reporter failed')
+      }
+      log.push(`in-flight:${inFlight}`)
+    })
+
+    await expect(
+      submitXrpPayment('testnet', wallet, { destination: 'rPT1Sjq2YGrBMTttX4GZHjKu9dyfzbpAYe', amountDrops: '1' }),
+    ).rejects.toThrow('reporter failed')
+
+    // The failed raise was inside the `try`, so the `finally` lowered the
+    // depth: the next write is a fresh 0→1 transition and raises the signal.
+    log = []
+    await submitXrpPayment('testnet', wallet, { destination: 'rPT1Sjq2YGrBMTttX4GZHjKu9dyfzbpAYe', amountDrops: '1' })
+    expect(reports()).toEqual(['in-flight:true', 'in-flight:false'])
+  })
+})
+
+/**
+ * The depth is lowered in a `finally` nested inside the one that releases the
+ * held client, so a `release()` that throws cannot strand the signal raised —
+ * which would refuse every update for the rest of the session. `release` only
+ * calls the non-throwing `abandon` today, so the client module is replaced
+ * here to make it throw.
+ */
+describe('a throwing client release cannot strand the in-flight depth', () => {
+  afterEach(() => {
+    vi.doUnmock('../client')
+    vi.resetModules()
+  })
+
+  it('still lowers the depth and clears the signal when release() throws', async () => {
+    vi.resetModules()
+    const fake = {
+      autofill: async (tx: any) => ({ ...tx, Fee: '12', Sequence: 1, LastLedgerSequence: 100 }),
+      submitAndWait: async () => ({ result: { meta: { TransactionResult: 'tesSUCCESS' }, ledger_index: 42 } }),
+    }
+    vi.doMock('../client', () => ({
+      getXrplClient: async () => fake,
+      holdXrplClient: async () => ({
+        client: fake,
+        release: () => {
+          throw new Error('release failed')
+        },
+      }),
+    }))
+    const writes = await import('../writes')
+    const reported: boolean[] = []
+    writes.setTxInFlightReporter((inFlight) => reported.push(inFlight))
+    const params = { destination: 'rPT1Sjq2YGrBMTttX4GZHjKu9dyfzbpAYe', amountDrops: '1' }
+
+    await expect(writes.submitXrpPayment('testnet', wallet, params)).rejects.toThrow('release failed')
+    expect(reported).toEqual([true, false])
+
+    // And the depth is back at zero: the next write raises again.
+    await expect(writes.submitXrpPayment('testnet', wallet, params)).rejects.toThrow('release failed')
+    expect(reported).toEqual([true, false, true, false])
   })
 })

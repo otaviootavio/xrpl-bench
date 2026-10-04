@@ -172,6 +172,25 @@ describe('SendTab — the entry a send writes', () => {
     expect(entry.label).toBeUndefined()
   })
 
+  it('signs the fee the dialog stated, not one autofill computes', async () => {
+    useRecommendedFee.mockReturnValue({ data: '10', isError: false, refetch: vi.fn() })
+    review('')
+
+    expect(screen.getByText(/plus a network fee of 0\.00001 XRP/)).toBeTruthy()
+    await confirm()
+
+    expect(submitXrpPayment).toHaveBeenCalledWith('testnet', expect.anything(), expect.objectContaining({ feeDrops: '10' }))
+  })
+
+  it('refuses on the form when the fee read is above the cap', () => {
+    useRecommendedFee.mockReturnValue({ data: '20000', isError: false, refetch: vi.fn() })
+    review('')
+
+    expect(screen.getByText(/currently 0\.02 XRP, above this wallet's limit of 0\.01 XRP/)).toBeTruthy()
+    expect((screen.getByRole('button', { name: 'Review payment' }) as HTMLButtonElement).disabled).toBe(true)
+    expect(screen.queryByRole('button', { name: 'Confirm and send' })).toBeNull()
+  })
+
   it('records a tagless send as tagless', async () => {
     review('')
     await confirm()

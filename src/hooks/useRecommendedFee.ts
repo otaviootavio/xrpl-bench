@@ -8,5 +8,9 @@ export function useRecommendedFee(network: NetworkId) {
     queryKey: queryKeys.recommendedFee(network),
     queryFn: () => fetchRecommendedFeeDrops(network),
     staleTime: 10_000,
+    // Polled, because Send pins this figure as the fee it signs: a figure read
+    // once per mount could be minutes old by the time it is confirmed, and a
+    // fee above the cap would refuse "until it falls" with nothing re-reading.
+    refetchInterval: 10_000,
   })
 }

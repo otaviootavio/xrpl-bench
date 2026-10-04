@@ -1336,3 +1336,43 @@ wallets back.
 **A partial teardown is reported, not reloaded over.** Every clear is
 attempted; any failure is rethrown, and the reset screens show it instead of
 reloading as though the device were clean.
+
+## 14. The fee cap is a refusal, and Send pays the fee it shows
+
+Decided 2026-10-04, in `_bmad-output/implementation-artifacts/spec-fee-cap-and-shown-fee.md`.
+
+**The defects.** `writes.ts` passed `{ maxFeeXRP: '0.01' }` as `client.autofill`'s
+second argument, which in xrpl.js 5 is `signersCount`. The object was ignored,
+so the only ceiling on a write was xrpl.js's default of 2 XRP. Separately, Send's
+dialog stated the uncushioned `open_ledger_fee` while autofill computed its own
+fee with a 1.2 cushion, so a dialog showing 10 drops led to a charge of 12.
+
+**The cap is a refusal, not a clamp.** After autofill and before signing,
+`submitAndClassify` refuses any `Fee` that is not a canonical positive drops
+string no larger than `MAX_FEE_DROPS` (10 000 drops, `money.ts`), compared as
+`BigInt`, by throwing `FeeAboveCapError`. `Client({ maxFeeXRP })` was rejected
+because it silently clamps a spike fee below what the network wants. There is no
+exemption for xrpl.js's special-cost types (AccountDelete, AMMCreate,
+VaultCreate, whose fee is the owner reserve). The choke point refuses them until
+a feature decides otherwise. The Send form refuses a fee read above the cap
+before the dialog, for XRP and token sends.
+
+**Send pins the fee it shows.** The figure in the confirm dialog is set as
+`tx.Fee`, so autofill leaves it alone. It is pinned when "Review payment" is
+pressed, beside the destination check's `checkedAt`: the dialog states that
+figure and Send signs it, and it is never re-read after the unlock. If the live
+fee read stops stating the same fact while the dialog is open outside a send (a
+different figure, a failure, or a figure arriving where the dialog said it was
+still being read), the dialog closes and the intent is withdrawn, as a stale
+destination check does, so paying a different figure takes a fresh review. A
+poll that reads the same figure again changes nothing; the comparison is by
+value. Once a send is under way, "Sending…" stays up and the pin is signed. No
+cushion is applied. Under rising load a pinned fee may queue or expire (reported as
+`expired`, no fee consumed), but it never charges more than was stated. An
+expired send invalidates the fee read so a retry does not pin the same figure.
+With no figure (a token send whose fee read is pending or failed), autofill
+computes the fee and the dialog states the cap as the upper bound.
+
+**The fee is polled every 10 s** (`useRecommendedFee`, `refetchInterval`), so
+the pinned figure is recent and an above-cap refusal clears on its own when the
+fee falls.

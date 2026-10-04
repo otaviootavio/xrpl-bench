@@ -1,6 +1,7 @@
 import { Wallet, type Payment, type SubmittableTransaction, type TrustSet, TrustSetFlags } from 'xrpl'
 import { getXrplClient, holdXrplClient } from './client'
 import type { NetworkId } from './networks'
+import { MAX_FEE_DROPS, feeWithinCap, formatXrp, isCanonicalPositiveDrops } from './money'
 
 /**
  * Reports whether a transaction is currently in flight.
@@ -40,10 +41,33 @@ export function resetTxInFlightReporter(): void {
   inFlightDepth = 0
 }
 
-/** Cap on the fee autofill is allowed to attach, so a fee-escalation spike
- * can never quietly turn a small payment into an expensive one. xrpl.js
- * otherwise defaults to 2 XRP. */
-const MAX_FEE_XRP = '0.01'
+/**
+ * The choke point refused to sign because the transaction's fee is above
+ * `MAX_FEE_DROPS` or is not a canonical positive drops string. Nothing was
+ * signed or submitted, so no fee was spent.
+ *
+ * The cap is enforced here, explicitly, rather than through xrpl.js: the
+ * second argument of `client.autofill` is `signersCount`, not an options
+ * object, and a `Client({ maxFeeXRP })` would silently CLAMP a spike fee below
+ * what the network wants (and skips its special-cost types altogether, e.g.
+ * AccountDelete) instead of refusing. A refusal is the honest outcome: every
+ * write type passes this check, with no exceptions.
+ */
+export class FeeAboveCapError extends Error {
+  readonly fee: unknown
+  constructor(fee: unknown) {
+    const cap = formatXrp(MAX_FEE_DROPS)
+    super(
+      // Named as a figure only when it is a canonical drops string; a
+      // malformed one (`'012'`, `'12.5'`, missing) is not a fee to state.
+      isCanonicalPositiveDrops(fee)
+        ? `The network fee for this transaction is ${formatXrp(fee)}, above this wallet's limit of ${cap}. Nothing was signed or submitted, and no fee was spent.`
+        : `The network fee for this transaction could not be confirmed to be within this wallet's limit of ${cap}. Nothing was signed or submitted, and no fee was spent.`,
+    )
+    this.name = 'FeeAboveCapError'
+    this.fee = fee
+  }
+}
 
 export type SubmitOutcome =
   | { status: 'validated'; hash: string; resultCode: string; ledgerIndex?: number }
@@ -91,7 +115,12 @@ export async function submitAndClassify(
     const held = await holdXrplClient(network)
     release = held.release
     const client = held.client
-    const prepared = await client.autofill(tx, { maxFeeXRP: MAX_FEE_XRP } as any)
+    // A `Fee` already on `tx` (Send pins the figure it showed) is left alone
+    // by autofill; otherwise autofill computes one. Either way the cap below
+    // is the only ceiling, and it is checked on what will actually be signed.
+    const prepared = await client.autofill(tx)
+    // Thrown inside the `try`, so the in-flight depth is still lowered.
+    if (!feeWithinCap(prepared.Fee)) throw new FeeAboveCapError(prepared.Fee)
     const signed = wallet.sign(prepared)
     const lastLedgerSequence = (prepared as any).LastLedgerSequence as number | undefined
     try {
@@ -147,7 +176,15 @@ async function isExpiry(err: any, network: NetworkId, lastLedgerSequence?: numbe
 export async function submitXrpPayment(
   network: NetworkId,
   wallet: Wallet,
-  params: { destination: string; amountDrops: string; destinationTag?: number },
+  params: {
+    destination: string
+    amountDrops: string
+    destinationTag?: number
+    /** The fee to sign, as a drops string — the figure the operator was shown.
+     * Pinned on the transaction so autofill does not compute its own. Still
+     * subject to the choke point's cap. */
+    feeDrops?: string
+  },
 ): Promise<SubmitOutcome> {
   const tx: Payment = {
     TransactionType: 'Payment',
@@ -155,6 +192,7 @@ export async function submitXrpPayment(
     Destination: params.destination,
     Amount: params.amountDrops,
     ...(params.destinationTag !== undefined ? { DestinationTag: params.destinationTag } : {}),
+    ...(params.feeDrops !== undefined ? { Fee: params.feeDrops } : {}),
   }
   return submitAndClassify(network, wallet, tx)
 }
@@ -162,7 +200,17 @@ export async function submitXrpPayment(
 export async function submitIssuedPayment(
   network: NetworkId,
   wallet: Wallet,
-  params: { destination: string; currency: string; issuer: string; value: string; destinationTag?: number },
+  params: {
+    destination: string
+    currency: string
+    issuer: string
+    value: string
+    destinationTag?: number
+    /** The fee to sign, as a drops string — the figure the operator was shown.
+     * Pinned on the transaction so autofill does not compute its own. Still
+     * subject to the choke point's cap. */
+    feeDrops?: string
+  },
 ): Promise<SubmitOutcome> {
   const tx: Payment = {
     TransactionType: 'Payment',
@@ -170,6 +218,7 @@ export async function submitIssuedPayment(
     Destination: params.destination,
     Amount: { currency: params.currency, issuer: params.issuer, value: params.value },
     ...(params.destinationTag !== undefined ? { DestinationTag: params.destinationTag } : {}),
+    ...(params.feeDrops !== undefined ? { Fee: params.feeDrops } : {}),
   }
   return submitAndClassify(network, wallet, tx)
 }

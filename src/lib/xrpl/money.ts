@@ -81,6 +81,38 @@ export function isPositiveDrops(value: unknown): value is string {
 }
 
 /**
+ * The most this app will ever sign as a transaction fee: 10 000 drops
+ * (0.01 XRP). One definition, read by the write choke point (which refuses to
+ * sign above it) and by the Send form (which refuses a fee read above it
+ * before the dialog), so the two cannot disagree about the ceiling.
+ */
+export const MAX_FEE_DROPS = '10000'
+
+/**
+ * True only for a fee this app may sign: a canonical drops string (digits,
+ * no leading zero), greater than zero, and no larger than `MAX_FEE_DROPS`,
+ * compared as `BigInt`. Takes `unknown` because it checks what autofill
+ * attached, which is not trusted to be present or well formed — anything
+ * else fails closed.
+ *
+ * A plain `boolean`, deliberately not a `fee is string` predicate: it answers
+ * `false` for strings too (`'20000'`, `'012'`), and a predicate would narrow
+ * the refusal branch to `never`, switching type checking off exactly where a
+ * refused fee is described. `isCanonicalPositiveDrops` keeps its predicate,
+ * because there `false` really does mean "not a canonical drops string".
+ */
+export function feeWithinCap(fee: unknown): boolean {
+  return isCanonicalPositiveDrops(fee) && BigInt(fee) <= BigInt(MAX_FEE_DROPS)
+}
+
+/** A positive drops string in canonical form: digits only, no leading zero.
+ * Stricter than `isPositiveDrops` (which accepts `'012'`), because a fee this
+ * app signs or states must be exactly one spelling of its figure. */
+export function isCanonicalPositiveDrops(value: unknown): value is string {
+  return typeof value === 'string' && /^[1-9]\d*$/.test(value)
+}
+
+/**
  * True if a DECIMAL amount string (issued-currency balance/limit, e.g. "10.5")
  * is greater than zero. Issued-currency values are decimal strings, so they
  * must never be passed to BigInt — `BigInt("10.5")` throws a SyntaxError, and

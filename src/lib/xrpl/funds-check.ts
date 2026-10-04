@@ -4,7 +4,10 @@ import {
   amountPlusFeeFits,
   compareDecimalStrings,
   displayCurrencyCode,
+  feeWithinCap,
   formatXrp,
+  MAX_FEE_DROPS,
+  isCanonicalPositiveDrops,
   isPositiveDecimalString,
   xrpToDropsString,
 } from './money'
@@ -157,6 +160,18 @@ export function checkFunds(input: {
 }): FundsRefusal | undefined {
   const { amount, asset } = input
   if (!input.amountValid) return undefined
+  // A fee read above the cap is refused here, for XRP and token sends alike,
+  // rather than discovered after the unlock: the write choke point will not
+  // sign it, and the Send form pins this exact figure as the fee it signs.
+  if (input.fee.status === 'ok' && !feeWithinCap(input.fee.value)) {
+    const cap = formatXrp(MAX_FEE_DROPS)
+    return {
+      reason: isCanonicalPositiveDrops(input.fee.value)
+        ? `The network fee is currently ${formatXrp(input.fee.value)}, above this wallet's limit of ${cap}, so nothing can be sent until it falls.`
+        : `The network fee read is not a figure this wallet can confirm is within its limit of ${cap}, so nothing can be sent until it is read again.`,
+      pending: false,
+    }
+  }
   if (asset === 'XRP') {
     // Both figures are needed, and there is no "safe" substitute for either:
     // a fabricated fee or balance is how an amount that does not fit gets

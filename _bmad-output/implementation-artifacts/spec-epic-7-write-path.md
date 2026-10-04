@@ -186,7 +186,7 @@ None of these is visible to a user.
 
 - All four gates are green on `origin/dev` `9a2e1e0` plus this change:
   `bun run lint` (exit 0, and every custom guard passes), `bun run build`
-  (includes `tsc -b`), `bun run test` (44 files, 534 tests), and
+  (includes `tsc -b`), `bun run test` (44 files, 536 tests), and
   `bun run check:contrast`.
 - **Mutation check.** I applied each mutation on its own and restored the file
   afterwards:

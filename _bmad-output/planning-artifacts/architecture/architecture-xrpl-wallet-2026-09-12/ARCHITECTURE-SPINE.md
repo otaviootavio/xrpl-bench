@@ -192,6 +192,11 @@ without importing a component (AD-8).
   anywhere, **including inside that module** — deliberately stricter than §4,
   which exempts the render-time formatter. The carve-out is how a float reaches
   a formatter; formatting drops is string work and needs no numeric type.
+- **Gated in part.** `scripts/check-money.mjs` fails `lint` on BigInt
+  construction in `src/hooks`, `src/pages` and `src/components`. The rest of
+  this rule — `src/lib`, `src/store`, and the `Number()`/`parseFloat`/`toFixed`
+  ban — is enforced by review only, which is why this AD is not marked
+  `[GATED]`.
 
 ### AD-8 — Three declared surfaces, chosen by cause `[ADOPTED]`
 
@@ -230,7 +235,7 @@ without importing a component (AD-8).
   import or whose parameter type excludes it; today's signature admits only
   `Payment | TrustSet` (see `GAP-REGISTER.md`).
 
-### AD-10 — Explorer links only through the shared components
+### AD-10 — Explorer links only through the shared components `[GATED]`
 
 - **Binds:** every address and every transaction hash shown anywhere
 - **Prevents:** a link built by hand that points at the wrong network's explorer.

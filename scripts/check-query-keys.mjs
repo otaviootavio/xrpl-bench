@@ -13,9 +13,33 @@
  * counterexample (the guard's own fixtures, a test that must retype a key to
  * prove the mismatch is caught) stays possible without exempting a whole tree.
  *
- * oxlint carries no user-defined-rule mechanism, so this is a standalone scan
- * rather than a lint rule. It imports `node:` builtins and nothing else, so it
- * adds no dependency and runs under plain `node`.
+ * A key bound to a variable first is followed to its use within the same file
+ * (G-19): an identifier bound to an array literal — by `const`/`let`/`var`, by
+ * plain reassignment, or as a parameter default — is reported wherever it is
+ * then passed at a key position (`queryKey: k`, `invalidateQueries(k)` and the
+ * other positional APIs, or the `{ queryKey }` shorthand when the bound name is
+ * itself `queryKey`). It is reported at the use line, where it reaches the
+ * cache, so the directive for a deliberate one goes above the use.
+ *
+ * WHAT THIS SCAN CANNOT SEE — stated because a guard that silently misses a
+ * case is the failure it exists to prevent (recorded as G-19's residual limit
+ * in GAP-REGISTER.md):
+ *   - a key literal built in one module and used in another;
+ *   - a key returned from a function (`const k = makeKey()`), unless that
+ *     function's own body passes it at a key position — including the likely
+ *     React shape `const k = useMemo(() => ['accountState', n, a], [n, a])`,
+ *     and a wrapped literal such as `Object.freeze([...])` or `([...])`;
+ *   - a key composed from a non-literal (`k.concat(...)`, `[...base]` bound
+ *     first then reached through another name).
+ * Bindings are matched by name per file, not per scope, so a name bound to an
+ * array in one function and to a factory key in another is flagged — that
+ * over-approximation fails closed.
+ *
+ * This is a standalone scan rather than a lint rule. oxlint (1.80) does now
+ * offer user rules through `jsPlugins`, but its own schema marks them alpha and
+ * not subject to semver, which is not a foundation for a gate on signing code.
+ * The scan imports `node:` builtins and nothing else, so it adds no dependency
+ * and runs under plain `node`.
  *
  * Run by `bun run lint`, or alone with `bun run check:query-keys`.
  */
@@ -54,6 +78,9 @@ const POSITIONAL_KEY_APIS = [
   'refetchQueries',
   'prefetchQuery',
   'ensureQueryData',
+  'getQueryState',
+  'setQueryDefaults',
+  'getQueryDefaults',
 ]
 
 const PATTERNS = [
@@ -63,6 +90,58 @@ const PATTERNS = [
     re: new RegExp(`\\b${name}\\s*\\(\\s*\\[`, 'g'),
   })),
 ]
+
+const IDENT = '[A-Za-z_$][\\w$]*'
+
+/**
+ * An identifier bound to an array literal: `const k = [`, `let k: QueryKey = [`,
+ * `k = [`, or a parameter default `(k = [`. The lookbehind rules out a member
+ * assignment (`obj.k = [`); requiring `[` straight after the single `=` already
+ * rules out `==`, `===` and `=>`.
+ */
+const BINDING_RE = new RegExp(
+  `(?<![\\w$.])(${IDENT})\\s*(?::[^=;\\n]+)?=\\s*\\[`,
+  'g',
+)
+
+/** Escape an identifier for use inside a RegExp (`$` is the only special). */
+const escapeIdent = (name) => name.replace(/\$/g, '\\$')
+
+/**
+ * Key positions a bound name can reach the cache through. The name must be the
+ * whole argument: a following `.`, `(` or `[` means a derived value
+ * (`k.slice()`, `k[0]`, `k()`), not the array itself.
+ */
+function keyPositionPatterns(name) {
+  const id = escapeIdent(name)
+  const tail = `(?![\\w$])(?!\\s*[.(\\[])`
+  const patterns = [
+    { label: `queryKey: ${name}`, re: new RegExp(`\\bqueryKey\\s*:\\s*${id}${tail}`, 'g') },
+    ...POSITIONAL_KEY_APIS.map((api) => ({
+      label: `${api}(${name})`,
+      re: new RegExp(`\\b${api}\\s*\\(\\s*${id}${tail}`, 'g'),
+    })),
+  ]
+  if (name === 'queryKey') {
+    // `useQuery({ queryKey, enabled })` — object shorthand for the bound name.
+    patterns.push({ label: '{ queryKey }', re: /(?<=[{,]\s*)\bqueryKey(?=\s*[,}])/g })
+  }
+  return patterns
+}
+
+/** Every name bound to an array literal in `text`, with the 1-based line of
+ * its first such binding. */
+function arrayBindings(text) {
+  const bindings = new Map()
+  BINDING_RE.lastIndex = 0
+  let match
+  while ((match = BINDING_RE.exec(text)) !== null) {
+    const name = match[1]
+    if (name === 'const' || name === 'let' || name === 'var') continue
+    if (!bindings.has(name)) bindings.set(name, lineOf(text, match.index))
+  }
+  return bindings
+}
 
 function* walk(dir) {
   for (const entry of readdirSync(dir).sort()) {
@@ -107,6 +186,17 @@ export function scanForHandWrittenKeys(dir = SRC, root = ROOT) {
         const line = lineOf(text, match.index)
         if (allowed.has(line)) continue
         found.push({ file: rel, line, label })
+      }
+    }
+    for (const [name, boundAt] of arrayBindings(text)) {
+      for (const { label, re } of keyPositionPatterns(name)) {
+        re.lastIndex = 0
+        let match
+        while ((match = re.exec(text)) !== null) {
+          const line = lineOf(text, match.index)
+          if (allowed.has(line)) continue
+          found.push({ file: rel, line, label: `${label} (array bound at line ${boundAt})` })
+        }
       }
     }
   }

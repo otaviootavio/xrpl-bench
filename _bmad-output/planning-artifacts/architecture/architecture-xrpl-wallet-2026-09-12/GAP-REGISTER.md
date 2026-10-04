@@ -40,10 +40,12 @@ Verified against `src/` on 2026-09-15, not taken from the commit messages.
 | G-8 | Two service-worker registration paths | `3ca0917` | `lib/sw-register.ts` is the sole importer of the virtual specifier |
 | G-9 | `docs/decisions.md` §4 owed a sentence permitting the `vaultKey` handle | `3ca0917` | §4 now carries it in full — including the lazy-expiry nuance, which is more than was asked for |
 
-**Three of these are now machine-enforced rather than merely closed.** AD-1, AD-4
+**Five of these are now machine-enforced rather than merely closed.** AD-1, AD-4
 and AD-11 have scripts inside `bun run lint` — `check-layering.mjs`,
-`check-query-keys.mjs`, `check-sw-register.mjs` — so the same gap cannot silently
-reopen. The other six are held by review only.
+`check-query-keys.mjs`, `check-sw-register.mjs` — and since Epic 10 (2026-10-04)
+so do G-6 and G-7, through `check-money.mjs` (AD-7, BigInt in `hooks/`,
+`pages/`, `components/`) and `check-explorer-links.mjs` (AD-10), so the same gap
+cannot silently reopen. G-2, G-4, G-5 and G-9 are held by review only.
 
 ---
 
@@ -307,7 +309,24 @@ substance. Three further ledger entries are **stale** — the Epic 2, Epic 3 and
 Epic 4 "split at the build scope gate" entries shipped in `10e1d70`, `b359058`
 and `3ca0917` — and three more were already promoted as G-11, G-12 and G-17.
 
-### G-19 — The query-key guard cannot see a key bound to a variable `AD-4`
+### G-19 — The query-key guard cannot see a key bound to a variable `AD-4` — **CLOSED, with a recorded limit**
+
+**Closed 2026-10-04 by Epic 10 story 10.1** (`spec-epic-10-guards.md`). The
+guard now follows an identifier bound to an array literal — `const`/`let`/`var`,
+plain reassignment, or a parameter default — to a key position in the same
+file, including the `{ queryKey }` shorthand, and reports it at the use line.
+The check stays a `node:` script: oxlint 1.80 does offer user rules through
+`jsPlugins`, but marks them alpha and outside semver.
+
+**Residual limit, stated rather than silent** (also in the guard's docstring):
+a key literal built in one module and used in another, a key returned from a
+function — including `useMemo(() => [...], deps)`, the likeliest shape in a
+hook — a wrapped literal (`Object.freeze([...])`, `([...])`), and a key composed
+from a non-literal are not seen. Bindings are
+matched by name per file, not per scope, which over-approximates and fails
+closed.
+
+The original entry, unchanged:
 
 **Severity: enforcement hole, no live defect.**
 
@@ -415,7 +434,19 @@ have shipped exactly that.
 worker becoming redundant, or a registration replaced. Neither is evidenced
 today. Verify before scheduling; do not schedule on the ledger entry alone.
 
-### G-27 — Nothing stops the Epic 4 fixes from reappearing `AD-7` `AD-10`
+### G-27 — Nothing stops the Epic 4 fixes from reappearing `AD-7` `AD-10` — **CLOSED**
+
+**Closed 2026-10-04 by Epic 10 story 10.2** (`spec-epic-10-guards.md`).
+`scripts/check-money.mjs` fails `lint` on a `BigInt(` call, a `BigInt.` static
+or a bigint literal in `src/hooks`, `src/pages` or `src/components`;
+`scripts/check-explorer-links.mjs` fails it on an explorer host outside
+`lib/xrpl/networks.ts` and `components/wallet/AddressLink.tsx`, or on the URL
+builder referenced outside them in shipped source. Each has a one-line
+directive and a fixture test. **Not covered:** `src/lib` and `src/store` for
+AD-7, and the `Number()`/`parseFloat`/`toFixed` half of AD-7 anywhere; an
+explorer host assembled from fragments for AD-10.
+
+The original entry, unchanged:
 
 **Severity: decay, identical to what G-1 suffered.**
 

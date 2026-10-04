@@ -91,9 +91,9 @@ development_status:
   9-2-the-send-screen-warns-on-the-pair-and-the-list-stops-inventi: backlog
   epic-9-retrospective: optional
 
-  epic-10: backlog
-  10-1-the-query-key-guard-sees-a-key-that-was-bound-to-a-variable: backlog
-  10-2-money-arithmetic-and-explorer-links-get-gates-of-their-own: backlog
+  epic-10: done
+  10-1-the-query-key-guard-sees-a-key-that-was-bound-to-a-variable: done
+  10-2-money-arithmetic-and-explorer-links-get-gates-of-their-own: done
   epic-10-retrospective: optional
 
   epic-11: backlog

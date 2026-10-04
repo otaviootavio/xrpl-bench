@@ -15,9 +15,12 @@
  * a lib test legitimately constructs a BigInt to pin a regression — so this
  * guard does not prove AD-7 for them.
  *
- * What it flags: a `BigInt(` call, a `BigInt.` static (`BigInt.asUintN`), and a
- * bigint literal (`0n`, `1_000_000n`, `0x1fn`). A text scan cannot tell `a + b`
- * on bigints from `a + b` on numbers, but it can see where a bigint is made, and
+ * What it flags: a `BigInt(` call, a `BigInt.` static (`BigInt.asUintN`),
+ * `BigInt` passed or bound as a value (`.map(BigInt)`, `const toBig = BigInt`),
+ * and a bigint literal (`0n`, `1_000_000n`, `0x1fn`). A bare `BigInt` followed
+ * by a space and a lowercase word on the same line is read as prose ("never
+ * BigInt them") and passes. A text scan cannot tell `a + b` on bigints from
+ * `a + b` on numbers, but it can see where a bigint is made, and
  * in these three trees there is no legitimate reason to make one. The `bigint`
  * type keyword is not flagged: a type is not arithmetic. Comments are not
  * stripped, so a comment that writes `BigInt(` fails closed rather than a
@@ -55,6 +58,7 @@ const EXTENSIONS = ['.ts', '.tsx']
 const PATTERNS = [
   { label: 'BigInt(', re: /\bBigInt\s*\(/g },
   { label: 'BigInt.', re: /\bBigInt\s*\.\s*[A-Za-z_$]/g },
+  { label: 'BigInt as a value', re: /\bBigInt\b(?!\s*[(.])(?![ \t]+[a-z])/g },
   {
     label: 'bigint literal',
     re: /(?<![\w$.])(?:0[xX][0-9a-fA-F_]+|0[oO][0-7_]+|0[bB][01_]+|\d[\d_]*)n(?![\w$])/g,

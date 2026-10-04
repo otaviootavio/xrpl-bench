@@ -78,6 +78,9 @@ const POSITIONAL_KEY_APIS = [
   'refetchQueries',
   'prefetchQuery',
   'ensureQueryData',
+  'getQueryState',
+  'setQueryDefaults',
+  'getQueryDefaults',
 ]
 
 const PATTERNS = [

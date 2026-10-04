@@ -82,6 +82,17 @@ describe('the money-arithmetic guard', () => {
     ])
   })
 
+  it('rejects BigInt passed or bound as a value, which still makes bigints', () => {
+    write(
+      'src/hooks/a.ts',
+      `const xs = items.map(BigInt)\n` + `const toBig = BigInt\n` + `const d = toBig(a) - toBig(b)\n`,
+    )
+    expect(scan().map((v: { line: number; label: string }) => [v.line, v.label])).toEqual([
+      [1, 'BigInt as a value'],
+      [2, 'BigInt as a value'],
+    ])
+  })
+
   it('is not defeated by a line break between BigInt and its call', () => {
     write('src/components/a.tsx', `const n = BigInt\n  (x)\n`)
     expect(scan()).toHaveLength(1)

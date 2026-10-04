@@ -84,17 +84,26 @@ describe('the query-key guard', () => {
     write('h.ts', `queryClient.prefetchQuery(['accountState', n, a])\n`)
     // check-query-keys-allow
     write('i.ts', `queryClient.ensureQueryData(['accountState', n, a])\n`)
+    // check-query-keys-allow
+    write('j.ts', `queryClient.getQueryState(['accountState', n, a])\n`)
+    // check-query-keys-allow
+    write('k.ts', `queryClient.setQueryDefaults(['accountState'], {})\n`)
+    // check-query-keys-allow
+    write('l.ts', `queryClient.getQueryDefaults(['accountState'])\n`)
     const labels = scanForHandWrittenKeys(dir, dir).map((v: { label: string }) => v.label)
     expect(labels.sort()).toEqual([
       'cancelQueries(',
       'ensureQueryData(',
       'getQueriesData(',
       'getQueryData(',
+      'getQueryDefaults(',
+      'getQueryState(',
       'prefetchQuery(',
       'refetchQueries(',
       'resetQueries(',
       'setQueriesData(',
       'setQueryData(',
+      'setQueryDefaults(',
     ])
   })
 
@@ -160,6 +169,9 @@ describe('a key bound to a variable before use (G-19)', () => {
       'refetchQueries',
       'prefetchQuery',
       'ensureQueryData',
+      'getQueryState',
+      'setQueryDefaults',
+      'getQueryDefaults',
     ]
     // check-query-keys-allow
     write('a.ts', `const k = ['accountState', n, a]\n` + apis.map((api) => `queryClient.${api}(k)\n`).join(''))

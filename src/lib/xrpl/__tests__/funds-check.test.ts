@@ -156,3 +156,39 @@ describe('checkFunds — token', () => {
     expect(checkFunds(input({ asset: USD, fee: failed, spendable: failed }))).toBeUndefined()
   })
 })
+
+describe('checkFunds — a fee read above the cap', () => {
+  const ABOVE_CAP =
+    "The network fee is currently 0.02 XRP, above this wallet's limit of 0.01 XRP, so nothing can be sent until it falls."
+
+  it('refuses an XRP send, naming the fee and the cap', () => {
+    expect(checkFunds(input({ fee: ok('20000') }))).toEqual({ reason: ABOVE_CAP, pending: false })
+  })
+
+  it('refuses a token send too — the fee is paid in XRP whatever the payment carries', () => {
+    expect(checkFunds(input({ asset: USD, fee: ok('20000') }))).toEqual({ reason: ABOVE_CAP, pending: false })
+  })
+
+  it('permits a fee exactly at the cap', () => {
+    expect(checkFunds(input({ fee: ok('10000') }))).toBeUndefined()
+    expect(checkFunds(input({ asset: USD, fee: ok('10000') }))).toBeUndefined()
+  })
+
+  it('outranks a missing spendable figure, so the operator is told the fee is the blocker', () => {
+    expect(checkFunds(input({ fee: ok('20000'), spendable: failed }))?.reason).toBe(ABOVE_CAP)
+  })
+
+  it('refuses a fee read that is not a canonical drops figure, still naming the cap', () => {
+    const NOT_A_FIGURE =
+      "The network fee read is not a figure this wallet can confirm is within its limit of 0.01 XRP, so nothing can be sent until it is read again."
+    for (const asset of ['XRP', USD]) {
+      for (const fee of ['012', '12.5', 'abc', '0', '-12']) {
+        expect(checkFunds(input({ asset, fee: ok(fee) }))).toEqual({ reason: NOT_A_FIGURE, pending: false })
+      }
+    }
+  })
+
+  it('says nothing about an amount that is not valid yet', () => {
+    expect(checkFunds(input({ amountValid: false, fee: ok('20000') }))).toBeUndefined()
+  })
+})

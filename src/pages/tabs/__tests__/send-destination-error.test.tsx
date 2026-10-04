@@ -650,6 +650,31 @@ describe('SendTab — the submit path re-checks before it spends', () => {
     expect(submitXrpPayment).toHaveBeenCalledOnce()
   })
 
+  it('signs the fee the dialog showed, not one read during the unlock', async () => {
+    let release: (w: unknown) => void = () => {}
+    unlockWalletForSigning.mockImplementationOnce(() => new Promise((r) => (release = r)))
+    useRecommendedFee.mockReturnValue(feeRead({ data: '10' }))
+
+    const { rerender } = render(<SendTab />)
+    fillValidForm()
+    settleClock()
+    fireEvent.click(reviewButton())
+    expect(screen.getByText(/plus a network fee of/i).textContent).toContain(`plus a network fee of ${formatXrp('10')}`)
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm and send' }))
+
+    // A poll lands a new figure while the unlock is still pending.
+    useRecommendedFee.mockReturnValue(feeRead({ data: '15' }))
+    await act(async () => {
+      rerender(<SendTab />)
+    })
+    await act(async () => {
+      release({ address: WALLET_ADDRESS })
+    })
+
+    expect(submitXrpPayment).toHaveBeenCalledOnce()
+    expect(submitXrpPayment.mock.calls[0][2].feeDrops).toBe('10')
+  })
+
   it('disables both dialog controls while a send is in flight', async () => {
     // The premise `doSend`'s re-entry guard rests on: React drops a press on a
     // disabled control before any handler runs, so no second activation can
@@ -1225,7 +1250,7 @@ describe('a failed fee read does not block a token send', () => {
     expect(screen.queryByText(/network fee could not be read, so this amount/i)).toBeNull()
   })
 
-  it('states in the confirm dialog that the fee is still being read, while it is', () => {
+  it('states in the confirm dialog that the fee is still being read, while it is', async () => {
     // A token send is permitted throughout, so this is the one place the
     // in-flight wording is reachable — and pending must not borrow failed's
     // words here either.
@@ -1233,8 +1258,14 @@ describe('a failed fee read does not block a token send', () => {
     renderTokenForm()
     fireEvent.click(reviewButton())
 
-    expect(screen.getByText(/plus a network fee that is still being read/i)).toBeTruthy()
+    expect(screen.getByText(/still being read; it will not exceed 0\.01 XRP/i)).toBeTruthy()
     expect(screen.queryByText(/plus a network fee that could not be read/i)).toBeNull()
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Confirm and send' }))
+    })
+    expect(submitIssuedPayment).toHaveBeenCalledOnce()
+    expect(submitIssuedPayment.mock.calls[0][2].feeDrops).toBeUndefined()
   })
 
   it('states in the confirm dialog that the fee could not be read', () => {
@@ -1244,6 +1275,48 @@ describe('a failed fee read does not block a token send', () => {
 
     expect(screen.getByText(/plus a network fee that could not be read/i)).toBeTruthy()
     expect(screen.queryByText(/the current rate/i)).toBeNull()
+  })
+
+  it('states the cap as the upper bound when it has no fee figure, and pins none', async () => {
+    useRecommendedFee.mockReturnValue(feeRead({ data: undefined, isError: true }))
+    renderTokenForm()
+    fireEvent.click(reviewButton())
+
+    expect(
+      screen.getByText(/plus a network fee that could not be read; it will not exceed 0\.01 XRP/i),
+    ).toBeTruthy()
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Confirm and send' }))
+    })
+    // No figure was shown, so none is pinned: autofill computes one and the
+    // write choke point's cap bounds it — which is what the dialog said.
+    expect(submitIssuedPayment).toHaveBeenCalledOnce()
+    expect(submitIssuedPayment.mock.calls[0][2].feeDrops).toBeUndefined()
+  })
+
+  it('pins the fee the dialog stated on a token send', async () => {
+    useRecommendedFee.mockReturnValue(feeRead({ data: '10' }))
+    renderTokenForm()
+    fireEvent.click(reviewButton())
+
+    expect(screen.getByText(/plus a network fee of/i).textContent).toContain(`plus a network fee of ${formatXrp('10')}`)
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Confirm and send' }))
+    })
+    expect(submitIssuedPayment).toHaveBeenCalledWith(
+      'testnet',
+      expect.anything(),
+      expect.objectContaining({ feeDrops: '10' }),
+    )
+  })
+
+  it('refuses on the form when the fee read is above the cap, naming the cap', () => {
+    useRecommendedFee.mockReturnValue(feeRead({ data: '20000' }))
+    renderTokenForm()
+
+    expect(reviewButton().disabled).toBe(true)
+    expect(screen.getByText(/above this wallet's limit of 0\.01 XRP/)).toBeTruthy()
   })
 })
 

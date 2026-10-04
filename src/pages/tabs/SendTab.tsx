@@ -19,11 +19,11 @@ import { useTrustLines } from '@/hooks/useTrustLines'
 import { useDestinationCheck } from '@/hooks/useDestinationCheck'
 import { submitXrpPayment, submitIssuedPayment, type SubmitOutcome } from '@/lib/xrpl/writes'
 import { unlockWalletForSigning } from '@/lib/crypto/keystore'
-import { formatXrp, xrpToDropsString, displayCurrencyCode } from '@/lib/xrpl/money'
+import { formatXrp, xrpToDropsString, displayCurrencyCode, MAX_FEE_DROPS } from '@/lib/xrpl/money'
 import { checkFunds, heldTokenLines, selectedTokenLine, spendableReadState, tokenAssetKey } from '@/lib/xrpl/funds-check'
 import { readStateOf, type ReadState } from '@/lib/read-state'
 import { describeResultCode } from '@/lib/xrpl/result-codes'
-import { invalidateAccountScoped, invalidateDestinationCheck } from '@/lib/xrpl/query-keys'
+import { invalidateAccountScoped, invalidateDestinationCheck, queryKeys } from '@/lib/xrpl/query-keys'
 import { DESTINATION_CHECK_FRESHNESS_MS, fetchDestinationInfoOnce, type DestinationInfo } from '@/lib/xrpl/query-reads'
 import { useQueryClient } from '@tanstack/react-query'
 import { toast } from '@/lib/notify'
@@ -340,12 +340,25 @@ export function SendTab() {
         return
       }
 
+      /**
+       * The fee the dialog stated is the fee signed: pinned on the transaction
+       * so autofill does not compute its own (with its 1.2 cushion, 10 shown
+       * became 12 charged). `feeState` is the render closure's — the figure on
+       * screen when Confirm was pressed — and is deliberately NOT re-read after
+       * the unlock, which could only make the paid figure differ from the
+       * shown one. A stale low fee can queue or expire; it can never overcharge.
+       * With no figure (a token send whose fee read is pending or failed),
+       * autofill computes one and the choke point's cap bounds it, which is
+       * what the dialog said.
+       */
+      const feeDrops = feeState.status === 'ok' ? feeState.value : undefined
       let result: SubmitOutcome
       if (asset === 'XRP') {
         result = await submitXrpPayment(network, signingWallet, {
           destination,
           amountDrops: xrpToDropsString(amount),
           destinationTag: tagValue,
+          feeDrops,
         })
       } else {
         const [currency, issuer] = asset.split('|')
@@ -355,6 +368,7 @@ export function SendTab() {
           issuer,
           value: amount,
           destinationTag: tagValue,
+          feeDrops,
         })
       }
       setOutcome(result)
@@ -381,6 +395,9 @@ export function SendTab() {
         // this the form kept saying "not activated" for up to the freshness
         // window, and the next send's post-unlock probe was served from it.
         result.status === 'validated' ? invalidateDestinationCheck(queryClient, network, destination) : null,
+        // An expired send was pinned to a fee that did not get in; a retry
+        // must not pin that same cached figure again.
+        result.status === 'expired' ? queryClient.invalidateQueries({ queryKey: queryKeys.recommendedFee(network) }) : null,
       ])
     } catch (err: any) {
       toast.error(err?.message ?? 'Send failed.')
@@ -654,9 +671,9 @@ export function SendTab() {
           </dl>
 
           {/* Reported where the figure belongs, immediately under the row that
-              now says "Unavailable". The hook has no `refetchInterval`, so this
-              retry is the only way back — without it a failed read stays failed
-              for as long as the screen is open. Worded so it does not assert a
+              now says "Unavailable". The hook polls every 10 s, so a failed
+              read can recover on its own; this retry lets the operator ask now
+              rather than wait for the next poll. Worded so it does not assert a
               hold that is not in force: a token send never uses this figure and
               is deliberately NOT blocked by its absence. */}
           {feeState.status === 'failed' && (
@@ -712,12 +729,14 @@ export function SendTab() {
               {tagValue !== undefined ? ` (destination tag ${tagValue})` : ''} on {network},{' '}
               {/* "the current rate" named a figure that was never read. An XRP
                   send cannot reach this dialog without one; a token send can,
-                  and is told the plain fact instead. */}
+                  and is told the plain fact plus the bound the write path
+                  enforces. A figure stated here is the fee signed (pinned in
+                  `doSend`), never a cushioned estimate. */}
               {feeState.status === 'ok'
                 ? `plus a network fee of ${formatXrp(feeState.value)}`
                 : feeState.status === 'pending'
-                  ? 'plus a network fee that is still being read'
-                  : 'plus a network fee that could not be read'}
+                  ? `plus a network fee that is still being read; it will not exceed ${formatXrp(MAX_FEE_DROPS)}`
+                  : `plus a network fee that could not be read; it will not exceed ${formatXrp(MAX_FEE_DROPS)}`}
               . Payments on the XRP Ledger are irreversible and cannot be cancelled or refunded once sent.
             </DialogDescription>
           </DialogHeader>

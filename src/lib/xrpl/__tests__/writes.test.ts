@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { Wallet, type AccountSet } from 'xrpl'
+import { Wallet, decode, type AccountSet } from 'xrpl'
+import { MAX_FEE_DROPS } from '../money'
 import { getXrplClient, resetXrplClientFactory, resetXrplClients, setXrplClientFactory } from '../client'
 import {
   resetTxInFlightReporter,
@@ -8,6 +9,7 @@ import {
   submitIssuedPayment,
   submitTrustSet,
   submitXrpPayment,
+  FeeAboveCapError,
 } from '../writes'
 
 /**
@@ -29,7 +31,15 @@ interface FakeClient {
   request: () => Promise<any>
 }
 
-function installFakeClient(behaviour: { submit?: () => Promise<any>; validatedLedgerIndex?: number } = {}) {
+function installFakeClient(
+  behaviour: {
+    submit?: () => Promise<any>
+    validatedLedgerIndex?: number
+    /** What autofill attaches as `Fee` when the transaction carries none.
+     * `'absent'` attaches nothing, to test a missing field. */
+    autofillFee?: string | 'absent'
+  } = {},
+) {
   const client = {
     autofilled: [] as any[],
     autofillOptions: [] as any[],
@@ -39,12 +49,22 @@ function installFakeClient(behaviour: { submit?: () => Promise<any>; validatedLe
     },
     autofill: async (tx: any, options?: any) => {
       log.push('autofill')
-      client.autofilled.push(tx)
+      // A shallow copy, so the record is what reached autofill, not what
+      // it returned.
+      client.autofilled.push({ ...tx })
       client.autofillOptions.push(options)
-      return { ...tx, Fee: '12', Sequence: 1, LastLedgerSequence: 100 }
+      // Like xrpl.js: a preset `Fee` is left alone; otherwise one is computed.
+      const prepared: any = { ...tx, Sequence: 1, LastLedgerSequence: 100 }
+      if (prepared.Fee == null) {
+        const fee = behaviour.autofillFee ?? '12'
+        if (fee !== 'absent') prepared.Fee = fee
+      }
+      return prepared
     },
-    submitAndWait: async () => {
+    submitted: [] as string[],
+    submitAndWait: async (blob: string) => {
       log.push('submitAndWait')
+      client.submitted.push(blob)
       if (behaviour.submit) return behaviour.submit()
       return { result: { meta: { TransactionResult: 'tesSUCCESS' }, ledger_index: 42 } }
     },
@@ -54,7 +74,7 @@ function installFakeClient(behaviour: { submit?: () => Promise<any>; validatedLe
     },
   }
   setXrplClientFactory(() => client as any)
-  return client as unknown as FakeClient & { autofilled: any[]; autofillOptions: any[] }
+  return client as unknown as FakeClient & { autofilled: any[]; autofillOptions: any[]; submitted: string[] }
 }
 
 const wallet = Wallet.fromSeed('sEdTM1uX8pu2do5XvTnutH6HsouMaM2')
@@ -170,15 +190,14 @@ describe('the write choke point raises and clears the in-flight flag', () => {
     expect(client.autofilled[0].DestinationTag).toBe(7)
   })
 
-  it('caps the fee autofill may attach, on every write', async () => {
+  it('calls autofill with the transaction alone — no bogus options in the signersCount slot', async () => {
     const client = installFakeClient()
 
     await submitXrpPayment('testnet', wallet, { destination: 'rPT1Sjq2YGrBMTttX4GZHjKu9dyfzbpAYe', amountDrops: '1000000' })
-    await submitTrustSet('testnet', wallet, { currency: 'USD', issuer: 'rPT1Sjq2YGrBMTttX4GZHjKu9dyfzbpAYe', limit: '100' })
 
-    // Without this, xrpl.js defaults to 2 XRP and a fee-escalation spike
-    // quietly turns a small payment into an expensive one.
-    expect(client.autofillOptions).toEqual([{ maxFeeXRP: '0.01' }, { maxFeeXRP: '0.01' }])
+    // xrpl.js 5's second argument is `signersCount`; an object there was
+    // silently ignored, leaving the 2 XRP default as the only ceiling.
+    expect(client.autofillOptions).toEqual([undefined])
   })
 
   it('classifies a tef/tem/ter result as failed, with no ledgerIndex, and clears the flag', async () => {
@@ -500,5 +519,108 @@ describe('a throwing client release cannot strand the in-flight depth', () => {
     // And the depth is back at zero: the next write raises again.
     await writes.submitXrpPayment('testnet', wallet, params).catch(() => {})
     expect(reported).toEqual([true, false, true, false])
+  })
+})
+
+describe('the fee cap on every write, and the pinned fee', () => {
+  const XRP = { destination: 'rPT1Sjq2YGrBMTttX4GZHjKu9dyfzbpAYe', amountDrops: '1000000' }
+  const signedFee = (blob: string) => decode(blob).Fee
+
+  it('signs and submits exactly the pinned fee, for an XRP payment', async () => {
+    const client = installFakeClient({ autofillFee: '12' })
+
+    const outcome = await submitXrpPayment('testnet', wallet, { ...XRP, feeDrops: '10' })
+
+    expect(outcome.status).toBe('validated')
+    expect(client.autofilled[0].Fee).toBe('10')
+    expect(client.submitted).toHaveLength(1)
+    expect(signedFee(client.submitted[0])).toBe('10')
+  })
+
+  it('signs and submits exactly the pinned fee, for a token payment', async () => {
+    const client = installFakeClient({ autofillFee: '12' })
+
+    await submitIssuedPayment('testnet', wallet, {
+      destination: 'rPT1Sjq2YGrBMTttX4GZHjKu9dyfzbpAYe',
+      currency: 'USD',
+      issuer: 'rhub8VRN55s94qWKDv6jmDy1pUykJzF3wq',
+      value: '25.5',
+      feeDrops: '10',
+    })
+
+    expect(client.autofilled[0].Fee).toBe('10')
+    expect(signedFee(client.submitted[0])).toBe('10')
+  })
+
+  it('leaves the fee to autofill when none is pinned', async () => {
+    const client = installFakeClient({ autofillFee: '12' })
+
+    await submitXrpPayment('testnet', wallet, XRP)
+
+    expect('Fee' in client.autofilled[0]).toBe(false)
+    expect(signedFee(client.submitted[0])).toBe('12')
+  })
+
+  it('signs a fee exactly at the cap', async () => {
+    const client = installFakeClient({ autofillFee: MAX_FEE_DROPS })
+
+    const outcome = await submitXrpPayment('testnet', wallet, XRP)
+
+    expect(MAX_FEE_DROPS).toBe('10000')
+    expect(outcome.status).toBe('validated')
+    expect(signedFee(client.submitted[0])).toBe('10000')
+  })
+
+  it('refuses one drop above the cap, before signing, and still lowers the in-flight flag', async () => {
+    const client = installFakeClient({ autofillFee: '10001' })
+
+    const attempt = submitXrpPayment('testnet', wallet, XRP)
+    await expect(attempt).rejects.toBeInstanceOf(FeeAboveCapError)
+    await expect(attempt).rejects.toThrow(/0\.010001 XRP.*limit of 0\.01 XRP.*Nothing was signed or submitted/)
+
+    expect(client.submitted).toEqual([])
+    expect(log).not.toContain('submitAndWait')
+    expect(log[0]).toBe('in-flight:true')
+    expect(log.at(-1)).toBe('in-flight:false')
+  })
+
+  it('refuses a pinned fee above the cap too — pinning is not a way around it', async () => {
+    const client = installFakeClient()
+
+    await expect(submitXrpPayment('testnet', wallet, { ...XRP, feeDrops: '20000' })).rejects.toBeInstanceOf(
+      FeeAboveCapError,
+    )
+    expect(client.submitted).toEqual([])
+  })
+
+  it('refuses above the cap on every write type, not only payments', async () => {
+    const client = installFakeClient({ autofillFee: '2000000' })
+
+    await expect(
+      submitTrustSet('testnet', wallet, { currency: 'USD', issuer: 'rPT1Sjq2YGrBMTttX4GZHjKu9dyfzbpAYe', limit: '100' }),
+    ).rejects.toBeInstanceOf(FeeAboveCapError)
+    const accountSet: AccountSet = { TransactionType: 'AccountSet', Account: wallet.address }
+    await expect(submitAndClassify('testnet', wallet, accountSet)).rejects.toBeInstanceOf(FeeAboveCapError)
+
+    expect(client.submitted).toEqual([])
+    expect(log.at(-1)).toBe('in-flight:false')
+  })
+
+  it.each([
+    ['missing', 'absent'],
+    ['zero', '0'],
+    ['fractional', '12.5'],
+    ['not a number', 'abc'],
+    ['leading zero', '012'],
+    ['negative', '-12'],
+  ])('refuses a %s fee before signing (fail closed)', async (_label, fee) => {
+    const client = installFakeClient({ autofillFee: fee })
+
+    const attempt = submitXrpPayment('testnet', wallet, XRP)
+    await expect(attempt).rejects.toBeInstanceOf(FeeAboveCapError)
+    await expect(attempt).rejects.toThrow(/could not be confirmed.*Nothing was signed or submitted/)
+
+    expect(client.submitted).toEqual([])
+    expect(log.at(-1)).toBe('in-flight:false')
   })
 })

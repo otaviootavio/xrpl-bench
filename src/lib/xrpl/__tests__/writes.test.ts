@@ -489,11 +489,16 @@ describe('a throwing client release cannot strand the in-flight depth', () => {
     writes.setTxInFlightReporter((inFlight) => reported.push(inFlight))
     const params = { destination: 'rPT1Sjq2YGrBMTttX4GZHjKu9dyfzbpAYe', amountDrops: '1' }
 
-    await expect(writes.submitXrpPayment('testnet', wallet, params)).rejects.toThrow('release failed')
+    // Only the depth is pinned here. What a validated write reports to its
+    // caller when release() throws is deliberately left unspecified: today the
+    // release error replaces the validated outcome, and a payment that
+    // validated but shows as an error invites a second send, so no test may
+    // fix that behaviour in place.
+    await writes.submitXrpPayment('testnet', wallet, params).catch(() => {})
     expect(reported).toEqual([true, false])
 
     // And the depth is back at zero: the next write raises again.
-    await expect(writes.submitXrpPayment('testnet', wallet, params)).rejects.toThrow('release failed')
+    await writes.submitXrpPayment('testnet', wallet, params).catch(() => {})
     expect(reported).toEqual([true, false, true, false])
   })
 })

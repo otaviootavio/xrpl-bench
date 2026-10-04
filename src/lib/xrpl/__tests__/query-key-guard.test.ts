@@ -113,6 +113,117 @@ describe('the query-key guard', () => {
   })
 })
 
+describe('a key bound to a variable before use (G-19)', () => {
+  // Every fixture below binds an array literal and passes the name at a key
+  // position. The guard follows the name within the file, so each source line
+  // holding a use carries the directive, exactly like the literal fixtures.
+
+  it('rejects the case the story names: bound with const, then invalidated', () => {
+    write(
+      'a.ts',
+      `const k = ['accountState', n, a]\n` +
+        // check-query-keys-allow
+        `queryClient.invalidateQueries({ queryKey: k })\n`,
+    )
+    const found = scanForHandWrittenKeys(dir, dir)
+    expect(found).toHaveLength(1)
+    expect(found[0]).toMatchObject({ file: 'a.ts', line: 2 })
+    expect(found[0].label).toBe('queryKey: k (array bound at line 1)')
+  })
+
+  it('rejects a typed or `as const` binding, a reassignment and a parameter default', () => {
+    // check-query-keys-allow
+    write('a.ts', `const key: QueryKey = ['accountState', n, a] as const\nuseQuery({ queryKey: key })\n`)
+    // check-query-keys-allow
+    write('b.ts', `let k2\nk2 = ['accountState', n, a]\nqueryClient.fetchQuery(k2)\n`)
+    // check-query-keys-allow
+    write('c.ts', `function f(k3 = ['accountState']) { return useQuery({ queryKey: k3 }) }\n`)
+    const found = scanForHandWrittenKeys(dir, dir)
+    expect(found.map((v: { file: string; line: number }) => [v.file, v.line])).toEqual([
+      ['a.ts', 2],
+      ['b.ts', 3],
+      ['c.ts', 1],
+    ])
+  })
+
+  it('rejects a bound key passed positionally to every key-taking API', () => {
+    const apis = [
+      'invalidateQueries',
+      'fetchQuery',
+      'removeQueries',
+      'setQueryData',
+      'setQueriesData',
+      'getQueryData',
+      'getQueriesData',
+      'resetQueries',
+      'cancelQueries',
+      'refetchQueries',
+      'prefetchQuery',
+      'ensureQueryData',
+    ]
+    // check-query-keys-allow
+    write('a.ts', `const k = ['accountState', n, a]\n` + apis.map((api) => `queryClient.${api}(k)\n`).join(''))
+    expect(scanForHandWrittenKeys(dir, dir)).toHaveLength(apis.length)
+  })
+
+  it('rejects the object shorthand when the bound name is queryKey itself', () => {
+    // check-query-keys-allow
+    write('a.ts', `const queryKey = ['accountState', n, a]\nuseQuery({ queryKey, enabled: true })\n`)
+    const found = scanForHandWrittenKeys(dir, dir)
+    expect(found).toHaveLength(1)
+    // check-query-keys-allow
+    expect(found[0]).toMatchObject({ line: 2, label: '{ queryKey } (array bound at line 1)' })
+  })
+
+  it('is not defeated by a line break between the key position and the name', () => {
+    // check-query-keys-allow
+    write('a.ts', `const k = ['accountState', n, a]\nuseQuery({\n  queryKey:\n    k,\n})\n`)
+    expect(scanForHandWrittenKeys(dir, dir)).toHaveLength(1)
+  })
+
+  it('passes a name bound to a factory key, a derived value, an unused array and a destructure', () => {
+    write(
+      'a.ts',
+      `const fromFactory = queryKeys.accountState(n, a)\n` +
+        `useQuery({ queryKey: fromFactory })\n` +
+        `const parts = ['accountState', n, a]\n` +
+        `useQuery({ queryKey: parts.slice(0, 1) })\n` +
+        `queryClient.fetchQuery(parts[0])\n` +
+        `const unused = ['accountState', n, a]\n` +
+        `const [first, second] = pair\n` +
+        `obj.m = ['x']\n` +
+        `useQuery({ queryKey: m })\n` +
+        `const same = eq == ['x']\n` +
+        `useQuery({ queryKey: eq })\n` +
+        `items.map((arrowParam) => ['k', arrowParam])\n` +
+        `const fn = arrowParam => ['k', arrowParam]\n` +
+        `useQuery({ queryKey: arrowParam })\n` +
+        `const kk = queryKeys.trustLines(n, a)\n` +
+        `const k1 = ['x']\n` +
+        `useQuery({ queryKey: kk })\n`,
+    )
+    expect(scanForHandWrittenKeys(dir, dir)).toEqual([])
+  })
+
+  it('suppresses a bound key only by a directive above the use, and only that one use', () => {
+    write(
+      'a.ts',
+      `// ${'check-query-keys-allow'}\n` +
+        `const k = ['accountState', n, a]\n` +
+        // check-query-keys-allow
+        `useQuery({ queryKey: k })\n` +
+        `// ${'check-query-keys-allow'}\n` +
+        // check-query-keys-allow
+        `queryClient.invalidateQueries({ queryKey: k })\n` +
+        `const unrelated = 1\n` +
+        // check-query-keys-allow
+        `queryClient.removeQueries({ queryKey: k })\n`,
+    )
+    const found = scanForHandWrittenKeys(dir, dir)
+    expect(found.map((v: { line: number }) => v.line)).toEqual([3, 7])
+  })
+})
+
 describe('the guard’s exemptions', () => {
   it('skips the factory module itself, whose literals are the definitions', () => {
     write(

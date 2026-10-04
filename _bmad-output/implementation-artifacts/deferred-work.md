@@ -197,3 +197,12 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-epic-8-connections.md`
   summary: After a socket drops, `useAccountLiveUpdates` keeps its `transaction` listener on the client it subscribed through, and nothing re-subscribes on the replacement client. Live updates stop until the hook remounts (network or wallet switch, or reload), and polling is the only fallback.
   evidence: xrpl.js 5.1.0 `connection.ts` has no subscription tracking, so its own auto-reconnect never re-subscribed either. Epic 8 now closes the replaced client, which ends that client's reconnect loop. The loss itself is pre-existing. Medium: incoming payments appear on the next 15-second poll rather than at once.
+
+## Deferred from: build of epic 10 (2026-10-04)
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-epic-10-guards.md`
+  summary: `scripts/check-layering.mjs` and `scripts/check-sw-register.mjs` still say "oxlint carries no user-defined-rule mechanism"; oxlint 1.80 has one (`jsPlugins`, alpha).
+  evidence: `node_modules/oxlint/configuration_schema.json` documents `jsPlugins`. Corrected in `check-query-keys.mjs`, which epic 10 owns; the other two are outside its scope (agents rule 5). Low: the conclusion (stay a `node:` script) still holds, only the stated reason is stale.
+- source_spec: `_bmad-output/implementation-artifacts/spec-epic-10-guards.md`
+  summary: AD-7 is gated only for BigInt construction in `src/hooks`, `src/pages` and `src/components`. `src/lib`/`src/store` and the `Number()`/`parseFloat`/`toFixed`-on-money half of the rule are still review-only.
+  evidence: Story 10.2's AC scopes the guard to the three UI trees. Widening it to `src/lib` needs a directive in `lib/xrpl/__tests__/money.test.ts:104` (a deliberate `BigInt('10.5')`), and a `Number()` ban needs a way to tell a monetary value from any other number, which a text scan cannot. Medium: today no non-`money.ts` lib module does money arithmetic, but nothing holds that.

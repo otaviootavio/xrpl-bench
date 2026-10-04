@@ -149,7 +149,7 @@ action_items:
     action: "Make a browser pass with opened screenshots part of every UI story's
       definition of done, and record the CDP virtual-authenticator recipe in docs/agents/verifying-your-work.md."
     owner: "Otavio"
-    status: open
+    status: done
     ref: "_bmad-output/implementation-artifacts/epic-5-retro-2026-09-30.md"
   - id: "epic-5-retro-item-8-before-epic-7-split-sendtab-tsx-807-line"
     epic: 5
@@ -171,5 +171,5 @@ action_items:
       thrown-submit invalidation first), adding the HistoryTab and TrustLinesTab retained-rows
       findings."
     owner: "Otavio"
-    status: open
+    status: done
     ref: "_bmad-output/implementation-artifacts/epic-5-retro-2026-09-30.md"

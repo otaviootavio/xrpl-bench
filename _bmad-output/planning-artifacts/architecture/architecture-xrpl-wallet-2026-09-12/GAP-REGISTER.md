@@ -263,7 +263,18 @@ depth above zero. `finally` decrements.
 
 ---
 
-## G-18 — An Address Book entry has no destination tag `AD-6`
+## G-18 — An Address Book entry has no destination tag `AD-6` — **CLOSED**
+
+**Closed 2026-10-04 by Epic 9 (stories 9.1, 9.2)** (`spec-epic-9-address-tags.md`).
+An entry is `{ address, destinationTag?, label? }`, with the tag held as canonical
+decimal text. Identity is `sameCounterparty` / `counterpartyKey` in
+`store/address-book.ts`. FR-21's test in `SendTab` is decided on the pair, and a
+send writes the pair it signed with no fabricated label. Settings keys rows by
+the pair. Old entries are read as tagless by a merge-time migration, which
+keeps the persisted version at 0 so that a rollback cannot wipe the slice.
+**Not closed by this:** the "picker fills both fields or neither" half of the
+fix has nothing to apply to, because no picker exists. The Address Book is
+also not scoped to a network; see `deferred-work.md`, epic 9.
 
 **Severity: money-loss path, and it needs no new feature to occur.**
 

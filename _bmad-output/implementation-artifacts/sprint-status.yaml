@@ -86,9 +86,9 @@ development_status:
   8-2-concurrent-callers-share-one-connection-attempt: done
   epic-8-retrospective: optional
 
-  epic-9: backlog
-  9-1-a-saved-address-carries-the-tag-that-makes-a-payment-arrive: backlog
-  9-2-the-send-screen-warns-on-the-pair-and-the-list-stops-inventi: backlog
+  epic-9: done
+  9-1-a-saved-address-carries-the-tag-that-makes-a-payment-arrive: done
+  9-2-the-send-screen-warns-on-the-pair-and-the-list-stops-inventi: done
   epic-9-retrospective: optional
 
   epic-10: done

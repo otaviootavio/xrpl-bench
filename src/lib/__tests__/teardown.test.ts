@@ -65,7 +65,7 @@ async function seedStore() {
   s.setNetwork('mainnet')
   s.setWallets([{ id: 'w1', label: 'Savings', address: 'rAliceAddressLabelThatMustNotSurvive' } as never])
   s.setActiveWalletId('w1')
-  s.addAddressBookEntry('rBobCounterpartyThatMustNotSurvive', 'Bob — landlord')
+  s.addAddressBookEntry({ address: 'rBobCounterpartyThatMustNotSurvive', label: 'Bob — landlord' })
   s.setAutoLockMinutes(30)
   s.declineUpdateVersion('deadbeef')
   await flush()

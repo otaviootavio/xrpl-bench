@@ -27,6 +27,7 @@ import { invalidateAccountScoped, invalidateDestinationCheck } from '@/lib/xrpl/
 import { DESTINATION_CHECK_FRESHNESS_MS, fetchDestinationInfoOnce, type DestinationInfo } from '@/lib/xrpl/query-reads'
 import { useQueryClient } from '@tanstack/react-query'
 import { toast } from '@/lib/notify'
+import { addressKnownUnderOtherTag, canonicalDestinationTag, sameCounterparty } from '@/store/address-book'
 
 const MAX_DESTINATION_TAG = 4294967295
 
@@ -125,10 +126,19 @@ export function SendTab() {
   const heldTokens = heldTokenLines(trustLinesState)
   const selectedLine = selectedTokenLine(trustLinesState, asset)
 
-  const isKnownDestination = addressBook.some((e) => e.address === destination)
   const isSelfSend = !!wallet && destination === wallet.address
   const amountValidation = validateAmountString(amount || '', asset === 'XRP' ? 'xrp' : 'issued')
   const tagValue = destTag ? Number(destTag) : undefined
+  /** The counterparty this form would pay: the address AND the tag, as text.
+   * The tag field only ever holds digits, so this is the canonical form of the
+   * very tag `tagValue` submits — derived from the string, never from it. */
+  const counterparty = { address: destination, destinationTag: canonicalDestinationTag(destTag) }
+  /** FR-21's "you haven't sent here before", decided on the pair (AD-6): a
+   * familiar address with a never-used tag is a new counterparty, and so is
+   * the same address with no tag at all. */
+  const isKnownDestination = addressBook.some((e) => sameCounterparty(e, counterparty))
+  /** Only chooses the warning's words; see `addressKnownUnderOtherTag`. */
+  const addressSeenUnderOtherTag = !isKnownDestination && addressKnownUnderOtherTag(addressBook, counterparty)
   const tagValid = tagValue === undefined || (Number.isInteger(tagValue) && tagValue >= 0 && tagValue <= MAX_DESTINATION_TAG)
 
   /** Funds check done in the form, so a too-large send fails here with a clear
@@ -351,7 +361,10 @@ export function SendTab() {
       setConfirmingFor(null)
       if (result.status === 'validated') {
         toast.success('Payment sent.')
-        if (!isKnownDestination) addAddressBookEntry(destination, destination.slice(0, 8))
+        // The pair actually paid — the tag that was signed, as text — and no
+        // label: nothing here knows a name for it, and a truncated address
+        // is not one.
+        if (!isKnownDestination) addAddressBookEntry(counterparty)
       } else if (result.status === 'expired') {
         toast.warning('This transaction expired before validating. It was not applied — you can retry.')
       } else if (result.status === 'claimed') {
@@ -708,12 +721,28 @@ export function SendTab() {
               . Payments on the XRP Ledger are irreversible and cannot be cancelled or refunded once sent.
             </DialogDescription>
           </DialogHeader>
-          {!isKnownDestination && (
-            <Alert variant="warning">
-              <AlertTitle>You haven't sent here before</AlertTitle>
-              <AlertDescription>Double-check the address character by character before continuing.</AlertDescription>
-            </Alert>
-          )}
+          {!isKnownDestination &&
+            (addressSeenUnderOtherTag ? (
+              <Alert variant="warning">
+                <AlertTitle>
+                  {counterparty.destinationTag !== undefined
+                    ? `You haven't sent with destination tag ${counterparty.destinationTag} before`
+                    : "You haven't sent here without a destination tag before"}
+                </AlertTitle>
+                <AlertDescription>
+                  {/* "Only with a tag" is exact: a tagless entry at this
+                      address would have made the pair known. */}
+                  {counterparty.destinationTag !== undefined
+                    ? 'You have paid this address before, but not with this destination tag. Check the tag against what the recipient gave you before continuing.'
+                    : 'You have paid this address before, but only with a destination tag. Check whether the recipient needs one before continuing.'}
+                </AlertDescription>
+              </Alert>
+            ) : (
+              <Alert variant="warning">
+                <AlertTitle>You haven't sent here before</AlertTitle>
+                <AlertDescription>Double-check the address character by character before continuing.</AlertDescription>
+              </Alert>
+            ))}
           <DialogFooter>
             <Button variant="outline" onClick={() => setConfirmingFor(null)} disabled={busy}>
               Cancel

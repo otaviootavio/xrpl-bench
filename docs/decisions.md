@@ -47,7 +47,7 @@ Research-backed (React/PWA/shadcn/crypto-wallet specific, checked against curren
 4. **Never use JS `number`/floating point for money.** XRP drops and issued-currency values must be handled as integer strings/BigInt, with conversion to a human-readable string happening only at the render boundary through one shared formatter. Floating-point drift is a top-cited LLM code-correctness bug and here it means sending the wrong amount.
 5. **Never use array index as the React `key` for lists that can reorder or filter** (transaction history, trust lines). Use the transaction hash or `currency+issuer` instead — index-as-key is a common LLM default and causes row state to stick to the wrong item after a list update, e.g. after switching wallets or networks.
 6. **Service worker must never cache RPC/ledger responses.** Balance, trust-line, and transaction data are network-first, no-cache; only the static app shell is cache-first/precached. Increment the cache version on every deploy and purge old caches on `activate` — stale-cache bugs are the top cited PWA failure mode and here they'd render a wrong balance.
-7. **Logout/wallet removal must fully tear down state**, including the service worker cache and the TanStack Query cache — leaving a warm cache after "logout" is a documented shared-device PWA vulnerability.
+7. **Logout/wallet removal must fully tear down state**, including the service worker cache and the TanStack Query cache — leaving a warm cache after "logout" is a documented shared-device PWA vulnerability. *(Narrowed by §13: account data is torn down on every lock and removal; the service-worker cache holds only the shell and is cleared by "remove everything" alone.)*
 8. **Never let an AI agent blindly re-run the shadcn CLI over a customized primitive.** shadcn components are copied into the repo specifically so we can edit them; a regenerate/overwrite without diffing silently reverts intentional customizations (a documented shadcn/AI-agent failure mode).
 9. **Never let a bespoke crypto component silently drop accessibility.** AI-written compositions on top of shadcn primitives are known to lose ARIA attributes and keyboard focus handling once a primitive is wrapped (e.g. a custom `<AmountInput>` built on `<Input>`). Every bespoke component gets a keyboard-only + screen-reader pass before merge, not as deferred polish.
 10. **No third-party script may be capable of observing the unlock/seed screens.** Analytics, session-replay, and verbose error-reporting SDKs must be explicitly denied on any screen that touches key material — this is the same root cause behind the real-world LLM-router credential-leak incidents that motivated this rule.
@@ -1302,3 +1302,37 @@ payment, an activation, a new release), goes to the Annunciator through
 `lib/notify.tsx`. §6.5's rule governs that notice surface — errors and warnings
 never auto-dismiss — and does not reach the inline one, which persists until the
 read succeeds.
+
+## 13. Teardown is two sets: account data, and the shell
+
+Decided 2026-10-04, implementing the architecture spine's AD-16 (Epic 6,
+closing G-13 and G-14). Recorded here because guardrail #7, as first written,
+mandated one of the two defects.
+
+**The defects.** "Remove everything" — the hard-lock reset on the Unlock screen
+and "Erase everything" in Settings — wiped the vault but never the persisted
+app store (`xrpl-wallet-app-state`), so wallet labels and addresses and the
+whole Address Book survived on a device just handed over. Meanwhile every lock
+deleted *every* Cache Storage key, which holds only the precached shell
+(`vite.config.ts` declares no `runtimeCaching`): it protected nothing, and it
+stopped the app opening offline and voided US-8's retained precache.
+
+**The rule.** `src/lib/teardown.ts` owns the clear set, as two named sets:
+
+- **Account data** — the vault, the persisted app store, the TanStack Query
+  cache, live sockets. A lock or single-wallet removal clears the query cache
+  (`clearCachedAccountData`); "remove everything" clears all of it
+  (`tearDownAllLocalState`). Persisted owners are listed in
+  `PERSISTED_ACCOUNT_DATA`, and `src/lib/__tests__/teardown.test.ts` fails on
+  any module under `src/` that persists without being listed there.
+- **The shell** — the service-worker precache. It survives every lock and every
+  single-wallet removal. Only "remove everything" clears it.
+
+**The app store is cleared in memory before its key is deleted.** The `persist`
+middleware re-serializes the whole slice on every later `set()`, and both reset
+paths call `lock()`; deleting the key first would let that write the old
+wallets back.
+
+**A partial teardown is reported, not reloaded over.** Every clear is
+attempted; any failure is rethrown, and the reset screens show it instead of
+reloading as though the device were clean.

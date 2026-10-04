@@ -25,9 +25,12 @@ file before editing anything under `src/lib/crypto/`.
 - **Treat any new unlock method as a wrap/unwrap contract.** Adding one means
   wrapping the existing master key with it, not deriving a second independent
   key.
-- **Tear down completely on lock or wallet removal:** the in-memory key, the
-  persisted session, the TanStack Query cache, and the service worker cache. A
-  warm cache behind a lock screen is a documented shared-device vulnerability.
+- **Tear down account data on lock or wallet removal:** the in-memory key, the
+  persisted session, and the TanStack Query cache. A warm cache behind a lock
+  screen is a documented shared-device vulnerability.
+- **Register every new persistence owner in `lib/teardown.ts`**
+  (`PERSISTED_ACCOUNT_DATA`). "Remove everything" calls `tearDownAllLocalState`
+  and clears nothing field by field.
 
 ## Never
 
@@ -43,6 +46,10 @@ file before editing anything under `src/lib/crypto/`.
   fonts and other subresources: the app's faces are self-hosted for this reason.
 - **Never** let a `title` attribute or a hidden element be the only carrier of a
   security-relevant explanation.
+- **Never** clear the service-worker cache on lock or single-wallet removal. It
+  holds only the precached shell, never account data, and deleting it stops the
+  app opening offline. Only "remove everything" clears it — `docs/decisions.md`
+  §13 (AD-16).
 
 ## Ask first
 

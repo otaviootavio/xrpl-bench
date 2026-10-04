@@ -41,6 +41,27 @@ interface AppState {
   lock: () => void
 }
 
+/** The idb-keyval key this store persists under. Exported so the teardown
+ * owner (`lib/teardown.ts`, AD-16) and its tests name the same key. */
+export const APP_STATE_STORAGE_KEY = 'xrpl-wallet-app-state'
+
+type PersistedAppState = Pick<
+  AppState,
+  'network' | 'wallets' | 'activeWalletId' | 'addressBook' | 'autoLockMinutes' | 'declinedUpdateVersions'
+>
+
+/** The persisted slice's initial values — one object, used both as the
+ * store's starting state and as what a teardown resets it to, so the two
+ * cannot drift apart. */
+const PERSISTED_DEFAULTS: PersistedAppState = {
+  network: 'testnet',
+  wallets: [],
+  activeWalletId: null,
+  addressBook: [],
+  autoLockMinutes: 5,
+  declinedUpdateVersions: [],
+}
+
 const indexedDbStorage: StateStorage = {
   getItem: async (name) => (await idbGet<string>(name)) ?? null,
   setItem: async (name, value) => {
@@ -54,12 +75,7 @@ const indexedDbStorage: StateStorage = {
 export const useAppStore = create<AppState>()(
   persist(
     (set) => ({
-      network: 'testnet',
-      wallets: [],
-      activeWalletId: null,
-      addressBook: [],
-      autoLockMinutes: 5,
-      declinedUpdateVersions: [],
+      ...PERSISTED_DEFAULTS,
 
       vaultKey: null,
       unlocked: false,
@@ -88,7 +104,7 @@ export const useAppStore = create<AppState>()(
       },
     }),
     {
-      name: 'xrpl-wallet-app-state',
+      name: APP_STATE_STORAGE_KEY,
       // docs/decisions.md §1 specifies IndexedDB for app state, not
       // localStorage (zustand's default). The payload here is non-secret, but
       // keeping every persisted byte in one store means teardown has a single
@@ -96,7 +112,7 @@ export const useAppStore = create<AppState>()(
       storage: createJSONStorage(() => indexedDbStorage),
       // Only ever persist non-secret UI/selection state. vaultKey and
       // unlocked are deliberately excluded here.
-      partialize: (s) => ({
+      partialize: (s): PersistedAppState => ({
         network: s.network,
         wallets: s.wallets,
         activeWalletId: s.activeWalletId,
@@ -107,6 +123,27 @@ export const useAppStore = create<AppState>()(
     },
   ),
 )
+
+/**
+ * Removes everything this store persists — AD-16's account-data set, called
+ * only by `lib/teardown.ts`, never by a page clearing its own fields.
+ *
+ * Two steps, in this order, and both are needed:
+ *  1. The in-memory persisted slice goes back to its defaults FIRST. The
+ *     `persist` middleware re-serializes the whole slice on every later
+ *     `set()` — `lock()` included — so deleting the key while the old wallets
+ *     and Address Book are still in memory would let the next setter write
+ *     them straight back (G-13's residue, by a different route).
+ *  2. The key itself is deleted, and awaited: zustand's own
+ *     `persist.clearStorage()` returns void, so a reload straight after it
+ *     could beat the delete.
+ * Session-only fields (`vaultKey`, `unlocked`, `txInFlight`) are not
+ * persisted and are left to the caller's lock.
+ */
+export async function clearPersistedAppState(): Promise<void> {
+  useAppStore.setState({ ...PERSISTED_DEFAULTS })
+  await idbDel(APP_STATE_STORAGE_KEY)
+}
 
 export function useActiveWallet(): WalletMeta | null {
   return useAppStore((s) => s.wallets.find((w) => w.id === s.activeWalletId) ?? null)

@@ -29,7 +29,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 # - Retrospective appends its action items to action_items; the status view surfaces open ones
 generated: 09-15-2026 21:01
-last_updated: '10-02-2026 23:35'
+last_updated: '10-04-2026 14:18'
 project: xrpl-wallet
 project_key: NOKEY
 tracking_system: file-system
@@ -73,33 +73,33 @@ development_status:
   epic-6: done
   6-1-a-reset-that-claims-to-remove-everything-clears-the-persiste: done
   6-2-locking-the-app-does-not-delete-the-app-shell: done
-  epic-6-retrospective: optional
+  epic-6-retrospective: done
 
   epic-7: done
   7-1-any-transaction-type-can-reach-the-write-choke-point: done
   7-2-two-overlapping-writes-cannot-clear-each-other-s-in-flight-s: done
   7-3-a-failed-update-activation-keeps-telling-the-truth-about-wha: done
-  epic-7-retrospective: optional
+  epic-7-retrospective: done
 
   epic-8: done
   8-1-a-connection-the-app-has-stopped-using-is-closed: done
   8-2-concurrent-callers-share-one-connection-attempt: done
-  epic-8-retrospective: optional
+  epic-8-retrospective: done
 
   epic-9: done
   9-1-a-saved-address-carries-the-tag-that-makes-a-payment-arrive: done
   9-2-the-send-screen-warns-on-the-pair-and-the-list-stops-inventi: done
-  epic-9-retrospective: optional
+  epic-9-retrospective: done
 
   epic-10: done
   10-1-the-query-key-guard-sees-a-key-that-was-bound-to-a-variable: done
   10-2-money-arithmetic-and-explorer-links-get-gates-of-their-own: done
-  epic-10-retrospective: optional
+  epic-10-retrospective: done
 
   epic-11: done
   11-1-the-warning-comes-before-the-write-on-both-import-paths: done
   11-2-a-pasted-seed-is-not-rejected-for-its-whitespace: done
-  epic-11-retrospective: optional
+  epic-11-retrospective: done
 action_items:
   - id: "epic-5-retro-item-1-make-send-s-token-path-fail-closed-on-a"
     epic: 5
@@ -173,3 +173,242 @@ action_items:
     owner: "Otavio"
     status: done
     ref: "_bmad-output/implementation-artifacts/epic-5-retro-2026-09-30.md"
+  - id: "epic-6-retro-item-11-re-decide-decision-1-full-reset-clears-t"
+    epic: 6
+    action: "Re-decide Decision 1 (full reset clears the shell) knowing that the precache
+      is *not* re-fetched by the reload: it stays empty under the still-registered
+      worker until a new worker version installs. Either keep the shell on reset,
+      or unregister the service worker as part of clearShell so the next load precaches
+      again. Whichever is chosen, correct the comment at lib/teardown.ts:74-76 and
+      pin the result with a test."
+    owner: "Otavio (decision), then dev"
+    status: open
+    ref: "_bmad-output/implementation-artifacts/epic-6-retro-2026-10-04.md"
+  - id: "epic-6-retro-item-12-pin-single-wallet-removal-s-shell-surviv"
+    epic: 6
+    action: "Pin single-wallet removal's shell survival (6.2 AC4): extend the AD-16
+      scan to caches.delete/caches.keys with lib/teardown.ts as the only allowed file,
+      which covers both lock and removal, or add a Settings handleRemove test with
+      a stubbed caches."
+    owner: "dev"
+    status: open
+    ref: "_bmad-output/implementation-artifacts/epic-6-retro-2026-10-04.md"
+  - id: "epic-6-retro-item-13-move-the-ad-16-registration-scan-out-of"
+    epic: 6
+    action: "Move the AD-16 registration scan out of teardown.test.ts into a scripts/check-*.mjs
+      guard run by lint, with fixture tests, like the other six. Close its granularity
+      hole while there: a second persisted key or store inside a registered file,
+      and localStorage property assignment."
+    owner: "dev"
+    status: open
+    ref: "_bmad-output/implementation-artifacts/epic-6-retro-2026-10-04.md"
+  - id: "epic-6-retro-item-14-a-browser-pass-records-the-exact-commit"
+    epic: 6
+    action: "A browser pass records the exact commit or build it ran on. If the tree
+      changes afterwards (rebase, review fixes), the Verification section says which
+      criteria the change could affect, and those are re-run. Add this to the definition
+      of done in docs/agents/verifying-your-work.md. Also: a pass checks the state
+      each recorded unattended decision asserts."
+    owner: "Otavio (process)"
+    status: open
+    ref: "_bmad-output/implementation-artifacts/epic-6-retro-2026-10-04.md"
+  - id: "epic-6-retro-item-15-fix-the-remove-all-wallets-from-this-dev"
+    epic: 6
+    action: "Fix the \"Remove all wallets from this device\" button overflowing the
+      Security card at 320 px (both themes), and re-check the Settings tab at 320
+      px and 200% zoom."
+    owner: "dev"
+    status: open
+    ref: "_bmad-output/implementation-artifacts/epic-6-retro-2026-10-04.md"
+  - id: "epic-7-retro-item-16-review-and-merge-pr-42-a-real-0-01-xrp-f"
+    epic: 7
+    action: "Review and merge PR #42 (a real 0.01 XRP fee cap enforced as a refusal
+      at the choke point; Send pins the fee it shows). It is the fix for a live high-severity
+      money defect on dev. Ship it before any further epic merges or any promotion
+      to stage. Its own unattended decisions (no fee cushion, refusing AccountDelete/AMMCreate/VaultCreate)
+      need Otavio's sign-off."
+    owner: "Otavio"
+    status: open
+    ref: "_bmad-output/implementation-artifacts/epic-7-retro-2026-10-04.md"
+  - id: "epic-7-retro-item-17-give-the-fee-cap-a-normative-home-an-ad"
+    epic: 7
+    action: "Give the fee cap a normative home: an AD in ARCHITECTURE-SPINE.md (or
+      a PRD NFR) stating the ceiling, that the choke point refuses above it, and that
+      the fee shown at confirm is the fee signed. Then a future epic's acceptance
+      criteria can cite it."
+    owner: "architect"
+    status: open
+    ref: "_bmad-output/implementation-artifacts/epic-7-retro-2026-10-04.md"
+  - id: "epic-7-retro-item-18-add-a-rule-to-the-unattended-loop-a-find"
+    epic: 7
+    action: "Add a rule to the unattended loop: a finding a build or review marks
+      high-severity *and* money-moving blocks the resolver's merge of the *next* epic
+      until a story or PR for it exists and Otavio has seen it. Record it in docs/agents/."
+    owner: "Otavio (process)"
+    status: open
+    ref: "_bmad-output/implementation-artifacts/epic-7-retro-2026-10-04.md"
+  - id: "epic-7-retro-item-19-when-deferred-work-triage-routes-an-entr"
+    epic: 7
+    action: "When deferred-work triage routes an entry to \"epic N\", the epic N build
+      must list each such entry in its spec as taken, or as declined with a reason.
+      Add this to the build checklist and do it once now for the three epic-7-routed
+      entries (thrown-submit invalidation, shown fee, post-unlock re-reads)."
+    owner: "dev"
+    status: open
+    ref: "_bmad-output/implementation-artifacts/epic-7-retro-2026-10-04.md"
+  - id: "epic-7-retro-item-20-add-a-scripts-check-mjs-guard-run-by-lin"
+    epic: 7
+    action: "Add a scripts/check-*.mjs guard, run by lint with fixture tests, that
+      fails when submitAndWait, submit, autofill or Wallet.sign is called outside
+      src/lib/xrpl/writes.ts, so AD-9's single choke point is enforced rather than
+      observed."
+    owner: "dev"
+    status: open
+    ref: "_bmad-output/implementation-artifacts/epic-7-retro-2026-10-04.md"
+  - id: "epic-7-retro-item-21-forbid-as-any-on-xrpl-js-calls-in-src-li"
+    epic: 7
+    action: "Forbid as any on xrpl.js calls in src/lib/xrpl (an oxlint no-explicit-any
+      override scoped there, or a guard script), and remove the remaining casts in
+      writes.ts."
+    owner: "dev"
+    status: open
+    ref: "_bmad-output/implementation-artifacts/epic-7-retro-2026-10-04.md"
+  - id: "epic-7-retro-item-22-any-test-that-claims-to-pin-an-sdk-level"
+    epic: 7
+    action: "Any test that claims to pin an SDK-level guard (a fee, a flag, a limit)
+      must assert the SDK's *output*, not the fake's recorded input. Record this in
+      docs/agents/ with the \"caps the fee\" test as the example."
+    owner: "dev"
+    status: open
+    ref: "_bmad-output/implementation-artifacts/epic-7-retro-2026-10-04.md"
+  - id: "epic-8-retro-item-23-record-the-reviewer-s-pr-33-round-1-tear"
+    epic: 8
+    action: "Record the reviewer's PR #33 round-1 teardown note in deferred-work.md:
+      disconnectAllClients skips a cached client that is mid-reconnect, and it keeps
+      reconnecting after wallet removal. Then decide whether to unfreeze the teardown
+      path so it also closes in-flight attempts and reconnecting clients (this and
+      the existing entry at deferred-work.md:195)."
+    owner: "dev (record); Otavio (decide)"
+    status: open
+    ref: "_bmad-output/implementation-artifacts/epic-8-retro-2026-10-04.md"
+  - id: "epic-8-retro-item-24-reconcile-epics-md-epic-8-with-the-as-bu"
+    epic: 8
+    action: "Reconcile epics.md §Epic 8 with the as-built: (a) the claim that G-22/G-23's
+      propagation \"never reaches the write choke point\" is false. The close-on-replace
+      reached submitAndWait, so record holdXrplClient as part of the write path's
+      contract (AD-9/AD-12). (b) Reword 8.1's \"resetXrplClients is unchanged\" to
+      \"still synchronous, disconnects nothing, and clears all of the module's connection
+      state\"."
+    owner: "architect"
+    status: open
+    ref: "_bmad-output/implementation-artifacts/epic-8-retro-2026-10-04.md"
+  - id: "epic-8-retro-item-25-decide-where-the-high-backup-node-partia"
+    epic: 8
+    action: "Decide where the High backup-node partial-history item goes (deferred-work.md:160-161).
+      The triage proposed it for epic 8 after epic 8 had merged, and it is still open
+      (reads.ts:176)."
+    owner: "Otavio"
+    status: open
+    ref: "_bmad-output/implementation-artifacts/epic-8-retro-2026-10-04.md"
+  - id: "epic-8-retro-item-26-make-the-unattended-resolver-send-every"
+    epic: 8
+    action: "Make the unattended resolver send every non-blocking reviewer finding
+      either to a fix or to a deferred-work.md entry before it squash-merges, and
+      say which in the PR."
+    owner: "Otavio (process)"
+    status: open
+    ref: "_bmad-output/implementation-artifacts/epic-8-retro-2026-10-04.md"
+  - id: "epic-8-retro-item-27-add-a-recipe-to-docs-agents-verifying-yo"
+    epic: 8
+    action: "Add a recipe to docs/agents/verifying-your-work.md for non-UI runtime
+      changes: a scripted live check against Testnet through the AD-12 factory seam,
+      recorded in the spec's Verification. A change to connection, write or read behaviour
+      should not reach done verified through mocks alone."
+    owner: "Otavio (process)"
+    status: open
+    ref: "_bmad-output/implementation-artifacts/epic-8-retro-2026-10-04.md"
+  - id: "epic-9-retro-item-28-decide-spec-decision-9-before-dev-is-pro"
+    epic: 9
+    action: "Decide spec Decision 9 before dev is promoted to stage. Either keep migrated
+      pre-epic-9 entries as tagless, which silences the warning on a later tagless
+      send to that address, or mark them \"tag unknown\" so they always warn. Decide
+      it together with network-scoping the Address Book (deferred-work epic-9 entry
+      1), because both change the persisted shape. Then add it to PR #41's record."
+    owner: "Otavio"
+    status: open
+    ref: "_bmad-output/implementation-artifacts/epic-9-retro-2026-10-04.md"
+  - id: "epic-9-retro-item-29-reconcile-docs-decisions-md-2-lines-25-2"
+    epic: 9
+    action: "Reconcile docs/decisions.md §2 (lines 25-26) with AD-6 as built. The
+      first-send warning is decided on the (address, destination tag) pair, and the
+      app writes no labels."
+    owner: "Otavio (apply) / dev (draft)"
+    status: open
+    ref: "_bmad-output/implementation-artifacts/epic-9-retro-2026-10-04.md"
+  - id: "epic-9-retro-item-30-in-the-unattended-build-loop-do-not-squa"
+    epic: 9
+    action: "In the unattended build loop, do not squash-merge a PR whose reviewer
+      raised a \"for Otavio\" decision that weakens a money-moving guard or warning.
+      Hold it, or label it and block promotion until Otavio decides. Regenerate the
+      PR body's decision list from the spec whenever a review fix adds a decision."
+    owner: "Otavio (process)"
+    status: open
+    ref: "_bmad-output/implementation-artifacts/epic-9-retro-2026-10-04.md"
+  - id: "epic-10-retro-item-31-name-every-escape-this-retro-found-in-th"
+    epic: 10
+    action: "Name every escape this retro found in the guards' \"cannot see\" docstrings
+      and in GAP-REGISTER G-19/G-27, or close the cheap ones with fixtures: computed
+      member qc['invalidateQueries']([...]), a one-hop alias const j = k, Array.of(...),
+      a computed global globalThis['Big'+'Int'], a computed explorer field name, and
+      an escaped host."
+    owner: "dev"
+    status: open
+    ref: "_bmad-output/implementation-artifacts/epic-10-retro-2026-10-04.md"
+  - id: "epic-10-retro-item-32-unattended-runs-append-the-fresh-reviewe"
+    epic: 10
+    action: "Unattended runs append the fresh reviewer's findings and the resolver's
+      fixes to the spec's Review triage, and refresh its Verification counts, before
+      merge. The spec, not the PR thread, is the record."
+    owner: "Otavio (process)"
+    status: open
+    ref: "_bmad-output/implementation-artifacts/epic-10-retro-2026-10-04.md"
+  - id: "epic-10-retro-item-33-a-resolver-re-runs-all-four-gates-on-the"
+    epic: 10
+    action: "A resolver re-runs all four gates on the tree it is about to merge (rebased
+      onto current dev), not the tree the PR was last rebased onto."
+    owner: "Otavio (process)"
+    status: open
+    ref: "_bmad-output/implementation-artifacts/epic-10-retro-2026-10-04.md"
+  - id: "epic-10-retro-item-34-one-docs-sweep-for-the-drift-36-reported"
+    epic: 10
+    action: "One docs sweep for the drift #36 reported: the stale oxlint sentence
+      in check-layering.mjs and check-sw-register.mjs, the guard counts in implementation-readiness.md
+      and reconcile-decisions.md, the GAP-REGISTER header, and naming the six guards
+      in docs/agents/ (via bmad-project-context)."
+    owner: "dev"
+    status: open
+    ref: "_bmad-output/implementation-artifacts/epic-10-retro-2026-10-04.md"
+  - id: "epic-11-retro-item-35-add-a-scripted-end-to-end-smoke-of-first"
+    epic: 11
+    action: "Add a scripted end-to-end smoke of first-run Onboarding (generate and
+      import, virtual authenticator, Testnet or a stubbed ledger) that runs before
+      merge, so a core flow that no test drives cannot stay broken. Onboarding import
+      was broken from 7fb32d7 until 434d69f."
+    owner: "dev (bmad-testarch-automate); Otavio decides whether it gates CI"
+    status: open
+    ref: "_bmad-output/implementation-artifacts/epic-11-retro-2026-10-04.md"
+  - id: "epic-11-retro-item-36-record-in-deferred-work-md-a-cancelled-o"
+    epic: 11
+    action: "Record in deferred-work.md: a cancelled Onboarding import leaves a vault
+      with no wallet, and re-onboarding re-runs setUpVaultAuth, registering a second
+      passkey and orphaning the first."
+    owner: "dev"
+    status: open
+    ref: "_bmad-output/implementation-artifacts/epic-11-retro-2026-10-04.md"
+  - id: "epic-11-retro-item-37-rule-on-the-six-unattended-decisions-in"
+    epic: 11
+    action: "Rule on the six unattended decisions in spec-epic-11-seed-import.md §Decisions
+      (listed under Open questions)."
+    owner: "Otavio"
+    status: open
+    ref: "_bmad-output/implementation-artifacts/epic-11-retro-2026-10-04.md"

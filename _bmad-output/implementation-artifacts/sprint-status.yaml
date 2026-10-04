@@ -96,9 +96,9 @@ development_status:
   10-2-money-arithmetic-and-explorer-links-get-gates-of-their-own: done
   epic-10-retrospective: optional
 
-  epic-11: backlog
-  11-1-the-warning-comes-before-the-write-on-both-import-paths: backlog
-  11-2-a-pasted-seed-is-not-rejected-for-its-whitespace: backlog
+  epic-11: done
+  11-1-the-warning-comes-before-the-write-on-both-import-paths: done
+  11-2-a-pasted-seed-is-not-rejected-for-its-whitespace: done
   epic-11-retrospective: optional
 action_items:
   - id: "epic-5-retro-item-1-make-send-s-token-path-fail-closed-on-a"

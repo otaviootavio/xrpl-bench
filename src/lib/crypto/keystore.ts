@@ -54,6 +54,26 @@ export function isValidSeed(seed: string): boolean {
   }
 }
 
+/**
+ * Turns what the operator typed or pasted into the Seed field into a Seed, or
+ * `null` if it is not one — the single place both import screens normalise
+ * their input (Epic 11, story 11.2).
+ *
+ * Leading and trailing whitespace is removed, because a password manager or a
+ * copied line routinely brings a newline or a space with it, and a correct
+ * backup must not read as a corrupt one. Whitespace *inside* the value is not
+ * removed: that is a different string, and guessing at it is not this
+ * function's job. A value that is whitespace only trims to `''`, which is not
+ * a Seed, so it is reported as malformed rather than ignored.
+ *
+ * Offline; neither stores nor logs the value. The caller holds the result in a
+ * ref, never in React state (guardrail #3).
+ */
+export function parseSeedInput(raw: string): string | null {
+  const seed = raw.trim()
+  return isValidSeed(seed) ? seed : null
+}
+
 /** Imports an existing wallet from a seed — account-onboarding.md US-2. */
 export async function importAndStoreWallet(label: string, seed: string, vaultKey: CryptoKey): Promise<WalletMeta> {
   const wallet = Wallet.fromSeed(seed) // throws on malformed seed

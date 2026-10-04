@@ -11,7 +11,7 @@ vi.mock('../db', () => ({
   deleteStoredWallet: async () => {},
 }))
 
-import { addressFromSeed, isValidSeed } from '../keystore'
+import { addressFromSeed, isValidSeed, parseSeedInput } from '../keystore'
 
 /**
  * AD-3: only `lib/crypto` turns a seed into a signer, so the screens ask the
@@ -63,5 +63,44 @@ describe('isValidSeed', () => {
     expect(isValidSeed('')).toBe(false)
     // A classic address is not a seed, however valid it looks.
     expect(isValidSeed('rPT1Sjq2YGrBMTttX4GZHjKu9dyfzbpAYe')).toBe(false)
+  })
+})
+
+/**
+ * Epic 11, story 11.2: the one place both import screens normalise what was
+ * typed or pasted. A correct Seed with stray whitespace round it — the shape a
+ * password manager or a copied line hands over — is a correct Seed.
+ */
+describe('parseSeedInput', () => {
+  it('returns a clean seed unchanged', () => {
+    const seed = Wallet.generate().seed!
+    expect(parseSeedInput(seed)).toBe(seed)
+  })
+
+  it('accepts a pasted seed with a trailing newline, and returns it without', () => {
+    const seed = Wallet.generate().seed!
+    expect(parseSeedInput(`${seed}\n`)).toBe(seed)
+    expect(parseSeedInput(`${seed}\r\n`)).toBe(seed)
+  })
+
+  it('accepts leading and trailing spaces and tabs', () => {
+    const seed = Wallet.generate(ECDSA.secp256k1).seed!
+    expect(parseSeedInput(`  \t${seed} \t `)).toBe(seed)
+  })
+
+  it('does not strip whitespace inside the value — that is a different string', () => {
+    const seed = Wallet.generate().seed!
+    const split = `${seed.slice(0, 10)} ${seed.slice(10)}`
+    expect(parseSeedInput(split)).toBeNull()
+  })
+
+  it('reports a whitespace-only value as not a seed, rather than as nothing typed', () => {
+    expect(parseSeedInput('   \n\t ')).toBeNull()
+    expect(parseSeedInput('')).toBeNull()
+  })
+
+  it('rejects a malformed value instead of throwing', () => {
+    expect(parseSeedInput(' not-a-seed ')).toBeNull()
+    expect(parseSeedInput('rPT1Sjq2YGrBMTttX4GZHjKu9dyfzbpAYe')).toBeNull()
   })
 })

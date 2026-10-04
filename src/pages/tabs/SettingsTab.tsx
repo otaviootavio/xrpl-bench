@@ -15,9 +15,9 @@ import { Separator } from '@/components/ui/separator'
 import { SeedReveal } from '@/components/wallet/SeedReveal'
 import { AddressLink } from '@/components/wallet/AddressLink'
 import { useAppStore } from '@/store/app-store'
-import { addressFromSeed, generateAndStoreWallet, importAndStoreWallet, listWallets, removeWallet, revealSeed } from '@/lib/crypto/keystore'
+import { addressFromSeed, generateAndStoreWallet, importAndStoreWallet, listWallets, parseSeedInput, removeWallet, revealSeed } from '@/lib/crypto/keystore'
 import { RESET_INCOMPLETE_MESSAGE, tearDownAllLocalState, clearCachedAccountData } from '@/lib/teardown'
-import { fetchAccountStateOnce } from '@/lib/xrpl/query-reads'
+import { checkBeforeImport, IMPORT_WARNING_COPY, INVALID_SEED_MESSAGE, type ImportWarning } from '@/lib/seed-import'
 import { toast } from '@/lib/notify'
 import { useQueryClient } from '@tanstack/react-query'
 
@@ -42,7 +42,8 @@ export function SettingsTab() {
   const [confirmRemove, setConfirmRemove] = useState<string | null>(null)
   const [confirmResetAll, setConfirmResetAll] = useState(false)
   const [confirmRevealFor, setConfirmRevealFor] = useState<string | null>(null)
-  const [importWarning, setImportWarning] = useState<string | null>(null)
+  const [importWarning, setImportWarning] = useState<ImportWarning | null>(null)
+  const [busy, setBusy] = useState(false)
 
   // Guardrail #3: a decrypted seed must NEVER enter React state (state is
   // serializable and reachable from devtools). It lives in a ref for exactly
@@ -53,41 +54,99 @@ export function SettingsTab() {
   // Uncontrolled: a controlled input would put the typed seed into React
   // state on every keystroke (guardrail #3).
   const seedInputRef = useRef<HTMLInputElement | null>(null)
+  // The parsed Seed while the master-key warning is open. The Add dialog — and
+  // the input inside it — closes when the warning opens, so the value has to
+  // be held somewhere that outlives the input: a ref, never state.
+  const pendingImportSeedRef = useRef<string | null>(null)
   const getRevealedSeed = useCallback(() => revealedSeedRef.current, [])
 
   async function refreshWallets() {
     setWallets(await listWallets())
   }
 
+  /** The vault write for an import, and everything that follows a completed
+   * add. Reached only after the pre-flight check: directly when it found
+   * nothing to warn about, or from "Import anyway". */
+  async function storeImported(seed: string, key: CryptoKey) {
+    const meta = await importAndStoreWallet(label || 'Wallet', seed, key)
+    await refreshWallets()
+    setActiveWalletId(meta.id)
+    finishAdd()
+  }
+
+  function finishAdd() {
+    pendingImportSeedRef.current = null
+    toast.success('Wallet added.')
+    setAddOpen(false)
+    setLabel('')
+    if (seedInputRef.current) seedInputRef.current.value = ''
+  }
+
   async function handleAddWallet() {
-    if (!vaultKey) return
-    try {
-      if (addMode === 'generate') {
+    if (!vaultKey || busy) return
+    if (addMode === 'generate') {
+      setBusy(true)
+      try {
         const { meta } = await generateAndStoreWallet(label || 'Wallet', vaultKey)
         await refreshWallets()
         setActiveWalletId(meta.id)
-      } else {
-        // docs/decisions.md §2 states the disabled-master-key check for import
-        // unconditionally — it must not be limited to the onboarding path.
-        const seedInput = seedInputRef.current?.value ?? ''
-        const probeAddress = addressFromSeed(seedInput)
-        const state = await fetchAccountStateOnce(queryClient, network, probeAddress)
-        const meta = await importAndStoreWallet(label || 'Wallet', seedInput, vaultKey)
-        await refreshWallets()
-        setActiveWalletId(meta.id)
-        if (state.exists && state.disableMasterKey) {
-          setImportWarning(
-            "This account's master key is disabled (a Regular Key has been set elsewhere). Signing with this seed alone may not work.",
-          )
-        }
+        finishAdd()
+      } catch (err: any) {
+        toast.error(err?.message ?? 'Could not add wallet.')
+      } finally {
+        setBusy(false)
       }
-      toast.success('Wallet added.')
-      setAddOpen(false)
-      setLabel('')
-      if (seedInputRef.current) seedInputRef.current.value = ''
+      return
+    }
+
+    // Import. The same operation as Onboarding's (lib/seed-import.ts): parse,
+    // check, and only then write — docs/decisions.md §2 states the
+    // disabled-master-key check for import unconditionally, so it must not be
+    // limited to the onboarding path, and it must come before the vault write
+    // here too, not after it.
+    const seed = parseSeedInput(seedInputRef.current?.value ?? '')
+    if (!seed) {
+      toast.error(INVALID_SEED_MESSAGE)
+      return
+    }
+    setBusy(true)
+    try {
+      const warning = await checkBeforeImport(queryClient, network, addressFromSeed(seed))
+      if (warning) {
+        pendingImportSeedRef.current = seed
+        setAddOpen(false)
+        setImportWarning(warning)
+        return
+      }
+      await storeImported(seed, vaultKey)
     } catch (err: any) {
       toast.error(err?.message ?? 'Could not add wallet.')
+    } finally {
+      setBusy(false)
     }
+  }
+
+  /** "Import anyway": the operator has read the warning and chosen to go on. */
+  async function acceptImportWarning() {
+    const seed = pendingImportSeedRef.current
+    if (!vaultKey || !seed || busy) return
+    setBusy(true)
+    try {
+      await storeImported(seed, vaultKey)
+      setImportWarning(null)
+    } catch (err: any) {
+      toast.error(err?.message ?? 'Could not add wallet.')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  /** Cancel, Escape, the overlay and the close button all land here: the
+   * import is abandoned and nothing is written. */
+  function cancelImportWarning() {
+    pendingImportSeedRef.current = null
+    setImportWarning(null)
+    setLabel('')
   }
 
   async function handleConfirmReveal(id: string) {
@@ -154,7 +213,9 @@ export function SettingsTab() {
             <CardTitle>Wallets</CardTitle>
             <CardDescription>Switch, add, or remove wallets on this device.</CardDescription>
           </div>
-          <Dialog open={addOpen} onOpenChange={setAddOpen}>
+          {/* Not closable while a check or a write is running: closing reads as
+              "stop", and the write would still land behind it. */}
+          <Dialog open={addOpen} onOpenChange={(o) => !busy && setAddOpen(o)}>
             <DialogTrigger asChild>
               <Button>Add wallet</Button>
             </DialogTrigger>
@@ -184,7 +245,9 @@ export function SettingsTab() {
                 )}
               </div>
               <DialogFooter>
-                <Button onClick={handleAddWallet}>Add</Button>
+                <Button onClick={handleAddWallet} disabled={busy}>
+                  {busy ? (addMode === 'import' ? 'Checking…' : 'Adding…') : 'Add'}
+                </Button>
               </DialogFooter>
             </DialogContent>
           </Dialog>
@@ -427,17 +490,25 @@ export function SettingsTab() {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={!!importWarning} onOpenChange={(o) => !o && setImportWarning(null)}>
+      <Dialog open={!!importWarning} onOpenChange={(o) => !o && !busy && cancelImportWarning()}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Heads up</DialogTitle>
+            <DialogDescription>Check this before the seed is saved to this device.</DialogDescription>
           </DialogHeader>
-          <Alert variant="warning">
-            <AlertTitle>Master key disabled</AlertTitle>
-            <AlertDescription>{importWarning}</AlertDescription>
-          </Alert>
+          {importWarning && (
+            <Alert variant="warning">
+              <AlertTitle>{IMPORT_WARNING_COPY[importWarning].title}</AlertTitle>
+              <AlertDescription>{IMPORT_WARNING_COPY[importWarning].body}</AlertDescription>
+            </Alert>
+          )}
           <DialogFooter>
-            <Button onClick={() => setImportWarning(null)}>Got it</Button>
+            <Button variant="outline" onClick={cancelImportWarning} disabled={busy}>
+              Cancel import
+            </Button>
+            <Button onClick={acceptImportWarning} disabled={busy}>
+              {busy ? 'Importing…' : 'Import anyway'}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

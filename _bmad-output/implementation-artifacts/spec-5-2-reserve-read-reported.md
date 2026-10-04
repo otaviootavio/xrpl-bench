@@ -284,7 +284,7 @@ inspection of the two marks is the one thing still worth a human eye.
 **Browser pass, 2026-10-04 — RUN (Epic 5 retro item 6).** This closes the "Not verified" note above.
 
 Setup:
-- Code under test: `7cb52f8` (branch `fix/retro-5-items-3-5-9`). The reserve handling is unchanged there from `dev`.
+- Code under test: `dev` at `3ac02fc` (before epic 8, #33) plus the code diff of branch `fix/retro-5-items-3-5-9` (PR for retro items 3, 5, 9). The reserve handling is unchanged there from `dev`.
 - Playwright Chromium 1148, a fresh isolated context, and a CDP virtual authenticator per `docs/agents/verifying-your-work.md`.
 - Vite on port 5174, Testnet, with a throwaway wallet funded by the in-app faucet (100 XRP; Spendable 99, Reserved 1 before the fault).
 - The reserve read was forced to fail by answering every `server_state` request with an error at the websocket (`page.routeWebSocket`). No app code was changed, and `account_info` was left alone, which is exactly the "reserve fails while `account_info` succeeds" state this story is about. Every screenshot was opened.

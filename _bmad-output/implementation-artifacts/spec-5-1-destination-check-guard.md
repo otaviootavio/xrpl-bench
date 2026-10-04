@@ -350,7 +350,7 @@ of the new assertions, and removing the submit-path re-read fails 3 more.
 **Browser pass, 2026-10-04 — RUN (Epic 5 retro item 6).** This closes the gap in the row above.
 
 Setup:
-- Code under test: `7cb52f8` (branch `fix/retro-5-items-3-5-9`). This story's guard is unchanged there from `dev`.
+- Code under test: `dev` at `3ac02fc` (before epic 8, #33) plus the code diff of branch `fix/retro-5-items-3-5-9` (PR for retro items 3, 5, 9). This story's guard is unchanged there from `dev`.
 - Playwright Chromium 1148, a fresh isolated context, and a CDP virtual authenticator (ctap2, internal, resident key, UV, PRF) per `docs/agents/verifying-your-work.md`.
 - Vite on port 5174, Testnet, with a throwaway wallet created and funded in that context.
 - Destination: `rPupnpAqKZy1b8DMNrajEChEfaLrqcghC8`, funded by a script and given `asfRequireDest` (`AccountSet` `tesSUCCESS`, `Flags` 131072).

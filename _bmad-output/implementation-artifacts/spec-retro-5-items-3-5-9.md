@@ -5,7 +5,7 @@ created: '2026-10-04'
 status: 'done'
 route: 'dispatch'
 review_loop_iteration: 0
-baseline_commit: 'c0b47a3'
+baseline_commit: 'f0c9bb0'
 context:
   - '{project-root}/docs/agents/INDEX.md'
   - '{project-root}/docs/agents/ledger-io.md'
@@ -93,10 +93,16 @@ context:
 3. **F3's symptom did not reproduce today; the change is defensive.** On 2026-10-04, `account_tx` for a freshly generated, never-funded address returned `transactions: []` (success, not `actNotFound`) on all four configured endpoints: `s.altnet.rippletest.net`, `testnet.xrpl-labs.com`, `xrplcluster.com` and `s1.ripple.com`. So History was not, in fact, calling new wallets a failed read on these servers. The change aligns `fetchAccountTx` with the other two reads in case a server does answer `actNotFound`. The retro assumed one would, from the code alone; I did not find a configured endpoint that does. It was demonstrated in the browser by injecting `actNotFound` at the websocket.
 4. **`actNotFound` on a continuation page is still a failure.** The account had history one page earlier. Answering empty with no marker would end the list and make it look complete: the failed-shown-as-empty pattern this epic exists to remove.
 5. **The guard parses the factory as text and fails closed.** A `node:`-only script cannot import `.ts`. If the `accountScoped` table is renamed or reshaped, lint fails with "checking nothing" instead of passing. A vitest test holds the parsed names equal to the runtime factory's. The guard also fails if nothing outside the factory calls `invalidateAccountScoped(` (a guard over a path nobody takes). It skips test files, as the vitest scan did, and takes a per-line `// check-account-invalidation-allow` like its three siblings.
+6. **Failures were forced at the websocket, not with the recipe's temporary switch.** Step 6 of `docs/agents/verifying-your-work.md` (landed in #34 the same day) says to force a failed read "only with a temporary switch" in `reads.ts`. I used `page.routeWebSocket` instead, answering the chosen command, or the chosen command for one account, with a rippled-style error. That way no app code was edited, so nothing had to be reverted and the code under test is exactly the code shipped. It also lets one account's read fail while another's succeeds, which the 5.1 pass needed. I did not edit the doc (rule 5). If you agree, the recipe could name this as an alternative. The captures follow the recipe's authenticator setup, but several were taken after a fixed wait rather than a settled-value wait. Each screenshot was opened and shows a settled state.
+
+**Drift noticed, not repaired (rule 5):**
+- The 5.5 entry in `deferred-work.md` still says the rule lives in "a vitest scan".
+- `planning-artifacts/implementation-readiness.md` says three guards are machine-enforced; there are now four.
+- `spec-5-5-one-invalidation-group.md`'s Code Map names the deleted `account-invalidation-sites.test.ts`.
 
 ## Verification
 
-**Commands** (on `ee36344`, rebased onto `dev` `f0c9bb0`): `bun run lint`, `bun run build`, `bun run test` (415 tests, 33 files) and `bun run check:contrast` all exit 0. `lint` prints `check-account-invalidation: 4 account-scoped builders, discarded only through invalidateAccountScoped() (4 callers).`
+**Commands** (this branch rebased onto `dev` `f0c9bb0`): `bun run lint`, `bun run build`, `bun run test` (415 tests, 33 files) and `bun run check:contrast` all exit 0. `lint` prints `check-account-invalidation: 4 account-scoped builders, discarded only through invalidateAccountScoped() (4 callers).`
 
 **Mutation checks** (each reverted afterwards; tree clean):
 
@@ -123,14 +129,14 @@ How it was driven:
 - Failures were forced with `page.routeWebSocket`, which answers the chosen request with a rippled-style `{status:'error'}` response instead of forwarding it. No app code was changed. Every forced state is named below.
 - Every screenshot listed was opened and judged. Screenshots are in the session scratchpad, not the repo.
 
-Pass 1 ran on `7cb52f8` (this branch before rebasing). Items 3 and 5 were re-run on `ee36344`, after rebasing onto epic 8's connection change.
+Pass 1 ran on this branch's diff over `dev` `3ac02fc`, before epic 8 (#33) changed the connection layer. Items 3 and 5 were re-run on this branch rebased onto `f0c9bb0` (pass 2).
 
 | Item | Exercised | Observed | Met |
 |---|---|---|---|
 | 3 | New unfunded wallet, History, nothing forced | "No transactions yet" (servers answer `[]`, see Decision 3) | — |
-| 3 | `account_tx` forced to `actNotFound` (both reads: History and the watch) | "No transactions yet", no failure panel; on `ee36344` too | yes |
+| 3 | `account_tx` forced to `actNotFound` (both reads: History and the watch) | "No transactions yet", no failure panel; in pass 2 too | yes |
 | 3 | `account_tx` forced to `tooBusy` | "History unavailable" panel with Try again: a real failure is still reported | yes |
-| 5 | Funded wallet, Send 2 XRP to a never-funded address; the form showed "Destination not activated" before | Validated. The destination's `account_info` was re-read 7.9 s after Confirm (6.6 s on `ee36344`), right after validation, and the warning was gone 0.2–0.4 s later, well inside the 30 s window. Before the change nothing invalidated that entry, and it was ~5 s old, so it would have stayed. | yes |
+| 5 | Funded wallet, Send 2 XRP to a never-funded address; the form showed "Destination not activated" before | Validated. The destination's `account_info` was re-read 7.9 s after Confirm (6.6 s in pass 2), right after validation, and the warning was gone 0.2–0.4 s later, well inside the 30 s window. Before the change nothing invalidated that entry, and it was ~5 s old, so it would have stayed. | yes |
 | 6 | 5.1 and 5.2 passes | See those specs' Verification sections, appended today | see there |
 
 **Gaps, stated:**

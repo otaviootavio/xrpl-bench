@@ -1668,6 +1668,133 @@ describe('the confirm step closes with the guard and does not revive', () => {
 })
 
 /**
+ * The fee is pinned at "Review payment", like the destination check. The
+ * dialog states the pinned figure and Send signs it; a live read that stops
+ * stating the same fact while the dialog is open (another figure, a failure, a
+ * figure arriving where none was) withdraws the intent, so paying a different
+ * figure is always an explicit re-review. PR #42 review thread 2.
+ */
+describe('the confirm step pins the fee it states', () => {
+  const confirmButton = () => screen.queryByRole('button', { name: 'Confirm and send' })
+  const dialogFeeText = () => screen.getByText(/plus a network fee/i).textContent ?? ''
+
+  function openOnXrpForm(fee = '10') {
+    useRecommendedFee.mockReturnValue(feeRead({ data: fee }))
+    const utils = render(<SendTab />)
+    fillValidForm()
+    settleClock()
+    fireEvent.click(reviewButton())
+    expect(confirmButton()).toBeTruthy()
+    return utils
+  }
+
+  /** A token send: the fee is not part of its guard, so only the pin can
+   * close the dialog when the fee read changes — a test on an XRP send would
+   * pass through `checkFunds` with the pin deleted. */
+  function openOnTokenForm(feeOverrides: Parameters<typeof feeRead>[0]) {
+    useRecommendedFee.mockReturnValue(feeRead(feeOverrides))
+    useTrustLines.mockReturnValue(trustLinesRead())
+    useDestinationInfo.mockReturnValue(query({ data: info({ asset: TOKEN_ASSET, hasTrustLine: true }) }))
+    const utils = render(<SendTab />)
+    fireEvent.change(screen.getByTestId('asset'), { target: { value: TOKEN_ASSET } })
+    fillValidForm()
+    settleClock()
+    fireEvent.click(reviewButton())
+    expect(confirmButton()).toBeTruthy()
+    return utils
+  }
+
+  it('stays open across a poll that reads the same figure again', async () => {
+    const { rerender } = openOnXrpForm('10')
+
+    // A fresh result object with the same figure: what every 10 s poll does.
+    useRecommendedFee.mockReturnValue(feeRead({ data: '10' }))
+    rerender(<SendTab />)
+    expect(confirmButton()).toBeTruthy()
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Confirm and send' }))
+    })
+    expect(submitXrpPayment.mock.calls[0][2].feeDrops).toBe('10')
+  })
+
+  it('closes when the live fee moves away from the pinned figure, and does not reopen when it moves back', () => {
+    const { rerender } = openOnXrpForm('10')
+
+    useRecommendedFee.mockReturnValue(feeRead({ data: '15' }))
+    rerender(<SendTab />)
+    // The guard is still open (15 drops fits): only the pin closed it.
+    expect(reviewButton().disabled).toBe(false)
+    expect(confirmButton()).toBeNull()
+
+    // 10 → 15 → 10: the intent was withdrawn, not suspended.
+    useRecommendedFee.mockReturnValue(feeRead({ data: '10' }))
+    rerender(<SendTab />)
+    expect(confirmButton()).toBeNull()
+  })
+
+  it('pins the new figure when the operator reviews again', async () => {
+    const { rerender } = openOnXrpForm('10')
+    useRecommendedFee.mockReturnValue(feeRead({ data: '15' }))
+    rerender(<SendTab />)
+    expect(confirmButton()).toBeNull()
+
+    fireEvent.click(reviewButton())
+    expect(dialogFeeText()).toContain(`plus a network fee of ${formatXrp('15')}`)
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Confirm and send' }))
+    })
+    expect(submitXrpPayment).toHaveBeenCalledOnce()
+    expect(submitXrpPayment.mock.calls[0][2].feeDrops).toBe('15')
+  })
+
+  it('closes a token send when the fee read fails under a pinned figure', () => {
+    const { rerender } = openOnTokenForm({ data: '10' })
+
+    useRecommendedFee.mockReturnValue(feeRead({ data: undefined, isError: true }))
+    rerender(<SendTab />)
+    // A token send is not held by a failed fee read, so this is the pin alone.
+    expect(reviewButton().disabled).toBe(false)
+    expect(confirmButton()).toBeNull()
+
+    useRecommendedFee.mockReturnValue(feeRead({ data: '10' }))
+    rerender(<SendTab />)
+    expect(confirmButton()).toBeNull()
+  })
+
+  it('closes a token send when a figure arrives where the dialog said it was still being read', () => {
+    const { rerender } = openOnTokenForm({ data: undefined })
+    expect(dialogFeeText()).toMatch(/still being read/)
+
+    useRecommendedFee.mockReturnValue(feeRead({ data: '10' }))
+    rerender(<SendTab />)
+    expect(reviewButton().disabled).toBe(false)
+    expect(confirmButton()).toBeNull()
+  })
+
+  it('keeps "Sending…" and the pinned figure on screen when the fee moves during a send, and signs the pin', async () => {
+    let release: (w: unknown) => void = () => {}
+    unlockWalletForSigning.mockImplementationOnce(() => new Promise((r) => (release = r)))
+    const { rerender } = openOnXrpForm('10')
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm and send' }))
+
+    useRecommendedFee.mockReturnValue(feeRead({ data: '15' }))
+    await act(async () => {
+      rerender(<SendTab />)
+    })
+    expect(screen.getByRole('button', { name: 'Sending…' })).toBeTruthy()
+    expect(dialogFeeText()).toContain(`plus a network fee of ${formatXrp('10')}`)
+    expect(dialogFeeText()).not.toContain(formatXrp('15'))
+
+    await act(async () => {
+      release({ address: WALLET_ADDRESS })
+    })
+    expect(submitXrpPayment).toHaveBeenCalledOnce()
+    expect(submitXrpPayment.mock.calls[0][2].feeDrops).toBe('10')
+  })
+})
+
+/**
  * The readout rows render from the shared read state (`lib/read-state.ts`).
  * The split that introduced it was behaviour-preserving, so these pin the rows
  * as they stood: the fee row tells all three states apart, and the Spendable

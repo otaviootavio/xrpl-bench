@@ -1358,9 +1358,16 @@ a feature decides otherwise. The Send form refuses a fee read above the cap
 before the dialog, for XRP and token sends.
 
 **Send pins the fee it shows.** The figure in the confirm dialog is set as
-`tx.Fee`, so autofill leaves it alone. It is the figure that was on screen when
-Confirm was pressed, and it is never re-read after the unlock. No cushion is
-applied. Under rising load a pinned fee may queue or expire (reported as
+`tx.Fee`, so autofill leaves it alone. It is pinned when "Review payment" is
+pressed, beside the destination check's `checkedAt`: the dialog states that
+figure and Send signs it, and it is never re-read after the unlock. If the live
+fee read stops stating the same fact while the dialog is open outside a send (a
+different figure, a failure, or a figure arriving where the dialog said it was
+still being read), the dialog closes and the intent is withdrawn, as a stale
+destination check does, so paying a different figure takes a fresh review. A
+poll that reads the same figure again changes nothing; the comparison is by
+value. Once a send is under way, "Sending…" stays up and the pin is signed. No
+cushion is applied. Under rising load a pinned fee may queue or expire (reported as
 `expired`, no fee consumed), but it never charges more than was stated. An
 expired send invalidates the fee read so a retry does not pin the same figure.
 With no figure (a token send whose fee read is pending or failed), autofill

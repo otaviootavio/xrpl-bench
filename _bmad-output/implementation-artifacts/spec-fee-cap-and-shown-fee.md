@@ -113,6 +113,17 @@ Pinning the uncushioned `open_ledger_fee` means that under rising load a send ma
 - Ledger: both deferred-work entries gained a `resolution:` key. No other entry uses that key.
 - Browser pass (Playwright Chromium, fresh `browser.newContext()` with CDP virtual authenticator, dev server on 5177, Testnet, new wallet funded by the in-app faucet, 1280 px light theme): 5 XRP to rHb9CJAWyB4rj91VRWn96DkukG4bwdtyTh. Dialog said "plus a network fee of 0.00001 XRP". Spendable went from 99 to 93.99999 (delta 5.00001 = amount + 10 drops). History's Fee field for C8C0535E…3BE4F6 said 0.00001 XRP. All three agree, and screenshots (scratchpad `01-dialog.png`, `02-sent.png`, `03-history.png`) were opened. Not covered in the browser: a real token send, the above-cap refusal (needs a forced fee read), other widths and the dark theme. These are covered by unit tests only.
 
+- PR #42 review, thread 1: `feeWithinCap` now returns a plain `boolean`, as the Code Map asked. The `fee is string` predicate answered `false` for strings (`'20000'`, `'012'`), so TypeScript narrowed `input.fee.value` to `never` inside `checkFunds`'s refusal block and switched type checking off there. The call sites need no narrowing from it: `funds-check.ts` gets `string` from `fee.status === 'ok'`, and `writes.ts` passes `prepared.Fee` to `FeeAboveCapError(fee: unknown)`. `isCanonicalPositiveDrops` keeps its predicate, because there `false` really does mean "not a canonical drops string".
+- PR #42 review, thread 2: the fee is pinned at "Review payment". The confirm intent in `SendTab` is now `{ checkedAt, fee }`, where `fee` is the fee read state at the press. The dialog states the pin and `doSend` signs it. A render-time withdrawal (the same one that already handled `!canSend`) clears the intent when the live read stops stating the same fact as the pin, outside `busy`. "The same fact" means the same status and, for a figure, the same drops string (`sameFeeFact`), compared by value. So a 10 s poll that reads the figure again changes nothing, and a fee going 10 → 15 → 10 does not reopen the dialog on the way back. Pending → ok and ok → failed also close it, because the dialog would otherwise keep saying "still being read", or a figure the network no longer quotes. `confirmOpen` is also gated on the match. Six component tests in `send-destination-error.test.tsx` (`the confirm step pins the fee it states`) cover this. Token sends are used for the failure and arrival cases, because there the fee is not part of the guard and only the pin can close the dialog.
+- Mutation check for thread 2:
+  - Removing the fee clause from the withdrawal fails 2 tests (no reopen on 10 → 15 → 10; token ok → failed).
+  - Removing both the withdrawal and the gate fails 4.
+  - Making the dialog render the live fee fails the "Sending…" test.
+  - Comparing by reference fails dozens of tests, because every rerender closes the dialog.
+  - Comparing by status only fails 2.
+  - Two mutants survive, and both are equivalent in reachable states. Removing only the `confirmOpen` gate survives because the render-phase `setState` withdraws before commit. Having `doSend` sign the live closure fee survives because the dialog can only be open, and Confirm pressed, while the live fee equals the pin.
+- Known gap: the dialog closes silently when the fee moves, with no screen-reader announcement. This is the same as the existing guard-closed withdrawal and is not addressed here.
+
 ## Spec Change Log
 
 ## Review Triage Log
@@ -132,3 +143,5 @@ Pinning the uncushioned `open_ledger_fee` means that under rising load a send ma
 | 11 | blind | No real-network check recorded for shown = paid | low | Addressed by the Testnet browser pass in Verification, not by code |
 | 12 | verif | No test that the fee is not re-read after the unlock | medium (gap) | Pre-verified gap. patch |
 | 13 | verif | Pending-fee dialog cap suffix and no-pin not tested | low (gap) | Pre-verified gap. patch |
+| 14 | PR #42 review | `feeWithinCap` declared `fee is string` but returns `false` for some strings, so the refusal branch narrowed to `never` | low | Confirmed. patch: return `boolean` (Implementation Notes) |
+| 15 | PR #42 review | The fee in an open dialog can change under the operator with 10 s polling, and Confirm then pays a figure they did not read | low | Confirmed; supersedes the rejection in row 9 and Decision 12's second half. patch: fee pinned at Review, and the dialog closes when the live read moves (Implementation Notes) |

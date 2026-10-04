@@ -94,8 +94,14 @@ export const MAX_FEE_DROPS = '10000'
  * compared as `BigInt`. Takes `unknown` because it checks what autofill
  * attached, which is not trusted to be present or well formed — anything
  * else fails closed.
+ *
+ * A plain `boolean`, deliberately not a `fee is string` predicate: it answers
+ * `false` for strings too (`'20000'`, `'012'`), and a predicate would narrow
+ * the refusal branch to `never`, switching type checking off exactly where a
+ * refused fee is described. `isCanonicalPositiveDrops` keeps its predicate,
+ * because there `false` really does mean "not a canonical drops string".
  */
-export function feeWithinCap(fee: unknown): fee is string {
+export function feeWithinCap(fee: unknown): boolean {
   return isCanonicalPositiveDrops(fee) && BigInt(fee) <= BigInt(MAX_FEE_DROPS)
 }
 

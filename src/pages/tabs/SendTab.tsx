@@ -37,6 +37,16 @@ const MAX_DESTINATION_TAG = 4294967295
  * error, not a message that outlives its cause. */
 type PreflightReason = 'failed' | 'tag-required' | 'guard-closed' | 'not-activated' | 'no-trust-line'
 
+/** Whether two fee read states state the same fact: the same status and, for
+ * a figure, the same drops string. Compared by value, never by reference
+ * (`readStateOf` builds a fresh object every render) and never by
+ * `dataUpdatedAt` (a 10 s poll that reads the same figure again is not a
+ * change the operator needs to re-confirm). */
+function sameFeeFact(a: ReadState<string>, b: ReadState<string>): boolean {
+  if (a.status !== b.status) return false
+  return a.status !== 'ok' || (b.status === 'ok' && a.value === b.value)
+}
+
 export function SendTab() {
   const network = useAppStore((s) => s.network)
   const wallet = useActiveWallet()
@@ -69,16 +79,24 @@ export function SendTab() {
   const asset = assetChoice && assetChoiceMatches ? assetChoice.asset : 'XRP'
   const setAsset = (next: string) => setAssetChoice({ network, address: wallet?.address ?? '', asset: next })
   const [destTag, setDestTag] = useState('')
-  /** The operator's intent to confirm, pinned to the exact check that was on
-   * screen when they asked for it — `destQuery.dataUpdatedAt`, or `null` for
-   * no intent at all.
+  /** The operator's intent to confirm, pinned to what was on screen when they
+   * pressed "Review payment" — or `null` for no intent at all:
    *
-   * The intent is withdrawn outright whenever the guard closes outside a send
-   * (below, beside `confirmOpen`). The pin adds the case the guard alone does
-   * not see: a destination reading replaced by a newer one without the guard
-   * ever closing. `dataUpdatedAt` only increases, so an intent formed against
-   * an older reading can never match again. */
-  const [confirmingFor, setConfirmingFor] = useState<number | null>(null)
+   * - `checkedAt` — the destination check's `dataUpdatedAt`. The guard alone
+   *   does not see a reading replaced by a newer one without ever closing;
+   *   `dataUpdatedAt` only increases, so an intent formed against an older
+   *   reading can never match again.
+   * - `fee` — the fee read state at that moment. The dialog states THIS, and
+   *   `doSend` signs THIS, so the figure the operator read is the figure paid
+   *   even though the live read polls every 10 s. If the live read stops
+   *   stating the same fact (another figure, a failure, a figure arriving
+   *   where none was) the intent is withdrawn, below — compared by value,
+   *   because a fee can go 10 → 15 → 10 and must not reopen the dialog on the
+   *   way back.
+   *
+   * The intent is withdrawn outright whenever the guard closes, or the fee
+   * moves, outside a send (below, beside `confirmOpen`). */
+  const [confirmingFor, setConfirmingFor] = useState<{ checkedAt: number; fee: ReadState<string> } | null>(null)
   const [busy, setBusy] = useState(false)
   const [outcome, setOutcome] = useState<SubmitOutcome | null>(null)
   /** Why the submit path refused to send, and the `(network, destination,
@@ -223,8 +241,14 @@ export function SendTab() {
    * its own — a read recovering on its next poll, the amount typed back —
    * would put "Confirm and send" back on screen with nobody having asked.
    * It terminates because it clears its own condition.
+   *
+   * The fee pinned at "Review payment" no longer stating the live read's fact
+   * withdraws it the same way: the dialog would otherwise go on stating a
+   * figure the network no longer quotes, or the fee coming back to the pinned
+   * figure would reopen it unasked. Never while `busy`: once a send is under
+   * way it signs the pinned figure, and "Sending…" must stay up.
    */
-  if (confirmingFor !== null && !busy && !canSend) setConfirmingFor(null)
+  if (confirmingFor !== null && !busy && (!canSend || !sameFeeFact(confirmingFor.fee, feeState))) setConfirmingFor(null)
 
   /**
    * The confirm step's open state, derived — intent and the whole send guard
@@ -236,9 +260,17 @@ export function SendTab() {
    * or a check aging out during the unlock must not pull "Sending…" off the
    * screen mid-submission and leave the operator with no sign that a payment
    * is in flight. Outside `busy` the intent must also still be about the
-   * destination reading it was formed against.
+   * destination reading it was formed against, and about the fee it pinned.
    */
-  const confirmOpen = confirmingFor !== null && (busy || (canSend && confirmingFor === checkedAt))
+  const confirmOpen =
+    confirmingFor !== null &&
+    (busy || (canSend && confirmingFor.checkedAt === checkedAt && sameFeeFact(confirmingFor.fee, feeState)))
+  /** What `doSend` signs: the pin, never the live read. */
+  const pinnedFee: ReadState<string> | null = confirmingFor?.fee ?? null
+  /** What the dialog states: the same pin. The live read stands in only once
+   * the intent is gone, i.e. while the dialog animates out, so its closing
+   * frames do not flash "could not be read" over a fee that was read. */
+  const dialogFee: ReadState<string> = pinnedFee ?? feeState
 
   async function doSend() {
     if (!wallet || !vaultKey) return
@@ -343,15 +375,16 @@ export function SendTab() {
       /**
        * The fee the dialog stated is the fee signed: pinned on the transaction
        * so autofill does not compute its own (with its 1.2 cushion, 10 shown
-       * became 12 charged). `feeState` is the render closure's — the figure on
-       * screen when Confirm was pressed — and is deliberately NOT re-read after
-       * the unlock, which could only make the paid figure differ from the
-       * shown one. A stale low fee can queue or expire; it can never overcharge.
-       * With no figure (a token send whose fee read is pending or failed),
+       * became 12 charged). It is the figure pinned at "Review payment" — the
+       * one the dialog rendered — and is deliberately NOT re-read after the
+       * unlock, which could only make the paid figure differ from the shown
+       * one. A live read that moved before Confirm closed the dialog instead.
+       * A stale low fee can queue or expire; it can never overcharge. With no
+       * figure pinned (a token send whose fee read was pending or failed),
        * autofill computes one and the choke point's cap bounds it, which is
        * what the dialog said.
        */
-      const feeDrops = feeState.status === 'ok' ? feeState.value : undefined
+      const feeDrops = pinnedFee?.status === 'ok' ? pinnedFee.value : undefined
       let result: SubmitOutcome
       if (asset === 'XRP') {
         result = await submitXrpPayment(network, signingWallet, {
@@ -684,7 +717,7 @@ export function SendTab() {
             />
           )}
 
-          <Button onClick={() => setConfirmingFor(checkedAt)} disabled={!canSend}>
+          <Button onClick={() => setConfirmingFor({ checkedAt, fee: feeState })} disabled={!canSend}>
             Review payment
           </Button>
 
@@ -719,7 +752,9 @@ export function SendTab() {
           dialog is up — a failed fee, spendable or trust-line read, an amount
           that stops fitting, a check that ages out — takes the dialog down and
           withdraws the intent in the same render, so the guard reopening does
-          not bring it back. Only an explicit "Review payment" does. */}
+          not bring it back. So does the live fee read moving away from the
+          figure pinned at "Review payment". Only an explicit "Review payment"
+          does. */}
       <Dialog open={confirmOpen} onOpenChange={(o) => !o && setConfirmingFor(null)}>
         <DialogContent>
           <DialogHeader>
@@ -730,11 +765,12 @@ export function SendTab() {
               {/* "the current rate" named a figure that was never read. An XRP
                   send cannot reach this dialog without one; a token send can,
                   and is told the plain fact plus the bound the write path
-                  enforces. A figure stated here is the fee signed (pinned in
-                  `doSend`), never a cushioned estimate. */}
-              {feeState.status === 'ok'
-                ? `plus a network fee of ${formatXrp(feeState.value)}`
-                : feeState.status === 'pending'
+                  enforces. The figure stated is the one pinned at "Review
+                  payment" and signed by `doSend`, never a cushioned estimate
+                  and never a later poll: a poll that moves it closes this. */}
+              {dialogFee.status === 'ok'
+                ? `plus a network fee of ${formatXrp(dialogFee.value)}`
+                : dialogFee.status === 'pending'
                   ? `plus a network fee that is still being read; it will not exceed ${formatXrp(MAX_FEE_DROPS)}`
                   : `plus a network fee that could not be read; it will not exceed ${formatXrp(MAX_FEE_DROPS)}`}
               . Payments on the XRP Ledger are irreversible and cannot be cancelled or refunded once sent.

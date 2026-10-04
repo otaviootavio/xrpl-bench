@@ -122,6 +122,13 @@ Pinning the uncushioned `open_ledger_fee` means that under rising load a send ma
   - Comparing by reference fails dozens of tests, because every rerender closes the dialog.
   - Comparing by status only fails 2.
   - Two mutants survive, and both are equivalent in reachable states. Removing only the `confirmOpen` gate survives because the render-phase `setState` withdraws before commit. Having `doSend` sign the live closure fee survives because the dialog can only be open, and Confirm pressed, while the live fee equals the pin.
+- Browser pass for thread 2:
+  - Setup: tree of commit `9d2d017` on base `c0b65e5`. Playwright Chromium headless shell in a fresh context with a CDP virtual authenticator. Dev server on port 5177, Testnet, new throwaway wallet funded by the in-app faucet. Fee responses were rewritten in flight through `routeWebSocket`, because Testnet's fee will not move on demand. All six screenshots were opened.
+  - Met: the dialog stated 0.00001 XRP and stayed open for 25 s across 2 fee polls of the same figure (390 px, light).
+  - Met: after a fresh "Check again" and review, the live fee moved to 15 drops. The dialog closed, the fee row read 0.000015 XRP, Review stayed enabled, and there was no stale-check alert, so the pin closed the dialog and the destination window did not.
+  - Met: when the fee went back to 10 drops, the dialog stayed closed.
+  - Met: re-reviewing at 15 drops stated "plus a network fee of 0.000015 XRP" (1280 px, dark). The decoded `submit` blob had `Fee: 15`. The payment validated, and Spendable went from 99 to 97.999985, which is the amount plus 15 drops.
+  - Not covered in the browser: the failing-fee and token-send close cases (component tests only), and a fee moving during the unlock (component test only; the passkey answers instantly in this harness).
 - Known gap: the dialog closes silently when the fee moves, with no screen-reader announcement. This is the same as the existing guard-closed withdrawal and is not addressed here.
 
 ## Spec Change Log

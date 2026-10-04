@@ -16,7 +16,7 @@ import { SeedReveal } from '@/components/wallet/SeedReveal'
 import { AddressLink } from '@/components/wallet/AddressLink'
 import { useAppStore } from '@/store/app-store'
 import { addressFromSeed, generateAndStoreWallet, importAndStoreWallet, listWallets, removeWallet, revealSeed } from '@/lib/crypto/keystore'
-import { tearDownAllLocalState, clearCachedAccountData } from '@/lib/teardown'
+import { RESET_INCOMPLETE_MESSAGE, tearDownAllLocalState, clearCachedAccountData } from '@/lib/teardown'
 import { fetchAccountStateOnce } from '@/lib/xrpl/query-reads'
 import { toast } from '@/lib/notify'
 import { useQueryClient } from '@tanstack/react-query'
@@ -113,18 +113,26 @@ export function SettingsTab() {
       const remaining = await listWallets()
       setActiveWalletId(remaining[0]?.id ?? null)
     }
-    // Guardrail #7: the removed wallet's balances/history must not stay warm
-    // in the query or service-worker caches.
-    await clearCachedAccountData(queryClient)
+    // AD-16: the removed wallet's balances/history leave the query cache. The
+    // shell (service-worker precache) stays — it never held account data.
+    clearCachedAccountData(queryClient)
     setConfirmRemove(null)
     toast.success('Wallet removed from this device.')
   }
 
   async function handleFullReset() {
-    await tearDownAllLocalState(queryClient)
-    lock()
-    setWallets([])
-    setActiveWalletId(null)
+    // `tearDownAllLocalState` owns the whole clear set (AD-16), including the
+    // persisted app store — wallets, Address Book, auto-lock and declined
+    // updates — so no field is cleared here.
+    try {
+      await tearDownAllLocalState(queryClient)
+    } catch {
+      // Do not reload as though the device were clean when it is not.
+      toast.error(RESET_INCOMPLETE_MESSAGE)
+      return
+    } finally {
+      lock()
+    }
     window.location.reload()
   }
 
@@ -459,8 +467,9 @@ export function SettingsTab() {
           <DialogHeader>
             <DialogTitle>Remove all wallets from this device?</DialogTitle>
             <DialogDescription>
-              This erases every wallet stored here, including their encrypted seeds, and clears all cached balance and history
-              data. Any wallet you have not backed up elsewhere will be permanently lost — this cannot be undone.
+              This erases every wallet stored here, including their encrypted seeds, along with the address book and settings,
+              and clears all cached balance and history data. Any wallet you have not backed up elsewhere will be permanently
+              lost — this cannot be undone.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>

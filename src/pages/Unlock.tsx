@@ -9,7 +9,7 @@ import { FingerprintIcon } from 'lucide-react'
 import { getLockoutState, hasPasskeyRegistered, unlockVault } from '@/lib/crypto/auth'
 import { queryKeys } from '@/lib/xrpl/query-keys'
 import { ChassisShell } from '@/components/ChassisShell'
-import { tearDownAllLocalState } from '@/lib/teardown'
+import { RESET_INCOMPLETE_MESSAGE, tearDownAllLocalState } from '@/lib/teardown'
 import { useQueryClient } from '@tanstack/react-query'
 import { useAppStore } from '@/store/app-store'
 import { toast } from '@/lib/notify'
@@ -70,9 +70,17 @@ export function Unlock() {
 
   /** wallet-security.md: after the hard-lock threshold the only way forward is
    * a fresh import. That instruction was previously unactionable — wipeVault
-   * lived only in Settings, which sits behind this very lock screen. */
+   * lived only in Settings, which sits behind this very lock screen.
+   * `tearDownAllLocalState` owns the whole clear set (AD-16) — the vault AND
+   * the persisted app store — so nothing is cleared field by field here. */
   async function handleReset() {
-    await tearDownAllLocalState(queryClient)
+    try {
+      await tearDownAllLocalState(queryClient)
+    } catch {
+      // Do not reload as though the device were clean when it is not.
+      toast.error(RESET_INCOMPLETE_MESSAGE)
+      return
+    }
     window.location.reload()
   }
 
@@ -143,8 +151,9 @@ export function Unlock() {
             <DialogHeader>
               <DialogTitle>Reset this device?</DialogTitle>
               <DialogDescription>
-                This erases every wallet stored on this device, including their encrypted seeds. Anything you have not backed up
-                elsewhere will be permanently lost — this cannot be undone. You will need your seed to import your wallet again.
+                This erases every wallet stored on this device, including their encrypted seeds, along with the address book
+                and settings. Anything you have not backed up elsewhere will be permanently lost — this cannot be undone. You
+                will need your seed to import your wallet again.
               </DialogDescription>
             </DialogHeader>
             <DialogFooter>

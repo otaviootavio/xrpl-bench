@@ -129,7 +129,7 @@ As a user, I want a way back if a new version fails to start, so that a bad rele
 - The seed remains the ultimate backstop, which is why backup confirmation is mandatory at onboarding (see [account-onboarding.md](./account-onboarding.md) US-6).
 - Release notes for any version that changes vault or storage format state explicitly whether a downgrade is possible.
 
-**Relevant mechanism:** The precache from the previous release is not discarded until the new version has started successfully, so a failed activation leaves a working shell rather than none. Vault data in IndexedDB is independent of the shell cache and survives shell replacement — the two must never be torn down together, unlike the deliberate joint teardown on lock or wallet removal (`docs/decisions.md` guardrail #7).
+**Relevant mechanism:** The precache from the previous release is not discarded until the new version has started successfully, so a failed activation leaves a working shell rather than none. Vault data in IndexedDB is independent of the shell cache and survives shell replacement — the two must never be torn down together. Locking and single-wallet removal leave the shell in place; only the deliberate "remove everything" reset clears both (`docs/decisions.md` §13).
 
 ---
 

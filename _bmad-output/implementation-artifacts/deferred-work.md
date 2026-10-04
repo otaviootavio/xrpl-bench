@@ -206,3 +206,12 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-epic-10-guards.md`
   summary: AD-7 is gated only for BigInt construction in `src/hooks`, `src/pages` and `src/components`. `src/lib`/`src/store` and the `Number()`/`parseFloat`/`toFixed`-on-money half of the rule are still review-only.
   evidence: Story 10.2's AC scopes the guard to the three UI trees. Widening it to `src/lib` needs a directive in `lib/xrpl/__tests__/money.test.ts:104` (a deliberate `BigInt('10.5')`), and a `Number()` ban needs a way to tell a monetary value from any other number, which a text scan cannot. Medium: today no non-`money.ts` lib module does money arithmetic, but nothing holds that.
+
+## Deferred from: build of epic 6 (2026-10-04)
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-epic-6-teardown.md`
+  summary: The `lock()` comment in `store/app-store.ts` says the query cache "is cleared by the Main view's lock handler"; it is cleared by `hooks/useClearCacheOnLock.ts`.
+  evidence: `useClearCacheOnLock` (called from `Main.tsx`) is the only lock-time caller of `clearCachedAccountData`. The comment is outside the lines epic 6 changed (agents rule 5). Low: a stale pointer, not a wrong rule.
+- source_spec: `_bmad-output/implementation-artifacts/spec-epic-6-teardown.md`
+  summary: Unlocking with no network logs an uncaught page error, "Could not reach the Testnet network (tried wss://s.altnet.rippletest.net:51233 and wss://testnet.xrpl-labs.com)…", in addition to the per-read failure panels.
+  evidence: Seen as a Playwright `pageerror` during the epic 6 offline pass (production build, controlling service worker, `context.setOffline(true)`). The screen itself reported each failed read inline, as AD-8 requires. The source is a rejection in the connection layer that nothing catches; the exact call site was not traced. Low: no wrong figure is shown, but an unhandled rejection is noise that can hide a real one.

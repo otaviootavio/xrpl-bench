@@ -60,6 +60,12 @@ describe('spendableReadState', () => {
   it('never reports a figure it does not have, whatever the status claims', () => {
     expect(spendableReadState({ status: 'ok', spendableDrops: null })).toEqual(failed)
   })
+
+  it('never reports a figure as current when the status says the read is not ok', () => {
+    expect(spendableReadState({ status: 'unavailable', spendableDrops: '5' })).toEqual(failed)
+    expect(spendableReadState({ status: 'loading', spendableDrops: '5' })).toEqual(pending)
+    expect(spendableReadState({ status: 'not-activated', spendableDrops: '5' })).toEqual(notActivated)
+  })
 })
 
 describe('heldTokenLines / selectedTokenLine', () => {

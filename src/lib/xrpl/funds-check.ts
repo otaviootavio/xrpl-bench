@@ -26,16 +26,17 @@ export interface FundsRefusal {
  * The spendable figure as the shared read state.
  *
  * Takes the shape `useSpendableBalance` returns, stated structurally because
- * `lib` does not import from a hook (AD-1). A figure is `ok` only when one is
- * present. Without one, the hook's own status says which fact it is; a status
- * that claims `ok` with no figure is reported as `failed`, never as a figure,
- * so this mapping cannot turn a missing number into permission.
+ * `lib` does not import from a hook (AD-1). The status is read first: a figure
+ * is `ok` only when the hook says `ok` AND carries one. A status that claims
+ * `ok` with no figure is reported as `failed`, and a figure riding along with
+ * any other status is ignored, so this mapping turns neither a missing number
+ * nor a number from a read that is not current into permission.
  */
 export function spendableReadState(spendable: {
   status: 'loading' | 'unavailable' | 'not-activated' | 'ok'
   spendableDrops: string | null
 }): ReadState<string> {
-  if (spendable.spendableDrops) return { status: 'ok', value: spendable.spendableDrops }
+  if (spendable.status === 'ok' && spendable.spendableDrops) return { status: 'ok', value: spendable.spendableDrops }
   if (spendable.status === 'loading') return { status: 'pending' }
   if (spendable.status === 'not-activated') return { status: 'not-activated' }
   return { status: 'failed' }

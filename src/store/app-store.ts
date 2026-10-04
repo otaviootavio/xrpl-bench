@@ -4,13 +4,16 @@ import { get as idbGet, set as idbSet, del as idbDel } from 'idb-keyval'
 import type { NetworkId } from '@/lib/xrpl/networks'
 import type { WalletMeta } from '@/lib/crypto/keystore'
 import { endSession } from '@/lib/crypto/auth'
+import { migrateAddressBook, upsertAddressBookEntry, type AddressBookEntry } from '@/store/address-book'
 
 interface AppState {
   // Non-secret, persisted state
   network: NetworkId
   wallets: WalletMeta[]
   activeWalletId: string | null
-  addressBook: { address: string; label: string }[]
+  /** Identity is the `(address, destination tag)` pair — see
+   * `store/address-book.ts`, the one place that decides it (AD-6). */
+  addressBook: AddressBookEntry[]
   autoLockMinutes: number
   /** app-versioning-and-updates.md US-4: a declined release's identifier (its
    * commit SHA) is remembered so it stops nagging, while a newer one still
@@ -37,7 +40,7 @@ interface AppState {
   setWallets: (wallets: WalletMeta[]) => void
   setActiveWalletId: (id: string | null) => void
   setAutoLockMinutes: (minutes: number) => void
-  addAddressBookEntry: (address: string, label: string) => void
+  addAddressBookEntry: (entry: AddressBookEntry) => void
   declineUpdateVersion: (id: string) => void
   setTxInFlight: (inFlight: boolean) => void
   unlock: (key: CryptoKey) => void
@@ -65,6 +68,37 @@ const PERSISTED_DEFAULTS: PersistedAppState = {
   declinedUpdateVersions: [],
 }
 
+/**
+ * Reads the persisted slice into the current shape, on every hydration — the
+ * Address Book migration (Epic 9).
+ *
+ * Done in `merge`, deliberately NOT by bumping `persist`'s `version` with a
+ * `migrate`. Every build before this one is version 0 with no `migrate`, and
+ * zustand's answer to a stored version it does not expect, with no `migrate`,
+ * is to hydrate nothing; its next `set()` then writes defaults over storage.
+ * A version bump would therefore make rolling `prod` back past this commit
+ * erase the Address Book, the network, the auto-lock setting and the declined
+ * updates. Normalising on read keeps the stored version at 0, which every
+ * build reads: an older build sees the new entries as `{ address }` rows and
+ * ignores the tag.
+ *
+ * `migrateAddressBook` is idempotent, so running it on every load is safe: a
+ * pre-Epic-9 entry `{ address, label }` reads as a tagless entry, minus the
+ * label the old Send screen fabricated from the address, and nothing with an
+ * address is dropped.
+ *
+ * Total and non-throwing: a throw here would leave the store on its in-memory
+ * defaults, and the next `set()` (even `lock()`) would write them over the
+ * stored slice. With nothing stored (`persisted` undefined) the current state
+ * is returned untouched. Every other persisted field passes through exactly as
+ * zustand's default shallow merge would pass it.
+ */
+export function mergePersistedAppState<S extends PersistedAppState>(persisted: unknown, current: S): S {
+  if (!persisted || typeof persisted !== 'object') return current
+  const state = persisted as Record<string, unknown>
+  return { ...current, ...(state as Partial<PersistedAppState>), addressBook: migrateAddressBook(state.addressBook) }
+}
+
 const indexedDbStorage: StateStorage = {
   getItem: async (name) => (await idbGet<string>(name)) ?? null,
   setItem: async (name, value) => {
@@ -88,8 +122,7 @@ export const useAppStore = create<AppState>()(
       setWallets: (wallets) => set({ wallets }),
       setActiveWalletId: (activeWalletId) => set({ activeWalletId }),
       setAutoLockMinutes: (autoLockMinutes) => set({ autoLockMinutes }),
-      addAddressBookEntry: (address, label) =>
-        set((s) => ({ addressBook: [...s.addressBook.filter((e) => e.address !== address), { address, label }] })),
+      addAddressBookEntry: (entry) => set((s) => ({ addressBook: upsertAddressBookEntry(s.addressBook, entry) })),
       declineUpdateVersion: (id) =>
         set((s) => (s.declinedUpdateVersions.includes(id) ? s : { declinedUpdateVersions: [...s.declinedUpdateVersions, id] })),
       setTxInFlight: (txInFlight) => set({ txInFlight }),
@@ -113,6 +146,7 @@ export const useAppStore = create<AppState>()(
       // keeping every persisted byte in one store means teardown has a single
       // place to clear and nothing app-related is left behind in localStorage.
       storage: createJSONStorage(() => indexedDbStorage),
+      merge: mergePersistedAppState,
       // Only ever persist non-secret UI/selection state. vaultKey and
       // unlocked are deliberately excluded here.
       partialize: (s): PersistedAppState => ({

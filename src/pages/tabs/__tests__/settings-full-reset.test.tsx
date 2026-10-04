@@ -69,7 +69,7 @@ async function seedResidue() {
   const s = useAppStore.getState()
   s.setWallets([{ id: 'w1', label: 'Savings', address: 'rAliceAddressLabelThatMustNotSurvive' } as never])
   s.setActiveWalletId('w1')
-  s.addAddressBookEntry('rBobCounterpartyThatMustNotSurvive', 'Bob — landlord')
+  s.addAddressBookEntry({ address: 'rBobCounterpartyThatMustNotSurvive', label: 'Bob — landlord' })
   useAppStore.setState({ unlocked: true } as never)
   await flush()
   expect(h.idb.get(APP_STATE_STORAGE_KEY)).toContain('Bob — landlord')

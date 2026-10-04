@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { Wallet } from 'xrpl'
-import { resetXrplClientFactory, resetXrplClients, setXrplClientFactory } from '../client'
+import { getXrplClient, resetXrplClientFactory, resetXrplClients, setXrplClientFactory } from '../client'
 import {
   resetTxInFlightReporter,
   setTxInFlightReporter,
@@ -242,5 +242,53 @@ describe('the write choke point raises and clears the in-flight flag', () => {
 
     expect(outcome.status).toBe('validated')
     expect(log.some((e) => e.startsWith('in-flight'))).toBe(false)
+  })
+})
+
+/**
+ * PR #33 review: the socket drops while `submitAndWait` is polling, and a read
+ * (a refetch interval, `refetchOnReconnect`) replaces the dropped client. The
+ * write must keep its client open — xrpl.js's reconnect of it is what lets the
+ * poll observe the outcome — and the client is closed only once the write ends.
+ */
+describe('a write keeps its client open across a drop and a concurrent replacement', () => {
+  it('reports the validated outcome and closes the replaced client only after the write settles', async () => {
+    const built: any[] = []
+    setXrplClientFactory(() => {
+      const client: any = {
+        connected: true,
+        disconnectCalls: 0,
+        isConnected: () => client.connected,
+        connect: async () => {},
+        disconnect: async () => {
+          client.disconnectCalls += 1
+          client.connected = false
+        },
+        autofill: async (tx: any) => ({ ...tx, Fee: '12', Sequence: 1, LastLedgerSequence: 100 }),
+        submitAndWait: async () => {
+          // The drop, then a concurrent read that replaces the cached client.
+          client.connected = false
+          await getXrplClient('testnet')
+          await new Promise((r) => setTimeout(r, 0))
+          // A disconnect() here would have cancelled xrpl.js's reconnect.
+          if (client.disconnectCalls > 0) throw new Error('NotConnectedError')
+          client.connected = true // xrpl.js's own reconnect succeeded
+          return { result: { meta: { TransactionResult: 'tesSUCCESS' }, ledger_index: 42 } }
+        },
+      }
+      built.push(client)
+      return client
+    })
+
+    const outcome = await submitXrpPayment('testnet', wallet, {
+      destination: 'rPT1Sjq2YGrBMTttX4GZHjKu9dyfzbpAYe',
+      amountDrops: '1000000',
+    })
+    await new Promise((r) => setTimeout(r, 0))
+
+    expect(outcome.status).toBe('validated')
+    expect(built).toHaveLength(2)
+    expect(built[0].disconnectCalls).toBe(1)
+    expect(built[1].disconnectCalls).toBe(0)
   })
 })

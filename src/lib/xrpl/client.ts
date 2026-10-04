@@ -20,6 +20,18 @@ const clients = new Map<NetworkId, Client>()
  */
 const inflight = new Map<NetworkId, Promise<Client>>()
 
+/**
+ * Clients a write is still using, by how many writes hold each. `submitAndWait`
+ * polls the ledger on the client it was given for as long as the transaction is
+ * pending, and after a dropped socket it relies on xrpl.js reconnecting THAT
+ * client. Replacing it in the cache must therefore not close it while a write
+ * holds it; the close is deferred to the last release instead.
+ */
+const holds = new Map<Client, number>()
+
+/** Clients replaced in the cache while held — closed by the last release. */
+const abandonOnRelease = new Set<Client>()
+
 /** Bumped by `resetXrplClients`, so an attempt it forgot cannot write the cache. */
 let generation = 0
 
@@ -49,6 +61,8 @@ export function setXrplClientFactory(factory: XrplClientFactory): void {
 export function resetXrplClients(): void {
   clients.clear()
   inflight.clear()
+  holds.clear()
+  abandonOnRelease.clear()
   generation += 1
 }
 
@@ -128,6 +142,31 @@ export function getXrplClient(network: NetworkId): Promise<Client> {
 }
 
 /**
+ * Like `getXrplClient`, but the client is held until `release` is called: if a
+ * later read replaces it in the cache meanwhile (it dropped, so it reports not
+ * connected), it is left to xrpl.js's own reconnect rather than closed, and is
+ * closed only once the last holder releases it. For a caller that keeps using
+ * one client across awaits — a write waiting for validation.
+ */
+export async function holdXrplClient(network: NetworkId): Promise<{ client: Client; release: () => void }> {
+  const client = await getXrplClient(network)
+  holds.set(client, (holds.get(client) ?? 0) + 1)
+  let released = false
+  const release = () => {
+    if (released) return
+    released = true
+    const remaining = (holds.get(client) ?? 1) - 1
+    if (remaining > 0) {
+      holds.set(client, remaining)
+      return
+    }
+    holds.delete(client)
+    if (abandonOnRelease.delete(client)) abandon(client)
+  }
+  return { client, release }
+}
+
+/**
  * Falls back to the network's backup endpoint if the primary can't be
  * reached, per docs/decisions.md §2 — a single hardcoded endpoint meant any
  * outage of that one host took the whole wallet offline.
@@ -138,10 +177,13 @@ async function connectNetwork(network: NetworkId): Promise<Client> {
   // A cached client that is no longer connected is about to be replaced.
   // Close it first: xrpl.js schedules its own reconnect after an unexpected
   // close, so an overwritten entry would reconnect into a socket nobody holds.
+  // A client a write still holds is the exception: that write is waiting on
+  // the very reconnect a close would cancel, so its close waits for the release.
   const replaced = clients.get(network)
   if (replaced) {
     clients.delete(network)
-    abandon(replaced)
+    if (holds.has(replaced)) abandonOnRelease.add(replaced)
+    else abandon(replaced)
   }
 
   const { wsUrl, wsUrlBackup } = NETWORKS[network]

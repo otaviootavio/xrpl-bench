@@ -3,6 +3,7 @@ import type { Client } from 'xrpl'
 import {
   disconnectAllClients,
   getXrplClient,
+  holdXrplClient,
   resetXrplClientFactory,
   resetXrplClients,
   setXrplClientFactory,
@@ -320,6 +321,74 @@ describe('getXrplClient closes what it abandons', () => {
 
     expect(built).toHaveLength(1)
     expect(built[0].disconnectCalls).toBe(0)
+  })
+})
+
+/**
+ * PR #33 review: a write's `submitAndWait` polls on the client it was given and
+ * relies on xrpl.js reconnecting THAT client after a drop. A read replacing the
+ * dropped client must not close it under the write — that turned a payment
+ * that may well validate into a reported failure the user could resend.
+ */
+describe('holdXrplClient keeps a client a write is using open across a replacement', () => {
+  function counting() {
+    const built: FakeClient[] = []
+    setXrplClientFactory((url) => {
+      const client = fakeClient(url, async () => {})
+      built.push(client)
+      return client
+    })
+    return built
+  }
+
+  it('does not disconnect a held client that a concurrent read replaces, and closes it on release', async () => {
+    const built = counting()
+
+    const { client, release } = await holdXrplClient('testnet')
+    const held = client as FakeClient
+    // The socket drops; xrpl.js is now reconnecting this very client.
+    held.connected = false
+    const replacement = await getXrplClient('testnet')
+    await flush()
+
+    expect(replacement).toBe(built[1])
+    expect(held.disconnectCalls).toBe(0)
+
+    release()
+    await flush()
+    expect(held.disconnectCalls).toBe(1)
+    expect(built[1].disconnectCalls).toBe(0)
+  })
+
+  it('waits for the last of several holders before closing', async () => {
+    counting()
+
+    const a = await holdXrplClient('testnet')
+    const b = await holdXrplClient('testnet')
+    expect(b.client).toBe(a.client)
+    ;(a.client as FakeClient).connected = false
+    await getXrplClient('testnet')
+
+    a.release()
+    a.release() // idempotent: a second call must not count as b's release
+    await flush()
+    expect((a.client as FakeClient).disconnectCalls).toBe(0)
+
+    b.release()
+    await flush()
+    expect((a.client as FakeClient).disconnectCalls).toBe(1)
+  })
+
+  it('never closes a held client that is still the cached one when released', async () => {
+    const built = counting()
+
+    const { release } = await holdXrplClient('testnet')
+    release()
+    await flush()
+
+    expect(built).toHaveLength(1)
+    expect(built[0].disconnectCalls).toBe(0)
+    expect(await getXrplClient('testnet')).toBe(built[0])
   })
 })
 

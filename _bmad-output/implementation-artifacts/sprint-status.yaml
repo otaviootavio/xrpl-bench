@@ -156,7 +156,7 @@ action_items:
     action: "Before epic 7, split SendTab.tsx (807 lines, 13 responsibilities) and
       introduce one shared read-state primitive for readouts and the amount field."
     owner: "architect"
-    status: open
+    status: done
     ref: "_bmad-output/implementation-artifacts/epic-5-retro-2026-09-30.md"
   - id: "epic-5-retro-item-9-promote-the-account-invalidation-source"
     epic: 5

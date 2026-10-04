@@ -1593,3 +1593,41 @@ describe('the confirm step closes with the guard and does not revive', () => {
     })
   })
 })
+
+/**
+ * The readout rows render from the shared read state (`lib/read-state.ts`).
+ * The split that introduced it was behaviour-preserving, so these pin the rows
+ * as they stood: the fee row tells all three states apart, and the Spendable
+ * row says "Unavailable" for every state without a figure — a read in flight
+ * included. That last part is a recorded defect (deferred-work.md, spec-5-3
+ * entry on the Spendable row), not a rule; fixing it should flip the in-flight
+ * assertion below, deliberately.
+ */
+describe('the readout rows render from the read state', () => {
+  /** The `<dd>` beside a row's legend. */
+  const rowValue = (legend: string) => screen.getByText(legend).nextElementSibling as HTMLElement
+
+  it('renders the read figures when both reads succeeded', () => {
+    render(<SendTab />)
+    expect(rowValue('Network fee').textContent).toBe(formatXrp('12'))
+    expect(rowValue('Spendable').textContent).toBe(formatXrp('100000000'))
+  })
+
+  it('keeps the Spendable row at "Unavailable" while its read is in flight', () => {
+    useSpendableBalance.mockReturnValue(spendable({ status: 'loading', isLoading: true, spendableDrops: null, reservedDrops: null }))
+    render(<SendTab />)
+    expect(rowValue('Spendable').textContent).toBe('Unavailable')
+  })
+
+  it('keeps the Spendable row at "Unavailable" for an account that does not exist yet', () => {
+    useSpendableBalance.mockReturnValue(spendable({ status: 'not-activated', spendableDrops: null, reservedDrops: null }))
+    render(<SendTab />)
+    expect(rowValue('Spendable').textContent).toBe('Unavailable')
+  })
+
+  it('drops a retained fee figure from the row while the read is in error', () => {
+    useRecommendedFee.mockReturnValue(feeRead({ data: '12', isError: true }))
+    render(<SendTab />)
+    expect(rowValue('Network fee').textContent).toBe('Unavailable')
+  })
+})

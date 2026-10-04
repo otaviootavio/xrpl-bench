@@ -213,14 +213,18 @@ After a reset the key holds the defaults rather than being absent. The
 post-teardown `lock()` and the next load's hydration write the defaults. No
 earlier value survives.
 
-**Screenshots** (session scratchpad, not the repo). Opened and judged:
-`03-sent-A-to-B`, `04-locked-offline-reload`, `05-unlocked-offline`,
-`07-hard-lock-reset-dialog`, `08-after-hard-lock-reset`,
-`09-settings-reset-dialog`. For the two changed dialogs, 12 captures were taken
-(320 / 390 / 1280 px × light / dark). Four were opened, covering both dialogs,
-both themes and both extreme widths: Settings dark 320, Settings light 1280,
-Unlock light 320 and Unlock dark 1280. Text wraps cleanly with no clipping, the
-buttons are reachable, and there is no horizontal page scroll.
+**Screenshots** (session scratchpad, not the repo). Every one was opened and
+judged. Flow: `01-funded-A` (100 XRP, Live), `02-settings-two-wallets`,
+`03-sent-A-to-B` (Validated), `04-locked-offline-reload` (Unlock, offline),
+`05-unlocked-offline` (each read failure reported inline, no figure),
+`06-hard-locked`, `07-hard-lock-reset-dialog`, `08-after-hard-lock-reset`
+(onboarding), `09-settings-reset-dialog` and `10-after-settings-reset`
+(onboarding). The two changed dialogs were captured at 320, 390 and 1280 px, in
+light and dark, which is all 12 combinations. Text wraps cleanly with no
+clipping, both buttons are reachable at every width, and the page does not
+scroll horizontally. `zz-failure.png` comes from a superseded run, where the
+script's own wait condition was wrong; it shows a working, funded Balances
+screen and is not evidence of anything.
 
 **Gaps, stated plainly.**
 - The reset-failure path (`RESET_INCOMPLETE_MESSAGE`) was exercised only in the
@@ -228,6 +232,12 @@ buttons are reachable, and there is no horizontal page scroll.
   browser, and not on the Settings screen at all.
 - `declinedUpdateVersions` was not populated in the browser, because declining
   needs a newer release. Its clearing is covered by the unit test.
-- 8 of the 12 dialog captures were not opened. None are cited.
+- The Settings-path "Erase everything" ran with an empty address book (that
+  wallet had sent nothing), so a real Address Book entry was cleared in the
+  browser only on the hard-lock path. The Settings path's address-book clearing
+  rests on the shared teardown and its unit test, which calls `lock()` after
+  teardown.
+- The browser build predates the rebase onto `b23eb74` and the final wording
+  edit to the failure message.
 - The installed-PWA (home-screen) case was not exercised. Offline start-up was
   verified in a browser tab under the controlling service worker.

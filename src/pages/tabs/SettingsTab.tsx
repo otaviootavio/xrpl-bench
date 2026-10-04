@@ -227,13 +227,15 @@ export function SettingsTab() {
               <div className="grid gap-3">
                 <div className="grid gap-1.5">
                   <Label htmlFor="wlabel">Label</Label>
-                  <Input id="wlabel" value={label} onChange={(e) => setLabel(e.target.value)} placeholder="Savings" />
+                  <Input id="wlabel" value={label} onChange={(e) => setLabel(e.target.value)} placeholder="Savings" disabled={busy} />
                 </div>
+                {/* Frozen with the dialog while a check or a write runs: switching
+                    to Generate mid-import would show one path while the other lands. */}
                 <div className="flex gap-2">
-                  <Button variant={addMode === 'generate' ? 'default' : 'outline'} onClick={() => setAddMode('generate')} type="button">
+                  <Button variant={addMode === 'generate' ? 'default' : 'outline'} onClick={() => setAddMode('generate')} type="button" disabled={busy}>
                     Generate
                   </Button>
-                  <Button variant={addMode === 'import' ? 'default' : 'outline'} onClick={() => setAddMode('import')} type="button">
+                  <Button variant={addMode === 'import' ? 'default' : 'outline'} onClick={() => setAddMode('import')} type="button" disabled={busy}>
                     Import
                   </Button>
                 </div>

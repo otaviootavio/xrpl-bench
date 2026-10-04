@@ -232,6 +232,52 @@ describe('Settings: dismissing the warning is cancelling it', () => {
   })
 })
 
+describe('Settings: the busy guards hold while the check or the write runs', () => {
+  it('the Add dialog cannot be closed, re-submitted or switched to Generate while the check is in flight', async () => {
+    let settle!: (v: unknown) => void
+    fetchQuery.mockReturnValue(new Promise((r) => (settle = r)))
+    await settingsImport(SEED)
+    expect(screen.getByRole('button', { name: 'Checking…' })).toBeTruthy()
+
+    await act(async () => {
+      fireEvent.keyDown(document.activeElement ?? document.body, { key: 'Escape' })
+    })
+    expect(screen.getByText('Add another wallet')).toBeTruthy()
+
+    await click('Checking…')
+    expect(fetchQuery).toHaveBeenCalledTimes(1)
+    expect((screen.getByRole('button', { name: 'Generate' }) as HTMLButtonElement).disabled).toBe(true)
+    expect((screen.getByRole('button', { name: 'Import' }) as HTMLButtonElement).disabled).toBe(true)
+    expect((document.getElementById('wlabel') as HTMLInputElement).disabled).toBe(true)
+
+    await act(async () => {
+      settle(accountState())
+    })
+    expect(importAndStoreWallet).toHaveBeenCalledTimes(1)
+  })
+
+  it('a double-click on "Import anyway" writes once', async () => {
+    ledger.masterKeyDisabled()
+    let settle!: (v: unknown) => void
+    importAndStoreWallet.mockReturnValue(new Promise((r) => (settle = r)))
+    await settingsImport(SEED)
+    // Two clicks as a browser delivers them: separate events, with React's
+    // commit for the first (busy, button disabled) landing before the second.
+    const button = screen.getByRole('button', { name: 'Import anyway' })
+    await act(async () => {
+      fireEvent.click(button)
+    })
+    await act(async () => {
+      fireEvent.click(button)
+    })
+    expect(importAndStoreWallet).toHaveBeenCalledTimes(1)
+    await act(async () => {
+      settle({ id: 'w-new', label: 'Wallet', address: ADDRESS, createdAt: 0 })
+    })
+    expect(importAndStoreWallet).toHaveBeenCalledTimes(1)
+  })
+})
+
 describe('Onboarding: the Seed survives the move from the import step to the PIN step', () => {
   it('probes and writes the Seed that was typed, not the empty value an unmounted input leaves', async () => {
     ledger.masterKeyEnabled()

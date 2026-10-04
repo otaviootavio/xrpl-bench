@@ -20,8 +20,11 @@ import type { NetworkId } from './networks'
  * `invalidateAccountScoped()`, below. No call site names an account-scoped key
  * to `invalidateQueries` — four sites that each picked their own subset left
  * history stale after a trust-line change and the incoming-payment watch stale
- * after a send. `src/lib/xrpl/__tests__/account-invalidation-sites.test.ts` is
- * the guard that enforces this one-path rule.
+ * after a send. `scripts/check-account-invalidation.mjs`, run by `bun run lint`,
+ * is the guard that enforces this one-path rule; it reads the account-scoped
+ * names off the `accountScoped` table below, so keep that table's shape. The
+ * destination check is not account-scoped and has its own single helper,
+ * `invalidateDestinationCheck()`.
  *
  * `scripts/check-query-keys.mjs`, run by `bun run lint`, rejects any key
  * literal written outside this module.
@@ -77,6 +80,31 @@ export async function invalidateAccountScoped(
       client.invalidateQueries({ queryKey: build(network, address) }),
     ),
   )
+}
+
+/**
+ * Marks the destination check stale for one destination on one network — every
+ * asset's entry for it — so its next read, and the submit path's post-unlock
+ * probe, go back to the ledger instead of a cached answer.
+ *
+ * A validated send is the one moment the app itself changes what that check
+ * says: a payment can activate the address it went to. `destinationInfo` is
+ * deliberately outside the `accountScoped` group (it is keyed on someone
+ * else's account), so `invalidateAccountScoped()` never reaches it, and without
+ * this the form went on saying "not activated" for up to the freshness window
+ * and the next send's probe was served from that cache.
+ *
+ * Every asset, not only the one just sent: an XRP payment that activates an
+ * address makes `exists: false` false for that address's token entries too.
+ * The prefix `['destinationInfo', network, destination]` reaches exactly those
+ * entries and no other destination's.
+ */
+export async function invalidateDestinationCheck(
+  client: Pick<QueryClient, 'invalidateQueries'>,
+  network: NetworkId,
+  destination: string,
+): Promise<void> {
+  await client.invalidateQueries({ queryKey: ['destinationInfo', network, destination] })
 }
 
 export const queryKeys = {

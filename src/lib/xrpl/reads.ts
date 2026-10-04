@@ -150,21 +150,38 @@ export interface TxSummary {
   feeDrops?: string
 }
 
-/** Wraps `account_tx`, paginated via `marker`. */
+/** Wraps `account_tx`, paginated via `marker`.
+ *
+ * `actNotFound` on the FIRST page is an empty history, not a failed read — the
+ * same not-activated ≠ failed distinction `fetchAccountState` and
+ * `fetchAccountLines` already draw. A server that answers an unactivated
+ * address that way would otherwise have History call every new wallet "could
+ * not be read", and the incoming-payment watch retry a read that has nothing to
+ * fail about.
+ *
+ * On a continuation page (`marker` set) it is rethrown: the account had history
+ * a page ago, so "not found" there is not "nothing more", and answering empty
+ * with no marker would end the list early and make it look complete. */
 export async function fetchAccountTx(
   network: NetworkId,
   address: string,
   marker?: unknown,
 ): Promise<{ items: TxSummary[]; marker?: unknown }> {
   const client = await getXrplClient(network)
-  const res = await client.request({
-    command: 'account_tx',
-    account: address,
-    ledger_index_min: -1,
-    ledger_index_max: -1,
-    limit: 25,
-    marker: marker as never,
-  })
+  let res
+  try {
+    res = await client.request({
+      command: 'account_tx',
+      account: address,
+      ledger_index_min: -1,
+      ledger_index_max: -1,
+      limit: 25,
+      marker: marker as never,
+    })
+  } catch (err: any) {
+    if (marker === undefined && err?.data?.error === 'actNotFound') return { items: [], marker: undefined }
+    throw err
+  }
 
   const items: TxSummary[] = []
   for (const entry of res.result.transactions) {

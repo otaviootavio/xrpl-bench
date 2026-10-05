@@ -10,7 +10,7 @@ As a user, I want to click my own address (or another wallet's address) anywhere
 **Acceptance Criteria:**
 - Every place an address is displayed as a primary element (own address, active wallet in the switcher, a counterparty in transaction history, a trust line's issuer) is clickable/tappable and opens that address's account page on the explorer.
 - Opens in an external browser/new tab, not embedded in-app, so the user is clearly looking at an independent third-party source.
-- The explorer link always matches the **currently selected network** (see [network-selection.md](./network-selection.md)) — a Testnet address never links to the Mainnet explorer and vice versa.
+- The explorer link always matches the **currently selected network** (see [network-selection.md](./network-selection.md)) — a Testnet address never links to the Mainnet explorer and vice versa. (One exception, in `docs/decisions.md` §4: an Address Book row recorded on the other network links to that network's explorer.)
 
 **Relevant XRPL mechanism / explorer mapping:** `https://livenet.xrpl.org/accounts/{address}` for Mainnet, `https://testnet.xrpl.org/accounts/{address}` for Testnet (XRPL Foundation's official open-source explorer, verified live 2026-08-31). Purely a UI convenience — no XRPL API call is needed to build the link, just the address and the active network.
 

@@ -27,7 +27,7 @@ import { invalidateAccountScoped, invalidateDestinationCheck, queryKeys } from '
 import { DESTINATION_CHECK_FRESHNESS_MS, fetchDestinationInfoOnce, type DestinationInfo } from '@/lib/xrpl/query-reads'
 import { useQueryClient } from '@tanstack/react-query'
 import { toast } from '@/lib/notify'
-import { addressKnownUnderOtherTag, canonicalDestinationTag, sameCounterparty } from '@/store/address-book'
+import { addressKnownUnderOtherTag, canonicalDestinationTag, suppressesFirstSendWarning, type SendPair } from '@/store/address-book'
 
 const MAX_DESTINATION_TAG = 4294967295
 
@@ -147,14 +147,19 @@ export function SendTab() {
   const isSelfSend = !!wallet && destination === wallet.address
   const amountValidation = validateAmountString(amount || '', asset === 'XRP' ? 'xrp' : 'issued')
   const tagValue = destTag ? Number(destTag) : undefined
-  /** The counterparty this form would pay: the address AND the tag, as text.
-   * The tag field only ever holds digits, so this is the canonical form of the
-   * very tag `tagValue` submits — derived from the string, never from it. */
-  const counterparty = { address: destination, destinationTag: canonicalDestinationTag(destTag) }
-  /** FR-21's "you haven't sent here before", decided on the pair (AD-6): a
+  /** The counterparty this form would pay: the network it would be submitted
+   * on, the address, AND the tag, as text. The tag field only ever holds
+   * digits, so this is the canonical form of the very tag `tagValue` submits —
+   * derived from the string, never from it. `network` is the same render
+   * closure's value that `doSend` submits on, so the entry written after a
+   * validated send names the network the payment was signed for. */
+  const counterparty: SendPair = { network, address: destination, destinationTag: canonicalDestinationTag(destTag) }
+  /** FR-21's "you haven't sent here before", decided on the triple (AD-6): a
    * familiar address with a never-used tag is a new counterparty, and so is
-   * the same address with no tag at all. */
-  const isKnownDestination = addressBook.some((e) => sameCounterparty(e, counterparty))
+   * the same address with no tag at all, or the same pair on another network.
+   * Only an entry with a recorded network can silence it; a legacy entry
+   * (no network recorded) never does. */
+  const isKnownDestination = suppressesFirstSendWarning(addressBook, counterparty)
   /** Only chooses the warning's words; see `addressKnownUnderOtherTag`. */
   const addressSeenUnderOtherTag = !isKnownDestination && addressKnownUnderOtherTag(addressBook, counterparty)
   const tagValid = tagValue === undefined || (Number.isInteger(tagValue) && tagValue >= 0 && tagValue <= MAX_DESTINATION_TAG)
@@ -408,9 +413,9 @@ export function SendTab() {
       setConfirmingFor(null)
       if (result.status === 'validated') {
         toast.success('Payment sent.')
-        // The pair actually paid — the tag that was signed, as text — and no
-        // label: nothing here knows a name for it, and a truncated address
-        // is not one.
+        // The pair actually paid, on the network it was submitted on — the
+        // tag that was signed, as text — and no label: nothing here knows a
+        // name for it, and a truncated address is not one.
         if (!isKnownDestination) addAddressBookEntry(counterparty)
       } else if (result.status === 'expired') {
         toast.warning('This transaction expired before validating. It was not applied — you can retry.')

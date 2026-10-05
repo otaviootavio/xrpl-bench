@@ -21,6 +21,7 @@ vi.mock('idb-keyval', () => ({
 vi.mock('@/lib/crypto/auth', () => ({ endSession: async () => {} }))
 
 import { APP_STATE_STORAGE_KEY, useAppStore } from '../app-store'
+import { suppressesFirstSendWarning } from '../address-book'
 
 const EXCHANGE = 'rHb9CJAWyB4rj91VRWn96DkukG4bwdtyTh'
 const OTHER = 'rPT1Sjq2YGrBMTttX4GZHjKu9dyfzbpAYe'
@@ -47,7 +48,7 @@ beforeEach(() => {
 })
 
 describe('app store — a version-0 Address Book survives the shape change', () => {
-  it('reads every old entry as a tagless entry and drops the fabricated labels', async () => {
+  it('reads every old entry as one with no recorded network or tag, and drops the fabricated labels', async () => {
     h.idb.set(
       APP_STATE_STORAGE_KEY,
       legacyBlob([
@@ -117,6 +118,56 @@ describe('app store — a version-0 Address Book survives the shape change', () 
     const s = useAppStore.getState()
     expect(s.addressBook).toEqual([])
     expect(s.wallets).toEqual(WALLETS)
+  })
+
+  it('reads back a book with networks unchanged, and keeps writing version 0', async () => {
+    const current = [
+      { address: EXCHANGE },
+      { address: EXCHANGE, network: 'testnet', destinationTag: '1' },
+      { address: EXCHANGE, network: 'mainnet', destinationTag: '1' },
+      { address: OTHER, network: 'mainnet' },
+    ]
+    h.idb.set(APP_STATE_STORAGE_KEY, legacyBlob(current))
+    await useAppStore.persist.rehydrate()
+    expect(useAppStore.getState().addressBook).toEqual(current)
+
+    useAppStore.getState().addAddressBookEntry({ network: 'testnet', address: EXCHANGE })
+    await new Promise((r) => setTimeout(r, 0))
+
+    const stored = JSON.parse(h.idb.get(APP_STATE_STORAGE_KEY)!)
+    expect(stored.version).toBe(0)
+    // The legacy entry is never dropped when its pair is re-recorded.
+    expect(stored.state.addressBook).toEqual([...current, { address: EXCHANGE, network: 'testnet' }])
+  })
+
+  it('keeps an entry whose network this build does not know, as not recorded', async () => {
+    h.idb.set(APP_STATE_STORAGE_KEY, legacyBlob([{ address: EXCHANGE, network: 'devnet', destinationTag: '4' }]))
+    await useAppStore.persist.rehydrate()
+
+    expect(useAppStore.getState().addressBook).toEqual([{ address: EXCHANGE, destinationTag: '4' }])
+  })
+
+  it('a rollback round trip can only make entries unrecorded: more warnings, never fewer', async () => {
+    // What the two older builds write over this build's
+    // `[{A,1,testnet}, {A,1,mainnet}, {OTHER,testnet}]`: epic 9 rebuilds each
+    // entry without `network` and its upsert merges the two networks' (A, 1)
+    // into one; the pre-epic-9 build keeps one `{ address, label }` per address.
+    const epic9RolledBack = [{ address: EXCHANGE, destinationTag: '1' }, { address: OTHER }]
+    const preEpic9RolledBack = [
+      { address: EXCHANGE, label: EXCHANGE.slice(0, 8) },
+      { address: OTHER, label: OTHER.slice(0, 8) },
+    ]
+    for (const rolledBack of [epic9RolledBack, preEpic9RolledBack]) {
+      h.idb.set(APP_STATE_STORAGE_KEY, legacyBlob(rolledBack))
+      await useAppStore.persist.rehydrate()
+      const book = useAppStore.getState().addressBook
+      expect(book).toHaveLength(2)
+      expect(book.every((e) => e.network === undefined)).toBe(true)
+      for (const network of ['mainnet', 'testnet'] as const) {
+        expect(suppressesFirstSendWarning(book, { network, address: EXCHANGE, destinationTag: '1' })).toBe(false)
+        expect(suppressesFirstSendWarning(book, { network, address: OTHER })).toBe(false)
+      }
+    }
   })
 
   it('after migrating, a second tag at a known address is kept beside the first', async () => {

@@ -8,8 +8,11 @@ import {
   counterpartyKey,
   migrateAddressBook,
   sameCounterparty,
+  suppressesFirstSendWarning,
+  tagNotRecorded,
   upsertAddressBookEntry,
   type AddressBookEntry,
+  type SendPair,
 } from '../address-book'
 
 /**
@@ -113,21 +116,180 @@ describe('upsertAddressBookEntry', () => {
 })
 
 describe('addressKnownUnderOtherTag — chooses words, never silences the warning', () => {
-  it('is true for a known address under a different tag, or with none', () => {
-    const book = [{ address: EXCHANGE, destinationTag: '1' }]
-    expect(addressKnownUnderOtherTag(book, { address: EXCHANGE, destinationTag: '2' })).toBe(true)
-    expect(addressKnownUnderOtherTag(book, { address: EXCHANGE })).toBe(true)
+  it('is true for a known address under a different tag, or with none, on the same network', () => {
+    const book: AddressBookEntry[] = [{ address: EXCHANGE, network: 'testnet', destinationTag: '1' }]
+    expect(addressKnownUnderOtherTag(book, { network: 'testnet', address: EXCHANGE, destinationTag: '2' })).toBe(true)
+    expect(addressKnownUnderOtherTag(book, { network: 'testnet', address: EXCHANGE })).toBe(true)
   })
 
   it('is false for the same pair and for an unknown address', () => {
-    const book = [{ address: EXCHANGE, destinationTag: '1' }]
-    expect(addressKnownUnderOtherTag(book, { address: EXCHANGE, destinationTag: '1' })).toBe(false)
-    expect(addressKnownUnderOtherTag(book, { address: OTHER, destinationTag: '1' })).toBe(false)
+    const book: AddressBookEntry[] = [{ address: EXCHANGE, network: 'testnet', destinationTag: '1' }]
+    expect(addressKnownUnderOtherTag(book, { network: 'testnet', address: EXCHANGE, destinationTag: '1' })).toBe(false)
+    expect(addressKnownUnderOtherTag(book, { network: 'testnet', address: OTHER, destinationTag: '1' })).toBe(false)
+  })
+
+  it('ignores an entry recorded on another network — "You have paid this address before" would be false here', () => {
+    const book: AddressBookEntry[] = [{ address: EXCHANGE, network: 'mainnet', destinationTag: '1' }]
+    expect(addressKnownUnderOtherTag(book, { network: 'testnet', address: EXCHANGE, destinationTag: '2' })).toBe(false)
+    expect(addressKnownUnderOtherTag(book, { network: 'testnet', address: EXCHANGE })).toBe(false)
+  })
+
+  it('is false while an unrecorded entry exists at the address, even beside a recorded one here', () => {
+    // The legacy entry may be a tagless payment (or one with tag 2) on this
+    // network: "only with a destination tag" / "not with this tag" could be false.
+    const book: AddressBookEntry[] = [{ address: EXCHANGE }, { address: EXCHANGE, network: 'testnet', destinationTag: '1' }]
+    expect(addressKnownUnderOtherTag(book, { network: 'testnet', address: EXCHANGE })).toBe(false)
+    expect(addressKnownUnderOtherTag(book, { network: 'testnet', address: EXCHANGE, destinationTag: '2' })).toBe(false)
+    // An unrecorded entry at a different address does not block it.
+    const other: AddressBookEntry[] = [{ address: OTHER }, { address: EXCHANGE, network: 'testnet', destinationTag: '1' }]
+    expect(addressKnownUnderOtherTag(other, { network: 'testnet', address: EXCHANGE })).toBe(true)
+  })
+
+  it('ignores an entry with no recorded network, tagged or not', () => {
+    expect(addressKnownUnderOtherTag([{ address: EXCHANGE }], { network: 'testnet', address: EXCHANGE, destinationTag: '5' })).toBe(false)
+    expect(addressKnownUnderOtherTag([{ address: EXCHANGE }], { network: 'testnet', address: EXCHANGE })).toBe(false)
+    expect(
+      addressKnownUnderOtherTag([{ address: EXCHANGE, destinationTag: '1' }], { network: 'testnet', address: EXCHANGE, destinationTag: '2' }),
+    ).toBe(false)
+  })
+})
+
+/**
+ * Epic 9 retro items 28/29: identity is (network, address, tag). An entry with
+ * no recorded network (everything saved before this change) is kept and
+ * listed but silences the first-send warning on no network; with no tag as
+ * well, its tag reads "not recorded", never "tagless".
+ */
+describe('the network is part of identity, and an unrecorded entry silences nothing', () => {
+  it('pre-epic-9 entry: warns for a tagless send and for a tagged one', () => {
+    const book = migrateAddressBook([{ address: EXCHANGE, label: 'rHb9CJAW' }])
+    expect(suppressesFirstSendWarning(book, { network: 'testnet', address: EXCHANGE })).toBe(false)
+    expect(suppressesFirstSendWarning(book, { network: 'testnet', address: EXCHANGE, destinationTag: '5' })).toBe(false)
+    expect(suppressesFirstSendWarning(book, { network: 'mainnet', address: EXCHANGE })).toBe(false)
+  })
+
+  it('a pair that arrives without a network still matches no unrecorded entry', () => {
+    // The type requires `network`; this is the defence for a caller that
+    // builds a pair from untyped data. Its key would equal a legacy entry's.
+    const networkless = { address: EXCHANGE } as unknown as SendPair
+    expect(suppressesFirstSendWarning([{ address: EXCHANGE }], networkless)).toBe(false)
+    const networklessTagged = { address: EXCHANGE, destinationTag: '1' } as unknown as SendPair
+    expect(suppressesFirstSendWarning([{ address: EXCHANGE, destinationTag: '1' }], networklessTagged)).toBe(false)
+  })
+
+  it('recorded elsewhere: a Mainnet entry does not silence Testnet, nor the reverse', () => {
+    const mainnet: AddressBookEntry[] = [{ address: EXCHANGE, network: 'mainnet' }]
+    const testnet: AddressBookEntry[] = [{ address: EXCHANGE, network: 'testnet', destinationTag: '1' }]
+    expect(suppressesFirstSendWarning(mainnet, { network: 'testnet', address: EXCHANGE })).toBe(false)
+    expect(suppressesFirstSendWarning(testnet, { network: 'mainnet', address: EXCHANGE, destinationTag: '1' })).toBe(false)
+  })
+
+  it('recorded here: the same triple silences the warning', () => {
+    expect(suppressesFirstSendWarning([{ address: EXCHANGE, network: 'testnet' }], { network: 'testnet', address: EXCHANGE })).toBe(true)
+    expect(
+      suppressesFirstSendWarning([{ address: EXCHANGE, network: 'mainnet', destinationTag: '1' }], {
+        network: 'mainnet',
+        address: EXCHANGE,
+        destinationTag: '1',
+      }),
+    ).toBe(true)
+  })
+
+  it('recorded here, tagless, does not silence a tagged send (absence is still not a wildcard)', () => {
+    expect(
+      suppressesFirstSendWarning([{ address: EXCHANGE, network: 'testnet' }], { network: 'testnet', address: EXCHANGE, destinationTag: '0' }),
+    ).toBe(false)
+  })
+
+  it('an epic-9 tagged entry is kept as its tag with no network, and warns for every pair', () => {
+    const book = migrateAddressBook([{ address: EXCHANGE, destinationTag: '1' }])
+    expect(book).toEqual([{ address: EXCHANGE, destinationTag: '1' }])
+    for (const network of ['mainnet', 'testnet'] as const) {
+      expect(suppressesFirstSendWarning(book, { network, address: EXCHANGE, destinationTag: '1' })).toBe(false)
+      expect(suppressesFirstSendWarning(book, { network, address: EXCHANGE })).toBe(false)
+    }
+  })
+
+  it('a tagless entry with no network reads as "tag not recorded", never as tagless', () => {
+    expect(tagNotRecorded({ address: EXCHANGE })).toBe(true)
+    expect(tagNotRecorded({ address: EXCHANGE, destinationTag: '1' })).toBe(false)
+    expect(tagNotRecorded({ address: EXCHANGE, network: 'testnet' })).toBe(false)
+    // Not the same counterparty as the recorded tagless pair on either network.
+    expect(sameCounterparty({ address: EXCHANGE }, { address: EXCHANGE, network: 'testnet' })).toBe(false)
+    expect(sameCounterparty({ address: EXCHANGE }, { address: EXCHANGE, network: 'mainnet' })).toBe(false)
+  })
+
+  it('the key spells each state with its own token: `?` not recorded, `-` no tag', () => {
+    // The `?` tag token is redundant with the `?` network token today; it is
+    // pinned so the key never reads an unrecorded tag as "no tag".
+    expect(counterpartyKey({ address: EXCHANGE })).toBe(`?|${EXCHANGE}|?`)
+    expect(counterpartyKey({ address: EXCHANGE, destinationTag: '1' })).toBe(`?|${EXCHANGE}|1`)
+    expect(counterpartyKey({ address: EXCHANGE, network: 'testnet' })).toBe(`testnet|${EXCHANGE}|-`)
+    expect(counterpartyKey({ address: EXCHANGE, network: 'mainnet', destinationTag: '0' })).toBe(`mainnet|${EXCHANGE}|0`)
+  })
+
+  it('every network/tag state has its own key', () => {
+    const keys = [
+      { address: EXCHANGE },
+      { address: EXCHANGE, destinationTag: '0' },
+      { address: EXCHANGE, network: 'testnet' as const },
+      { address: EXCHANGE, network: 'testnet' as const, destinationTag: '0' },
+      { address: EXCHANGE, network: 'mainnet' as const },
+      { address: EXCHANGE, network: 'mainnet' as const, destinationTag: '0' },
+    ].map(counterpartyKey)
+    expect(new Set(keys).size).toBe(keys.length)
+  })
+
+  it('re-recording a legacy pair appends the recorded entry and keeps the legacy one', () => {
+    const book = upsertAddressBookEntry(migrateAddressBook([{ address: EXCHANGE }]), { network: 'testnet', address: EXCHANGE })
+    expect(book).toEqual([{ address: EXCHANGE }, { address: EXCHANGE, network: 'testnet' }])
+  })
+
+  it('the same pair on two networks is two entries with two keys', () => {
+    let book: AddressBookEntry[] = []
+    book = upsertAddressBookEntry(book, { network: 'testnet', address: EXCHANGE, destinationTag: '1' })
+    book = upsertAddressBookEntry(book, { network: 'mainnet', address: EXCHANGE, destinationTag: '1' })
+    expect(book).toEqual([
+      { address: EXCHANGE, network: 'testnet', destinationTag: '1' },
+      { address: EXCHANGE, network: 'mainnet', destinationTag: '1' },
+    ])
+    expect(counterpartyKey(book[0])).not.toBe(counterpartyKey(book[1]))
+    expect(
+      migrateAddressBook([
+        { address: EXCHANGE, network: 'testnet', destinationTag: '1' },
+        { address: EXCHANGE, network: 'mainnet', destinationTag: '1' },
+      ]),
+    ).toHaveLength(2)
+  })
+
+  it('the migration never collapses a legacy entry into a recorded one', () => {
+    expect(
+      migrateAddressBook([
+        { address: EXCHANGE },
+        { address: EXCHANGE, network: 'testnet' },
+        { address: EXCHANGE, destinationTag: '1' },
+        { address: EXCHANGE, network: 'testnet', destinationTag: '1' },
+      ]),
+    ).toHaveLength(4)
+  })
+
+  it('keeps a known network, and reads an unknown network value as not recorded without dropping the entry', () => {
+    expect(migrateAddressBook([{ address: EXCHANGE, network: 'mainnet' }])).toEqual([{ address: EXCHANGE, network: 'mainnet' }])
+    expect(migrateAddressBook([{ address: EXCHANGE, network: 'devnet' }])).toEqual([{ address: EXCHANGE }])
+    expect(migrateAddressBook([{ address: EXCHANGE, network: 7 }, { address: OTHER, network: null }])).toEqual([
+      { address: EXCHANGE },
+      { address: OTHER },
+    ])
+  })
+
+  it('writes the network key only when there is one', () => {
+    expect(Object.keys(upsertAddressBookEntry([], { address: EXCHANGE, network: undefined })[0])).toEqual(['address'])
+    expect(upsertAddressBookEntry([], { address: EXCHANGE, network: 'mainnet' })[0]).toEqual({ address: EXCHANGE, network: 'mainnet' })
   })
 })
 
 describe('migrateAddressBook — no saved address is lost by the shape change', () => {
-  it('reads every old-shape entry as a tagless entry', () => {
+  it('reads every old-shape entry as one with no network and its tag not recorded', () => {
     const old = [
       { address: EXCHANGE, label: EXCHANGE.slice(0, 8) },
       { address: OTHER, label: OTHER.slice(0, 8) },

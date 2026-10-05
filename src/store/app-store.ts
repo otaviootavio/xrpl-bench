@@ -83,9 +83,10 @@ const PERSISTED_DEFAULTS: PersistedAppState = {
  * ignores the tag.
  *
  * `migrateAddressBook` is idempotent, so running it on every load is safe: a
- * pre-Epic-9 entry `{ address, label }` reads as a tagless entry, minus the
- * label the old Send screen fabricated from the address, and nothing with an
- * address is dropped.
+ * pre-Epic-9 entry `{ address, label }` reads as an entry with no recorded
+ * network and its tag not recorded (it silences no first-send warning), minus
+ * the label the old Send screen fabricated from the address, and nothing with
+ * an address is dropped.
  *
  * Total and non-throwing: a throw here would leave the store on its in-memory
  * defaults, and the next `set()` (even `lock()`) would write them over the

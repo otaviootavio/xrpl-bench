@@ -230,7 +230,7 @@ action_items:
       to stage. Its own unattended decisions (no fee cushion, refusing AccountDelete/AMMCreate/VaultCreate)
       need Otavio's sign-off."
     owner: "Otavio"
-    status: open
+    status: done
     ref: "_bmad-output/implementation-artifacts/epic-7-retro-2026-10-04.md"
   - id: "epic-7-retro-item-17-give-the-fee-cap-a-normative-home-an-ad"
     epic: 7
@@ -267,7 +267,7 @@ action_items:
       src/lib/xrpl/writes.ts, so AD-9's single choke point is enforced rather than
       observed."
     owner: "dev"
-    status: open
+    status: done
     ref: "_bmad-output/implementation-artifacts/epic-7-retro-2026-10-04.md"
   - id: "epic-7-retro-item-21-forbid-as-any-on-xrpl-js-calls-in-src-li"
     epic: 7
@@ -275,7 +275,7 @@ action_items:
       override scoped there, or a guard script), and remove the remaining casts in
       writes.ts."
     owner: "dev"
-    status: open
+    status: done
     ref: "_bmad-output/implementation-artifacts/epic-7-retro-2026-10-04.md"
   - id: "epic-7-retro-item-22-any-test-that-claims-to-pin-an-sdk-level"
     epic: 7
@@ -283,7 +283,7 @@ action_items:
       must assert the SDK's *output*, not the fake's recorded input. Record this in
       docs/agents/ with the \"caps the fee\" test as the example."
     owner: "dev"
-    status: open
+    status: done
     ref: "_bmad-output/implementation-artifacts/epic-7-retro-2026-10-04.md"
   - id: "epic-8-retro-item-23-record-the-reviewer-s-pr-33-round-1-tear"
     epic: 8

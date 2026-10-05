@@ -67,6 +67,9 @@ gates and three layers of review had passed.
 - **Never** report a task complete on the strength of the five gates alone if
   the change was visual.
 - **Never** cite a screenshot you have not opened.
+- **Never** call an SDK-level guard (a fee, a flag, a limit) pinned by a test
+  that asserts only what a fake recorded. Assert the SDK's output, such as the
+  decoded signed blob. See [anti-patterns.md §11](anti-patterns.md#11-pinning-a-guard-on-the-fake-instead-of-on-the-sdk).
 - **Never** describe your own verification in stronger terms than you ran. "The
   gates pass" is a claim you can support; "no issues remain" is not.
 - **Never** move a UI-touching story to `done` without the browser pass above.

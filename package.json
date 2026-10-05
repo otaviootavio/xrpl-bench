@@ -11,7 +11,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
-    "lint": "oxlint --deny-warnings --report-unused-disable-directives && node scripts/check-query-keys.mjs && node scripts/check-sw-register.mjs && node scripts/check-layering.mjs && node scripts/check-account-invalidation.mjs && node scripts/check-money.mjs && node scripts/check-explorer-links.mjs",
+    "lint": "oxlint --deny-warnings --report-unused-disable-directives && node scripts/check-query-keys.mjs && node scripts/check-sw-register.mjs && node scripts/check-layering.mjs && node scripts/check-account-invalidation.mjs && node scripts/check-money.mjs && node scripts/check-explorer-links.mjs && node scripts/check-write-choke-point.mjs",
     "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest",
@@ -21,7 +21,8 @@
     "check:layering": "node scripts/check-layering.mjs",
     "check:account-invalidation": "node scripts/check-account-invalidation.mjs",
     "check:money": "node scripts/check-money.mjs",
-    "check:explorer-links": "node scripts/check-explorer-links.mjs"
+    "check:explorer-links": "node scripts/check-explorer-links.mjs",
+    "check:write-choke-point": "node scripts/check-write-choke-point.mjs"
   },
   "dependencies": {
     "@radix-ui/react-checkbox": "^1.3.11",

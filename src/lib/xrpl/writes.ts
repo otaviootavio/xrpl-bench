@@ -2,6 +2,7 @@ import { Wallet, type Payment, type SubmittableTransaction, type TrustSet, Trust
 import { getXrplClient, holdXrplClient } from './client'
 import type { NetworkId } from './networks'
 import { MAX_FEE_DROPS, feeWithinCap, formatXrp, isCanonicalPositiveDrops } from './money'
+import { isRecord } from './narrow'
 
 /**
  * Reports whether a transaction is currently in flight.
@@ -122,16 +123,16 @@ export async function submitAndClassify(
     // Thrown inside the `try`, so the in-flight depth is still lowered.
     if (!feeWithinCap(prepared.Fee)) throw new FeeAboveCapError(prepared.Fee)
     const signed = wallet.sign(prepared)
-    const lastLedgerSequence = (prepared as any).LastLedgerSequence as number | undefined
+    const lastLedgerSequence = prepared.LastLedgerSequence
     try {
       const res = await client.submitAndWait(signed.tx_blob)
       const meta = res.result.meta
-      const resultCode = typeof meta === 'object' && meta ? (meta as any).TransactionResult : 'unknown'
+      const resultCode = typeof meta === 'object' && meta ? meta.TransactionResult : 'unknown'
       const status = classify(resultCode)
       return status === 'failed'
         ? { status, hash: signed.hash, resultCode }
         : { status, hash: signed.hash, resultCode, ledgerIndex: res.result.ledger_index }
-    } catch (err: any) {
+    } catch (err: unknown) {
       // The "stuck/expired" case from docs/decisions.md: the network moved past
       // this transaction's LastLedgerSequence without it appearing in a
       // validated ledger. It may simply never have been included. NEVER
@@ -158,8 +159,11 @@ export async function submitAndClassify(
   }
 }
 
-async function isExpiry(err: any, network: NetworkId, lastLedgerSequence?: number): Promise<boolean> {
-  if (err?.name === 'XrplError' && typeof err?.message === 'string' && err.message.includes('LastLedgerSequence')) {
+async function isExpiry(err: unknown, network: NetworkId, lastLedgerSequence?: number): Promise<boolean> {
+  // Read structurally, not by `instanceof XrplError` (see `narrow.ts`): an
+  // expiry missed here would be rethrown as a failure.
+  const { name, message } = isRecord(err) ? err : {}
+  if (name === 'XrplError' && typeof message === 'string' && message.includes('LastLedgerSequence')) {
     return true
   }
   if (lastLedgerSequence === undefined) return false

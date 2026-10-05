@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { Wallet, decode, type AccountSet } from 'xrpl'
+import { TrustSetFlags, Wallet, XrplError, decode, type AccountSet } from 'xrpl'
 import { MAX_FEE_DROPS } from '../money'
 import { getXrplClient, resetXrplClientFactory, resetXrplClients, setXrplClientFactory } from '../client'
 import {
@@ -186,9 +186,14 @@ describe('the write choke point raises and clears the in-flight flag', () => {
     expect(log.at(-1)).toBe('in-flight:false')
     // The drops path sends a string Amount; this one must send the issued
     // object, untouched — no arithmetic, no Number().
-    expect(client.autofilled[0].Amount).toEqual({ currency: 'USD', issuer: 'rhub8VRN55s94qWKDv6jmDy1pUykJzF3wq', value: '25.5' })
-    expect(client.autofilled[0].DestinationTag).toBe(7)
+    // Asserted on the signed blob, not on what the fake was handed: only the
+    // SDK's output is what the ledger receives (anti-patterns.md §11).
+    expect(client.submitted).toHaveLength(1)
+    const signed = decode(client.submitted[0])
+    expect(signed.Amount).toEqual({ currency: 'USD', issuer: 'rhub8VRN55s94qWKDv6jmDy1pUykJzF3wq', value: '25.5' })
+    expect(signed.DestinationTag).toBe(7)
   })
+
 
   it('calls autofill with the transaction alone — no bogus options in the signersCount slot', async () => {
     const client = installFakeClient()
@@ -196,7 +201,11 @@ describe('the write choke point raises and clears the in-flight flag', () => {
     await submitXrpPayment('testnet', wallet, { destination: 'rPT1Sjq2YGrBMTttX4GZHjKu9dyfzbpAYe', amountDrops: '1000000' })
 
     // xrpl.js 5's second argument is `signersCount`; an object there was
-    // silently ignored, leaving the 2 XRP default as the only ceiling.
+    // silently ignored, leaving the 2 XRP default as the only ceiling. This
+    // pins only OUR call shape. It is not the cap guard: the cap is pinned by
+    // the signed-blob tests in 'the fee cap on every write' below, because a
+    // fake's recorded input says nothing about what the SDK did with it
+    // (anti-patterns.md §11).
     expect(client.autofillOptions).toEqual([undefined])
   })
 
@@ -233,6 +242,29 @@ describe('the write choke point raises and clears the in-flight flag', () => {
 
     expect(outcome.status).toBe('expired')
     expect(outcome).not.toHaveProperty('resultCode')
+    expect(log.at(-1)).toBe('in-flight:false')
+  })
+
+  it('classifies the SDK-reported expiry as expired without asking the ledger', async () => {
+    // What xrpl.js's submitAndWait rejects with once the network passes
+    // LastLedgerSequence. Read structurally in isExpiry, so this pins that read.
+    installFakeClient({
+      submit: async () => {
+        throw new XrplError(
+          "The latest ledger sequence 101 is greater than the transaction's LastLedgerSequence (100).",
+        )
+      },
+      // Not past LastLedgerSequence: only the error itself can say expired.
+      validatedLedgerIndex: 50,
+    })
+
+    const outcome = await submitXrpPayment('testnet', wallet, {
+      destination: 'rPT1Sjq2YGrBMTttX4GZHjKu9dyfzbpAYe',
+      amountDrops: '1000000',
+    })
+
+    expect(outcome.status).toBe('expired')
+    expect(log).not.toContain('request')
     expect(log.at(-1)).toBe('in-flight:false')
   })
 
@@ -310,6 +342,25 @@ describe('a write keeps its client open across a drop and a concurrent replaceme
     expect(built).toHaveLength(2)
     expect(built[0].disconnectCalls).toBe(1)
     expect(built[1].disconnectCalls).toBe(0)
+  })
+})
+
+/**
+ * What a trust-line change signs, read off the decoded blob (anti-patterns.md
+ * §11): the limit the ledger will hold, and NoRipple, so a holder balance
+ * cannot ripple through this account.
+ */
+describe('a trust-line change signs the limit and NoRipple', () => {
+  it('signs the requested limit with NoRipple set', async () => {
+    const client = installFakeClient()
+
+    await submitTrustSet('testnet', wallet, { currency: 'USD', issuer: 'rPT1Sjq2YGrBMTttX4GZHjKu9dyfzbpAYe', limit: '100' })
+
+    expect(client.submitted).toHaveLength(1)
+    const signed = decode(client.submitted[0])
+    expect(signed.TransactionType).toBe('TrustSet')
+    expect(signed.LimitAmount).toEqual({ currency: 'USD', issuer: 'rPT1Sjq2YGrBMTttX4GZHjKu9dyfzbpAYe', value: '100' })
+    expect(Number(signed.Flags) & TrustSetFlags.tfSetNoRipple).toBe(TrustSetFlags.tfSetNoRipple)
   })
 })
 

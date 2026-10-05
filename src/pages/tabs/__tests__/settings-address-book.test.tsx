@@ -54,6 +54,7 @@ vi.mock('@/lib/build-info', () => ({
 import { SettingsTab } from '../SettingsTab'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { useAppStore } from '@/store/app-store'
+import { accountExplorerUrl } from '@/lib/xrpl/networks'
 
 const EXCHANGE = 'rHb9CJAWyB4rj91VRWn96DkukG4bwdtyTh'
 const OTHER = 'rPT1Sjq2YGrBMTttX4GZHjKu9dyfzbpAYe'
@@ -73,6 +74,11 @@ function renderSettings() {
  * Settings cannot satisfy an assertion about the list. */
 function addressBookCard(): HTMLElement {
   return screen.getByText('Address book').closest('[data-slot="card"]') as HTMLElement
+}
+
+/** Each `dt` legend with the text of the value it names. */
+function legendsIn(root: Element): [string | null, string | null | undefined][] {
+  return [...root.querySelectorAll('dt')].map((dt) => [dt.textContent, dt.nextElementSibling?.textContent])
 }
 
 let consoleError: ReturnType<typeof vi.spyOn>
@@ -124,11 +130,52 @@ describe('Settings — the Address Book list', () => {
     expect(tag.closest('div')?.querySelector('dt')?.textContent).toBe('Destination tag')
   })
 
-  it('shows no tag legend for a tagless entry', () => {
-    useAppStore.setState({ addressBook: [{ address: OTHER }] } as never)
+  it('shows no tag legend for a tagless entry recorded on a network', () => {
+    useAppStore.setState({ addressBook: [{ address: OTHER, network: 'testnet' }] } as never)
     renderSettings()
 
     expect(within(addressBookCard()).queryByText('Destination tag')).toBeNull()
+    expect(within(addressBookCard()).queryByText('Not recorded')).toBeNull()
+  })
+
+  it('says "Not recorded" for both the network and the tag of an entry saved before networks were recorded', () => {
+    useAppStore.setState({ addressBook: [{ address: OTHER }] } as never)
+    renderSettings()
+
+    expect(legendsIn(addressBookCard())).toContainEqual(['Network', 'Not recorded'])
+    expect(legendsIn(addressBookCard())).toContainEqual(['Destination tag', 'Not recorded'])
+  })
+
+  it('an entry with a tag but no recorded network shows its tag and "Network: Not recorded"', () => {
+    useAppStore.setState({ addressBook: [{ address: OTHER, destinationTag: '1' }] } as never)
+    renderSettings()
+
+    const legends = legendsIn(addressBookCard())
+    expect(legends).toContainEqual(['Network', 'Not recorded'])
+    expect(legends).toContainEqual(['Destination tag', '1'])
+    expect(legends).not.toContainEqual(['Destination tag', 'Not recorded'])
+  })
+
+  it("lists every network's entries, each with its Network legend and its own explorer link", () => {
+    useAppStore.setState({
+      network: 'mainnet',
+      addressBook: [{ address: EXCHANGE }, { address: EXCHANGE, network: 'testnet' }, { address: EXCHANGE, network: 'mainnet' }],
+    } as never)
+    renderSettings()
+
+    const rows = [...addressBookCard().querySelectorAll('dl')]
+    expect(rows).toHaveLength(3)
+    expect(rows.map((row) => legendsIn(row).find(([dt]) => dt === 'Network')?.[1])).toEqual(['Not recorded', 'Testnet', 'Mainnet'])
+    // A Testnet row viewed on Mainnet links to the Testnet explorer; an
+    // unrecorded row falls back to the active network.
+    expect(rows.map((row) => row.querySelector('a')?.getAttribute('href'))).toEqual([
+      accountExplorerUrl('mainnet', EXCHANGE),
+      accountExplorerUrl('testnet', EXCHANGE),
+      accountExplorerUrl('mainnet', EXCHANGE),
+    ])
+    expect(accountExplorerUrl('testnet', EXCHANGE)).not.toBe(accountExplorerUrl('mainnet', EXCHANGE))
+    const duplicateKey = consoleError.mock.calls.some((args: unknown[]) => args.some((a) => typeof a === 'string' && /same key/i.test(a)))
+    expect(duplicateKey).toBe(false)
   })
 
   it('shows a human label when there is one', () => {

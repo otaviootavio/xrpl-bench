@@ -340,7 +340,7 @@ action_items:
       it together with network-scoping the Address Book (deferred-work epic-9 entry
       1), because both change the persisted shape. Then add it to PR #41's record."
     owner: "Otavio"
-    status: open
+    status: done
     ref: "_bmad-output/implementation-artifacts/epic-9-retro-2026-10-04.md"
   - id: "epic-9-retro-item-29-reconcile-docs-decisions-md-2-lines-25-2"
     epic: 9
@@ -348,7 +348,7 @@ action_items:
       first-send warning is decided on the (address, destination tag) pair, and the
       app writes no labels."
     owner: "Otavio (apply) / dev (draft)"
-    status: open
+    status: done
     ref: "_bmad-output/implementation-artifacts/epic-9-retro-2026-10-04.md"
   - id: "epic-9-retro-item-30-in-the-unattended-build-loop-do-not-squa"
     epic: 9

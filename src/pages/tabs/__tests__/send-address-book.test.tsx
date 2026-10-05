@@ -4,8 +4,9 @@ import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 
 /**
  * Story 9.2 — FR-21's "you haven't sent here before" is decided on the
- * `(address, destination tag)` pair (AD-6), and the entry a send writes
- * records the tag actually signed and no fabricated label.
+ * `(network, address, destination tag)` triple (AD-6; the network since the
+ * Epic 9 retro, items 28/29), and the entry a send writes records the network
+ * and tag actually signed and no fabricated label.
  *
  * The harness is the one `send-destination-error.test.tsx` uses, cut down to
  * what a validated send needs; the Address Book and its writer are mutable
@@ -22,7 +23,8 @@ const submitXrpPayment = vi.fn()
 const unlockWalletForSigning = vi.fn()
 const invalidateQueries = vi.fn()
 const addAddressBookEntry = vi.fn()
-let addressBook: { address: string; destinationTag?: string; label?: string }[] = []
+let network: 'mainnet' | 'testnet' = 'testnet'
+let addressBook: { address: string; network?: string; destinationTag?: string; label?: string }[] = []
 
 vi.mock('@/hooks/useDestinationInfo', () => ({ useDestinationInfo: () => useDestinationInfo() }))
 vi.mock('@/hooks/useRecommendedFee', () => ({ useRecommendedFee: () => useRecommendedFee() }))
@@ -49,7 +51,7 @@ vi.mock('@/components/wallet/AddressLink', () => ({
 }))
 vi.mock('@/store/app-store', () => ({
   useAppStore: (selector: (s: Record<string, unknown>) => unknown) =>
-    selector({ network: 'testnet', vaultKey: {}, addressBook, addAddressBookEntry }),
+    selector({ network, vaultKey: {}, addressBook, addAddressBookEntry }),
   useActiveWallet: () => ({ id: 'w1', address: WALLET_ADDRESS, label: 'Test' }),
 }))
 
@@ -60,21 +62,23 @@ const WALLET_ADDRESS = 'r4NagxniGTmPRr8yBRXRD6NNpZP7FfP4KR'
 const NOW = 1_800_000_000_000
 
 function info() {
-  return { network: 'testnet', destination: EXCHANGE, asset: 'XRP', exists: true, requireDestTag: false }
+  return { network, destination: EXCHANGE, asset: 'XRP', exists: true, requireDestTag: false }
 }
 
 beforeEach(() => {
   addressBook = []
+  network = 'testnet'
   vi.useFakeTimers()
   vi.setSystemTime(NOW)
-  useDestinationInfo.mockReturnValue({
+  // Read per render, so a test that changes `network` sees the check for it.
+  useDestinationInfo.mockImplementation(() => ({
     data: info(),
     isError: false,
     isSuccess: true,
     isFetching: false,
     dataUpdatedAt: NOW,
     refetch: vi.fn().mockResolvedValue({}),
-  })
+  }))
   useSpendableBalance.mockReturnValue({
     status: 'ok',
     isLoading: false,
@@ -86,7 +90,7 @@ beforeEach(() => {
   })
   useRecommendedFee.mockReturnValue({ data: '12', isError: false, refetch: vi.fn() })
   useTrustLines.mockReturnValue({ data: [] })
-  fetchQuery.mockResolvedValue(info())
+  fetchQuery.mockImplementation(async () => info())
   unlockWalletForSigning.mockResolvedValue({ address: WALLET_ADDRESS })
   submitXrpPayment.mockResolvedValue({ status: 'validated', resultCode: 'tesSUCCESS', hash: 'AB' })
 })
@@ -119,7 +123,7 @@ const anyFirstSendWarning = () => screen.queryByText(/You haven't sent/)
 
 describe('SendTab — the first-send warning is decided on the pair', () => {
   it('fires for a known address with a tag never used before', () => {
-    addressBook = [{ address: EXCHANGE, destinationTag: '1' }]
+    addressBook = [{ address: EXCHANGE, network: 'testnet', destinationTag: '1' }]
     review('2')
 
     expect(screen.getByText("You haven't sent with destination tag 2 before")).toBeTruthy()
@@ -128,7 +132,7 @@ describe('SendTab — the first-send warning is decided on the pair', () => {
   })
 
   it('fires for a known tagged address sent to with no tag', () => {
-    addressBook = [{ address: EXCHANGE, destinationTag: '1' }]
+    addressBook = [{ address: EXCHANGE, network: 'testnet', destinationTag: '1' }]
     review('')
 
     expect(screen.getByText("You haven't sent here without a destination tag before")).toBeTruthy()
@@ -136,14 +140,14 @@ describe('SendTab — the first-send warning is decided on the pair', () => {
   })
 
   it('fires for a known tagless address sent to with a tag — absence is not a wildcard', () => {
-    addressBook = [{ address: EXCHANGE }]
+    addressBook = [{ address: EXCHANGE, network: 'testnet' }]
     review('5')
 
     expect(screen.getByText("You haven't sent with destination tag 5 before")).toBeTruthy()
   })
 
   it('does not fire for the exact pair already sent to', () => {
-    addressBook = [{ address: EXCHANGE, destinationTag: '7' }]
+    addressBook = [{ address: EXCHANGE, network: 'testnet', destinationTag: '7' }]
     // Typed with a leading zero: the ledger tag is the same UInt32.
     review('007')
 
@@ -159,6 +163,103 @@ describe('SendTab — the first-send warning is decided on the pair', () => {
   })
 })
 
+/**
+ * Epic 9 retro items 28/29: identity is (network, address, tag). Only an entry
+ * recorded on the network being sent on silences the warning or unlocks the
+ * tag-specific "You have paid this address before" words.
+ */
+describe('SendTab — the warning is decided on the network too', () => {
+  it('pre-epic-9 entry, tagless send: warns with the generic copy', () => {
+    addressBook = [{ address: EXCHANGE }]
+    review('')
+
+    expect(screen.getByText("You haven't sent here before")).toBeTruthy()
+    expect(screen.getByText(/character by character/)).toBeTruthy()
+  })
+
+  it('pre-epic-9 entry, tagged send: warns with the generic copy', () => {
+    addressBook = [{ address: EXCHANGE }]
+    review('5')
+
+    expect(screen.getByText("You haven't sent here before")).toBeTruthy()
+    expect(screen.queryByText(/You have paid this address before/)).toBeNull()
+  })
+
+  it('an epic-9 tagged entry with no network warns for its own pair, with the generic copy', () => {
+    addressBook = [{ address: EXCHANGE, destinationTag: '1' }]
+    review('1')
+
+    expect(screen.getByText("You haven't sent here before")).toBeTruthy()
+  })
+
+  it('recorded on Mainnet, sending on Testnet: warns with the generic copy', () => {
+    addressBook = [{ address: EXCHANGE, network: 'mainnet' }]
+    review('')
+
+    expect(screen.getByText("You haven't sent here before")).toBeTruthy()
+    expect(screen.queryByText(/You have paid this address before/)).toBeNull()
+  })
+
+  it('recorded on Testnet, sending on Mainnet: warns (and vice versa)', () => {
+    network = 'mainnet'
+    addressBook = [{ address: EXCHANGE, network: 'testnet', destinationTag: '1' }]
+    review('1')
+
+    expect(screen.getByText("You haven't sent here before")).toBeTruthy()
+  })
+
+  it('a different tag recorded on another network does not unlock the tag-specific words', () => {
+    addressBook = [{ address: EXCHANGE, network: 'mainnet', destinationTag: '1' }]
+    review('2')
+
+    expect(screen.getByText("You haven't sent here before")).toBeTruthy()
+    expect(screen.queryByText(/You have paid this address before/)).toBeNull()
+  })
+
+  it('a legacy entry beside a recorded tagged one keeps the generic copy for a tagless send', () => {
+    addressBook = [{ address: EXCHANGE }, { address: EXCHANGE, network: 'testnet', destinationTag: '1' }]
+    review('')
+
+    expect(screen.getByText("You haven't sent here before")).toBeTruthy()
+    expect(screen.queryByText(/only with a destination tag/)).toBeNull()
+  })
+
+  it('recorded here: no warning', () => {
+    addressBook = [{ address: EXCHANGE, network: 'testnet' }]
+    review('')
+
+    expect(screen.getByRole('button', { name: 'Confirm and send' })).toBeTruthy()
+    expect(anyFirstSendWarning()).toBeNull()
+  })
+
+  it('recorded here on Mainnet: no warning on Mainnet', () => {
+    network = 'mainnet'
+    addressBook = [{ address: EXCHANGE, network: 'mainnet', destinationTag: '9' }]
+    review('9')
+
+    expect(screen.getByRole('button', { name: 'Confirm and send' })).toBeTruthy()
+    expect(anyFirstSendWarning()).toBeNull()
+  })
+
+  it('a validated send over a legacy entry writes the recorded triple', async () => {
+    addressBook = [{ address: EXCHANGE }]
+    review('')
+    await confirm()
+
+    expect(addAddressBookEntry).toHaveBeenCalledOnce()
+    expect(addAddressBookEntry.mock.calls[0][0]).toEqual({ network: 'testnet', address: EXCHANGE, destinationTag: undefined })
+  })
+
+  it('writes the network it submitted on', async () => {
+    network = 'mainnet'
+    review('3')
+    await confirm()
+
+    expect(submitXrpPayment).toHaveBeenCalledWith('mainnet', expect.anything(), expect.objectContaining({ destinationTag: 3 }))
+    expect(addAddressBookEntry.mock.calls[0][0]).toMatchObject({ network: 'mainnet', address: EXCHANGE, destinationTag: '3' })
+  })
+})
+
 describe('SendTab — the entry a send writes', () => {
   it('records the tag actually signed, as text, and no fabricated label', async () => {
     review('0042')
@@ -168,6 +269,7 @@ describe('SendTab — the entry a send writes', () => {
     expect(addAddressBookEntry).toHaveBeenCalledOnce()
     const [entry] = addAddressBookEntry.mock.calls[0]
     expect(entry.address).toBe(EXCHANGE)
+    expect(entry.network).toBe('testnet')
     expect(entry.destinationTag).toBe('42')
     expect(entry.label).toBeUndefined()
   })
@@ -201,7 +303,7 @@ describe('SendTab — the entry a send writes', () => {
   })
 
   it('writes a second tag at a known address rather than skipping it', async () => {
-    addressBook = [{ address: EXCHANGE, destinationTag: '1' }]
+    addressBook = [{ address: EXCHANGE, network: 'testnet', destinationTag: '1' }]
     review('2')
     await confirm()
 
@@ -210,7 +312,7 @@ describe('SendTab — the entry a send writes', () => {
   })
 
   it('writes nothing for a pair already in the book', async () => {
-    addressBook = [{ address: EXCHANGE, destinationTag: '1' }]
+    addressBook = [{ address: EXCHANGE, network: 'testnet', destinationTag: '1' }]
     review('1')
     await confirm()
 

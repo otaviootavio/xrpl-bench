@@ -173,12 +173,17 @@ without importing a component (AD-8).
 - **Rule:** `src/store/app-store.ts` holds `network` and `activeWalletId` and
   nothing duplicates them into component state. Both reach a query through the
   factory in AD-4.
-- **It also owns the Address Book, and an entry's identity is the (address,
-  destination tag) pair** — not the address alone. One exchange address with two
-  tags is two counterparties, and collapsing them onto the address loses the tag
-  that makes a payment arrive. The identity is a named function beside the
-  entity, never re-derived at a call site. This is a target: today's entry is
-  `{ address, label }` and dedupes on address (see `GAP-REGISTER.md`).
+- **It also owns the Address Book, and an entry's identity is the (network,
+  address, destination tag) triple** — not the address alone. One exchange
+  address with two tags is two counterparties, and collapsing them onto the
+  address loses the tag that makes a payment arrive. A classic address is the
+  same string on Mainnet and Testnet, so a pair recorded on one network says
+  nothing about the other. The identity is a named function beside the entity
+  (`src/store/address-book.ts`), never re-derived at a call site. An entry with
+  no recorded network (saved before entries carried one) is kept and listed
+  but silences the first-send warning on no network, and if it has no tag its
+  tag reads "not recorded", never "tagless". Built in Epic 9 (G-18, closed);
+  the network was added by the Epic 9 retrospective, items 28/29.
 
 ### AD-7 — Money arithmetic lives in one module
 

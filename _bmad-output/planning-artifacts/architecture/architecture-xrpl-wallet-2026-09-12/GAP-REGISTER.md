@@ -275,6 +275,12 @@ keeps the persisted version at 0 so that a rollback cannot wipe the slice.
 **Not closed by this:** the "picker fills both fields or neither" half of the
 fix has nothing to apply to, because no picker exists. The Address Book is
 also not scoped to a network; see `deferred-work.md`, epic 9.
+**Amended 2026-10-04 by the Epic 9 retrospective, items 28/29**
+(`spec-epic-9-retro-28-29-address-book-tag-unknown-per-network.md`): identity
+is now the (network, address, tag) triple, and an entry saved before entries
+recorded their network (including every migrated pre-Epic-9 entry) is kept
+and listed but silences the warning on no network. That closes both the
+"read as tagless" hazard above and the network scoping.
 
 **Severity: money-loss path, and it needs no new feature to occur.**
 

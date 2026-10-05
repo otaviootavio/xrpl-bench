@@ -15,7 +15,8 @@ import { Separator } from '@/components/ui/separator'
 import { SeedReveal } from '@/components/wallet/SeedReveal'
 import { AddressLink } from '@/components/wallet/AddressLink'
 import { useAppStore } from '@/store/app-store'
-import { counterpartyKey } from '@/store/address-book'
+import { counterpartyKey, tagNotRecorded } from '@/store/address-book'
+import { NETWORKS } from '@/lib/xrpl/networks'
 import { addressFromSeed, generateAndStoreWallet, importAndStoreWallet, listWallets, parseSeedInput, removeWallet, revealSeed } from '@/lib/crypto/keystore'
 import { RESET_INCOMPLETE_MESSAGE, tearDownAllLocalState, clearCachedAccountData } from '@/lib/teardown'
 import { checkBeforeImport, IMPORT_WARNING_COPY, INVALID_SEED_MESSAGE, type ImportWarning } from '@/lib/seed-import'
@@ -299,11 +300,16 @@ export function SettingsTab() {
               </p>
             </div>
           )}
-          {/* One row per counterparty — the (address, tag) pair, keyed by the
-              same identity that decides it (AD-6). The address renders once,
-              in full, through AddressLink; a label only when a human gave one.
-              The tag carries its own text legend, so it is told apart from the
-              address by words, not colour (NFR-6). */}
+          {/* One row per counterparty — the (network, address, tag) triple,
+              keyed by the same identity that decides it (AD-6). Every
+              network's entries are listed, each under its own "Network"
+              legend, and its explorer link goes to that network. The address
+              renders once, in full, through AddressLink; a label only when a
+              human gave one. The tag carries its own text legend, so it is
+              told apart from the address by words, not colour (NFR-6). An
+              entry saved before networks were recorded says so in words for
+              both its network and its tag: it may stand for a payment made
+              with a tag that was never stored. */}
           {addressBook.map((e) => (
             <dl key={counterpartyKey(e)} className="panel-plate flex min-w-0 flex-col gap-1.5 rounded-md p-2">
               {e.label !== undefined && (
@@ -313,15 +319,25 @@ export function SettingsTab() {
                 </div>
               )}
               <div className="min-w-0">
+                <dt className="panel-legend">Network</dt>
+                <dd className="mt-0.5 text-sm">{e.network !== undefined ? NETWORKS[e.network].label : 'Not recorded'}</dd>
+              </div>
+              <div className="min-w-0">
                 <dt className="panel-legend">Address</dt>
                 <dd className="mt-0.5 min-w-0">
-                  <AddressLink address={e.address} truncate={false} />
+                  <AddressLink address={e.address} network={e.network} truncate={false} />
                 </dd>
               </div>
               {e.destinationTag !== undefined && (
                 <div className="min-w-0">
                   <dt className="panel-legend">Destination tag</dt>
                   <dd className="mt-0.5 font-data text-sm tracking-tight break-all">{e.destinationTag}</dd>
+                </div>
+              )}
+              {tagNotRecorded(e) && (
+                <div className="min-w-0">
+                  <dt className="panel-legend">Destination tag</dt>
+                  <dd className="mt-0.5 text-sm">Not recorded</dd>
                 </div>
               )}
             </dl>

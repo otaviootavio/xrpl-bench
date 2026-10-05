@@ -5,5 +5,9 @@
     "react/rules-of-hooks": "error",
     "react-hooks/exhaustive-deps": "error",
     "react/only-export-components": ["warn", { "allowConstantExport": true }]
-  }
+  },
+  "overrides": [
+    { "files": ["src/lib/xrpl/**"], "rules": { "typescript/no-explicit-any": "error" } },
+    { "files": ["src/lib/xrpl/__tests__/**", "src/lib/xrpl/**/*.test.ts", "src/lib/xrpl/**/*.test.tsx"], "rules": { "typescript/no-explicit-any": "off" } }
+  ]
 }

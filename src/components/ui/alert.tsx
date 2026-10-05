@@ -2,6 +2,7 @@ import * as React from 'react'
 import { cva, type VariantProps } from 'class-variance-authority'
 import { cn } from '@/lib/utils'
 import { type LampTone } from '@/components/ui/lamp'
+import { NOTICE_TONE, type NoticeTone } from '@/lib/notice-tone'
 
 /**
  * Panel notices, built as annunciators.
@@ -26,25 +27,6 @@ import { type LampTone } from '@/components/ui/lamp'
  * Deliberately no thick coloured left rule — a 4px accent bar is a generic
  * callout costume.
  */
-/**
- * The tone of a notice: its edge and its text, with no ground.
- *
- * Exported because the docked Annunciator (`components/Annunciator.tsx`) is
- * the same device on a different surface — `lib/notify.tsx` tags each notice
- * with a tone from this map so a notification and an inline notice report the
- * same state in the same colours. Ground is deliberately excluded: an inline
- * notice is recessed into the plate it sits on, the Annunciator's rows sit on
- * plate ground, and only the tone is shared.
- */
-const NOTICE_TONE = {
-  default: 'border-border text-foreground',
-  destructive: 'border-destructive/55 text-text-destructive',
-  warning: 'border-warning/60 text-text-warning',
-  success: 'border-success/55 text-text-success',
-} as const
-
-export type NoticeTone = keyof typeof NOTICE_TONE
-
 const alertVariants = cva(
   // Recessed rather than recoloured, so a notice reads as a different PLANE
   // when it sits on a plate that shares its ground.
@@ -81,8 +63,9 @@ const ANNUNCIATOR_LEGEND = [
 /**
  * The lit legend plate. Uses only measured fill/-foreground pairs.
  *
- * Exported for the same reason as NOTICE_TONE: the toast layer lights the same
- * legend. The plate's SHAPE is per-surface; only these fills are shared.
+ * Exported because `components/Annunciator.tsx` lights the same legend on a
+ * different surface, and the two must not drift into two sets of fills. The
+ * plate's SHAPE is per-surface; only these fills are shared.
  */
 const ANNUNCIATOR: Record<NoticeTone, string> = {
   default: 'bg-muted text-foreground',
@@ -139,4 +122,4 @@ function AlertDescription({ className, ...props }: React.ComponentProps<'div'>) 
   return <div className={cn('text-sm leading-snug [&_p]:leading-snug', className)} {...props} />
 }
 
-export { Alert, AlertTitle, AlertDescription, ANNUNCIATOR, ANNUNCIATOR_LEGEND, NOTICE_TONE }
+export { Alert, AlertTitle, AlertDescription, ANNUNCIATOR, ANNUNCIATOR_LEGEND }

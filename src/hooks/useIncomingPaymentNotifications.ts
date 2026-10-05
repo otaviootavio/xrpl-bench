@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { toast } from '@/lib/notify'
 import { fetchAccountTx } from '@/lib/xrpl/reads'
+import { queryKeys } from '@/lib/xrpl/query-keys'
 import { formatXrp, formatAmountString, displayCurrencyCode } from '@/lib/xrpl/money'
 import type { NetworkId } from '@/lib/xrpl/networks'
 
@@ -25,7 +26,7 @@ export function useIncomingPaymentNotifications(network: NetworkId, address: str
   const watchKey = useRef<string | null>(null)
 
   const query = useQuery({
-    queryKey: ['incomingPaymentWatch', network, address],
+    queryKey: queryKeys.incomingPaymentWatch(network, address),
     queryFn: () => fetchAccountTx(network, address as string),
     enabled: !!address,
     // useAccountLiveUpdates invalidates this key the moment a transaction
@@ -50,7 +51,11 @@ export function useIncomingPaymentNotifications(network: NetworkId, address: str
     // Ignore data that arrived for a previous account before the reset above.
     if (watchKey.current !== `${network}:${address}`) return
 
-    const incoming = query.data.items.filter((tx) => tx.direction === 'received' && tx.validated && tx.type === 'Payment')
+    // Only a successful payment is announced as received: a failed incoming
+    // Payment delivered nothing, and "Received …" would state the opposite.
+    const incoming = query.data.items.filter(
+      (tx) => tx.direction === 'received' && tx.validated && tx.type === 'Payment' && tx.resultCode === 'tesSUCCESS',
+    )
 
     if (isFirstLoad.current) {
       incoming.forEach((tx) => seenHashes.current.add(tx.hash))

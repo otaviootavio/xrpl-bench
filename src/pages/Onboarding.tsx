@@ -1,5 +1,4 @@
 import { useCallback, useRef, useState } from 'react'
-import { Wallet } from 'xrpl'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -9,8 +8,8 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { SeedReveal } from '@/components/wallet/SeedReveal'
 import { ChassisShell } from '@/components/ChassisShell'
 import { setUpVaultAuth, hasPasskeyRegistered } from '@/lib/crypto/auth'
-import { generateAndStoreWallet, importAndStoreWallet, listWallets, type WalletMeta } from '@/lib/crypto/keystore'
-import { fetchAccountStateOnce } from '@/lib/xrpl/query-reads'
+import { addressFromSeed, parseSeedInput, generateAndStoreWallet, importAndStoreWallet, listWallets, type WalletMeta } from '@/lib/crypto/keystore'
+import { checkBeforeImport, IMPORT_WARNING_COPY, INVALID_SEED_MESSAGE, type ImportWarning } from '@/lib/seed-import'
 import { useAppStore } from '@/store/app-store'
 import { useQueryClient } from '@tanstack/react-query'
 import { toast } from '@/lib/notify'
@@ -38,7 +37,7 @@ export function Onboarding() {
   const [mode, setMode] = useState<'generate' | 'import'>('generate')
   const [pin, setPin] = useState('')
   const [pinConfirm, setPinConfirm] = useState('')
-  const [importWarning, setImportWarning] = useState<string | null>(null)
+  const [importWarning, setImportWarning] = useState<ImportWarning | null>(null)
   const [backedUp, setBackedUp] = useState(false)
   const [busy, setBusy] = useState(false)
 
@@ -54,6 +53,13 @@ export function Onboarding() {
   // Uncontrolled input — a controlled one would put the typed seed into React
   // state on every keystroke.
   const importSeedRef = useRef<HTMLInputElement | null>(null)
+  // The parsed Seed, taken from the input when the import step is left. It
+  // has to be copied out: the input belongs to the `import-seed` step's tree,
+  // so the moment the flow moves on to `vault-setup` React unmounts it and
+  // `importSeedRef.current` becomes null. Reading the input at vault-setup
+  // time — as this screen used to — read `''`, and import never got as far as
+  // the probe.
+  const pendingImportSeedRef = useRef<string | null>(null)
 
   const queryClient = useQueryClient()
   const network = useAppStore((s) => s.network)
@@ -69,6 +75,7 @@ export function Onboarding() {
 
   function clearSeeds() {
     pendingSeedRef.current = null
+    pendingImportSeedRef.current = null
     setHasPendingSeed(false)
     if (importSeedRef.current) importSeedRef.current.value = ''
   }
@@ -94,17 +101,22 @@ export function Onboarding() {
         setHasPendingSeed(true)
         setStep('backup-confirm')
       } else {
-        const seed = importSeedRef.current?.value ?? ''
+        const seed = pendingImportSeedRef.current
+        if (!seed) {
+          // Unreachable through the UI — the import step only advances with
+          // a parsed Seed — but never write, or probe, without one.
+          toast.error(INVALID_SEED_MESSAGE)
+          setStep('import-seed')
+          return
+        }
         // Detect a disabled master key BEFORE the import is completed — the
         // resolved decision in docs/decisions.md says to warn *before*
         // completing import, so nothing is written to the vault until the
-        // user has seen the warning and chosen to continue.
-        const probe = Wallet.fromSeed(seed)
-        const state = await fetchAccountStateOnce(queryClient, network, probe.address)
-        if (state.exists && state.disableMasterKey) {
-          setImportWarning(
-            "This account's master key is disabled (a Regular Key has been set elsewhere). Signing with this seed alone may not work.",
-          )
+        // user has seen the warning and chosen to continue. An account that
+        // could not be read warns too (lib/seed-import.ts).
+        const warning = await checkBeforeImport(queryClient, network, addressFromSeed(seed))
+        if (warning) {
+          setImportWarning(warning)
           setStep('import-warning')
           return
         }
@@ -131,10 +143,10 @@ export function Onboarding() {
   /** The import is only actually written to the vault here, once the user has
    * acknowledged the disabled-master-key warning. */
   async function acceptImportWarning() {
-    if (!vaultKey) return
+    const seed = pendingImportSeedRef.current
+    if (!vaultKey || !seed) return
     setBusy(true)
     try {
-      const seed = importSeedRef.current?.value ?? ''
       const meta = await importAndStoreWallet('My Wallet', seed, vaultKey)
       const wallets = await listWallets()
       clearSeeds()
@@ -221,11 +233,12 @@ export function Onboarding() {
               <Input id="seed" type="password" autoComplete="off" spellCheck={false} ref={importSeedRef} placeholder="s..." />
               <Button
                 onClick={() => {
-                  try {
-                    Wallet.fromSeed(importSeedRef.current?.value ?? '')
+                  const seed = parseSeedInput(importSeedRef.current?.value ?? '')
+                  if (seed) {
+                    pendingImportSeedRef.current = seed
                     setStep('vault-setup')
-                  } catch {
-                    toast.error('That seed looks invalid. Double-check and try again.')
+                  } else {
+                    toast.error(INVALID_SEED_MESSAGE)
                   }
                 }}
               >
@@ -295,8 +308,8 @@ export function Onboarding() {
       <ChassisShell maxWidthClassName="max-w-md">
         <div className="flex min-h-full flex-col justify-center gap-6 p-6">
           <Alert variant="warning">
-            <AlertTitle>Heads up</AlertTitle>
-            <AlertDescription>{importWarning}</AlertDescription>
+            <AlertTitle>{IMPORT_WARNING_COPY[importWarning].title}</AlertTitle>
+            <AlertDescription>{IMPORT_WARNING_COPY[importWarning].body}</AlertDescription>
           </Alert>
           <div className="flex gap-2">
             <Button variant="outline" onClick={cancelImportWarning} disabled={busy}>

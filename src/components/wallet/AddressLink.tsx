@@ -1,6 +1,7 @@
 import { ExternalLinkIcon } from 'lucide-react'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
-import { accountExplorerUrl, txExplorerUrl } from '@/lib/xrpl/networks'
+import { Button } from '@/components/ui/button'
+import { accountExplorerUrl, txExplorerUrl, type NetworkId } from '@/lib/xrpl/networks'
 import { useAppStore } from '@/store/app-store'
 import { cn } from '@/lib/utils'
 
@@ -49,13 +50,49 @@ function TruncatedExplorerLink({
 
 /** Every address anywhere in the app renders through this component — see
  * docs/decisions.md enforced pattern: no hand-rolled <a href> to an explorer,
- * and the explorer link always matches the currently active network
+ * and the explorer link matches the currently active network unless the
+ * caller names the network the address was recorded on
  * (block-explorer-links.md US-1, US-4). */
-export function AddressLink({ address, truncate = true, className }: { address: string; truncate?: boolean; className?: string }) {
-  const network = useAppStore((s) => s.network)
+/**
+ * Two shapes, kept apart by the compiler rather than by a comment: the ordinary
+ * link, and the icon-only affordance for a surface that already prints the
+ * address in full beside it (the engraved serial plate). `label` is the
+ * accessible name and is REQUIRED in `iconOnly` mode, where there is no text to
+ * read; `truncate` is meaningless there and is rejected rather than ignored.
+ */
+type AddressLinkProps = {
+  address: string
+  /**
+   * The network the address was recorded on (an Address Book row saved on
+   * Testnet, viewed while Mainnet is active); the explorer link goes to that
+   * network's explorer. Omitted, the link follows the active network.
+   */
+  network?: NetworkId
+  className?: string
+} & (
+  | { iconOnly: true; label: string; truncate?: never }
+  | { iconOnly?: false; label?: never; truncate?: boolean }
+)
+
+export function AddressLink({ address, network: recordedNetwork, className, ...rest }: AddressLinkProps) {
+  const activeNetwork = useAppStore((s) => s.network)
+  const network = recordedNetwork ?? activeNetwork
+  if (rest.iconOnly) {
+    // No address, no affordance: a `—` placeholder where an icon button sits
+    // would read as a stray dash rather than as "nothing to link to".
+    if (!address) return null
+    return (
+      <Button asChild variant="ghost" size="icon" aria-label={rest.label}>
+        <a href={accountExplorerUrl(network, address)} target="_blank" rel="noreferrer noopener">
+          <ExternalLinkIcon className="size-4" aria-hidden="true" />
+        </a>
+      </Button>
+    )
+  }
   if (!address) {
     return <span className={cn('text-muted-foreground', className)}>—</span>
   }
+  const truncate = rest.truncate ?? true
   const display = truncate ? truncateMiddle(address) : address
   // Nothing is hidden when the value is shown in full, so no tooltip.
   if (display === address) {

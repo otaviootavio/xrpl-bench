@@ -1,16 +1,9 @@
 import { useQuery } from '@tanstack/react-query'
 import { isValidClassicAddress } from 'xrpl'
-import { fetchAccountState, fetchAccountLines } from '@/lib/xrpl/reads'
+import { destinationInfoQueryOptions, type DestinationInfo } from '@/lib/xrpl/query-reads'
 import type { NetworkId } from '@/lib/xrpl/networks'
 
-export interface DestinationInfo {
-  exists: boolean
-  requireDestTag: boolean
-  /** Whether the destination can actually receive the selected issued
-   * currency (i.e. already has a trust line to that issuer). Undefined when
-   * sending XRP, where no trust line is involved. */
-  hasTrustLine?: boolean
-}
+export type { DestinationInfo }
 
 /**
  * Looks up everything the Send form needs to know about a destination.
@@ -19,6 +12,13 @@ export interface DestinationInfo {
  * field's onBlur handler: docs/decisions.md §4 bans calling the XRPL client's
  * read methods directly from a `useEffect` OR an event handler, and the
  * handler version had no retry/backoff and no cache reuse.
+ *
+ * The key, the freshness window and the `queryFn` all come from
+ * `destinationInfoQueryOptions` in `lib/xrpl/query-reads.ts`, which the submit
+ * path's one-shot probe also builds from — so the read that displays the check
+ * and the read that authorises the payment cannot drift apart. They live in
+ * `lib` rather than here because dependencies point one way (AD-1): `lib` may
+ * not import from a hook.
  */
 export function useDestinationInfo(
   network: NetworkId,
@@ -27,18 +27,7 @@ export function useDestinationInfo(
 ) {
   const valid = isValidClassicAddress(destination)
   return useQuery<DestinationInfo>({
-    queryKey: ['destinationInfo', network, destination, asset],
+    ...destinationInfoQueryOptions(network, destination, asset),
     enabled: valid,
-    staleTime: 30_000,
-    queryFn: async () => {
-      const state = await fetchAccountState(network, destination)
-      const info: DestinationInfo = { exists: state.exists, requireDestTag: state.requireDestTag }
-      if (asset !== 'XRP' && state.exists) {
-        const [currency, issuer] = asset.split('|')
-        const lines = await fetchAccountLines(network, destination)
-        info.hasTrustLine = lines.some((l) => l.currency === currency && l.account === issuer)
-      }
-      return info
-    },
   })
 }

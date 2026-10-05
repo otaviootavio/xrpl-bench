@@ -101,7 +101,7 @@ S4 can run concurrently with S1–S3 by a second person; everything else is sequ
 |---|---|---|
 | M5 | `SendTab.tsx:140` | `canSend` checks format only. Compare against `spendableDrops` **with the fee reserved on top** (XRP) and against the held balance (issued), so a max-send doesn't fail at `tecUNFUNDED_PAYMENT`. |
 | M6 | `SendTab.tsx`, `TrustLinesTab.tsx` | No validation before building a tx. Use `isValidClassicAddress` for destination + issuer; validate currency codes (3-char or 40-hex); range-check `destTag` (`SendTab.tsx:80`) to uint32. |
-| M2 | `writes.ts:12` | No `maxFeeXRP` on `autofill()` — relies on the xrpl.js 2 XRP default. Cap it per the skill's fee-protection guidance. |
+| M2 | `writes.ts:12` | No `maxFeeXRP` on `autofill()` — relies on the xrpl.js 2 XRP default. Cap it per the skill's fee-protection guidance. **Note (2026-10-04):** the fix passed the cap as `autofill`'s second argument, which xrpl.js reads as `signersCount`, so it never took effect. Superseded by `docs/decisions.md` §14. |
 | M7 | `writes.ts:72-76` | `TrustSet` omits `tfSetNoRipple`. Holders should not ripple; skill `security.md` says NoRipple "prevents unexpected balance shifts." |
 | M3 | `writes.ts:30` | Expiry is detected by `err.message.includes('LastLedgerSequence')` — a wording change in xrpl.js silently reclassifies it. Match on the error type/code, or verify by comparing the validated ledger index against the tx's `LastLedgerSequence`. |
 

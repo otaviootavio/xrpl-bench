@@ -1,11 +1,29 @@
 {
   "version": 1,
   "skills": {
+    "xrpl": {
+      "source": "peersyst/xrplskills",
+      "sourceType": "github",
+      "skillPath": "skills/xrpl/SKILL.md",
+      "computedHash": "12dc74e7d4ce96a06f8dc6e8914879f2ec73879cd4d94f8f6153e4764619a926"
+    },
     "xrpl-dev": {
       "source": "xrpl-commons/xrpl-dev-skill",
       "sourceType": "github",
       "skillPath": "skill/SKILL.md",
       "computedHash": "5dace9f95e953f2cea93c3b8c42c1443512fd8082521bb364d4116a1fcad95bb"
+    },
+    "xrpl-go": {
+      "source": "peersyst/xrplskills",
+      "sourceType": "github",
+      "skillPath": "skills/xrpl-go/SKILL.md",
+      "computedHash": "404f29fec853ce08f937c3914ad406d92fe926454a7d8ab858d54551d6854666"
+    },
+    "xrpl-standards": {
+      "source": "peersyst/xrplskills",
+      "sourceType": "github",
+      "skillPath": "skills/xrpl-standards/SKILL.md",
+      "computedHash": "abaec5ff27ac6a49c97c329bdd0dc5ade148b2dd92b7a088678c7ee32bfdf923"
     }
   }
 }

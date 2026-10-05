@@ -292,3 +292,15 @@ Item 8 shipped as a refactor that preserves behaviour (`spec-sendtab-split.md`).
 - source_spec: `_bmad-output/implementation-artifacts/spec-guards-writes-choke-point.md`
   summary: No test pins that the `.oxlintrc.json` `no-explicit-any` override still matches `src/lib/xrpl`; a glob change or an oxlint release that read `overrides` differently would keep lint green.
   evidence: Raised by the verification-gap review (filed disposition: defer). Checked by hand on 2026-10-04 (oxlint 1.80.0): `as any` in `src/lib/xrpl/zz.ts` fails, in a colocated `zz.test.ts` passes, and the same in `src/hooks` passes. A vitest case spawning oxlint on a fixture would close it.
+
+## Deferred from: build of epic 6 retro item 11 (full reset unregisters the service worker, 2026-10-04)
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-epic-6-retro-11-reset-unregisters-service-worker.md`
+  summary: Offline start-up after a full reset has been verified only under `vite preview`, not on an installed home-screen PWA against `stage` with production's `no-cache` shell headers.
+  evidence: Raised by review. The browser pass showed the fix (fresh worker, precache 14, offline reload served by the worker with the HTTP cache cleared and the server killed) and a negative control (unregister removed: precache `{}`, offline reload `net::ERR_FAILED`), but its scripts and screenshots live in a session scratchpad. The retro's F1 production consequence was inferred, and this check carries it forward. Settle it with one installed-PWA pass on `stage`: reset, reopen online, then reopen in airplane mode. Medium if it fails.
+- source_spec: `_bmad-output/implementation-artifacts/spec-epic-6-retro-11-reset-unregisters-service-worker.md`
+  summary: A full reset made while offline leaves an app that cannot start until the device is back online, and neither reset screen warns about this before the user confirms.
+  evidence: Raised by review pass 2. Before this change, an offline reset left a worker with an empty precache that fell back to the network, so this already happened, and the change does not cause it (`docs/decisions.md` §13 says so). A fix is a product call: a warning in the confirm dialog, or skipping `clearShell` while `navigator.onLine === false`.
+- source_spec: `_bmad-output/implementation-artifacts/spec-epic-6-retro-11-reset-unregisters-service-worker.md`
+  summary: Nothing keeps `navigator.serviceWorker.getRegistrations()`/`unregister()` inside `lib/teardown.ts` `clearShell`. No lint rule or scan does it, and `docs/agents/keys-and-secrets.md` has no explicit **Never** for it.
+  evidence: Raised by review pass 2. Today the protection is the negative assertions in the lock, removal and teardown tests, which a new caller elsewhere (a "repair offline" button, a debug path) would not trip. The fix edits agent-context docs, or adds a scan like the AD-16 persistence scan that item 13 is already moving.

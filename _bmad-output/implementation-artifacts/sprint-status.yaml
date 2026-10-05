@@ -182,7 +182,7 @@ action_items:
       again. Whichever is chosen, correct the comment at lib/teardown.ts:74-76 and
       pin the result with a test."
     owner: "Otavio (decision), then dev"
-    status: open
+    status: done
     ref: "_bmad-output/implementation-artifacts/epic-6-retro-2026-10-04.md"
   - id: "epic-6-retro-item-12-pin-single-wallet-removal-s-shell-surviv"
     epic: 6
@@ -191,7 +191,7 @@ action_items:
       which covers both lock and removal, or add a Settings handleRemove test with
       a stubbed caches."
     owner: "dev"
-    status: open
+    status: done
     ref: "_bmad-output/implementation-artifacts/epic-6-retro-2026-10-04.md"
   - id: "epic-6-retro-item-13-move-the-ad-16-registration-scan-out-of"
     epic: 6

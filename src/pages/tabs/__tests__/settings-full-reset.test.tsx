@@ -18,6 +18,8 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 const h = vi.hoisted(() => ({
   idb: new Map<string, string>(),
   wipeVault: vi.fn(async () => {}),
+  listWallets: vi.fn(async (): Promise<unknown[]> => []),
+  removeWallet: vi.fn(async (_id: string) => {}),
 }))
 
 vi.mock('idb-keyval', () => ({
@@ -30,8 +32,8 @@ vi.mock('@/lib/crypto/keystore', () => ({
   addressFromSeed: () => '',
   generateAndStoreWallet: async () => {},
   importAndStoreWallet: async () => {},
-  listWallets: async () => [],
-  removeWallet: async () => {},
+  listWallets: () => h.listWallets(),
+  removeWallet: (id: string) => h.removeWallet(id),
   revealSeed: async () => '',
 }))
 vi.mock('@/lib/xrpl/client', () => ({ disconnectAllClients: async () => {} }))
@@ -64,6 +66,22 @@ import { useNoticeStore } from '@/store/notice-store'
 
 const reload = vi.fn()
 const flush = () => new Promise((r) => setTimeout(r, 0))
+const PRECACHE = 'workbox-precache-v2-https://wallet.example/'
+
+/** The shell: a Cache Storage holding the precache, and one service-worker
+ * registration (jsdom has neither). */
+function installShell() {
+  const live = new Set([PRECACHE])
+  const cacheStorage = {
+    keys: vi.fn(async () => [...live]),
+    delete: vi.fn(async (k: string) => live.delete(k)),
+  }
+  vi.stubGlobal('caches', cacheStorage)
+  const registration = { unregister: vi.fn(async () => true) }
+  const sw = { getRegistrations: vi.fn(async () => [registration]) }
+  Object.defineProperty(window.navigator, 'serviceWorker', { value: sw, configurable: true })
+  return { cacheStorage, live, sw, registration }
+}
 
 async function seedResidue() {
   const s = useAppStore.getState()
@@ -94,6 +112,8 @@ async function confirmErase() {
 beforeEach(() => {
   h.idb.clear()
   h.wipeVault.mockReset().mockResolvedValue(undefined)
+  h.listWallets.mockReset().mockResolvedValue([])
+  h.removeWallet.mockReset().mockResolvedValue(undefined)
   reload.mockReset()
   vi.stubGlobal('location', { ...window.location, reload })
   useNoticeStore.setState({ notices: [] } as never)
@@ -102,6 +122,7 @@ beforeEach(() => {
 afterEach(() => {
   cleanup()
   vi.unstubAllGlobals()
+  delete (window.navigator as { serviceWorker?: unknown }).serviceWorker
 })
 
 describe('Settings — Erase everything', () => {
@@ -131,5 +152,46 @@ describe('Settings — Erase everything', () => {
     expect(JSON.stringify(useNoticeStore.getState().notices)).toMatch(/reset did not finish/i)
     expect(reload).not.toHaveBeenCalled()
     expect(useAppStore.getState().unlocked).toBe(false)
+  })
+
+  it('calls unregister on every service-worker registration and deletes every cache key', async () => {
+    const { live, registration } = installShell()
+    await seedResidue()
+    renderSettings()
+
+    await confirmErase()
+    await waitFor(() => expect(reload).toHaveBeenCalledTimes(1))
+    expect(registration.unregister).toHaveBeenCalledTimes(1)
+    expect(live.size).toBe(0)
+  })
+})
+
+/**
+ * Single-wallet removal (6.2 AC4, epic 6 retro item 12): the shell — precache
+ * and registration — stays, and the device is not reset (no vault wipe, no
+ * reload).
+ */
+describe('Settings — Remove one wallet', () => {
+  it('leaves the precache and the service-worker registration alone, and does not reset the device', async () => {
+    const { cacheStorage, live, sw, registration } = installShell()
+    const keep = { id: 'w2', label: 'Spending', address: 'rCarolSecondWalletAddress' }
+    useAppStore.getState().setWallets([{ id: 'w1', label: 'Savings', address: 'rAliceAddressLabelThatMustNotSurvive' }, keep] as never)
+    useAppStore.getState().setActiveWalletId('w1')
+    h.listWallets.mockResolvedValue([keep])
+    renderSettings()
+
+    fireEvent.click((await screen.findAllByRole('button', { name: /^remove$/i }))[0])
+    fireEvent.click(await screen.findByRole('button', { name: /remove wallet/i }))
+    await waitFor(() => expect(h.removeWallet).toHaveBeenCalledWith('w1'))
+    await waitFor(() => expect(useAppStore.getState().activeWalletId).toBe('w2'))
+    await flush()
+
+    expect(cacheStorage.keys).not.toHaveBeenCalled()
+    expect(cacheStorage.delete).not.toHaveBeenCalled()
+    expect(live.has(PRECACHE)).toBe(true)
+    expect(sw.getRegistrations).not.toHaveBeenCalled()
+    expect(registration.unregister).not.toHaveBeenCalled()
+    expect(h.wipeVault).not.toHaveBeenCalled()
+    expect(reload).not.toHaveBeenCalled()
   })
 })

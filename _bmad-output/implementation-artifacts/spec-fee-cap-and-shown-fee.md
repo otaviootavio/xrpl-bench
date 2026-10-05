@@ -100,6 +100,8 @@ Pinning the uncushioned `open_ledger_fee` means that under rising load a send ma
 11. (review) Trust lines still shows no fee and checks none before its confirm (the cap holds at the choke point) — deferred to the ledger, as is a page-level test of the refusal toast.
 12. (review) Rejected: a fresh fee re-read inside `submitAndClassify` to catch a pinned fee below the network minimum (bounded by LastLedgerSequence, reported `expired`), and a test for an above-cap refetch while the dialog is open (covered by the existing guard withdrawal).
 
+**Confirmed:** no fee cushion (3) and refusing AccountDelete/AMMCreate/VaultCreate at signing (10) were CONFIRMED by Otavio on 2026-10-04 (`docs/decisions.md` §14).
+
 ## Implementation Notes
 
 - Gates green on the worktree (baseline c0b65e5 + this diff, uncommitted): lint, build, test 605/605, check:contrast.

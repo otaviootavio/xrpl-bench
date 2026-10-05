@@ -1326,17 +1326,48 @@ stopped the app opening offline and voided US-8's retained precache.
   (`tearDownAllLocalState`). Persisted owners are listed in
   `PERSISTED_ACCOUNT_DATA`, and `src/lib/__tests__/teardown.test.ts` fails on
   any module under `src/` that persists without being listed there.
-- **The shell** — the service-worker precache. It survives every lock and every
-  single-wallet removal. Only "remove everything" clears it.
+- **The shell** — the service-worker precache and the registration that owns
+  it. It survives every lock and every single-wallet removal. Only "remove
+  everything" clears it.
 
 **The app store is cleared in memory before its key is deleted.** The `persist`
 middleware re-serializes the whole slice on every later `set()`, and both reset
 paths call `lock()`; deleting the key first would let that write the old
 wallets back.
 
-**A partial teardown is reported, not reloaded over.** Every clear is
-attempted; any failure is rethrown, and the reset screens show it instead of
-reloading as though the device were clean.
+**A partial teardown is reported, not reloaded over.** Every account-data clear
+is attempted; any failure is rethrown, and the reset screens show it instead of
+reloading as though the device were clean. A partial teardown leaves the shell
+in place, so the "reload and reset again" it asks for reopens the version the
+user already runs, not one the origin now serves; the retry clears the shell.
+(This partial-teardown rule was decided unattended on 2026-10-04 and is pending
+Otavio's check — Decision 1 in
+`_bmad-output/implementation-artifacts/spec-epic-6-retro-11-reset-unregisters-service-worker.md`.)
+
+**A full reset unregisters the service worker** (2026-10-04, decided by Otavio;
+epic 6 retro F1, item 11). Deleting the caches alone left the precache empty for
+good: the still-registered, already-active worker never refills it, because
+workbox repairs a precache miss only for entries carrying `integrity`, which
+vite-plugin-pwa does not emit. An installed app that was reset could then not
+open offline until a new release installed. `clearShell` therefore unregisters
+every registration for the origin (`navigator.serviceWorker.getRegistrations()`,
+not only the one `lib/sw-register.ts` holds) and deletes every cache key, each
+step attempted independently and failing quietly, since the shell holds no
+account data. (Unregistering *every* registration, and the quiet failure of
+both steps, were decided unattended on 2026-10-04 and are pending Otavio's
+check — Decisions 2 and 3 in the same spec.) The reset's reload then installs a fresh worker that precaches the
+shell, as a first install does. A full reset made offline leaves no worker and
+no caches, so the app cannot open until the device is online again; that was
+already true before this change, when the emptied precache fell back to the
+network.
+
+**That reload is not an automatic update.** It is part of an explicit user
+action that leaves no wallet or key on the device, and it loads whatever the
+origin serves, exactly as a first install does. This already happened before
+the change: the emptied precache made workbox fall back to the network. Only the
+two reset buttons reach `clearShell`; lock, single-wallet removal and the update
+flow never unregister. A *waiting* worker (a declined update) is discarded with
+its registration, which matches a fresh install.
 
 ## 14. The fee cap is a refusal, and Send pays the fee it shows
 
@@ -1377,3 +1408,12 @@ computes the fee and the dialog states the cap as the upper bound.
 **The fee is polled every 10 s** (`useRecommendedFee`, `refetchInterval`), so
 the pinned figure is recent and an above-cap refusal clears on its own when the
 fee falls.
+
+**Both unattended decisions are confirmed.** On 2026-10-04 Otavio confirmed the
+two fee decisions PR #42 made unattended: there is **no fee cushion** (Send pays
+exactly the fee shown, and under load a send may expire rather than overpay),
+and **AccountDelete, AMMCreate and VaultCreate are refused at signing**, because
+their fee exceeds the 0.01 XRP cap. The confirmation is recorded in the
+Intent of
+`_bmad-output/implementation-artifacts/spec-epic-6-retro-11-reset-unregisters-service-worker.md`,
+and in Decisions 3 and 10 of `spec-fee-cap-and-shown-fee.md`.

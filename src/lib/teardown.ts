@@ -10,12 +10,16 @@ import { clearPersistedAppState } from '@/store/app-store'
  *    persisted owners are listed in `PERSISTED_ACCOUNT_DATA` below; its
  *    in-memory part is the TanStack Query cache, which is where balances,
  *    trust lines and history actually live.
- *  - **The shell** — the service-worker precache — survives every lock and
- *    every single-wallet removal. It holds no account data: `vite.config.ts`
- *    precaches the static build and declares no `runtimeCaching`, so no RPC
- *    response has ever been in Cache Storage. Deleting it on lock bought no
- *    privacy and cost offline start-up and the update flow's retained precache
- *    (G-14; `app-versioning-and-updates.md` US-8, US-9; PRD FR-52).
+ *  - **The shell** — the service-worker precache and the registration that
+ *    owns it — survives every lock and every single-wallet removal. It holds
+ *    no account data: `vite.config.ts` precaches the static build and declares
+ *    no `runtimeCaching`, so no RPC response has ever been in Cache Storage.
+ *    Deleting it on lock bought no privacy and cost offline start-up and the
+ *    update flow's retained precache (G-14; `app-versioning-and-updates.md`
+ *    US-8, US-9; PRD FR-52). Only a full reset clears it, and then the
+ *    registration goes with the caches: an active worker never refills a
+ *    deleted precache, so the reset's reload must install a fresh one
+ *    (`docs/decisions.md` §13).
  *
  * A module that persists anything is incomplete until its clear is listed in
  * `PERSISTED_ACCOUNT_DATA`, and a new Cache Storage entry must say which set
@@ -56,9 +60,10 @@ export const RESET_INCOMPLETE_MESSAGE =
  * "Remove everything" — the hard-lock reset on the Unlock screen and "Erase
  * everything" in Settings. Clears all of the account-data set AND the shell.
  *
- * Every clear is attempted even if an earlier one fails, so one broken layer
- * cannot leave the others behind; any failure is then rethrown, so a caller
- * never reloads as though everything were gone when it is not.
+ * Every account-data clear is attempted even if an earlier one fails, so one
+ * broken layer cannot leave the others behind; any failure is then rethrown,
+ * so a caller never reloads as though everything were gone when it is not.
+ * The shell is cleared only once every account-data clear has succeeded.
  */
 export async function tearDownAllLocalState(queryClient: QueryClient): Promise<void> {
   const failures: unknown[] = []
@@ -71,13 +76,15 @@ export async function tearDownAllLocalState(queryClient: QueryClient): Promise<v
   }
   clearCachedAccountData(queryClient)
   await disconnectAllClients().catch(() => {})
-  // The shell goes too on a full reset: nothing on a handed-over device should
-  // outlive "remove everything", and the reload re-fetches it. This is the
-  // ONLY path that clears it (Story 6.1 adds to this set and removes nothing).
-  await clearShell()
   if (failures.length > 0) {
+    // A partial teardown keeps the shell — worker and precache — so the
+    // "reload and reset again" the caller shows reopens the version the user
+    // already runs, not whatever the origin now serves. The retry clears it.
     throw new AggregateError(failures, 'Local data could not be fully removed.')
   }
+  // The shell goes too on a full reset: nothing on a handed-over device should
+  // outlive "remove everything". This is the ONLY path that clears it.
+  await clearShell()
 }
 
 /**
@@ -94,14 +101,39 @@ export function clearCachedAccountData(queryClient: QueryClient): void {
   queryClient.clear()
 }
 
-/** The shell set: the service-worker precache. Cleared by full teardown only. */
+/**
+ * The shell set: every service-worker registration for the origin, and the
+ * precache. Cleared by a full teardown only, after every account-data clear
+ * succeeded.
+ *
+ * Deleting the caches alone is not enough: the still-active worker never
+ * refills a deleted precache (workbox repairs a miss only for entries that
+ * carry `integrity`, which vite-plugin-pwa does not emit), so the app would not
+ * open offline again until a new release installed. Unregistering makes the
+ * reset's reload install a fresh worker that precaches the shell, as a first
+ * install does. That reload is not an automatic update: it follows an explicit
+ * reset that leaves no wallet on the device (`docs/decisions.md` §13).
+ *
+ * All registrations are unregistered, not only the one `lib/sw-register.ts`
+ * holds, so a stale one cannot keep serving an empty precache. The two steps
+ * are attempted independently and both fail quietly: the shell holds no
+ * account data, so its failure is no reason to report the reset incomplete.
+ */
 async function clearShell(): Promise<void> {
+  try {
+    const sw = typeof navigator === 'undefined' ? undefined : navigator.serviceWorker
+    if (sw) {
+      const registrations = await sw.getRegistrations()
+      await Promise.allSettled(registrations.map((r) => r.unregister()))
+    }
+  } catch {
+    // No service-worker API reachable (insecure context, blocked). Quiet: see above.
+  }
   if (typeof caches === 'undefined') return
   try {
     const keys = await caches.keys()
     await Promise.all(keys.map((k) => caches.delete(k)))
   } catch {
-    // Cache API can be unavailable (private mode, no SW registered). The shell
-    // holds no account data, so this is the one clear allowed to fail quietly.
+    // Cache API can be unavailable (private mode). Quiet: see above.
   }
 }

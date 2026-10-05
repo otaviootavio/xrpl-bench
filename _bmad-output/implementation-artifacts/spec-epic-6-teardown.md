@@ -134,6 +134,7 @@ was intact (14 entries).
    leaves an app that cannot start until the device is back online. The
    behaviour is unchanged from before. If a reset should also keep the shell,
    that is a one-line change in `tearDownAllLocalState`.
+   *Re-decided 2026-10-04: the premise "the reload re-fetches the shell" was false; the full reset now also unregisters the service worker (see `spec-epic-6-retro-11-reset-unregisters-service-worker.md`, `docs/decisions.md` §13).*
 2. **A full reset also resets the network preference to Testnet.** The whole
    persisted key is cleared, and `network` lives in it. "Remove everything" was
    read literally.

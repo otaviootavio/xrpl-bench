@@ -48,8 +48,9 @@ file before editing anything under `src/lib/crypto/`.
   security-relevant explanation.
 - **Never** clear the service-worker cache on lock or single-wallet removal. It
   holds only the precached shell, never account data, and deleting it stops the
-  app opening offline. Only "remove everything" clears it — `docs/decisions.md`
-  §13 (AD-16).
+  app opening offline. Only "remove everything" clears it, and it unregisters
+  the service worker too, so the reload precaches the shell again —
+  `docs/decisions.md` §13 (AD-16).
 
 ## Ask first
 

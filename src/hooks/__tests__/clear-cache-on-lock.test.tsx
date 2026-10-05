@@ -22,12 +22,16 @@ const KEY = queryKeys.accountState('testnet', 'rBoGUS9uiK9m3Kk6qnGRvWWCwAeN8hF3w
 
 afterEach(() => {
   vi.unstubAllGlobals()
+  delete (window.navigator as { serviceWorker?: unknown }).serviceWorker
 })
 
 describe('useClearCacheOnLock', () => {
-  it('clears the query cache on lock and never touches Cache Storage', async () => {
+  it('clears the query cache on lock and never touches Cache Storage or the service-worker registration', async () => {
     const cacheStorage = { keys: vi.fn(async () => ['workbox-precache']), delete: vi.fn(async () => true), open: vi.fn() }
     vi.stubGlobal('caches', cacheStorage)
+    const registration = { unregister: vi.fn(async () => true) }
+    const sw = { getRegistrations: vi.fn(async () => [registration]) }
+    Object.defineProperty(window.navigator, 'serviceWorker', { value: sw, configurable: true })
     useAppStore.setState({ unlocked: true } as never)
 
     const qc = new QueryClient()
@@ -43,5 +47,8 @@ describe('useClearCacheOnLock', () => {
     expect(qc.getQueryData(KEY)).toBeUndefined()
     expect(cacheStorage.delete).not.toHaveBeenCalled()
     expect(cacheStorage.keys).not.toHaveBeenCalled()
+    // The registration stays too: only a full reset unregisters it.
+    expect(sw.getRegistrations).not.toHaveBeenCalled()
+    expect(registration.unregister).not.toHaveBeenCalled()
   })
 })

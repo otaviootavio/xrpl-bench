@@ -81,6 +81,7 @@ beforeEach(() => {
 afterEach(() => {
   cleanup()
   vi.unstubAllGlobals()
+  delete (window.navigator as { serviceWorker?: unknown }).serviceWorker
 })
 
 describe('Unlock — hard-lock reset', () => {
@@ -98,6 +99,20 @@ describe('Unlock — hard-lock reset', () => {
       expect(onDisk).not.toContain(residue)
     }
     expect(h.wipeVault).toHaveBeenCalledTimes(1)
+  })
+
+  it('calls unregister on every service-worker registration and deletes every cache key', async () => {
+    const live = new Set(['workbox-precache-v2-https://wallet.example/'])
+    vi.stubGlobal('caches', { keys: vi.fn(async () => [...live]), delete: vi.fn(async (k: string) => live.delete(k)) })
+    const registration = { unregister: vi.fn(async () => true) }
+    Object.defineProperty(window.navigator, 'serviceWorker', { value: { getRegistrations: vi.fn(async () => [registration]) }, configurable: true })
+    renderUnlock()
+    await screen.findByText(/too many failed attempts/i)
+
+    await confirmReset()
+    await waitFor(() => expect(reload).toHaveBeenCalledTimes(1))
+    expect(registration.unregister).toHaveBeenCalledTimes(1)
+    expect(live.size).toBe(0)
   })
 
   it('does not reload as though the device were clean when a clear fails, and says so', async () => {

@@ -51,6 +51,24 @@ function installCaches(names: string[]) {
   return { api, live }
 }
 
+/**
+ * A minimal `navigator.serviceWorker` holding `count` registrations. Defined on
+ * the existing `navigator` (not a replacement object) and removed in
+ * `afterEach`, so the "no SW API" case is simply the default.
+ */
+function installServiceWorker(count = 1) {
+  const registrations = Array.from({ length: count }, () => ({ unregister: vi.fn(async () => true) }))
+  const sw = { getRegistrations: vi.fn(async () => registrations) }
+  Object.defineProperty(globalThis.navigator, 'serviceWorker', { value: sw, configurable: true })
+  return { sw, registrations }
+}
+
+function removeServiceWorker() {
+  if (typeof navigator !== 'undefined' && Object.getOwnPropertyDescriptor(navigator, 'serviceWorker')) {
+    delete (navigator as { serviceWorker?: unknown }).serviceWorker
+  }
+}
+
 /** Let the persist middleware's async writes land. */
 const flush = () => new Promise((r) => setTimeout(r, 0))
 
@@ -81,6 +99,7 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.unstubAllGlobals()
+  removeServiceWorker()
 })
 
 describe('tearDownAllLocalState — "remove everything" (G-13)', () => {
@@ -137,8 +156,78 @@ describe('tearDownAllLocalState — "remove everything" (G-13)', () => {
     expect(h.idb.has(APP_STATE_STORAGE_KEY)).toBe(false)
   })
 
+  it('a vault that fails to wipe leaves the shell — no unregister, no cache deletion — so the retry reloads the version already running', async () => {
+    const { api, live } = installCaches([PRECACHE])
+    const { sw } = installServiceWorker()
+    h.wipeVault.mockRejectedValueOnce(new Error('IDB blocked'))
+
+    await expect(tearDownAllLocalState(new QueryClient())).rejects.toThrow('could not be fully removed')
+    expect(sw.getRegistrations).not.toHaveBeenCalled()
+    expect(api.keys).not.toHaveBeenCalled()
+    expect(live.has(PRECACHE)).toBe(true)
+  })
+
   it('registers both IndexedDB owners in the account-data set', () => {
     expect(PERSISTED_ACCOUNT_DATA.map((o) => o.module).sort()).toEqual(['src/lib/crypto/db.ts', 'src/store/app-store.ts'])
+  })
+})
+
+/**
+ * Epic 6 retro F1: an active worker never refills a deleted precache, so a
+ * full reset must unregister every registration — then the reload installs a
+ * fresh worker that precaches the shell, and the app opens offline again.
+ */
+describe('tearDownAllLocalState — the shell goes with its worker', () => {
+  it('unregisters every service-worker registration and deletes every cache key', async () => {
+    const { live } = installCaches([PRECACHE, 'workbox-runtime-stale'])
+    const { sw, registrations } = installServiceWorker(2)
+
+    await tearDownAllLocalState(new QueryClient())
+
+    expect(sw.getRegistrations).toHaveBeenCalledTimes(1)
+    for (const r of registrations) expect(r.unregister).toHaveBeenCalledTimes(1)
+    expect(live.size).toBe(0)
+  })
+
+  it('still clears the caches, without throwing, when there is no service-worker API', async () => {
+    removeServiceWorker()
+    const { live } = installCaches([PRECACHE])
+    await expect(tearDownAllLocalState(new QueryClient())).resolves.toBeUndefined()
+    expect(live.size).toBe(0)
+  })
+
+  it('still unregisters, and resolves, when there is no Cache API', async () => {
+    vi.stubGlobal('caches', undefined)
+    const { registrations } = installServiceWorker()
+    await expect(tearDownAllLocalState(new QueryClient())).resolves.toBeUndefined()
+    expect(registrations[0].unregister).toHaveBeenCalledTimes(1)
+  })
+
+  it('still clears the caches and resolves when getRegistrations rejects', async () => {
+    const { live } = installCaches([PRECACHE])
+    const { sw } = installServiceWorker()
+    sw.getRegistrations.mockRejectedValueOnce(new Error('SecurityError'))
+
+    await expect(tearDownAllLocalState(new QueryClient())).resolves.toBeUndefined()
+    expect(live.size).toBe(0)
+  })
+
+  it('unregisters the others and still clears the caches when one unregister rejects', async () => {
+    const { live } = installCaches([PRECACHE])
+    const { registrations } = installServiceWorker(2)
+    registrations[0].unregister.mockRejectedValueOnce(new Error('InvalidStateError'))
+
+    await expect(tearDownAllLocalState(new QueryClient())).resolves.toBeUndefined()
+    expect(registrations[1].unregister).toHaveBeenCalledTimes(1)
+    expect(live.size).toBe(0)
+  })
+
+  it('still unregisters when the Cache API throws', async () => {
+    vi.stubGlobal('caches', { keys: vi.fn(async () => { throw new Error('private mode') }), delete: vi.fn() })
+    const { registrations } = installServiceWorker()
+
+    await expect(tearDownAllLocalState(new QueryClient())).resolves.toBeUndefined()
+    expect(registrations[0].unregister).toHaveBeenCalledTimes(1)
   })
 })
 
@@ -150,12 +239,15 @@ describe('clearCachedAccountData — lock and single-wallet removal (G-14)', () 
     expect(qc.getQueryCache().getAll()).toHaveLength(0)
   })
 
-  it('leaves the service-worker precache untouched', async () => {
+  it('leaves the service-worker precache and its registration untouched', async () => {
     const { api, live } = installCaches([PRECACHE])
+    const { sw, registrations } = installServiceWorker()
     clearCachedAccountData(seededQueryClient())
     await flush()
     expect(api.delete).not.toHaveBeenCalled()
     expect(live.has(PRECACHE)).toBe(true)
+    expect(sw.getRegistrations).not.toHaveBeenCalled()
+    expect(registrations[0].unregister).not.toHaveBeenCalled()
   })
 
   it('leaves the vault, the persisted app store and the sockets alone', async () => {

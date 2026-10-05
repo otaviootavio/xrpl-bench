@@ -39,6 +39,7 @@ export function AmountInput({
   kind,
   suffix,
   error,
+  pending,
   id,
 }: {
   label: string
@@ -47,8 +48,18 @@ export function AmountInput({
   kind: 'xrp' | 'issued'
   suffix?: string
   error?: string
+  /** A reason the amount cannot be checked yet because a read is still in
+   * flight. Shown beside the field like an error, but in the muted tone and
+   * without `aria-invalid`: a read that has not landed has not failed, and
+   * nothing on screen may say it has. `error` wins when both are given. */
+  pending?: string
   id: string
 }) {
+  const message = error
+    ? { text: error, id: `${id}-error`, tone: 'text-text-destructive' }
+    : pending
+      ? { text: pending, id: `${id}-pending`, tone: 'text-muted-foreground' }
+      : undefined
   return (
     <div className="grid gap-1.5">
       <Label htmlFor={id}>{label}</Label>
@@ -59,7 +70,7 @@ export function AmountInput({
           placeholder="0.00"
           value={value}
           aria-invalid={!!error}
-          aria-describedby={error ? `${id}-error` : undefined}
+          aria-describedby={message?.id}
           onChange={(e) => {
             const next = e.target.value
             if (/^\d*\.?\d*$/.test(next)) onChange(next)
@@ -67,12 +78,12 @@ export function AmountInput({
         />
         {suffix && <span className="panel-legend shrink-0">{suffix}</span>}
       </div>
-      {error && (
-        <p id={`${id}-error`} className="text-sm text-text-destructive">
-          {error}
+      {message && (
+        <p id={message.id} className={`text-sm ${message.tone}`}>
+          {message.text}
         </p>
       )}
-      {kind === 'xrp' && !error && (
+      {kind === 'xrp' && !message && (
         <p className="text-xs leading-snug text-muted-foreground">Up to 6 decimal places (1 drop = 0.000001 XRP).</p>
       )}
     </div>

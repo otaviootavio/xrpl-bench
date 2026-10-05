@@ -1,5 +1,4 @@
 import { useState } from 'react'
-import { isValidClassicAddress } from 'xrpl'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -10,25 +9,43 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { AmountInput, validateAmountString } from '@/components/wallet/AmountInput'
 import { TxLink } from '@/components/wallet/AddressLink'
 import { TxStatusBadge } from '@/components/wallet/TxStatusBadge'
+import { QueryErrorState } from '@/components/wallet/QueryErrorState'
 import { useAppStore, useActiveWallet } from '@/store/app-store'
+import type { NetworkId } from '@/lib/xrpl/networks'
+import { ReadingValue } from '@/components/wallet/ReadingValue'
 import { useSpendableBalance } from '@/hooks/useSpendableBalance'
 import { useRecommendedFee } from '@/hooks/useRecommendedFee'
 import { useTrustLines } from '@/hooks/useTrustLines'
-import { useDestinationInfo } from '@/hooks/useDestinationInfo'
+import { useDestinationCheck } from '@/hooks/useDestinationCheck'
 import { submitXrpPayment, submitIssuedPayment, type SubmitOutcome } from '@/lib/xrpl/writes'
 import { unlockWalletForSigning } from '@/lib/crypto/keystore'
-import {
-  formatXrp,
-  xrpToDropsString,
-  displayCurrencyCode,
-  isPositiveDecimalString,
-  compareDecimalStrings,
-} from '@/lib/xrpl/money'
+import { formatXrp, xrpToDropsString, displayCurrencyCode, MAX_FEE_DROPS } from '@/lib/xrpl/money'
+import { checkFunds, heldTokenLines, selectedTokenLine, spendableReadState, tokenAssetKey } from '@/lib/xrpl/funds-check'
+import { readStateOf, type ReadState } from '@/lib/read-state'
 import { describeResultCode } from '@/lib/xrpl/result-codes'
+import { invalidateAccountScoped, invalidateDestinationCheck, queryKeys } from '@/lib/xrpl/query-keys'
+import { DESTINATION_CHECK_FRESHNESS_MS, fetchDestinationInfoOnce, type DestinationInfo } from '@/lib/xrpl/query-reads'
 import { useQueryClient } from '@tanstack/react-query'
 import { toast } from '@/lib/notify'
+import { addressKnownUnderOtherTag, canonicalDestinationTag, suppressesFirstSendWarning, type SendPair } from '@/store/address-book'
 
 const MAX_DESTINATION_TAG = 4294967295
+
+/** Why the submit path refused. Named as a type rather than written inline
+ * three times, because the retirement rule below switches on it exhaustively:
+ * a new reason that forgets to say when it stops being true is a compile
+ * error, not a message that outlives its cause. */
+type PreflightReason = 'failed' | 'tag-required' | 'guard-closed' | 'not-activated' | 'no-trust-line'
+
+/** Whether two fee read states state the same fact: the same status and, for
+ * a figure, the same drops string. Compared by value, never by reference
+ * (`readStateOf` builds a fresh object every render) and never by
+ * `dataUpdatedAt` (a 10 s poll that reads the same figure again is not a
+ * change the operator needs to re-confirm). */
+function sameFeeFact(a: ReadState<string>, b: ReadState<string>): boolean {
+  if (a.status !== b.status) return false
+  return a.status !== 'ok' || (b.status === 'ok' && a.value === b.value)
+}
 
 export function SendTab() {
   const network = useAppStore((s) => s.network)
@@ -39,63 +56,347 @@ export function SendTab() {
   const queryClient = useQueryClient()
 
   const [destination, setDestination] = useState('')
-  const [asset, setAsset] = useState('XRP')
+  /** The asset picked, stamped with the `(network, address)` it was picked
+   * for, and read back only while both still match — `'XRP'` otherwise.
+   *
+   * `SendTab` is not remounted by a wallet or network switch (Main keys it by
+   * tab), so a bare string would carry a token picked on one account into
+   * another, where nothing has said that account holds it. The stamp retires
+   * the choice for every way the account can change, in the render itself,
+   * on the same pattern as `preflightReport` below. A retired choice is then
+   * cleared, so switching back does not quietly put the token back on the
+   * form: picking it again is an act the operator takes. */
+  const [assetChoice, setAssetChoice] = useState<{ network: NetworkId; address: string; asset: string } | null>(null)
   const [amount, setAmount] = useState('')
+  const assetChoiceMatches = !!assetChoice && assetChoice.network === network && assetChoice.address === wallet?.address
+  // A same-component state adjustment during render; it clears its own
+  // condition. A retired TOKEN choice takes its amount with it: "1000" typed
+  // as USD would otherwise be reread as 1000 XRP on the next account.
+  if (assetChoice && !assetChoiceMatches) {
+    if (assetChoice.asset !== 'XRP') setAmount('')
+    setAssetChoice(null)
+  }
+  const asset = assetChoice && assetChoiceMatches ? assetChoice.asset : 'XRP'
+  const setAsset = (next: string) => setAssetChoice({ network, address: wallet?.address ?? '', asset: next })
   const [destTag, setDestTag] = useState('')
-  const [confirming, setConfirming] = useState(false)
+  /** The operator's intent to confirm, pinned to what was on screen when they
+   * pressed "Review payment" — or `null` for no intent at all:
+   *
+   * - `checkedAt` — the destination check's `dataUpdatedAt`. The guard alone
+   *   does not see a reading replaced by a newer one without ever closing;
+   *   `dataUpdatedAt` only increases, so an intent formed against an older
+   *   reading can never match again.
+   * - `fee` — the fee read state at that moment. The dialog states THIS, and
+   *   `doSend` signs THIS, so the figure the operator read is the figure paid
+   *   even though the live read polls every 10 s. If the live read stops
+   *   stating the same fact (another figure, a failure, a figure arriving
+   *   where none was) the intent is withdrawn, below — compared by value,
+   *   because a fee can go 10 → 15 → 10 and must not reopen the dialog on the
+   *   way back.
+   *
+   * The intent is withdrawn outright whenever the guard closes, or the fee
+   * moves, outside a send (below, beside `confirmOpen`). */
+  const [confirmingFor, setConfirmingFor] = useState<{ checkedAt: number; fee: ReadState<string> } | null>(null)
   const [busy, setBusy] = useState(false)
   const [outcome, setOutcome] = useState<SubmitOutcome | null>(null)
-
-  const { spendableDrops } = useSpendableBalance(network, wallet?.address ?? null)
+  /** Why the submit path refused to send, and the `(network, destination,
+   * asset)` it refused for. Inline on the form, never a toast: a failed *read*
+   * reports where the data would have been (AD-8).
+   *
+   * The triple is stored with the reason, and the reason is read back only when
+   * it still matches, so one comparison retires the report for every way the
+   * inputs can change — including a network switch, which no field's `onChange`
+   * ever sees. A report about another ledger is not a smaller version of the
+   * truth; it is a false statement about this one. */
+  const [preflightReport, setPreflightReport] = useState<{
+    network: NetworkId
+    destination: string
+    asset: string
+    reason: PreflightReason
+  } | null>(null)
+  /**
+   * The three reads the amount is checked against, each as the shared read
+   * state (`lib/read-state.ts`): a figure that was read, a read in flight, a
+   * read that failed, or an account that does not exist yet. The funds check,
+   * the amount field and the readout rows all consume these, so the four facts
+   * are told apart in one place rather than re-derived per consumer.
+   */
+  const spendable = useSpendableBalance(network, wallet?.address ?? null)
+  const spendableState = spendableReadState(spendable)
   const fee = useRecommendedFee(network)
+  /** The fee, only when it was actually read for the network on screen now —
+   * never a fabricated one, and never a value retained under a read in error
+   * (docs/decisions.md §12, rule 2). */
+  const feeState: ReadState<string> = readStateOf(fee)
   const trustLines = useTrustLines(network, wallet?.address ?? null)
-  // Ledger reads go through a query hook, never an onBlur handler (§4).
-  const destQuery = useDestinationInfo(network, destination, asset)
-  const destInfo = destQuery.data
+  const trustLinesState = readStateOf(trustLines)
 
-  // Frozen assets can't be moved, so they're not offerable (decisions.md §2).
-  // Balances are DECIMAL strings — never BigInt them.
-  const heldTokens = (trustLines.data ?? []).filter((l) => isPositiveDecimalString(l.balance) && !l.freezePeer && !l.freeze)
-  const selectedLine = asset === 'XRP' ? null : heldTokens.find((l) => `${l.currency}|${l.account}` === asset)
+  const destCheck = useDestinationCheck(network, destination, asset)
+  const destQuery = destCheck.query
+  const destInfo = destCheck.info
+  const destinationValid = destCheck.destinationValid
+  const checkedAt = destCheck.checkedAt
+  /** The send guard's destination half; see `useDestinationCheck`. */
+  const destCheckOk = destCheck.ok
+  const destCheckStale = destCheck.stale
+  const destCheckPending = destCheck.pending
 
-  const isKnownDestination = addressBook.some((e) => e.address === destination)
-  const destinationValid = isValidClassicAddress(destination)
+  const heldTokens = heldTokenLines(trustLinesState)
+  const selectedLine = selectedTokenLine(trustLinesState, asset)
+
   const isSelfSend = !!wallet && destination === wallet.address
   const amountValidation = validateAmountString(amount || '', asset === 'XRP' ? 'xrp' : 'issued')
   const tagValue = destTag ? Number(destTag) : undefined
+  /** The counterparty this form would pay: the network it would be submitted
+   * on, the address, AND the tag, as text. The tag field only ever holds
+   * digits, so this is the canonical form of the very tag `tagValue` submits —
+   * derived from the string, never from it. `network` is the same render
+   * closure's value that `doSend` submits on, so the entry written after a
+   * validated send names the network the payment was signed for. */
+  const counterparty: SendPair = { network, address: destination, destinationTag: canonicalDestinationTag(destTag) }
+  /** FR-21's "you haven't sent here before", decided on the triple (AD-6): a
+   * familiar address with a never-used tag is a new counterparty, and so is
+   * the same address with no tag at all, or the same pair on another network.
+   * Only an entry with a recorded network can silence it; a legacy entry
+   * (no network recorded) never does. */
+  const isKnownDestination = suppressesFirstSendWarning(addressBook, counterparty)
+  /** Only chooses the warning's words; see `addressKnownUnderOtherTag`. */
+  const addressSeenUnderOtherTag = !isKnownDestination && addressKnownUnderOtherTag(addressBook, counterparty)
   const tagValid = tagValue === undefined || (Number.isInteger(tagValue) && tagValue >= 0 && tagValue <= MAX_DESTINATION_TAG)
 
   /** Funds check done in the form, so a too-large send fails here with a clear
-   * reason instead of costing a fee and coming back as tecUNFUNDED_PAYMENT. */
-  const fundsError = (() => {
-    if (!amountValidation.valid) return undefined
-    if (asset === 'XRP') {
-      if (!spendableDrops) return undefined
-      // The fee comes out on top of the amount, so both must fit.
-      const needed = BigInt(xrpToDropsString(amount)) + BigInt(fee.data ?? '0')
-      if (needed > BigInt(spendableDrops)) {
-        return `That's more than your spendable balance (${formatXrp(spendableDrops)}) once the network fee is included.`
-      }
-      return undefined
+   * reason instead of costing a fee and coming back as tecUNFUNDED_PAYMENT.
+   * Fails closed on every read that is not `ok`; see `checkFunds`. */
+  const fundsCheck = checkFunds({
+    amount,
+    amountValid: amountValidation.valid,
+    asset,
+    spendable: spendableState,
+    fee: feeState,
+    trustLines: trustLinesState,
+  })
+  const fundsError = fundsCheck?.reason
+
+  const canSend =
+    destinationValid &&
+    !isSelfSend &&
+    amountValidation.valid &&
+    !fundsError &&
+    tagValid &&
+    destCheckOk &&
+    (!destInfo?.requireDestTag || destTag.length > 0) &&
+    !busy
+
+  /**
+   * Whether a refusal is still true of the form in front of the operator.
+   *
+   * The `(network, destination, asset)` stamp is the outer bound and stays
+   * where it was; this is the inner one. A refusal that outlives its cause is
+   * a false statement about the form: "enter the tag the recipient gave you"
+   * with the tag entered, or "the form was no longer ready" on a form that is.
+   *
+   * The three reasons that answer `true` unconditionally retire on the stamp
+   * alone, deliberately:
+   * - `failed` — its cause is a read that did not succeed, and the form's own
+   *   observer may still be showing a perfectly good earlier answer for this
+   *   same triple. Retiring it on `destCheckOk` would take the report off the
+   *   screen in exactly the case it was written for.
+   * - `not-activated` / `no-trust-line` — the probe writes into the same cache
+   *   entry the form observes, so the contradicted fact *becomes* the displayed
+   *   one within the same tick. Retiring on the fact would erase the refusal
+   *   before it was read, leaving a payment that did not happen unexplained.
+   *   Their cause is the disagreement at that attempt, not the current value;
+   *   the next confirm clears the report on its own.
+   */
+  const preflightReasonStillHolds = (reason: PreflightReason): boolean => {
+    switch (reason) {
+      // Retires on the very predicate that wrote it — `tagValue !== undefined`
+      // is what the submit path tests, so anything it would not accept as a
+      // tag must not retire a refusal that asked for one.
+      case 'tag-required':
+        return tagValue === undefined
+      // Retires when the form is ready again, which is what it said it was not.
+      case 'guard-closed':
+        return !canSend
+      case 'failed':
+      case 'not-activated':
+      case 'no-trust-line':
+        return true
     }
-    if (selectedLine && compareDecimalStrings(amount, selectedLine.balance) > 0) {
-      return `You only hold ${selectedLine.balance} ${displayCurrencyCode(selectedLine.currency)}.`
-    }
-    return undefined
-  })()
+  }
+
+  /** The report, read back only while it is still about what is on screen —
+   * and still true of it. */
+  const preflight =
+    preflightReport &&
+    preflightReport.network === network &&
+    preflightReport.destination === destination &&
+    preflightReport.asset === asset &&
+    preflightReasonStillHolds(preflightReport.reason)
+      ? preflightReport.reason
+      : null
+
+  /**
+   * An intent the guard has withdrawn is gone, not suspended.
+   *
+   * Whenever the guard closes outside a send — the amount stops fitting, the
+   * fee, spendable or trust-line read fails, the destination check ages out —
+   * the intent is cleared during this render (a same-component state
+   * adjustment, no effect and no read). Without it, the guard reopening on
+   * its own — a read recovering on its next poll, the amount typed back —
+   * would put "Confirm and send" back on screen with nobody having asked.
+   * It terminates because it clears its own condition.
+   *
+   * The fee pinned at "Review payment" no longer stating the live read's fact
+   * withdraws it the same way: the dialog would otherwise go on stating a
+   * figure the network no longer quotes, or the fee coming back to the pinned
+   * figure would reopen it unasked. Never while `busy`: once a send is under
+   * way it signs the pinned figure, and "Sending…" must stay up.
+   */
+  if (confirmingFor !== null && !busy && (!canSend || !sameFeeFact(confirmingFor.fee, feeState))) setConfirmingFor(null)
+
+  /**
+   * The confirm step's open state, derived — intent and the whole send guard
+   * together, so the last thing on screen before "Confirm and send" can never
+   * be a permission the form has already withdrawn.
+   *
+   * `canSend` itself goes false on `busy` the moment the send starts, so
+   * `busy ||` holds the dialog open once a send is under way: a read failing
+   * or a check aging out during the unlock must not pull "Sending…" off the
+   * screen mid-submission and leave the operator with no sign that a payment
+   * is in flight. Outside `busy` the intent must also still be about the
+   * destination reading it was formed against, and about the fee it pinned.
+   */
+  const confirmOpen =
+    confirmingFor !== null &&
+    (busy || (canSend && confirmingFor.checkedAt === checkedAt && sameFeeFact(confirmingFor.fee, feeState)))
+  /** What `doSend` signs: the pin, never the live read. */
+  const pinnedFee: ReadState<string> | null = confirmingFor?.fee ?? null
+  /** What the dialog states: the same pin. The live read stands in only once
+   * the intent is gone, i.e. while the dialog animates out, so its closing
+   * frames do not flash "could not be read" over a fee that was read. */
+  const dialogFee: ReadState<string> = pinnedFee ?? feeState
 
   async function doSend() {
     if (!wallet || !vaultKey) return
+    /**
+     * The guard lives here, not on the button. `disabled` dims a control; it
+     * does not prevent activation, and this handler is what actually spends
+     * money — so the same conditions are re-asserted inside the submit path.
+     */
+    // A report, not a silent no-op: a dialog that vanishes on a press says
+    // nothing about why nothing happened.
+    const report = (reason: PreflightReason) => setPreflightReport({ network, destination, asset, reason })
+
+    // Re-entry returns silently rather than reporting. `canSend` contains
+    // `!busy`, so without this a second entry would fall into the branch below
+    // and claim "nothing was submitted" about a payment that was — the one
+    // statement this screen must never make.
+    //
+    // What it does NOT catch is two presses inside one React flush: `busy` here
+    // is the render closure's value, so both reads see `false`. That race is
+    // closed by `disabled={busy}` on Confirm (pinned below), which is also why
+    // this branch is unreachable today and has no test of its own. It stands as
+    // defence-in-depth against that attribute being dropped, on the same
+    // reasoning that kept `!destCheckOk`.
+    if (busy) return
+    // Unreachable from the dialog as well: it is open only while `canSend`
+    // holds, and a closed guard withdraws the intent in the same render. Kept,
+    // and kept reporting, as defence-in-depth against the dialog's condition
+    // drifting from this one — this handler is what actually spends money.
+    if (!canSend || !destCheckOk) {
+      report('guard-closed')
+      setConfirmingFor(null)
+      return
+    }
     setBusy(true)
     setOutcome(null)
+    setPreflightReport(null)
     try {
       const signingWallet = await unlockWalletForSigning(wallet.id, vaultKey)
+
+      /**
+       * Re-check the destination AFTER the unlock and immediately before
+       * submitting. The unlock can take seconds (passphrase typing, passkey
+       * prompt, key derivation), and the answer the operator was shown can age
+       * out inside that gap.
+       *
+       * This is a re-CHECK, not always a re-READ. `staleTime` on the shared
+       * options is the freshness window itself, so an answer still inside the
+       * window satisfies `fetchQuery` from the cache and no request is made;
+       * only an answer that aged out during the unlock forces a real read.
+       * What this guarantees is therefore the window, not a round trip: the
+       * permission that authorises this payment is at most
+       * `DESTINATION_CHECK_FRESHNESS_MS` old at the moment of submission.
+       */
+      let latest: DestinationInfo
+      try {
+        latest = await fetchDestinationInfoOnce(queryClient, network, destination, asset)
+      } catch {
+        // Inline, not the Annunciator: this is a failed READ of data with a
+        // place on screen (AD-8). Nothing was signed and no fee was spent.
+        report('failed')
+        setConfirmingFor(null)
+        return
+      }
+      if (latest.requireDestTag && tagValue === undefined) {
+        report('tag-required')
+        setConfirmingFor(null)
+        return
+      }
+      /**
+       * A destination fact the operator was SHOWN may not change under them
+       * between the displayed check and the submission.
+       *
+       * Compared against the displayed answer, never against a constant. Both
+       * facts are legitimately false on a form that sends: an unactivated
+       * address is activated BY a payment, and neither fact joins `canSend` —
+       * they warn without blocking, and that stays true. What is refused is
+       * only the contradiction: shown activated and now not, shown a trust
+       * line and now none. `=== true` states the "was it shown?" half
+       * explicitly, so a token send (where `hasTrustLine` is undefined for XRP)
+       * and an address that was already unactivated on screen both pass.
+       *
+       * Both sides test `=== false` rather than falsiness, so neither depends
+       * on the other running first. `latest.hasTrustLine` is legitimately
+       * `undefined` — for XRP, and for an account that does not exist
+       * (query-reads.ts skips the trust-line read then) — and undefined is not
+       * a contradiction of anything.
+       *
+       * `destInfo` here is the render closure's — the answer that was on
+       * screen when this handler was entered — which is the whole point.
+       */
+      if (destInfo?.exists === true && latest.exists === false) {
+        report('not-activated')
+        setConfirmingFor(null)
+        return
+      }
+      if (destInfo?.hasTrustLine === true && latest.hasTrustLine === false) {
+        report('no-trust-line')
+        setConfirmingFor(null)
+        return
+      }
+
+      /**
+       * The fee the dialog stated is the fee signed: pinned on the transaction
+       * so autofill does not compute its own (with its 1.2 cushion, 10 shown
+       * became 12 charged). It is the figure pinned at "Review payment" — the
+       * one the dialog rendered — and is deliberately NOT re-read after the
+       * unlock, which could only make the paid figure differ from the shown
+       * one. A live read that moved before Confirm closed the dialog instead.
+       * A stale low fee can queue or expire; it can never overcharge. With no
+       * figure pinned (a token send whose fee read was pending or failed),
+       * autofill computes one and the choke point's cap bounds it, which is
+       * what the dialog said.
+       */
+      const feeDrops = pinnedFee?.status === 'ok' ? pinnedFee.value : undefined
       let result: SubmitOutcome
       if (asset === 'XRP') {
         result = await submitXrpPayment(network, signingWallet, {
           destination,
           amountDrops: xrpToDropsString(amount),
           destinationTag: tagValue,
+          feeDrops,
         })
       } else {
         const [currency, issuer] = asset.split('|')
@@ -105,13 +406,17 @@ export function SendTab() {
           issuer,
           value: amount,
           destinationTag: tagValue,
+          feeDrops,
         })
       }
       setOutcome(result)
-      setConfirming(false)
+      setConfirmingFor(null)
       if (result.status === 'validated') {
         toast.success('Payment sent.')
-        if (!isKnownDestination) addAddressBookEntry(destination, destination.slice(0, 8))
+        // The pair actually paid, on the network it was submitted on — the
+        // tag that was signed, as text — and no label: nothing here knows a
+        // name for it, and a truncated address is not one.
+        if (!isKnownDestination) addAddressBookEntry(counterparty)
       } else if (result.status === 'expired') {
         toast.warning('This transaction expired before validating. It was not applied — you can retry.')
       } else if (result.status === 'claimed') {
@@ -120,26 +425,32 @@ export function SendTab() {
       } else {
         toast.error(describeResultCode(result.resultCode))
       }
-      await queryClient.invalidateQueries({ queryKey: ['accountState', network, wallet.address] })
-      await queryClient.invalidateQueries({ queryKey: ['accountTx', network, wallet.address] })
-      await queryClient.invalidateQueries({ queryKey: ['trustLines', network, wallet.address] })
+      await Promise.all([
+        invalidateAccountScoped(queryClient, network, wallet.address),
+        // Only a validated payment can change what the destination check says
+        // (it may just have activated the address); a `tec` claim, an expiry
+        // or a rejection changed nothing on the destination's side. Without
+        // this the form kept saying "not activated" for up to the freshness
+        // window, and the next send's post-unlock probe was served from it.
+        result.status === 'validated' ? invalidateDestinationCheck(queryClient, network, destination) : null,
+        // An expired send was pinned to a fee that did not get in; a retry
+        // must not pin that same cached figure again.
+        result.status === 'expired' ? queryClient.invalidateQueries({ queryKey: queryKeys.recommendedFee(network) }) : null,
+      ])
     } catch (err: any) {
       toast.error(err?.message ?? 'Send failed.')
+      // The intent to confirm goes too, deliberately rather than as a side
+      // effect of whether the probe happened to bump `dataUpdatedAt`. A throw
+      // here means the unlock or the submit call itself failed; the toast says
+      // so, and re-confirming a payment after that should be an act the
+      // operator takes again, not a dialog left standing over a failure.
+      setConfirmingFor(null)
     } finally {
       setBusy(false)
     }
   }
 
   if (!wallet) return <p className="text-muted-foreground">No active wallet.</p>
-
-  const canSend =
-    destinationValid &&
-    !isSelfSend &&
-    amountValidation.valid &&
-    !fundsError &&
-    tagValid &&
-    (!destInfo?.requireDestTag || destTag.length > 0) &&
-    !busy
 
   const amountLabel = asset === 'XRP' ? `${amount} XRP` : `${amount} ${displayCurrencyCode(asset.split('|')[0])}`
 
@@ -167,10 +478,115 @@ export function SendTab() {
               </p>
             )}
             {isSelfSend && <p className="text-sm text-text-destructive">You can't send a payment to your own address.</p>}
-            {destQuery.isFetching && <p className="text-xs text-muted-foreground">Checking destination…</p>}
+            {/* A read not yet completed FOR WHAT IS IN THE FIELD NOW — in flight,
+                not started, or still holding an answer about a previous input.
+                Unknown is not an error, and it is not permission either. */}
+            {(destCheckPending || destQuery.isFetching) && (
+              <p className="text-xs text-muted-foreground">Checking destination…</p>
+            )}
           </div>
 
-          {destInfo && !destInfo.exists && (
+          {/* Any errored check, including one that kept an earlier answer. That
+              retained answer is not shown and does not count: while a read is in
+              error, nothing from an earlier success stays on screen (§12). */}
+          {destQuery.isError && preflight !== 'failed' && (
+            <QueryErrorState
+              title="Destination check failed"
+              description="This address could not be checked against the ledger, so the app cannot tell whether it exists or whether the recipient requires a destination tag. Sending is held until the check succeeds — an untagged payment to an address that requires one cannot be recovered from here."
+              onRetry={() => destQuery.refetch()}
+            />
+          )}
+
+          {/* Aged out, which is not the same fact as failed and must not borrow
+              its words. The app does not re-read on its own here: a silent
+              refetch would put the operator back in front of an answer they
+              never asked for and did not watch arrive. */}
+          {destCheckStale && (
+            <Alert variant="warning">
+              <AlertTitle>Destination check is out of date</AlertTitle>
+              <AlertDescription className="flex flex-col items-start gap-2">
+                <span>
+                  This address was checked more than {Math.round(DESTINATION_CHECK_FRESHNESS_MS / 1000)} seconds ago. The
+                  answer may no longer hold — an account can start requiring a destination tag at any time — so sending is
+                  held until the check is run again.
+                </span>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => {
+                    setPreflightReport(null)
+                    void destQuery.refetch()
+                  }}
+                >
+                  Check again
+                </Button>
+              </AlertDescription>
+            </Alert>
+          )}
+
+          {/* The submit-path re-check refused. Reported where the check lives,
+              not in the notice band, and never as a completed payment. */}
+          {preflight === 'failed' && (
+            <QueryErrorState
+              title="Payment not sent — destination check failed"
+              description="The destination was re-checked immediately before sending, as it always is, and that read did not succeed. Nothing was submitted to the ledger and no network fee was spent. Run the check again, then send."
+              onRetry={() => {
+                setPreflightReport(null)
+                return destQuery.refetch()
+              }}
+            />
+          )}
+
+          {preflight === 'guard-closed' && (
+            <Alert variant="warning">
+              <AlertTitle>Payment not sent — the form was no longer ready</AlertTitle>
+              <AlertDescription>
+                Something this form checks changed between opening the confirmation and confirming it, so nothing was
+                submitted and no network fee was spent. What is outstanding is shown on the form.
+              </AlertDescription>
+            </Alert>
+          )}
+
+          {preflight === 'tag-required' && (
+            <Alert variant="warning">
+              <AlertTitle>Payment not sent — this address now requires a destination tag</AlertTitle>
+              <AlertDescription>
+                The re-check made immediately before sending came back saying this recipient requires a destination tag,
+                which it did not when you filled the form in. Nothing was submitted and no network fee was spent. Enter the
+                tag the recipient gave you, then send again.
+              </AlertDescription>
+            </Alert>
+          )}
+
+          {preflight === 'not-activated' && (
+            <Alert variant="warning">
+              <AlertTitle>Payment not sent — this address stopped being activated</AlertTitle>
+              <AlertDescription>
+                This address existed on the ledger when the form was filled in, and the re-check made immediately before
+                sending came back saying it no longer does. Nothing was submitted and no network fee was spent. The form now
+                shows the address as it currently stands, so sending again will go through — check the address with the
+                recipient first if you did not expect this.
+              </AlertDescription>
+            </Alert>
+          )}
+
+          {preflight === 'no-trust-line' && (
+            <Alert variant="warning">
+              <AlertTitle>Payment not sent — the recipient stopped accepting this token</AlertTitle>
+              <AlertDescription>
+                This recipient had a trust line to this issuer when the form was filled in, and the re-check made
+                immediately before sending came back saying they no longer do. Nothing was submitted and no network fee was
+                spent. The form now shows the trust line as it currently stands, so sending again will go through — and
+                will most likely fail on the ledger, at the cost of the fee.
+              </AlertDescription>
+            </Alert>
+          )}
+
+          {/* Suppressed while the refusal above is on screen: the refusal
+              already states this fact, and in the stronger form of what
+              changed. Two `role="alert"` panels making overlapping claims
+              about one fact is one fact told twice. */}
+          {destCheckOk && destInfo && !destInfo.exists && preflight !== 'not-activated' && (
             <Alert variant="warning">
               <AlertTitle>Destination not activated</AlertTitle>
               <AlertDescription>
@@ -180,7 +596,7 @@ export function SendTab() {
             </Alert>
           )}
 
-          {destInfo?.hasTrustLine === false && (
+          {destCheckOk && destInfo?.hasTrustLine === false && preflight !== 'no-trust-line' && (
             <Alert variant="warning">
               <AlertTitle>Recipient can't hold this token</AlertTitle>
               <AlertDescription>
@@ -191,7 +607,16 @@ export function SendTab() {
 
           <div className="grid gap-1.5">
             <Label htmlFor="dtag">
-              {destInfo?.requireDestTag ? 'Destination tag (required by recipient)' : 'Destination tag (optional)'}
+              {/* Driven by the guard, not by the error flag: a stale answer and
+                  an answer about a different address are as unknown as a failed
+                  read, and "(optional)" is the sentence that loses the money. */}
+              {destCheckOk
+                ? destInfo?.requireDestTag
+                  ? 'Destination tag (required by recipient)'
+                  : 'Destination tag (optional)'
+                : destinationValid
+                  ? 'Destination tag (requirement unknown)'
+                  : 'Destination tag (optional)'}
             </Label>
             <Input
               id="dtag"
@@ -212,18 +637,37 @@ export function SendTab() {
             <Label>Asset</Label>
             <Select value={asset} onValueChange={setAsset}>
               <SelectTrigger>
-                <SelectValue />
+                {/* A token no longer offered — the read failed, or no longer
+                    holds the line — has no item to name it, and the trigger
+                    would go blank while the amount suffix still says the
+                    token. Named from the operator's own choice, never from
+                    the read: no balance is shown for it. */}
+                <SelectValue>
+                  {asset !== 'XRP' && !selectedLine ? displayCurrencyCode(asset.split('|')[0]) : undefined}
+                </SelectValue>
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="XRP">XRP</SelectItem>
                 {heldTokens.map((l) => (
-                  <SelectItem key={`${l.account}-${l.currency}`} value={`${l.currency}|${l.account}`}>
+                  <SelectItem key={`${l.account}-${l.currency}`} value={tokenAssetKey(l)}>
                     {displayCurrencyCode(l.currency)} (balance {l.balance})
                   </SelectItem>
                 ))}
               </SelectContent>
             </Select>
           </div>
+
+          {/* Reported where the token list would have been. Not gated on the
+              asset, like the fee panel below: one read, one statement, which
+              does not come and go with the picker. Worded so it does not
+              assert a hold on XRP, which never uses this read. */}
+          {trustLinesState.status === 'failed' && (
+            <QueryErrorState
+              title="Token balances could not be read"
+              description="Your trust lines could not be read from the ledger, so the tokens you hold cannot be listed and a token amount cannot be checked against your balance. Sending a token is held until this read succeeds; sending XRP does not depend on it and is not held."
+              onRetry={() => trustLines.refetch()}
+            />
+          )}
 
           <AmountInput
             id="amount"
@@ -232,7 +676,8 @@ export function SendTab() {
             onChange={setAmount}
             kind={asset === 'XRP' ? 'xrp' : 'issued'}
             suffix={asset === 'XRP' ? 'XRP' : displayCurrencyCode(asset.split('|')[0])}
-            error={amount.length > 0 ? (amountValidation.error ?? fundsError) : undefined}
+            error={amount.length > 0 ? (amountValidation.error ?? (fundsCheck?.pending ? undefined : fundsError)) : undefined}
+            pending={amount.length > 0 && !amountValidation.error && fundsCheck?.pending ? fundsCheck.reason : undefined}
           />
 
           {/* A reading, so it is shown in the panel's well rather than a grey
@@ -240,17 +685,44 @@ export function SendTab() {
           <dl className="panel-well flex flex-wrap gap-x-8 gap-y-2 rounded-md px-3 py-2.5">
             <div>
               <dt className="panel-legend text-readout-muted">Network fee</dt>
-              <dd className="font-data text-base tracking-tight">{fee.data ? formatXrp(fee.data) : '…'}</dd>
+              <ReadingValue state={feeState} format={formatXrp} />
             </div>
-            {asset === 'XRP' && spendableDrops && (
+            {/* The row stays when there is no figure and says so. Removing it
+                left the operator with a fee and nothing to weigh it against,
+                and no hint that anything was missing.
+
+                Every state without a figure — a read in flight included — is
+                rendered as "Unavailable" here, unlike the fee row. That is
+                the row's behaviour as it stands, kept on purpose by the split
+                that introduced the read state, and recorded as deferred in
+                deferred-work.md: rendering `spendableState` as it is would be
+                the one-line fix. */}
+            {asset === 'XRP' && (
               <div>
                 <dt className="panel-legend text-readout-muted">Spendable</dt>
-                <dd className="font-data text-base tracking-tight">{formatXrp(spendableDrops)}</dd>
+                <ReadingValue
+                  state={spendableState.status === 'ok' ? spendableState : { status: 'failed' }}
+                  format={formatXrp}
+                />
               </div>
             )}
           </dl>
 
-          <Button onClick={() => setConfirming(true)} disabled={!canSend}>
+          {/* Reported where the figure belongs, immediately under the row that
+              now says "Unavailable". The hook polls every 10 s, so a failed
+              read can recover on its own; this retry lets the operator ask now
+              rather than wait for the next poll. Worded so it does not assert a
+              hold that is not in force: a token send never uses this figure and
+              is deliberately NOT blocked by its absence. */}
+          {feeState.status === 'failed' && (
+            <QueryErrorState
+              title="Network fee could not be read"
+              description="The current network fee could not be read from the ledger, so it cannot be shown and an XRP amount cannot be checked against your spendable balance with the fee added. Sending XRP is held until this read succeeds; a token send does not depend on this figure and is not held."
+              onRetry={() => fee.refetch()}
+            />
+          )}
+
+          <Button onClick={() => setConfirmingFor({ checkedAt, fee: feeState })} disabled={!canSend}>
             Review payment
           </Button>
 
@@ -278,25 +750,61 @@ export function SendTab() {
           stating the exact consequence (§4) — not only for unknown addresses.
           A first-send additionally escalates the warning, since the address
           book auto-records every successful destination. */}
-      <Dialog open={confirming} onOpenChange={(o) => !o && setConfirming(false)}>
+      {/* The confirm step is gated on the whole send guard (`canSend`), not
+          merely on the control that opened it, so the last thing on screen
+          before "Confirm and send" can never be a permission the submit path
+          is already going to refuse. Anything that closes the guard while the
+          dialog is up — a failed fee, spendable or trust-line read, an amount
+          that stops fitting, a check that ages out — takes the dialog down and
+          withdraws the intent in the same render, so the guard reopening does
+          not bring it back. So does the live fee read moving away from the
+          figure pinned at "Review payment". Only an explicit "Review payment"
+          does. */}
+      <Dialog open={confirmOpen} onOpenChange={(o) => !o && setConfirmingFor(null)}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Send {amountLabel}?</DialogTitle>
             <DialogDescription>
               This sends {amountLabel} to {destination}
-              {tagValue !== undefined ? ` (destination tag ${tagValue})` : ''} on {network}, plus a network fee of{' '}
-              {fee.data ? formatXrp(fee.data) : 'the current rate'}. Payments on the XRP Ledger are irreversible and cannot be
-              cancelled or refunded once sent.
+              {tagValue !== undefined ? ` (destination tag ${tagValue})` : ''} on {network},{' '}
+              {/* "the current rate" named a figure that was never read. An XRP
+                  send cannot reach this dialog without one; a token send can,
+                  and is told the plain fact plus the bound the write path
+                  enforces. The figure stated is the one pinned at "Review
+                  payment" and signed by `doSend`, never a cushioned estimate
+                  and never a later poll: a poll that moves it closes this. */}
+              {dialogFee.status === 'ok'
+                ? `plus a network fee of ${formatXrp(dialogFee.value)}`
+                : dialogFee.status === 'pending'
+                  ? `plus a network fee that is still being read; it will not exceed ${formatXrp(MAX_FEE_DROPS)}`
+                  : `plus a network fee that could not be read; it will not exceed ${formatXrp(MAX_FEE_DROPS)}`}
+              . Payments on the XRP Ledger are irreversible and cannot be cancelled or refunded once sent.
             </DialogDescription>
           </DialogHeader>
-          {!isKnownDestination && (
-            <Alert variant="warning">
-              <AlertTitle>You haven't sent here before</AlertTitle>
-              <AlertDescription>Double-check the address character by character before continuing.</AlertDescription>
-            </Alert>
-          )}
+          {!isKnownDestination &&
+            (addressSeenUnderOtherTag ? (
+              <Alert variant="warning">
+                <AlertTitle>
+                  {counterparty.destinationTag !== undefined
+                    ? `You haven't sent with destination tag ${counterparty.destinationTag} before`
+                    : "You haven't sent here without a destination tag before"}
+                </AlertTitle>
+                <AlertDescription>
+                  {/* "Only with a tag" is exact: a tagless entry at this
+                      address would have made the pair known. */}
+                  {counterparty.destinationTag !== undefined
+                    ? 'You have paid this address before, but not with this destination tag. Check the tag against what the recipient gave you before continuing.'
+                    : 'You have paid this address before, but only with a destination tag. Check whether the recipient needs one before continuing.'}
+                </AlertDescription>
+              </Alert>
+            ) : (
+              <Alert variant="warning">
+                <AlertTitle>You haven't sent here before</AlertTitle>
+                <AlertDescription>Double-check the address character by character before continuing.</AlertDescription>
+              </Alert>
+            ))}
           <DialogFooter>
-            <Button variant="outline" onClick={() => setConfirming(false)} disabled={busy}>
+            <Button variant="outline" onClick={() => setConfirmingFor(null)} disabled={busy}>
               Cancel
             </Button>
             {/* The one control in this app that moves funds, and therefore the

@@ -22,8 +22,8 @@ These close out the open questions raised in the earlier gap analysis, so they d
 
 | Gap | Decision |
 |---|---|
-| First-time-destination warning | **Yes, ship it.** Any send to an address not already in the local address book shows a "you haven't sent here before" confirmation step. |
-| Address book | **Yes, add as a new epic.** Local-only labels tied to addresses, no on-chain component. |
+| First-time-destination warning | **Yes, ship it.** Any send whose (network, address, destination tag) is not already recorded in the local address book shows a "you haven't sent here before" confirmation step. A known address sent to with a tag it was never paid with is new, and so is one sent to without a tag when it was only ever paid with one; so is a pair recorded only on the other network. An entry saved before entries recorded their network silences the warning on no network. Identity is AD-6 (`_bmad-output/planning-artifacts/architecture/architecture-xrpl-wallet-2026-09-12/ARCHITECTURE-SPINE.md`), owned by `src/store/address-book.ts`. |
+| Address book | **Yes, shipped (Epic 9).** Local-only, no on-chain component. Every validated send records the counterparty it paid (network, address, tag) automatically; the app writes no labels and has no add/edit/delete controls. Settings lists every network's entries. Pre-existing entries are kept and shown with their network and (if tagless) tag as "Not recorded". The persisted version stays 0 so an older build still reads the slice instead of discarding it; a rollback can only drop the recorded network, which turns entries back into unrecorded ones (more warnings, never fewer). |
 | Auto-lock timeout | Default **5 minutes** of inactivity; user-configurable to 1/5/15/30 min. Immediate lock on app backgrounding on mobile; on desktop a **30-second grace window** applies instead (see §5, 2026-09-01). |
 | Failed unlock attempts | Exponential backoff starting at the 3rd failed passkey/PIN attempt; after 8 consecutive failures, the wallet requires full re-import via seed (no silent unlimited retry). |
 | Non-biometric fallback for unlock | **Mandatory**, not optional: an app-level password/PIN is set during onboarding alongside the passkey, for environments with no platform authenticator. Passkey is preferred; PIN is the guaranteed fallback. |
@@ -47,7 +47,7 @@ Research-backed (React/PWA/shadcn/crypto-wallet specific, checked against curren
 4. **Never use JS `number`/floating point for money.** XRP drops and issued-currency values must be handled as integer strings/BigInt, with conversion to a human-readable string happening only at the render boundary through one shared formatter. Floating-point drift is a top-cited LLM code-correctness bug and here it means sending the wrong amount.
 5. **Never use array index as the React `key` for lists that can reorder or filter** (transaction history, trust lines). Use the transaction hash or `currency+issuer` instead — index-as-key is a common LLM default and causes row state to stick to the wrong item after a list update, e.g. after switching wallets or networks.
 6. **Service worker must never cache RPC/ledger responses.** Balance, trust-line, and transaction data are network-first, no-cache; only the static app shell is cache-first/precached. Increment the cache version on every deploy and purge old caches on `activate` — stale-cache bugs are the top cited PWA failure mode and here they'd render a wrong balance.
-7. **Logout/wallet removal must fully tear down state**, including the service worker cache and the TanStack Query cache — leaving a warm cache after "logout" is a documented shared-device PWA vulnerability.
+7. **Logout/wallet removal must fully tear down state**, including the service worker cache and the TanStack Query cache — leaving a warm cache after "logout" is a documented shared-device PWA vulnerability. *(Narrowed by §13: account data is torn down on every lock and removal; the service-worker cache holds only the shell and is cleared by "remove everything" alone.)*
 8. **Never let an AI agent blindly re-run the shadcn CLI over a customized primitive.** shadcn components are copied into the repo specifically so we can edit them; a regenerate/overwrite without diffing silently reverts intentional customizations (a documented shadcn/AI-agent failure mode).
 9. **Never let a bespoke crypto component silently drop accessibility.** AI-written compositions on top of shadcn primitives are known to lose ARIA attributes and keyboard focus handling once a primitive is wrapped (e.g. a custom `<AmountInput>` built on `<Input>`). Every bespoke component gets a keyboard-only + screen-reader pass before merge, not as deferred polish.
 10. **No third-party script may be capable of observing the unlock/seed screens.** Analytics, session-replay, and verbose error-reporting SDKs must be explicitly denied on any screen that touches key material — this is the same root cause behind the real-world LLM-router credential-leak incidents that motivated this rule.
@@ -58,10 +58,11 @@ Research-backed (React/PWA/shadcn/crypto-wallet specific, checked against curren
 
 - **All ledger reads go through TanStack Query hooks.** No component calls the XRPL client's read methods directly inside a `useEffect` or event handler.
 - **Money is strings/BigInt end-to-end.** No `Number()`/floating-point arithmetic on drops or issued-currency amounts anywhere outside the single shared formatting utility used at render time.
-- **Active wallet + active network are one global source of truth**, never duplicated into separate component-local state. Every TanStack Query key includes both, so a switch of either can never leave stale cross-wallet or cross-network data on screen.
-- **No secret ever enters React/store state, the URL, or anything serializable.** Decrypted key material exists only transiently in memory for signing, and is cleared immediately after use.
+- **Active wallet + active network are one global source of truth**, never duplicated into separate component-local state. Every **account-scoped** TanStack Query key includes both, so a switch of either can never leave stale cross-wallet or cross-network data on screen. A genuinely ledger-wide read (server reserves, the recommended fee) or a device-scoped one (passkey registered, lockout state) is a **named exception on the key factory** rather than an address bolted on — keying a ledger-wide fact by address would make four duplicate cache entries and invalidate them all on a wallet switch for no reason. The exception has to be visible on the factory; it may never be an undeclared literal.
+- **No secret ever enters React/store state, the URL, or anything serializable.** Decrypted key material exists only transiently in memory for signing, and is cleared immediately after use. One thing is deliberately not a secret under this rule and is permitted: a `CryptoKey` imported **non-extractable** may be held in session state (`app-store.ts`'s `vaultKey`) and written to the IndexedDB session store, because it is a handle the browser will not export bytes for — no code, ours or an attacker's, can read the key material back out of it. Raw key bytes, a plaintext seed, or an *extractable* key remain banned in state, in storage and in anything serializable. The handle lives in `vaultKey` on `src/store/app-store.ts` (session-only, excluded from `partialize`) and in the `session` store of `src/lib/crypto/db.ts`, whose entry carries an expiry. That expiry is the auto-lock setting counted from the last activity, not from unlock: `extendSession` (`src/lib/crypto/auth.ts`) pushes it forward on every activity tick, so a session in continuous use never expires. Expiry is also lazy — an entry past its time is only deleted when `getUnlockedSession` next reads it, or when a lock path calls `clearUnlockedSession`, so the handle can sit in IndexedDB past its expiry until one of those runs. The window is therefore "auto-lock minutes of inactivity, with deletion on the next read or lock", not a hard lifetime, and it is accepted as such. Do not "fix" `vaultKey` by removing it.
 - **Every destructive/irreversible action requires an explicit confirm step** stating the exact consequence in plain language: removing a wallet, closing a trust line, revealing a seed, sending a payment.
-- **Every address or transaction hash renders through the shared `<AddressLink>`/`<TxLink>` components**, never a hand-rolled `<a href>` to an explorer.
+- **Every address or transaction hash renders through the shared `<AddressLink>`/`<TxLink>` components**, never a hand-rolled `<a href>` to an explorer. The link follows the active network, except where the address is known to belong to another one: an Address Book row recorded on Testnet links to the Testnet explorer even while Mainnet is active (`<AddressLink network=…>`).
+- **Every write is autofilled, signed and submitted only in `submitAndClassify` (`src/lib/xrpl/writes.ts`; AD-9 in [the architecture spine](../_bmad-output/planning-artifacts/architecture/architecture-xrpl-wallet-2026-09-12/ARCHITECTURE-SPINE.md#ad-9--every-write-passes-one-choke-point-adopted)), and `src/lib/xrpl` holds no explicit `any` outside tests.** The fee cap went unenforced for a month because nothing held either rule: an `as any` hid an options object passed in xrpl.js's `signersCount` slot, and a test asserted what a fake recorded rather than what was signed (§14; epic 7 retrospective F1, F8, A3, A5). `scripts/check-write-choke-point.mjs` and an `.oxlintrc.json` override, both run by `bun run lint`, now enforce the two rules, and `docs/agents/anti-patterns.md` §11 records the testing lesson and what each guard cannot see.
 - **Every new bespoke crypto component ships with a keyboard-navigation and screen-reader pass before merge.**
 - **Service worker is network-first for all ledger/RPC traffic, versioned and purged on deploy, and fully torn down (cache + query cache) on wallet removal or logout.**
 - **shadcn primitives are edited in place (`components/ui/*`) for global style changes** — never overridden ad hoc with conflicting Tailwind classes at each call site.
@@ -1265,3 +1266,154 @@ the promoting branch onto the target's tip, verify the tree matches
 (`git diff origin/<target> <rebased> --stat` empty), push it under any name,
 open the PR. The check now verifies the property that actually matters and
 no longer cares what the branch is called.
+
+
+## 12. Read failures are reported, not absorbed
+
+Decided 2026-09-15, from the defects in `b359058` and the architecture spine's
+AD-13, AD-14 and AD-15. Recorded here because §3 and §4 are what an agent audits
+against, and these are money-path rules that lived only in a spine.
+
+**The defect that prompted it.** A failed destination check *relaxed* the send
+guard: `destInfo` was undefined, so `!destInfo?.requireDestTag` was satisfied,
+and the app enabled a tagless payment to an address that requires a tag —
+credited to nobody, unrecoverable. Separately, two screens reported an unread
+ledger as an empty one ("No transactions yet" on a failed `account_tx`), and a
+stale balance rendered under a green "Live" lamp beneath "Balance unavailable".
+
+**The three rules:**
+
+1. **A guard fails closed.** A guard on a money-moving action is satisfied only
+   by a read that succeeded for the input currently on screen. Neither an
+   errored read, nor data retained from an earlier input, nor a read outside its
+   freshness window satisfies it. Absence of a prohibition is not permission.
+   The cost is real and accepted: a legitimate send is blocked during an RPC
+   failure. A blocked send is recoverable; a tagless send to an exchange is not.
+2. **Retained data is never rendered as current.** When a read is in error, data
+   from an earlier success is not shown at all — no figure, no liveness
+   indicator, no derived total.
+3. **An empty state is a claim, not a default.** A screen may state a collection
+   is empty only when its read succeeded and returned empty. A failure and an
+   empty result are different facts and never share a rendering.
+
+**There are three declared surfaces, not two.** A failed *read* renders inline
+where the data would have been, through `components/wallet/QueryErrorState.tsx`.
+Anything the user *did*, and anything that *arrived on its own* (an incoming
+payment, an activation, a new release), goes to the Annunciator through
+`lib/notify.tsx`. §6.5's rule governs that notice surface — errors and warnings
+never auto-dismiss — and does not reach the inline one, which persists until the
+read succeeds.
+
+## 13. Teardown is two sets: account data, and the shell
+
+Decided 2026-10-04, implementing the architecture spine's AD-16 (Epic 6,
+closing G-13 and G-14). Recorded here because guardrail #7, as first written,
+mandated one of the two defects.
+
+**The defects.** "Remove everything" — the hard-lock reset on the Unlock screen
+and "Erase everything" in Settings — wiped the vault but never the persisted
+app store (`xrpl-wallet-app-state`), so wallet labels and addresses and the
+whole Address Book survived on a device just handed over. Meanwhile every lock
+deleted *every* Cache Storage key, which holds only the precached shell
+(`vite.config.ts` declares no `runtimeCaching`): it protected nothing, and it
+stopped the app opening offline and voided US-8's retained precache.
+
+**The rule.** `src/lib/teardown.ts` owns the clear set, as two named sets:
+
+- **Account data** — the vault, the persisted app store, the TanStack Query
+  cache, live sockets. A lock or single-wallet removal clears the query cache
+  (`clearCachedAccountData`); "remove everything" clears all of it
+  (`tearDownAllLocalState`). Persisted owners are listed in
+  `PERSISTED_ACCOUNT_DATA`, and `src/lib/__tests__/teardown.test.ts` fails on
+  any module under `src/` that persists without being listed there.
+- **The shell** — the service-worker precache and the registration that owns
+  it. It survives every lock and every single-wallet removal. Only "remove
+  everything" clears it.
+
+**The app store is cleared in memory before its key is deleted.** The `persist`
+middleware re-serializes the whole slice on every later `set()`, and both reset
+paths call `lock()`; deleting the key first would let that write the old
+wallets back.
+
+**A partial teardown is reported, not reloaded over.** Every account-data clear
+is attempted; any failure is rethrown, and the reset screens show it instead of
+reloading as though the device were clean. A partial teardown leaves the shell
+in place, so the "reload and reset again" it asks for reopens the version the
+user already runs, not one the origin now serves; the retry clears the shell.
+(This partial-teardown rule was decided unattended on 2026-10-04 and is pending
+Otavio's check — Decision 1 in
+`_bmad-output/implementation-artifacts/spec-epic-6-retro-11-reset-unregisters-service-worker.md`.)
+
+**A full reset unregisters the service worker** (2026-10-04, decided by Otavio;
+epic 6 retro F1, item 11). Deleting the caches alone left the precache empty for
+good: the still-registered, already-active worker never refills it, because
+workbox repairs a precache miss only for entries carrying `integrity`, which
+vite-plugin-pwa does not emit. An installed app that was reset could then not
+open offline until a new release installed. `clearShell` therefore unregisters
+every registration for the origin (`navigator.serviceWorker.getRegistrations()`,
+not only the one `lib/sw-register.ts` holds) and deletes every cache key, each
+step attempted independently and failing quietly, since the shell holds no
+account data. (Unregistering *every* registration, and the quiet failure of
+both steps, were decided unattended on 2026-10-04 and are pending Otavio's
+check — Decisions 2 and 3 in the same spec.) The reset's reload then installs a fresh worker that precaches the
+shell, as a first install does. A full reset made offline leaves no worker and
+no caches, so the app cannot open until the device is online again; that was
+already true before this change, when the emptied precache fell back to the
+network.
+
+**That reload is not an automatic update.** It is part of an explicit user
+action that leaves no wallet or key on the device, and it loads whatever the
+origin serves, exactly as a first install does. This already happened before
+the change: the emptied precache made workbox fall back to the network. Only the
+two reset buttons reach `clearShell`; lock, single-wallet removal and the update
+flow never unregister. A *waiting* worker (a declined update) is discarded with
+its registration, which matches a fresh install.
+
+## 14. The fee cap is a refusal, and Send pays the fee it shows
+
+Decided 2026-10-04, in `_bmad-output/implementation-artifacts/spec-fee-cap-and-shown-fee.md`.
+
+**The defects.** `writes.ts` passed `{ maxFeeXRP: '0.01' }` as `client.autofill`'s
+second argument, which in xrpl.js 5 is `signersCount`. The object was ignored,
+so the only ceiling on a write was xrpl.js's default of 2 XRP. Separately, Send's
+dialog stated the uncushioned `open_ledger_fee` while autofill computed its own
+fee with a 1.2 cushion, so a dialog showing 10 drops led to a charge of 12.
+
+**The cap is a refusal, not a clamp.** After autofill and before signing,
+`submitAndClassify` refuses any `Fee` that is not a canonical positive drops
+string no larger than `MAX_FEE_DROPS` (10 000 drops, `money.ts`), compared as
+`BigInt`, by throwing `FeeAboveCapError`. `Client({ maxFeeXRP })` was rejected
+because it silently clamps a spike fee below what the network wants. There is no
+exemption for xrpl.js's special-cost types (AccountDelete, AMMCreate,
+VaultCreate, whose fee is the owner reserve). The choke point refuses them until
+a feature decides otherwise. The Send form refuses a fee read above the cap
+before the dialog, for XRP and token sends.
+
+**Send pins the fee it shows.** The figure in the confirm dialog is set as
+`tx.Fee`, so autofill leaves it alone. It is pinned when "Review payment" is
+pressed, beside the destination check's `checkedAt`: the dialog states that
+figure and Send signs it, and it is never re-read after the unlock. If the live
+fee read stops stating the same fact while the dialog is open outside a send (a
+different figure, a failure, or a figure arriving where the dialog said it was
+still being read), the dialog closes and the intent is withdrawn, as a stale
+destination check does, so paying a different figure takes a fresh review. A
+poll that reads the same figure again changes nothing; the comparison is by
+value. Once a send is under way, "Sending…" stays up and the pin is signed. No
+cushion is applied. Under rising load a pinned fee may queue or expire (reported as
+`expired`, no fee consumed), but it never charges more than was stated. An
+expired send invalidates the fee read so a retry does not pin the same figure.
+With no figure (a token send whose fee read is pending or failed), autofill
+computes the fee and the dialog states the cap as the upper bound.
+
+**The fee is polled every 10 s** (`useRecommendedFee`, `refetchInterval`), so
+the pinned figure is recent and an above-cap refusal clears on its own when the
+fee falls.
+
+**Both unattended decisions are confirmed.** On 2026-10-04 Otavio confirmed the
+two fee decisions PR #42 made unattended: there is **no fee cushion** (Send pays
+exactly the fee shown, and under load a send may expire rather than overpay),
+and **AccountDelete, AMMCreate and VaultCreate are refused at signing**, because
+their fee exceeds the 0.01 XRP cap. The confirmation is recorded in the
+Intent of
+`_bmad-output/implementation-artifacts/spec-epic-6-retro-11-reset-unregisters-service-worker.md`,
+and in Decisions 3 and 10 of `spec-fee-cap-and-shown-fee.md`.

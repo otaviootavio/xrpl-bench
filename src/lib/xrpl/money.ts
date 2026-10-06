@@ -72,6 +72,46 @@ export function isNonNegativeDrops(drops: string): boolean {
   }
 }
 
+/** A drops string that is a whole number greater than zero. Takes `unknown`
+ * because its callers hand it raw ledger fields, which may be missing, a
+ * number, an issued-currency object or the legacy `"unavailable"`. */
+export function isPositiveDrops(value: unknown): value is string {
+  if (typeof value !== 'string' || !/^\d+$/.test(value)) return false
+  return BigInt(value) > 0n
+}
+
+/**
+ * The most this app will ever sign as a transaction fee: 10 000 drops
+ * (0.01 XRP). One definition, read by the write choke point (which refuses to
+ * sign above it) and by the Send form (which refuses a fee read above it
+ * before the dialog), so the two cannot disagree about the ceiling.
+ */
+export const MAX_FEE_DROPS = '10000'
+
+/**
+ * True only for a fee this app may sign: a canonical drops string (digits,
+ * no leading zero), greater than zero, and no larger than `MAX_FEE_DROPS`,
+ * compared as `BigInt`. Takes `unknown` because it checks what autofill
+ * attached, which is not trusted to be present or well formed — anything
+ * else fails closed.
+ *
+ * A plain `boolean`, deliberately not a `fee is string` predicate: it answers
+ * `false` for strings too (`'20000'`, `'012'`), and a predicate would narrow
+ * the refusal branch to `never`, switching type checking off exactly where a
+ * refused fee is described. `isCanonicalPositiveDrops` keeps its predicate,
+ * because there `false` really does mean "not a canonical drops string".
+ */
+export function feeWithinCap(fee: unknown): boolean {
+  return isCanonicalPositiveDrops(fee) && BigInt(fee) <= BigInt(MAX_FEE_DROPS)
+}
+
+/** A positive drops string in canonical form: digits only, no leading zero.
+ * Stricter than `isPositiveDrops` (which accepts `'012'`), because a fee this
+ * app signs or states must be exactly one spelling of its figure. */
+export function isCanonicalPositiveDrops(value: unknown): value is string {
+  return typeof value === 'string' && /^[1-9]\d*$/.test(value)
+}
+
 /**
  * True if a DECIMAL amount string (issued-currency balance/limit, e.g. "10.5")
  * is greater than zero. Issued-currency values are decimal strings, so they
@@ -83,6 +123,20 @@ export function isPositiveDecimalString(value: string): boolean {
   if (!/^-?\d*\.?\d*$/.test(value) || value.trim() === '') return false
   if (value.startsWith('-')) return false
   return /[1-9]/.test(value)
+}
+
+/**
+ * True if a LEDGER-REPORTED issued-currency value (e.g. a `delivered_amount`
+ * `value`) is greater than zero. Unlike `isPositiveDecimalString`, which gates
+ * what a user may type and stays strict, this accepts the XRPL exponent
+ * notation rippled emits for very small or very large values (`"1.5e-7"`,
+ * `"1E+20"`). A zero mantissa is zero whatever the exponent. String
+ * inspection only, per guardrail #4 — never `Number()`/`parseFloat()`.
+ */
+export function isPositiveLedgerDecimalString(value: string): boolean {
+  const match = /^(\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?$/.exec(value)
+  if (!match) return false
+  return /[1-9]/.test(match[1])
 }
 
 /**
@@ -120,4 +174,39 @@ export function displayCurrencyCode(code: string): string {
     return `${code.slice(0, 4)}…${code.slice(-4)}`
   }
   return code
+}
+
+/**
+ * The reserve an account must keep: the base reserve plus one owner reserve
+ * for every owned object (trust line, offer, …) — viewing-balances.md US-2.
+ */
+export function reserveRequirementDrops(baseReserveDrops: string, ownerReserveDrops: string, ownerCount: number): string {
+  return (BigInt(baseReserveDrops) + BigInt(multiplyDropsByCount(ownerReserveDrops, ownerCount))).toString()
+}
+
+/**
+ * Spendable = balance − reserve requirement, clamped at zero. An account whose
+ * balance has fallen below its reserve has nothing spendable; it never shows a
+ * negative figure (AD-7: the whole rule lives here, not in the hook).
+ */
+export function spendableAfterReserve(balanceDrops: string, reservedDrops: string): string {
+  const raw = subtractDrops(balanceDrops, reservedDrops)
+  return isNonNegativeDrops(raw) ? raw : '0'
+}
+
+/**
+ * The send-form funds check: the network fee comes out on top of the amount,
+ * so both must fit inside the spendable balance. Exactly equal fits — this is
+ * inclusive by design, not an off-by-one.
+ */
+export function amountPlusFeeFits(amountDrops: string, feeDrops: string, spendableDrops: string): boolean {
+  return BigInt(amountDrops) + BigInt(feeDrops) <= BigInt(spendableDrops)
+}
+
+/**
+ * Whether the spendable balance covers one more owner reserve — the cost of
+ * opening one additional trust line.
+ */
+export function coversOwnerReserve(spendableDrops: string, ownerReserveDrops: string): boolean {
+  return BigInt(spendableDrops) >= BigInt(ownerReserveDrops)
 }

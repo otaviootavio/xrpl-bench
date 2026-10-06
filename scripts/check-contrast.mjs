@@ -7,6 +7,14 @@
  * and measures every pair the app actually renders, including the tinted `/10`
  * and `/40` alpha composites. Exits non-zero on any failure.
  *
+ * It is also the only place in the repo that knows the sRGB truth of a token,
+ * so it carries the browser-surface check as well: the hex literals we hand the
+ * browser for the surfaces we did not draw (the omnibox/status bar via
+ * `theme-color`, the PWA splash via `background_color`) must equal
+ * `--background`. They are outside CSS, so nothing else could measure them, and
+ * all four had silently drifted from the tokens by 2026-09-09 —
+ * docs/sprints/mobile-chrome-sprints.md B2.
+ *
  * Exists because the failures it catches are invisible to `tsc` and to oxlint,
  * and were originally found only by measuring by hand. See docs/decisions.md
  * §6.2. Run with `bun run check:contrast`.
@@ -15,7 +23,8 @@ import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
 
-const CSS = join(dirname(fileURLToPath(import.meta.url)), '..', 'src', 'index.css')
+const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..')
+const CSS = join(ROOT, 'src', 'index.css')
 
 // ---- oklch -> sRGB, and WCAG 2.1 contrast -------------------------------
 function oklchToSrgb(L, C, hDeg) {
@@ -145,5 +154,43 @@ for (const [name, tokens] of [
   }
 }
 
-console.log(`\n${failures === 0 ? 'All token pairs pass.' : `${failures} contrast failure(s).`}`)
+// ---- browser surfaces: the colours we hand the browser, not the DOM ------
+// These are hex literals in index.html and vite.config.ts because neither file
+// can read a CSS custom property. That makes them the one part of the palette a
+// designer can change in index.css and leave behind, which is exactly what
+// happened: the dark literal was still blue-grey after the dark panel became
+// green-grey rack steel. Each must equal the --background it stands for.
+const toHex = (srgb) => '#' + srgb.map((c) => Math.round(c * 255).toString(16).padStart(2, '0')).join('')
+const LIGHT_BG = toHex(light.background.srgb)
+const DARK_BG = toHex(dark.background.srgb)
+
+const html = readFileSync(join(ROOT, 'index.html'), 'utf8')
+const viteConfig = readFileSync(join(ROOT, 'vite.config.ts'), 'utf8')
+
+// index.html builds its theme-color tag in an inline script (it is the only
+// form an installed PWA honours), so the two literals are `var` declarations
+// there rather than tag attributes. Both files are read as text, which is why
+// all four must stay lowercase six-digit hex in single/double quotes — hoist
+// one into a shared constant and this prints NOT FOUND.
+const metaThemeColor = (name) => html.match(new RegExp(`\\b${name} = '(#[0-9a-f]{6})'`))?.[1]
+const manifestColor = (key) => viteConfig.match(new RegExp(`\\b${key}: '(#[0-9a-f]{6})'`))?.[1]
+
+// The manifest carries ONE value for both finishes — Chrome bakes it into the
+// installed app and a manifest colour cannot carry a media query — so both
+// manifest keys are measured against the DARK background on purpose. See B1.
+const SURFACES = [
+  ['index.html theme-color (light)', metaThemeColor('LIGHT'), LIGHT_BG],
+  ['index.html theme-color (dark)', metaThemeColor('DARK'), DARK_BG],
+  ['manifest theme_color', manifestColor('theme_color'), DARK_BG],
+  ['manifest background_color', manifestColor('background_color'), DARK_BG],
+]
+
+console.log('\nBROWSER SURFACES (literal must equal --background)')
+for (const [label, got, want] of SURFACES) {
+  const ok = got === want
+  if (!ok) failures++
+  console.log(`  ${ok ? 'PASS' : 'FAIL'}  ${(got ?? 'NOT FOUND').padStart(9)} ${ok ? '==' : '!='} ${want}  ${label}`)
+}
+
+console.log(`\n${failures === 0 ? 'All token pairs pass.' : `${failures} failure(s).`}`)
 process.exit(failures === 0 ? 0 : 1)

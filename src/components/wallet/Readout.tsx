@@ -26,6 +26,18 @@ export interface ScaleMark {
   value: string
   /** Rendered after the value, e.g. an owned-object count. */
   note?: string
+  /**
+   * This reading could not be read, and `value` says so in words.
+   *
+   * The mark keeps its place under the rule — a figure that disappears says
+   * the obligation is smaller, which is the falsehood this state exists to
+   * stop — but it drops the data face and the tabular numerals, because what
+   * is rendered is a sentence and not a number. No new tone token: the
+   * destructive tone does not hold contrast on readout ground, so the words
+   * take the well's own `text-readout-muted` (the pair `check:contrast`
+   * already measures) and the retry beside the well carries the colour.
+   */
+  unavailable?: boolean
 }
 
 export function Readout({
@@ -72,9 +84,19 @@ export function Readout({
           {marks.map((m) => (
             <div key={m.label} className="min-w-0">
               <dt className="panel-legend text-readout-muted">{m.label}</dt>
-              <dd className="font-data text-base leading-snug tracking-tight sm:text-lg">
+              <dd
+                className={cn(
+                  'leading-snug',
+                  m.unavailable
+                    ? 'font-legend text-sm text-readout-muted'
+                    : 'font-data text-base tracking-tight sm:text-lg',
+                )}
+              >
                 {m.value}
-                {m.note && <span className="ml-1.5 font-legend text-xs tracking-normal text-readout-muted">{m.note}</span>}
+                {/* No note on a mark that could not be read: the row's whole
+                    job is to make one statement, and an owned-object count
+                    beside "Unavailable" would be a second. */}
+                {m.note && !m.unavailable && <span className="ml-1.5 font-legend text-xs tracking-normal text-readout-muted">{m.note}</span>}
               </dd>
             </div>
           ))}

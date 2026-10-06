@@ -1,4 +1,6 @@
 import { getXrplClient } from './client'
+import { isPositiveDrops, isPositiveLedgerDecimalString } from './money'
+import { isRecord, rippledErrorCode } from './narrow'
 import type { NetworkId } from './networks'
 
 export interface AccountState {
@@ -31,8 +33,8 @@ export async function fetchAccountState(network: NetworkId, address: string): Pr
       disableMasterKey: (flags & 0x00100000) !== 0,
       regularKey: data.RegularKey,
     }
-  } catch (err: any) {
-    if (err?.data?.error === 'actNotFound') {
+  } catch (err: unknown) {
+    if (rippledErrorCode(err) === 'actNotFound') {
       return {
         exists: false,
         address,
@@ -78,7 +80,7 @@ export async function fetchAccountLines(network: NetworkId, address: string): Pr
         command: 'account_lines',
         account: address,
         ledger_index: 'validated',
-        marker: marker as never,
+        marker,
       })
       for (const l of res.result.lines) {
         lines.push({
@@ -95,8 +97,8 @@ export async function fetchAccountLines(network: NetworkId, address: string): Pr
       marker = res.result.marker
     } while (marker !== undefined)
     return lines
-  } catch (err: any) {
-    if (err?.data?.error === 'actNotFound') return []
+  } catch (err: unknown) {
+    if (rippledErrorCode(err) === 'actNotFound') return []
     throw err
   }
 }
@@ -132,10 +134,12 @@ export interface TxSummary {
   counterparty: string
   amountDrops?: string
   amountIssued?: { currency: string; issuer: string; value: string }
-  /** True when the ledger could not tell us the exact delivered amount
-   * (`delivered_amount: "unavailable"`, only possible for very old partial
-   * payments). The amount shown is then an UPPER BOUND, not what actually
-   * arrived — the skill's security guidance says to treat it as partial. */
+  /** True when the figure is NOT a known delivered amount but the requested
+   * `DeliverMax`/`Amount` shown in its place — an UPPER BOUND, not what
+   * actually arrived. Set for every Payment without a positive, well-formed
+   * `delivered_amount`: the legacy `"unavailable"`, a missing field, a zero or
+   * negative figure, a malformed one, and any failed (non-`tesSUCCESS`)
+   * Payment, where nothing arrived at all. See `paymentAmountOf`. */
   amountIsUpperBound?: boolean
   /** Unix epoch seconds, or undefined when the ledger didn't supply a date
    * (rendering 0 would date the row to 1970/2000). */
@@ -147,21 +151,59 @@ export interface TxSummary {
   feeDrops?: string
 }
 
-/** Wraps `account_tx`, paginated via `marker`. */
+/** The fields `fetchAccountTx` reads off a listed transaction. Each is a type
+ * every xrpl.js `Transaction` already satisfies, so an entry is assigned to
+ * this view, not cast. */
+interface ListedTx {
+  Account: string
+  TransactionType: string
+  Destination?: string
+  DestinationTag?: number
+  Fee?: string
+  hash?: string
+  date?: number
+}
+
+/** An `account_tx` entry under either API version: v2 nests the transaction
+ * in `tx_json` beside `hash`, v1 in `tx`. */
+interface ListedEntry {
+  tx_json?: ListedTx
+  tx?: ListedTx
+  hash?: string
+}
+
+/** Wraps `account_tx`, paginated via `marker`.
+ *
+ * `actNotFound` on the FIRST page is an empty history, not a failed read — the
+ * same not-activated ≠ failed distinction `fetchAccountState` and
+ * `fetchAccountLines` already draw. A server that answers an unactivated
+ * address that way would otherwise have History call every new wallet "could
+ * not be read", and the incoming-payment watch retry a read that has nothing to
+ * fail about.
+ *
+ * On a continuation page (`marker` set) it is rethrown: the account had history
+ * a page ago, so "not found" there is not "nothing more", and answering empty
+ * with no marker would end the list early and make it look complete. */
 export async function fetchAccountTx(
   network: NetworkId,
   address: string,
   marker?: unknown,
 ): Promise<{ items: TxSummary[]; marker?: unknown }> {
   const client = await getXrplClient(network)
-  const res = await client.request({
-    command: 'account_tx',
-    account: address,
-    ledger_index_min: -1,
-    ledger_index_max: -1,
-    limit: 25,
-    marker: marker as never,
-  })
+  let res
+  try {
+    res = await client.request({
+      command: 'account_tx',
+      account: address,
+      ledger_index_min: -1,
+      ledger_index_max: -1,
+      limit: 25,
+      marker,
+    })
+  } catch (err: unknown) {
+    if (marker === undefined && rippledErrorCode(err) === 'actNotFound') return { items: [], marker: undefined }
+    throw err
+  }
 
   const items: TxSummary[] = []
   for (const entry of res.result.transactions) {
@@ -170,32 +212,26 @@ export async function fetchAccountTx(
     // renamed to disambiguate from the actual `delivered_amount` in meta,
     // which differs for partial payments) — verified live against the
     // testnet 2026-08-31; older/raw rippled responses may still use `tx`
-    // and `Amount`, so both are supported here.
-    const tx = (entry as any).tx_json ?? (entry as any).tx
+    // and `Amount`, so both are supported here. xrpl.js types the entry for
+    // v2 only (`tx` is `never`), so it is read through `ListedEntry`, which
+    // admits both, rather than cast.
+    const listed: ListedEntry = entry
+    const tx = listed.tx_json ?? listed.tx
     const meta = entry.meta
     if (!tx || typeof meta !== 'object') continue
     // Every transaction type this account was involved in is listed, not just
     // Payments. Filtering to Payment hid the wallet's own TrustSet activity
     // entirely, and made `limit`-based pagination return near-empty pages.
     const isSender = tx.Account === address
-    const isPayment = tx.TransactionType === 'Payment'
-    const delivered = (meta as any).delivered_amount
-    const deliveredUnavailable = delivered === 'unavailable'
-    const amount = isPayment ? (delivered && !deliveredUnavailable ? delivered : (tx.DeliverMax ?? tx.Amount)) : undefined
     items.push({
-      hash: (entry as any).hash ?? tx.hash ?? '',
+      hash: listed.hash ?? tx.hash ?? '',
       type: tx.TransactionType,
       direction: isSender ? 'sent' : 'received',
       counterparty: isSender ? (tx.Destination ?? '') : tx.Account,
-      amountDrops: typeof amount === 'string' ? amount : undefined,
-      amountIssued:
-        typeof amount === 'object' && amount
-          ? { currency: amount.currency, issuer: amount.issuer, value: amount.value }
-          : undefined,
-      amountIsUpperBound: isPayment && deliveredUnavailable ? true : undefined,
+      ...paymentAmountOf(tx, meta),
       date: typeof tx.date === 'number' ? tx.date + 946684800 : undefined, // ripple epoch -> unix epoch
       validated: !!entry.validated,
-      resultCode: typeof meta === 'object' ? (meta as any).TransactionResult ?? '' : '',
+      resultCode: typeof meta === 'object' ? meta.TransactionResult ?? '' : '',
       ledgerIndex: entry.ledger_index ?? undefined,
       destinationTag: tx.DestinationTag,
       feeDrops: tx.Fee,
@@ -204,8 +240,65 @@ export async function fetchAccountTx(
   return { items, marker: res.result.marker }
 }
 
-/** Wraps `tx` for a single transaction's full detail. */
+/** Wraps `tx` for a single transaction's full detail. The raw response is
+ * returned unchanged, with the same normalised payment amount `fetchAccountTx`
+ * produces laid beside it — so no caller ever reads a raw `DeliverMax` as if
+ * it arrived. There is no account here, so there is no direction. */
 export async function fetchTx(network: NetworkId, hash: string) {
   const client = await getXrplClient(network)
-  return client.request({ command: 'tx', transaction: hash })
+  const res = await client.request({ command: 'tx', transaction: hash })
+  // API v2 nests the transaction under `tx_json`; v1 lays it flat on `result`.
+  // Typed as the two fields read, so a v1 response (no `tx_json`) is admitted
+  // without a cast; `paymentAmountOf` checks whatever arrives.
+  const result: { tx_json?: unknown; meta?: unknown } | undefined = res.result
+  const tx = result?.tx_json ?? result
+  return { ...res, ...paymentAmountOf(tx, result?.meta) }
+}
+
+export type PaymentAmount = Pick<TxSummary, 'amountDrops' | 'amountIssued' | 'amountIsUpperBound'>
+
+type IssuedAmount = NonNullable<TxSummary['amountIssued']>
+
+/** An issued-currency amount object with all three fields as strings. MPT
+ * amounts (`mpt_issuance_id`) have no currency/issuer and are not rendered. */
+function asIssued(value: unknown): IssuedAmount | undefined {
+  if (typeof value !== 'object' || value === null) return undefined
+  const { currency, issuer, value: v } = value as Record<string, unknown>
+  if (typeof currency !== 'string' || typeof issuer !== 'string' || typeof v !== 'string') return undefined
+  return { currency, issuer, value: v }
+}
+
+/** Maps a raw ledger amount (drops string or issued object) to the summary
+ * fields, dropping anything that is neither. */
+function toSummaryAmount(amount: unknown): Pick<TxSummary, 'amountDrops' | 'amountIssued'> {
+  if (typeof amount === 'string') return { amountDrops: amount }
+  const issued = asIssued(amount)
+  return issued ? { amountIssued: issued } : {}
+}
+
+/**
+ * The one place that decides what figure a Payment shows and whether that
+ * figure is exact (FR-57, docs/agents/money.md).
+ *
+ * Only a successful Payment with a POSITIVE, well-formed `delivered_amount` is
+ * exact: drops by `BigInt > 0n`, an issued `value` by string inspection that
+ * also accepts the ledger's exponent notation. Anything else — the legacy
+ * `"unavailable"`, a missing, zero, negative or malformed field, or a failed
+ * Payment (which delivers nothing) — falls back to the requested
+ * `DeliverMax`/`Amount`, flagged as an upper bound. A non-Payment gets no
+ * amount and no flag.
+ */
+export function paymentAmountOf(tx: unknown, meta: unknown): PaymentAmount {
+  if (!isRecord(tx) || tx.TransactionType !== 'Payment') return {}
+  const m = isRecord(meta) ? meta : {}
+  const succeeded = m.TransactionResult === 'tesSUCCESS'
+  const delivered = m.delivered_amount
+
+  if (succeeded) {
+    if (isPositiveDrops(delivered)) return { amountDrops: delivered }
+    const issued = asIssued(delivered)
+    if (issued && isPositiveLedgerDecimalString(issued.value)) return { amountIssued: issued }
+  }
+
+  return { ...toSummaryAmount(tx.DeliverMax ?? tx.Amount), amountIsUpperBound: true }
 }

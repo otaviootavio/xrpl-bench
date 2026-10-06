@@ -100,8 +100,19 @@ export default defineConfig(({ mode }) => {
           // and an install carries the origin-scoped vault (§8.11).
           id: '/',
           description: 'Self-custody XRP Ledger wallet',
-          theme_color: '#e6eaef',
-          background_color: '#e6eaef',
+          // Both are dark rack steel (--background in the dark finish), NOT
+          // the light one, and that asymmetry is deliberate. An installed PWA
+          // on Android paints its status bar from this manifest, never from
+          // the media-scoped <meta name="theme-color"> in index.html, and a
+          // manifest colour cannot carry a media query — so one value has to
+          // serve both finishes. A pale band above the dark panel reads as
+          // broken chrome (it is what was reported); a dark strip above the
+          // pale enamel reads as the chassis the panel is racked into.
+          // Reasoning and the Chromium issues in
+          // docs/sprints/mobile-chrome-sprints.md B1/B3. Asserted against
+          // --background by `bun run check:contrast`.
+          theme_color: '#181a15',
+          background_color: '#181a15',
           display: 'standalone',
           icons: [
             { src: 'pwa-192.svg', sizes: '192x192', type: 'image/svg+xml' },

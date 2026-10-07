@@ -13,15 +13,26 @@ import { StatusLegend, type LampTone } from '@/components/ui/lamp'
  * taken rather than being shown an undifferentiated "Failed"
  * (docs/decisions.md §5.5).
  *
- * `whitespace-nowrap` is this call site's own: these legends carry a bracketed
- * result code, and `tecUNFUNDED_PAYMENT` breaking across two lines would read
- * as two codes. Most legends are one word and should wrap normally, so the
- * shared component does not assume it.
+ * Only the bracketed result code is unbreakable: `tecUNFUNDED_PAYMENT` split
+ * across two lines would read as two codes. The words before it ("Failed — fee
+ * charged") wrap normally, so on a narrow row the code moves to its own line as
+ * a unit instead of pushing the row wider than its box. The text sits in one
+ * span so it flows as a single run beside the lamp; loose text runs inside the
+ * legend's `inline-flex` would each become a flex item and could not wrap onto
+ * a line below one another.
  */
-function Status({ tone, children }: { tone: LampTone; children: React.ReactNode }) {
+function Status({ tone, code, children }: { tone: LampTone; code?: string; children: React.ReactNode }) {
   return (
-    <StatusLegend tone={tone} className="whitespace-nowrap">
-      {children}
+    <StatusLegend tone={tone}>
+      <span>
+        {children}
+        {code !== undefined && (
+          <>
+            {' '}
+            <span className="whitespace-nowrap">({code})</span>
+          </>
+        )}
+      </span>
     </StatusLegend>
   )
 }
@@ -30,6 +41,6 @@ export function TxStatusBadge({ resultCode, validated }: { resultCode?: string; 
   if (!validated) return <Status tone="neutral">Pending</Status>
   if (resultCode === 'tesSUCCESS') return <Status tone="live">Validated</Status>
   if (resultCode === 'expired') return <Status tone="caution">Expired — not applied</Status>
-  if (resultCode?.startsWith('tec')) return <Status tone="caution">Failed — fee charged ({resultCode})</Status>
-  return <Status tone="alert">Failed ({resultCode})</Status>
+  if (resultCode?.startsWith('tec')) return <Status tone="caution" code={resultCode}>Failed — fee charged</Status>
+  return <Status tone="alert" code={resultCode ?? ''}>Failed</Status>
 }

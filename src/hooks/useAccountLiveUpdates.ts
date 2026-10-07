@@ -2,6 +2,7 @@ import { useEffect } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import type { TransactionStream } from 'xrpl'
 import { getXrplClient } from '@/lib/xrpl/client'
+import { invalidateAccountScoped } from '@/lib/xrpl/query-keys'
 import type { NetworkId } from '@/lib/xrpl/networks'
 
 /**
@@ -25,10 +26,8 @@ export function useAccountLiveUpdates(network: NetworkId, address: string | null
     let cancelled = false
 
     function invalidateAccountQueries() {
-      queryClient.invalidateQueries({ queryKey: ['accountState', network, address] })
-      queryClient.invalidateQueries({ queryKey: ['trustLines', network, address] })
-      queryClient.invalidateQueries({ queryKey: ['accountTx', network, address] })
-      queryClient.invalidateQueries({ queryKey: ['incomingPaymentWatch', network, address] })
+      // Fire-and-forget: this runs from a stream handler with nothing to await.
+      void invalidateAccountScoped(queryClient, network, address)
     }
 
     function handleTransaction(event: TransactionStream) {

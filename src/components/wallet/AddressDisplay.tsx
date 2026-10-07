@@ -1,8 +1,7 @@
 import { useState } from 'react'
-import { CheckIcon, CopyIcon, ExternalLinkIcon } from 'lucide-react'
+import { CheckIcon, CopyIcon } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { accountExplorerUrl } from '@/lib/xrpl/networks'
-import { useAppStore } from '@/store/app-store'
+import { AddressLink } from '@/components/wallet/AddressLink'
 
 /**
  * The engraved serial plate.
@@ -24,7 +23,6 @@ function groupsOf(value: string, size = 4): string[] {
 
 export function AddressDisplay({ address }: { address: string }) {
   const [copied, setCopied] = useState(false)
-  const network = useAppStore((s) => s.network)
 
   async function handleCopy() {
     await navigator.clipboard.writeText(address)
@@ -61,11 +59,8 @@ export function AddressDisplay({ address }: { address: string }) {
         <span role="status" aria-live="polite" className="sr-only">
           {copied ? 'Address copied to clipboard' : ''}
         </span>
-        <Button variant="ghost" size="icon" asChild aria-label="View account on block explorer">
-          <a href={accountExplorerUrl(network, address)} target="_blank" rel="noreferrer noopener">
-            <ExternalLinkIcon className="size-4" />
-          </a>
-        </Button>
+        {/* AD-10: the anchor is built by the shared component, never here. */}
+        <AddressLink address={address} iconOnly label="View account on block explorer" />
       </div>
     </div>
   )

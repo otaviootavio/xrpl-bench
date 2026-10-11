@@ -24,7 +24,7 @@ cannot hold as written; they are listed under *Inherited Invariants* as
 **conflicts** and need a parent amendment before this spine is final. Nothing
 here overrides them silently.
 
-`[ASSUMPTION]` marks a call not yet confirmed by the owner. Finalized with four still open: Regular Key replacement (AD-29), migration across networks (AD-27), Controlled Wallet identity (AD-18), a missing `network_id` (AD-19). The six conflicting parent ADs (AD-2, 3, 5, 6, 9, 16) are amended when this spine is adopted.
+`[ASSUMPTION]` marks a call not yet confirmed by the owner. Four calls were confirmed by the owner on 2026-10-11 and are no longer assumptions: Regular Key replacement (AD-29), migration across networks (AD-27), Controlled Wallet identity (AD-18), a missing `network_id` accepted for Mainnet only (AD-19). The six conflicting parent ADs (AD-2, 3, 5, 6, 9, 16) are amended when this spine is adopted.
 
 ## Design Paradigm
 
@@ -102,7 +102,7 @@ graph TD
   Account address, check kinds), derived from that record and never edited
   independently. Every edit carries a record `rev` and is a compare-and-swap inside its
   IndexedDB transaction, so two tabs or two flows cannot lose each other's update.
-- **Controlled Wallets (FR-75), `[ASSUMPTION]`.** The Wallet whose key becomes an
+- **Controlled Wallets (FR-75), confirmed 2026-10-11.** The Wallet whose key becomes an
   Account's Regular Key operates that Account: its `accountAddress` is the
   controlled Account, its `keyAddress` its own. A Controlling Wallet on this
   device has `keyAddress` equal to that `accountAddress`. Two Seed records can
@@ -139,8 +139,8 @@ graph TD
 - **Rule:** `client.ts` pools connections by Node URL, not by network id. A
   custom Node is accepted only after `server_info` answers with the `network_id`
   of the network the user picked (Mainnet 0, Testnet 1, Devnet 2). A Node that
-  reports no `network_id` is accepted for Mainnet only (`[ASSUMPTION]`, verify
-  against a live Mainnet Node before building). `submitAndClassify` and every
+  reports no `network_id` is accepted for Mainnet only (confirmed 2026-10-11; verified against live
+  Mainnet Nodes the same day). `submitAndClassify` and every
   read take the Wallet's Node, not just its network. A custom Node is
   stored only on that Wallet's record. Failover happens only within the built-in
   list; a custom Node has none. The AD-12 seam (substitute + reset) moves with
@@ -267,7 +267,7 @@ graph TD
   a rollback turns into a vault nobody can open.
 - **Rule:** Every existing Wallet joins one **legacy lock** whose Open Key *is*
   today's `vaultKey`, wrapped as today under the PIN and the passkey. Nothing is
-  re-encrypted on update. A Wallet leaves the legacy lock only through an FR-73 edit, which re-encrypts that Wallet alone and **deletes its legacy `encryptedSeed`** (AD-23); the confirm says an older build can no longer open it. Each legacy Wallet's `network` is set at migration from today's persisted app-wide `network`, and the Wallet list offers "use on another network", which adds a Wallet over the **same Seed record** (AD-18) so a funded Mainnet address is never lost from view by a Testnet default (`[ASSUMPTION]`; product-adjacent, to confirm). Migrated Wallets lock
+  re-encrypted on update. A Wallet leaves the legacy lock only through an FR-73 edit, which re-encrypts that Wallet alone and **deletes its legacy `encryptedSeed`** (AD-23); the confirm says an older build can no longer open it. Each legacy Wallet's `network` is set at migration from today's persisted app-wide `network`, and the Wallet list offers "use on another network", which adds a Wallet over the **same Seed record** (AD-18) so a funded Mainnet address is never lost from view by a Testnet default (confirmed 2026-10-11). Migrated Wallets lock
   together, as today. There is **no IndexedDB version bump**: new data is
   additive fields on existing records and new `lock:<id>` keys in the existing
   `vault` store, and a legacy Wallet's `encryptedSeed` is never rewritten
@@ -304,8 +304,8 @@ graph TD
   (FR-22), not on submission. `SetRegularKey` and `AccountSet`
   (`asfDisableMaster`) are enabled only on a current successful read (parent
   AD-13), pass `submitAndClassify`, and are signed through `openSigner`.
-  FR-76 sets the Account's single Regular Key; `[ASSUMPTION]` when one already
-  exists it is replaced behind a confirm step that names the old key as no longer
+  FR-76 sets the Account's single Regular Key; when one already
+  exists (confirmed 2026-10-11) it is replaced behind a confirm step that names the old key as no longer
   able to sign. A controlled Wallet signs with `masterAddress` set (AD-18).
 - **Which key signs which transaction.** Disabling the master key
   (`asfDisableMaster`) must be signed by the Account's own master key pair
@@ -426,11 +426,9 @@ those Wallets (recoverable only by the written Seed or a Controlling Wallet).
   one key on an offline device, not a quorum. Needs its own epic and boundary
   decision.
 - **`largeBlob`** as a Seed carrier. Parked in the addendum; uneven support.
-- **Regular Key replacement policy when one already exists.** `[ASSUMPTION]`
-  replace with confirm (AD-29); to be confirmed with the owner and written into
-  the reworded FR-76.
+- **Regular Key replacement policy when one already exists.** Resolved
+  2026-10-11: replace with confirm (AD-29); FR-76 already says so.
 - **The Devnet row in `docs/user-stories/INDEX.md` and the Devnet transaction
-  explorer path** (assumed to follow Testnet's pattern). Needed before FR-61 is
-  built; no architectural consequence.
+  explorer path.** Resolved: the row exists and the path returned 200 on 2026-10-11.
 - **Amending the five conflicting parent ADs and `CLAUDE.md`'s unlock wording.**
   Done when this spine is adopted, not before.

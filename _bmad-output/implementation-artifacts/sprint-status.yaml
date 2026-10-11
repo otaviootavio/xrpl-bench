@@ -29,7 +29,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 # - Retrospective appends its action items to action_items; the status view surfaces open ones
 generated: 09-15-2026 21:01
-last_updated: '10-04-2026 14:18'
+last_updated: '10-11-2026 12:00'
 project: xrpl-wallet
 project_key: NOKEY
 tracking_system: file-system
@@ -100,6 +100,32 @@ development_status:
   11-1-the-warning-comes-before-the-write-on-both-import-paths: done
   11-2-a-pasted-seed-is-not-rejected-for-its-whitespace: done
   epic-11-retrospective: done
+
+  epic-12: backlog
+  12-1-existing-wallets-move-to-per-wallet-locks-without-changing: backlog
+  12-2-each-wallet-has-its-own-network-and-node-including-devnet: backlog
+  epic-12-retrospective: optional
+
+  epic-13: backlog
+  13-1-a-wallet-s-signing-check-is-structural-and-signing-goes-thro: backlog
+  13-2-each-wallet-has-its-own-open-check-and-auto-lock: backlog
+  epic-13-retrospective: optional
+
+  epic-14: backlog
+  14-1-create-a-stored-seed-wallet-one-question-at-a-time-under-one: backlog
+  14-2-a-passkey-derived-seed-with-the-passkey-rule-and-what-kind-o: backlog
+  14-3-a-confirmed-written-seed-and-revealing-a-seed-behind-the-sig: backlog
+  epic-14-retrospective: optional
+
+  epic-15: backlog
+  15-1-edit-a-wallet-s-checks-and-passkey: backlog
+  15-2-control-a-wallet-from-another-wallet-and-add-a-passkey-as-an: backlog
+  15-3-turn-the-account-master-key-off-and-on-from-settings: backlog
+  epic-15-retrospective: optional
+
+  epic-16: backlog
+  16-1-build-a-transaction-online-and-sign-it-offline-by-qr: backlog
+  epic-16-retrospective: optional
 action_items:
   - id: "epic-5-retro-item-1-make-send-s-token-path-fail-closed-on-a"
     epic: 5
@@ -246,8 +272,8 @@ action_items:
     action: "Add a rule to the unattended loop: a finding a build or review marks
       high-severity *and* money-moving blocks the resolver's merge of the *next* epic
       until a story or PR for it exists and Otavio has seen it. Record it in docs/agents/.
-      ONE RULE WITH epic-9-retro-item-30: decide and write both triggers together as
-      a single hold rule for money-moving findings."
+      ONE RULE WITH epic-9-retro-item-30: decide and write both triggers together
+      as a single hold rule for money-moving findings."
     owner: "Otavio (process)"
     status: open
     ref: "_bmad-output/implementation-artifacts/epic-7-retro-2026-10-04.md"
@@ -355,8 +381,9 @@ action_items:
     action: "In the unattended build loop, do not squash-merge a PR whose reviewer
       raised a \"for Otavio\" decision that weakens a money-moving guard or warning.
       Hold it, or label it and block promotion until Otavio decides. Regenerate the
-      PR body's decision list from the spec whenever a review fix adds a decision. ONE RULE WITH epic-7-retro-item-18 (second
-      trigger of the same hold rule); decide them together."
+      PR body's decision list from the spec whenever a review fix adds a decision.
+      ONE RULE WITH epic-7-retro-item-18 (second trigger of the same hold rule); decide
+      them together."
     owner: "Otavio (process)"
     status: open
     ref: "_bmad-output/implementation-artifacts/epic-9-retro-2026-10-04.md"
@@ -382,8 +409,8 @@ action_items:
   - id: "epic-10-retro-item-33-a-resolver-re-runs-all-four-gates-on-the"
     epic: 10
     action: "A resolver re-runs all four gates on the tree it is about to merge (rebased
-      onto current dev), not the tree the PR was last rebased onto. ONE RULE WITH epic-6-retro-item-14
-      (the browser half); decide them together."
+      onto current dev), not the tree the PR was last rebased onto. ONE RULE WITH
+      epic-6-retro-item-14 (the browser half); decide them together."
     owner: "Otavio (process)"
     status: open
     ref: "_bmad-output/implementation-artifacts/epic-10-retro-2026-10-04.md"

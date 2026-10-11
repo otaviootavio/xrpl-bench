@@ -311,8 +311,8 @@ describe.each(['mainnet', 'devnet'] as const)('choosing %s', (network) => {
   it('Onboarding import: the pre-check and the write use it', async () => {
     ledger.masterKeyEnabled()
     render(<Onboarding />)
-    radio(NETWORK_LABEL[network])
     await click('Import an existing wallet')
+    radio(NETWORK_LABEL[network])
     ;(document.getElementById('seed') as HTMLInputElement).value = SEED
     await click('Continue')
     fireEvent.change(document.getElementById('pin')!, { target: { value: '123456' } })
@@ -322,43 +322,28 @@ describe.each(['mainnet', 'devnet'] as const)('choosing %s', (network) => {
     expect(importAndStoreWallet.mock.calls[0][3]).toBe(network)
   })
 
-  it('Onboarding generate: the new Wallet is created on it', async () => {
-    render(<Onboarding />)
-    radio(NETWORK_LABEL[network])
-    await click('Create a new wallet')
-    fireEvent.change(document.getElementById('pin')!, { target: { value: '123456' } })
-    fireEvent.change(document.getElementById('pin-confirm')!, { target: { value: '123456' } })
-    await click('Continue')
-    expect(generateAndStoreWallet.mock.calls[0][2]).toBe(network)
-  })
-
   it('Settings import: the pre-check and the write use it, and "Import anyway" keeps it', async () => {
     ledger.masterKeyDisabled()
     render(<SettingsTab />)
     await click('Add wallet')
-    radio(NETWORK_LABEL[network])
     await click('Import')
+    radio(NETWORK_LABEL[network])
     ;(document.getElementById('wseed') as HTMLInputElement).value = SEED
     await click('Add')
     expect(fetchQuery.mock.calls[0][0].queryKey).toEqual(['accountState', network, ADDRESS])
     await click('Import anyway')
     expect(importAndStoreWallet.mock.calls[0][3]).toBe(network)
   })
-
-  it('Settings generate: the new Wallet is created on it', async () => {
-    render(<SettingsTab />)
-    await click('Add wallet')
-    radio(NETWORK_LABEL[network])
-    await click('Add')
-    expect(generateAndStoreWallet.mock.calls[0][2]).toBe(network)
-  })
 })
 
 describe('Settings: the Network choice is reset for the next Add', () => {
-  it('returns to Testnet after an add completes', async () => {
+  it('returns to Testnet after an import completes', async () => {
+    ledger.masterKeyEnabled()
     render(<SettingsTab />)
     await click('Add wallet')
+    await click('Import')
     radio(/^Mainnet/)
+    ;(document.getElementById('wseed') as HTMLInputElement).value = SEED
     await click('Add')
     await click('Add wallet')
     expect((screen.getByRole('radio', { name: /^Testnet/ }) as HTMLInputElement).checked).toBe(true)

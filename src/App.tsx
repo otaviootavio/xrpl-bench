@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { TooltipProvider } from '@/components/ui/tooltip'
+import { PinPromptProvider } from '@/components/wallet/PinPromptDialog'
 import { Onboarding } from '@/pages/Onboarding'
 import { Main } from '@/pages/Main'
 import { appStateSettled, useAppStore } from '@/store/app-store'
@@ -87,7 +88,9 @@ function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <TooltipProvider>
-        <Gate />
+        <PinPromptProvider>
+          <Gate />
+        </PinPromptProvider>
       </TooltipProvider>
     </QueryClientProvider>
   )

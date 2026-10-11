@@ -1,0 +1,430 @@
+/** @vitest-environment jsdom */
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+
+/**
+ * Story 5: the creation flow asks one question per axis, in order, each with a
+ * pre-selected answer, and RENDERS what `lib/crypto/policy.ts` says. The
+ * keystore and the ledger are stubbed at their edges; the policy is the real one
+ * (and, in one test, a stand-in that proves the screen decides nothing itself).
+ */
+const SEED = 'sEdTM1uX8pu2do5XvTnutH6HsouMaM2'
+
+const h = vi.hoisted(() => ({
+  capability: 'no' as 'yes' | 'no' | 'unknown',
+  appPin: false,
+  pinReadFails: false,
+  verifyDeferred: null as null | ((ok: boolean) => void),
+  createStoredWallet: vi.fn(),
+  verifyNode: vi.fn(),
+  startLockSession: vi.fn(async () => {}),
+  policyOverride: null as null | ((described: any) => any),
+}))
+
+vi.mock('idb-keyval', () => ({ get: async () => undefined, set: async () => {}, del: async () => {} }))
+vi.mock('@/lib/crypto/webauthn', () => ({ detectPrfSupport: async () => h.capability }))
+vi.mock('@/lib/crypto/lock', () => ({
+  hasAppPin: async () => {
+    if (h.pinReadFails) throw new Error('idb down')
+    return h.appPin
+  },
+  startLockSession: (...a: unknown[]) => h.startLockSession(...(a as [])),
+}))
+vi.mock('@/lib/crypto/pin', () => ({ triesRemaining: async () => 8 }))
+vi.mock('@/lib/xrpl/client', () => ({ verifyNode: (...a: unknown[]) => h.verifyNode(...a) }))
+vi.mock('@/lib/crypto/keystore', () => ({
+  createStoredWallet: (...a: unknown[]) => h.createStoredWallet(...a),
+  listWallets: async () => [META],
+  describeCheckFailure: (r: { status: string; triesRemaining?: number }) =>
+    r.status === 'wrong-credential' ? `Incorrect PIN. ${r.triesRemaining} tries remaining.` : 'Locked out.',
+}))
+vi.mock('@/lib/crypto/policy', async (importOriginal) => {
+  const real = await importOriginal<typeof import('@/lib/crypto/policy')>()
+  // Looked up at call time, so a test can swap the policy after the import.
+  return {
+    ...real,
+    describeOptions: (ctx: Parameters<typeof real.describeOptions>[0]) =>
+      h.policyOverride ? h.policyOverride(real.describeOptions(ctx)) : real.describeOptions(ctx),
+  }
+})
+
+import { CreateWalletFlow } from '../CreateWalletFlow'
+import { useAppStore } from '@/store/app-store'
+
+const META = {
+  id: 'w1',
+  seedId: 'w1',
+  lockId: 'lock-1',
+  label: 'Savings',
+  address: 'rAddr',
+  createdAt: 1,
+  network: 'testnet',
+  algorithm: 'ed25519',
+  openCheck: 'pin',
+  signingCheck: 'standard',
+}
+const KEY = { type: 'secret' } as unknown as CryptoKey
+const created = () => ({ status: 'ok', value: { meta: META, openKey: KEY, seed: SEED } })
+
+async function mount(props: Parameters<typeof CreateWalletFlow>[0] = {}) {
+  render(<CreateWalletFlow {...props} />)
+  await screen.findByText('Seed Method')
+}
+
+const radioNamed = (name: RegExp | string) => screen.getByRole('radio', { name }) as HTMLInputElement
+const legends = () => Array.from(document.querySelectorAll('legend')).map((l) => l.textContent)
+const createButton = () => screen.getByRole('button', { name: /Create wallet/ })
+const click = async (el: HTMLElement) => act(async () => void fireEvent.click(el))
+const type = (el: HTMLElement, value: string) => fireEvent.change(el, { target: { value } })
+
+beforeEach(() => {
+  h.capability = 'no'
+  h.appPin = false
+  h.pinReadFails = false
+  h.verifyDeferred = null
+  h.policyOverride = null
+  h.createStoredWallet.mockReset().mockResolvedValue(created())
+  h.verifyNode.mockReset().mockResolvedValue(undefined)
+  h.startLockSession.mockClear()
+  useAppStore.setState({ wallets: [], activeWalletId: null, openLocks: {} } as never)
+})
+afterEach(cleanup)
+
+describe('the questions and their pre-selected answers', () => {
+  it('asks in the FR-60 order', async () => {
+    await mount()
+    expect(legends()).toEqual([
+      'Network',
+      'Node',
+      'Seed Method',
+      'Signature type',
+      'Open Check',
+      'Auto-lock after inactivity',
+      'Signing Check',
+    ])
+  })
+
+  it('pre-selects Testnet, the built-in Nodes, Stored Seed, Ed25519, App PIN, 5 minutes, Standard (no PRF)', async () => {
+    await mount()
+    expect(radioNamed(/^Testnet/).checked).toBe(true)
+    expect(radioNamed(/^Built-in Nodes/).checked).toBe(true)
+    expect(screen.getByText(/wss:\/\/s\.altnet\.rippletest\.net:51233/)).toBeTruthy()
+    expect(radioNamed(/^Stored Seed/).checked).toBe(true)
+    expect(radioNamed('Ed25519').checked).toBe(true)
+    expect(radioNamed('App PIN').checked).toBe(true)
+    expect(radioNamed('5 minutes').checked).toBe(true)
+    expect(radioNamed(/^Standard/).checked).toBe(true)
+  })
+
+  it('with a known PRF the Open Check defaults to a passkey; Signing stays Standard on Testnet and becomes passkey on Mainnet', async () => {
+    h.capability = 'yes'
+    await mount()
+    expect(radioNamed('Passkey').checked).toBe(true)
+    expect(radioNamed(/^Standard/).checked).toBe(true)
+    await click(radioNamed(/^Mainnet/))
+    expect(radioNamed(/^Passkey only/).checked).toBe(true)
+  })
+
+  it('on Mainnet without PRF the Signing Check defaults to the App PIN', async () => {
+    await mount()
+    await click(radioNamed(/^Mainnet/))
+    expect(radioNamed(/^App PIN only/).checked).toBe(true)
+  })
+
+  it('the pre-selected pair on Mainnet with PRF is refused, with the reason in visible text', async () => {
+    h.capability = 'yes'
+    await mount()
+    await click(radioNamed(/^Mainnet/))
+    expect(screen.getByText(/needs a written, confirmed Seed/)).toBeTruthy()
+    expect(createButton().getAttribute('aria-disabled')).toBe('true')
+    await click(createButton())
+    expect(h.createStoredWallet).not.toHaveBeenCalled()
+    // One App PIN check clears it.
+    await click(radioNamed(/^App PIN only/))
+    expect(createButton().getAttribute('aria-disabled')).toBeNull()
+  })
+})
+
+describe('unavailable answers', () => {
+  it('Passkey-Derived is aria-disabled with its reason as text, and does nothing when clicked', async () => {
+    await mount()
+    const derived = radioNamed(/^Passkey-Derived Seed/)
+    expect(derived.getAttribute('aria-disabled')).toBe('true')
+    expect(screen.getByText('Not available in this version yet')).toBeTruthy()
+    await click(derived)
+    expect(radioNamed(/^Stored Seed/).checked).toBe(true)
+    expect(derived.checked).toBe(false)
+    expect(derived.disabled).toBe(false) // aria-disabled, not removed from the reading order
+  })
+
+  it('Mainnet: no Open Check and an auto-lock under a minute are aria-disabled with reasons, and creation cannot proceed', async () => {
+    await mount()
+    await click(radioNamed(/^Mainnet/))
+    const none = radioNamed(/^No Open Check/)
+    expect(none.getAttribute('aria-disabled')).toBe('true')
+    expect(screen.getAllByText(/A Mainnet wallet needs an Open Check/).length).toBeGreaterThan(0)
+    const half = radioNamed('30 seconds')
+    expect(half.getAttribute('aria-disabled')).toBe('true')
+    expect(screen.getByText(/at least 1 minute/)).toBeTruthy()
+    // Forcing them on: still refused, nothing created.
+    await click(none)
+    expect(none.checked).toBe(false)
+    await click(radioNamed('1 minute'))
+    expect(createButton().getAttribute('aria-disabled')).toBeNull()
+  })
+
+  it('Testnet may use no Open Check; switching to Mainnet then blocks it with the reason', async () => {
+    await mount()
+    await click(radioNamed(/^No Open Check/))
+    expect(radioNamed(/^No Open Check/).checked).toBe(true)
+    expect(createButton().getAttribute('aria-disabled')).toBeNull()
+    await click(radioNamed(/^Mainnet/))
+    expect(createButton().getAttribute('aria-disabled')).toBe('true')
+    expect(screen.getAllByText(/A Mainnet wallet needs an Open Check/).length).toBeGreaterThan(0)
+    await click(createButton())
+    expect(h.createStoredWallet).not.toHaveBeenCalled()
+  })
+
+  it('no PRF: both passkey answers are aria-disabled with the reason visible, and the defaults are the App PIN', async () => {
+    await mount()
+    expect(radioNamed('Passkey').getAttribute('aria-disabled')).toBe('true')
+    expect(radioNamed(/^Passkey only/).getAttribute('aria-disabled')).toBe('true')
+    expect(screen.getAllByText(/cannot use a passkey/).length).toBe(2)
+    expect(radioNamed('App PIN').checked).toBe(true)
+  })
+
+  it('PRF unknown: passkey answers are available with a visible note', async () => {
+    h.capability = 'unknown'
+    await mount()
+    expect(radioNamed('Passkey').getAttribute('aria-disabled')).toBeNull()
+    expect(screen.getAllByText('Checked when the passkey is created.').length).toBe(2)
+    expect(radioNamed('App PIN').checked).toBe(true)
+  })
+
+  it('renders the policy, and decides nothing itself: a stand-in policy changes what is offered and blocked', async () => {
+    h.policyOverride = (d) => ({
+      ...d,
+      openCheck: { ...d.openCheck, pin: { available: false, reason: 'SENTINEL: the policy said no.' } },
+      combination: { ok: false, reason: 'SENTINEL combination.' },
+    })
+    await mount()
+    expect(radioNamed('App PIN').getAttribute('aria-disabled')).toBe('true')
+    expect(screen.getByText('SENTINEL: the policy said no.')).toBeTruthy()
+    expect(screen.getByText('SENTINEL combination.')).toBeTruthy()
+    expect(createButton().getAttribute('aria-disabled')).toBe('true')
+    await click(createButton())
+    expect(h.createStoredWallet).not.toHaveBeenCalled()
+  })
+})
+
+describe('a rule leaking into the screen would show here', () => {
+  it('a policy that allows everything is believed: Mainnet with no Open Check and 30 seconds is offered and created', async () => {
+    h.policyOverride = (d) => ({
+      ...d,
+      openCheck: { pin: { available: true }, passkey: { available: true }, none: { available: true } },
+      autoLock: d.autoLock.map((c: object) => ({ ...c, available: true })),
+      combination: { ok: true },
+    })
+    await mount()
+    await click(radioNamed(/^Mainnet/))
+    await click(radioNamed(/^No Open Check/))
+    await click(radioNamed('30 seconds'))
+    expect(radioNamed(/^No Open Check/).getAttribute('aria-disabled')).toBeNull()
+    expect(radioNamed('30 seconds').getAttribute('aria-disabled')).toBeNull()
+    expect(createButton().getAttribute('aria-disabled')).toBeNull()
+    await screen.findByLabelText('Confirm the App PIN') // the default signing check still wants a PIN
+    type(screen.getByLabelText(/Choose an App PIN/), '123456')
+    type(screen.getByLabelText('Confirm the App PIN'), '123456')
+    await click(createButton())
+    expect(h.createStoredWallet.mock.calls[0][0]).toMatchObject({ network: 'mainnet', openCheck: 'none', autoLockMinutes: 0.5 })
+  })
+})
+
+describe('the App PIN', () => {
+  it('a first PIN is asked twice; a mismatch blocks', async () => {
+    await mount()
+    await screen.findByLabelText('Confirm the App PIN')
+    type(screen.getByLabelText(/Choose an App PIN/), '123456')
+    type(screen.getByLabelText('Confirm the App PIN'), '654321')
+    await click(createButton())
+    expect(screen.getByText("The two PINs don't match.")).toBeTruthy()
+    expect(h.createStoredWallet).not.toHaveBeenCalled()
+  })
+
+  it('a PIN under 6 digits blocks', async () => {
+    await mount()
+    await screen.findByLabelText('Confirm the App PIN')
+    type(screen.getByLabelText(/Choose an App PIN/), '123')
+    type(screen.getByLabelText('Confirm the App PIN'), '123')
+    await click(createButton())
+    expect(screen.getByText('The App PIN must be at least 6 digits.')).toBeTruthy()
+    expect(h.createStoredWallet).not.toHaveBeenCalled()
+  })
+
+  it('an existing App PIN is asked for once, with tries remaining', async () => {
+    h.appPin = true
+    await mount()
+    expect(await screen.findByLabelText('Your App PIN')).toBeTruthy()
+    expect(screen.queryByLabelText('Confirm the App PIN')).toBeNull()
+    expect(screen.getByText(/8 tries remaining/)).toBeTruthy()
+  })
+
+  it('is not asked for when neither check uses it', async () => {
+    await mount()
+    await click(radioNamed(/^No Open Check/))
+    expect(screen.queryByLabelText('Your App PIN')).toBeNull()
+    expect(screen.queryByLabelText(/Choose an App PIN/)).toBeNull()
+  })
+
+  it('passes the typed PIN once and clears the field', async () => {
+    await mount()
+    await screen.findByLabelText('Confirm the App PIN')
+    type(screen.getByLabelText(/Choose an App PIN/), '123456')
+    type(screen.getByLabelText('Confirm the App PIN'), '123456')
+    await click(createButton())
+    expect(h.createStoredWallet).toHaveBeenCalledTimes(1)
+    expect(h.createStoredWallet.mock.calls[0][1]).toEqual({ pin: '123456' })
+    expect(h.createStoredWallet.mock.calls[0][0]).toMatchObject({
+      network: 'testnet',
+      algorithm: 'ed25519',
+      openCheck: 'pin',
+      autoLockMinutes: 5,
+      signing: 'standard',
+      passkey: 'no',
+    })
+  })
+})
+
+describe('a failed App PIN read', () => {
+  it('says so with Retry, blocks Create, and recovers on retry', async () => {
+    h.pinReadFails = true
+    await mount()
+    expect((await screen.findByRole('alert')).textContent).toMatch(/Could not read the App PIN state/)
+    expect(screen.queryByLabelText(/Choose an App PIN/)).toBeNull()
+    expect(createButton().getAttribute('aria-disabled')).toBe('true')
+    await click(createButton())
+    expect(h.createStoredWallet).not.toHaveBeenCalled()
+    h.pinReadFails = false
+    await click(screen.getByRole('button', { name: 'Retry' }))
+    expect(await screen.findByLabelText(/Choose an App PIN/)).toBeTruthy()
+    expect(createButton().getAttribute('aria-disabled')).toBeNull()
+  })
+})
+
+describe('results', () => {
+  async function submit() {
+    await screen.findByLabelText('Confirm the App PIN')
+    type(screen.getByLabelText(/Choose an App PIN/), '123456')
+    type(screen.getByLabelText('Confirm the App PIN'), '123456')
+    await click(createButton())
+  }
+
+  it.each([
+    [{ status: 'refused', reason: 'Refused for a reason.' }, 'Refused for a reason.'],
+    [{ status: 'cancelled' }, 'Cancelled. Nothing was created.'],
+    [{ status: 'unsupported' }, /could not use a passkey/],
+    [{ status: 'wrong-credential', kind: 'pin', triesRemaining: 6 }, /Incorrect PIN. 6 tries remaining. Nothing was created./],
+  ])('shows %j and moves on to no backup', async (result, text) => {
+    h.createStoredWallet.mockResolvedValue(result)
+    await mount()
+    await submit()
+    expect((await screen.findByRole('alert')).textContent).toMatch(text)
+    expect(screen.queryByText('Back up your seed')).toBeNull()
+    expect(useAppStore.getState().wallets).toEqual([])
+  })
+
+  it('a thrown failure is shown and nothing is committed', async () => {
+    h.createStoredWallet.mockRejectedValue(new Error('put failed'))
+    await mount()
+    await submit()
+    expect((await screen.findByRole('alert')).textContent).toBe('put failed')
+    expect(useAppStore.getState().wallets).toEqual([])
+  })
+})
+
+describe('a created Wallet: backup first, then the store', () => {
+  it('commits only after the backup is confirmed, opens its own lock first, and keeps the Seed out of state and storage', async () => {
+    const inProgress: boolean[] = []
+    const done = vi.fn()
+    await mount({ onInProgressChange: (b) => inProgress.push(b), onDone: done })
+    await screen.findByLabelText('Confirm the App PIN')
+    type(screen.getByLabelText(/Choose an App PIN/), '123456')
+    type(screen.getByLabelText('Confirm the App PIN'), '123456')
+    await click(createButton())
+
+    expect(await screen.findByText('Back up your seed')).toBeTruthy()
+    // Not yet in the store: the Gate would skip the backup screen.
+    expect(useAppStore.getState().wallets).toEqual([])
+    expect(useAppStore.getState().openLocks).toEqual({})
+    // The Seed is masked in the DOM until asked, and is nowhere serializable.
+    expect(document.body.textContent).not.toContain(SEED)
+    for (const store of [localStorage, sessionStorage]) expect(JSON.stringify({ ...store })).not.toContain(SEED)
+
+    const continueButton = screen.getByRole('button', { name: 'Continue to my wallet' }) as HTMLButtonElement
+    expect(continueButton.disabled).toBe(true)
+    await click(screen.getByRole('checkbox'))
+    await click(continueButton)
+
+    await waitFor(() => expect(done).toHaveBeenCalledWith(META))
+    expect(h.startLockSession).toHaveBeenCalledWith('lock-1', KEY, 5)
+    const state = useAppStore.getState()
+    expect(Object.keys(state.openLocks)).toEqual(['lock-1'])
+    expect(state.wallets).toEqual([META])
+    expect(state.activeWalletId).toBe('w1')
+    expect(JSON.stringify({ wallets: state.wallets, activeWalletId: state.activeWalletId })).not.toContain(SEED)
+    expect(inProgress).toEqual([true, false])
+  })
+})
+
+describe('the Node', () => {
+  it('a Node that fails the network check is refused with its reason, and the built-in choice stays', async () => {
+    h.verifyNode.mockRejectedValue(new Error('That Node reports another network.'))
+    await mount()
+    await click(radioNamed(/^A Node you choose/))
+    type(screen.getByLabelText(/Node address/), 'wss://other.example.com')
+    await click(screen.getByRole('button', { name: 'Test this Node' }))
+    expect((await screen.findByRole('alert')).textContent).toMatch(/That Node reports another network\./)
+    expect(h.verifyNode).toHaveBeenCalledWith('testnet', 'wss://other.example.com')
+    expect(radioNamed(/^Built-in Nodes/).checked).toBe(true)
+  })
+
+  it('a proven Node is sent with the Wallet; an untested one blocks', async () => {
+    await mount()
+    await click(radioNamed(/^A Node you choose/))
+    type(screen.getByLabelText(/Node address/), 'wss://node.example.com')
+    await screen.findByLabelText('Confirm the App PIN')
+    type(screen.getByLabelText(/Choose an App PIN/), '123456')
+    type(screen.getByLabelText('Confirm the App PIN'), '123456')
+    await click(createButton())
+    expect(screen.getByText('Test the custom Node first, or use the built-in Nodes.')).toBeTruthy()
+    expect(h.createStoredWallet).not.toHaveBeenCalled()
+    await click(screen.getByRole('button', { name: 'Test this Node' }))
+    await screen.findByText(/answers for this network/)
+    await click(createButton())
+    expect(h.createStoredWallet.mock.calls[0][0]).toMatchObject({ node: 'wss://node.example.com' })
+  })
+
+  it('the network cannot change while a Node test runs, so a result is never stored for another network', async () => {
+    let finish: () => void = () => {}
+    h.verifyNode.mockImplementation(() => new Promise<void>((resolve) => (finish = resolve)))
+    await mount()
+    await click(radioNamed(/^A Node you choose/))
+    type(screen.getByLabelText(/Node address/), 'wss://node.example.com')
+    await click(screen.getByRole('button', { name: 'Test this Node' }))
+    expect(radioNamed(/^Devnet/).disabled).toBe(true)
+    await act(async () => finish())
+    await screen.findByText(/answers for this network/)
+    expect(radioNamed(/^Devnet/).disabled).toBe(false)
+  })
+
+  it('changing the network drops a proven Node: it was proven for the other one', async () => {
+    await mount()
+    await click(radioNamed(/^A Node you choose/))
+    type(screen.getByLabelText(/Node address/), 'wss://node.example.com')
+    await click(screen.getByRole('button', { name: 'Test this Node' }))
+    await screen.findByText(/answers for this network/)
+    await click(radioNamed(/^Devnet/))
+    expect(radioNamed(/^Built-in Nodes/).checked).toBe(true)
+    expect(screen.queryByLabelText(/Node address/)).toBeNull()
+  })
+})

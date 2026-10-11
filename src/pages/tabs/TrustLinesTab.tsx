@@ -13,7 +13,8 @@ import { useTrustLines } from '@/hooks/useTrustLines'
 import { useServerReserves } from '@/hooks/useServerReserves'
 import { useSpendableBalance } from '@/hooks/useSpendableBalance'
 import { submitTrustSet } from '@/lib/xrpl/writes'
-import { signingHandleFor, unavailablePrompts } from '@/lib/crypto/keystore'
+import { signingHandleFor } from '@/lib/crypto/keystore'
+import { usePrompts } from '@/hooks/usePrompts'
 import { formatXrp, displayCurrencyCode, coversOwnerReserve } from '@/lib/xrpl/money'
 import { describeResultCode } from '@/lib/xrpl/result-codes'
 import { invalidateAccountScoped } from '@/lib/xrpl/query-keys'
@@ -26,6 +27,8 @@ export function TrustLinesTab() {
   const wallet = useActiveWallet()
   // The Open Key of THIS Wallet's lock, never another's (AD-21).
   const vaultKey = useWalletOpenKey(wallet?.id)
+  // The PIN dialog, for a Wallet whose Signing Check is the App PIN.
+  const prompts = usePrompts()
   const trustLines = useTrustLines(network, wallet?.address ?? null, node)
   const reserves = useServerReserves(network, node)
   const { spendableDrops } = useSpendableBalance(network, wallet?.address ?? null, node)
@@ -45,7 +48,7 @@ export function TrustLinesTab() {
     if (!wallet || !vaultKey) return
     setBusy(true)
     try {
-      const signing = await signingHandleFor(wallet.id, { openKey: vaultKey, prompts: unavailablePrompts })
+      const signing = await signingHandleFor(wallet.id, { openKey: vaultKey, prompts })
       const result = await submitTrustSet(network, signing, { currency: currencyArg, issuer: issuerArg, limit: limitArg }, node)
       if (result.status === 'validated') {
         toast.success('Trust line updated.')

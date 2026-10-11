@@ -8,12 +8,14 @@ import { assertPasskeyAndDeriveBits, isCancelled, isPrfUnsupported, isWebAuthnSu
 import {
   clearAllLockSessions,
   clearLockSession,
+  deleteLockRecord,
   getLockRecord,
   extendLockSessionExpiry,
   getLockSession,
   getVaultMeta,
   LEGACY_LOCK_ID,
   listLockRecords,
+  listStoredWallets,
   lockKey,
   mutateVaultMeta,
   putLockRecord,
@@ -245,7 +247,8 @@ export async function openLock(lockId: string, method: OpenMethod, ctx: { pin?: 
 }
 
 // ---------------------------------------------------------------------------
-// Creation (AD-21, AD-28). The creation flow itself is a later story.
+// Creation (AD-21, AD-28). The Wallet that goes under a new lock is written by
+// `keystore.createStoredWallet`.
 // ---------------------------------------------------------------------------
 
 export interface CreateLockInput {
@@ -270,6 +273,64 @@ async function provesAppPin(bits: ArrayBuffer, meta: Awaited<ReturnType<typeof g
     return
   }
   throw new Error('The App PIN cannot be verified.')
+}
+
+/**
+ * The one way the App PIN is created and proved (AD-25), shared by an Open Check
+ * and a Signing Check. `build` receives the HKDF key for `hkdfInfo` (one purpose,
+ * one key) and returns what the caller will store.
+ *
+ * With no App PIN yet, `pin` becomes it: a salt and a verifier are written, so
+ * later uses can prove it from known ciphertext. Otherwise the PIN is tried on
+ * the shared counter: proved against the legacy wrapper or the verifier, and a
+ * wrong one counts. A vault with an App PIN but nothing to prove it against is a
+ * configuration problem, not a wrong PIN, and must not count.
+ */
+export async function withAppPin<T>(
+  pin: string,
+  hkdfInfo: string,
+  build: (methodKey: CryptoKey) => Promise<T>,
+): Promise<CheckResult<T>> {
+  const meta = await getVaultMeta()
+  if (!meta.pinSaltB64) {
+    const pinSaltB64 = generateSalt()
+    const bits = await derivePinKeyBits(pin, pinSaltB64)
+    const verifier = await aesEncrypt(await deriveAesKeyFromBits(bits, PIN_VERIFIER_INFO), PIN_VERIFIER_PLAINTEXT)
+    const value = await build(await deriveAesKeyFromBits(bits, hkdfInfo))
+    const written = await mutateVaultMeta((current) =>
+      current.pinSaltB64 ? current : { ...current, pinSaltB64, pinVerifier: { ...verifier, hkdfInfo: PIN_VERIFIER_INFO } },
+    )
+    if (written.pinSaltB64 !== pinSaltB64) return withAppPin(pin, hkdfInfo, build) // another flow set the App PIN first
+    return { status: 'ok', value }
+  }
+  if (!meta.wrappedMasterKeyForPin && !meta.pinVerifier) return { status: 'unsupported' }
+  const attempt = await attemptPin(pin, async (bits) => {
+    await provesAppPin(bits, meta)
+    return build(await deriveAesKeyFromBits(bits, hkdfInfo))
+  })
+  if (attempt.status === 'locked-out') return attempt
+  if (attempt.status === 'wrong-credential') return { status: 'wrong-credential', kind: 'pin', triesRemaining: attempt.triesRemaining }
+  return { status: 'ok', value: attempt.value }
+}
+
+/** Does this device have an App PIN yet? The creation flow asks twice if not. */
+export async function hasAppPin(): Promise<boolean> {
+  return !!(await getVaultMeta()).pinSaltB64
+}
+
+/** Undoes an App PIN that a creation that then failed had just made, if nothing
+ * has used it since — so a refused or cancelled creation leaves the vault as it
+ * was. Anything that depends on the PIN blocks it: a lock wrapped under it, a
+ * Wallet sealed under it (a PIN Signing Check has no lock wrapper), or a legacy
+ * wrapper. The failure count is not touched: a passkey shares it. */
+export async function discardUnusedAppPin(): Promise<void> {
+  if ((await listLockRecords()).some((r) => r.wrappedOpenKeyForPin)) return
+  if ((await listStoredWallets()).some((w) => w.signing?.kind === 'pin')) return
+  await mutateVaultMeta((current) => {
+    if (current.wrappedMasterKeyForPin) return current
+    const { pinSaltB64: _salt, pinVerifier: _verifier, ...rest } = current
+    return rest
+  })
 }
 
 /**
@@ -310,31 +371,9 @@ export async function createLock(input: CreateLockInput, ctx: { pin?: string } =
 
   if (input.openCheck === 'pin') {
     if (!ctx.pin) return { status: 'cancelled' }
-    const meta = await getVaultMeta()
-    if (!meta.pinSaltB64) {
-      // The App PIN is created by its first user (AD-25): salt, and a verifier
-      // so later locks can prove it without a legacy wrapper.
-      const pinSaltB64 = generateSalt()
-      const bits = await derivePinKeyBits(ctx.pin, pinSaltB64)
-      const verifier = await aesEncrypt(await deriveAesKeyFromBits(bits, PIN_VERIFIER_INFO), PIN_VERIFIER_PLAINTEXT)
-      const wrappedOpenKeyForPin = await wrapOpenKey(extractable, await deriveAesKeyFromBits(bits, hkdfInfo))
-      const written = await mutateVaultMeta((current) =>
-        current.pinSaltB64 ? current : { ...current, pinSaltB64, pinVerifier: { ...verifier, hkdfInfo: PIN_VERIFIER_INFO } },
-      )
-      if (written.pinSaltB64 !== pinSaltB64) return createLock(input, ctx) // another flow set the App PIN first
-      await putLockRecord({ ...base, wrappedOpenKeyForPin })
-      return { status: 'ok', value: { id, key: sealed } }
-    }
-    // A vault with an App PIN but nothing to prove it against is a
-    // configuration problem, not a wrong PIN: it must not count.
-    if (!meta.wrappedMasterKeyForPin && !meta.pinVerifier) return { status: 'unsupported' }
-    const attempt = await attemptPin(ctx.pin, async (bits) => {
-      await provesAppPin(bits, meta)
-      return wrapOpenKey(extractable, await deriveAesKeyFromBits(bits, hkdfInfo))
-    })
-    if (attempt.status === 'locked-out') return attempt
-    if (attempt.status === 'wrong-credential') return { status: 'wrong-credential', kind: 'pin', triesRemaining: attempt.triesRemaining }
-    await putLockRecord({ ...base, wrappedOpenKeyForPin: attempt.value })
+    const wrapped = await withAppPin(ctx.pin, hkdfInfo, (methodKey) => wrapOpenKey(extractable, methodKey))
+    if (wrapped.status !== 'ok') return wrapped
+    await putLockRecord({ ...base, wrappedOpenKeyForPin: wrapped.value })
     return { status: 'ok', value: { id, key: sealed } }
   }
 
@@ -380,6 +419,19 @@ export async function setAutoLockMinutes(
 // ---------------------------------------------------------------------------
 // Sessions (AD-21): one persisted entry per open lock
 // ---------------------------------------------------------------------------
+
+/** Starts one lock's persisted session with the full window — the creation flow
+ * calls it once the new Wallet is committed, so a refresh does not re-ask. */
+export async function startLockSession(lockId: string, key: CryptoKey, autoLockMinutes: number): Promise<void> {
+  await putLockSession(lockId, key, Date.now() + autoLockMinutes * 60_000)
+}
+
+/** Removes a lock's record and its session. The legacy lock is refused: its
+ * wrappers live in the vault meta and every migrated Wallet is on it. */
+export async function deleteLock(lockId: string): Promise<void> {
+  await deleteLockRecord(lockId)
+  await clearLockSession(lockId)
+}
 
 /** Every lock whose persisted session is still valid, with its key. An expired
  * entry is cleared by the read. */

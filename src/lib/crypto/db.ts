@@ -373,6 +373,14 @@ export async function putLockRecord(record: LockRecord): Promise<void> {
   await db.put('vault', record)
 }
 
+/** Removes one `lock:<id>` record. Never the legacy lock's, whose wrappers
+ * live in the vault meta. */
+export async function deleteLockRecord(lockId: string): Promise<void> {
+  if (lockId === LEGACY_LOCK_ID) throw new Error('The legacy lock cannot be deleted.')
+  const db = await getDb()
+  await db.delete('vault', lockKey(lockId))
+}
+
 /** Every `lock:<id>` record. */
 export async function listLockRecords(): Promise<LockRecord[]> {
   const db = await getDb()

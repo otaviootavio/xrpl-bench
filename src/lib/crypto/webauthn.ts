@@ -21,6 +21,27 @@ export function isWebAuthnSupported(): boolean {
   return typeof window !== 'undefined' && !!window.PublicKeyCredential
 }
 
+/** Whether this device can do the PRF extension a passkey check needs. `yes` or
+ * `no` only when the browser says so (`getClientCapabilities`); most cannot
+ * tell before a passkey exists, and answer `unknown` — creation then fails
+ * closed if the passkey turns out to give no PRF output. */
+export async function detectPrfSupport(): Promise<'yes' | 'no' | 'unknown'> {
+  if (!isWebAuthnSupported()) return 'no'
+  const credentialType = window.PublicKeyCredential as unknown as {
+    getClientCapabilities?: () => Promise<Record<string, boolean | undefined>>
+  }
+  if (typeof credentialType.getClientCapabilities === 'function') {
+    try {
+      const prf = (await credentialType.getClientCapabilities())['extension:prf']
+      if (prf === true) return 'yes'
+      if (prf === false) return 'no'
+    } catch {
+      // Cannot tell: fall through.
+    }
+  }
+  return 'unknown'
+}
+
 /**
  * Registers a new passkey for this device and returns its credential id
  * (base64) to persist in the vault. Requires user verification (biometric/

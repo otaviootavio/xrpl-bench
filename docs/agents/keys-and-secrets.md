@@ -18,8 +18,9 @@ file before editing anything under `src/lib/crypto/`.
   passkey wrapper, wrapping a *previous* master key, into a vault whose master
   key had just been regenerated. The passkey then unwrapped successfully, with a
   valid auth tag, and decrypted none of the newly stored seeds.
-- **Hold a plaintext seed in a ref, and clear it.** Onboarding keeps the
-  generated seed in `pendingSeedRef` and the typed one in an *uncontrolled*
+- **Hold a plaintext seed in a ref, and clear it.** `CreateWalletFlow` keeps the
+  generated seed in `seedRef` (Onboarding keeps an imported one in
+  `pendingImportSeedRef`) and a typed one in an *uncontrolled*
   input — a controlled input would put the seed into React state on every
   keystroke. Both are cleared the moment the flow that needs them completes.
 - **Treat any new unlock method as a wrap/unwrap contract.** Adding one means
@@ -32,6 +33,17 @@ file before editing anything under `src/lib/crypto/`.
   holds. Never read a Wallet's address, balance or network while its lock is
   closed — mount no ledger hook for it. A warm cache behind a lock
   screen is a documented shared-device vulnerability.
+- **Create a Wallet only through `keystore.createStoredWallet`.** It asks
+  `policy.ts` first (the only place that says which combinations are legal; a
+  screen renders `describeOptions` and never decides), gives the Wallet a lock of
+  its own whatever its Open Check, and writes the Seed in exactly one form: under
+  the lock's Open Key for a Standard Signing Check, or under a Signing Key that
+  only the PIN or a passkey unwraps (`sealedSeed` + `signing`, no
+  `encryptedSeed`), so the session can never open it. Every salt and `info`
+  string is generated and stored on the record. A failure after the lock is
+  written removes that lock; removing a Wallet's last view removes its lock
+  (never the legacy one). A PIN Signing Check is asked through the PIN dialog
+  (`usePrompts()`), never `unavailablePrompts`.
 - **Register every new persistence owner in `lib/teardown.ts`**
   (`PERSISTED_ACCOUNT_DATA`). "Remove everything" calls `tearDownAllLocalState`
   and clears nothing field by field.
@@ -45,7 +57,7 @@ file before editing anything under `src/lib/crypto/`.
   seed-backup step has been confirmed. `App.tsx`'s Gate switches to `<Main>` the
   instant `wallets.length > 0` (there is no app-wide unlock any more; each
   Wallet's own lock gates its panels), so an early commit skips the backup
-  screen entirely — see `Onboarding.tsx:20`.
+  screen entirely — see `Onboarding.tsx` and `CreateWalletFlow.tsx`, which commit only after the backup.
 - **Never** add a third-party script, analytics, session replay, or verbose
   error reporting that could observe an unlock or seed surface. This includes
   fonts and other subresources: the app's faces are self-hosted for this reason.

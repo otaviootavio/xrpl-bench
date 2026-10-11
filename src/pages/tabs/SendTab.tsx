@@ -18,7 +18,8 @@ import { useRecommendedFee } from '@/hooks/useRecommendedFee'
 import { useTrustLines } from '@/hooks/useTrustLines'
 import { useDestinationCheck } from '@/hooks/useDestinationCheck'
 import { submitXrpPayment, submitIssuedPayment, type SigningHandle, type SubmitOutcome } from '@/lib/xrpl/writes'
-import { signingHandleFor, unavailablePrompts } from '@/lib/crypto/keystore'
+import { signingHandleFor } from '@/lib/crypto/keystore'
+import { usePrompts } from '@/hooks/usePrompts'
 import { formatXrp, xrpToDropsString, displayCurrencyCode, MAX_FEE_DROPS } from '@/lib/xrpl/money'
 import { checkFunds, heldTokenLines, selectedTokenLine, spendableReadState, tokenAssetKey } from '@/lib/xrpl/funds-check'
 import { readStateOf, type ReadState } from '@/lib/read-state'
@@ -62,6 +63,8 @@ export function SendTab() {
   const wallet = useActiveWallet()
   // The Open Key of THIS Wallet's lock, never another's (AD-21).
   const vaultKey = useWalletOpenKey(wallet?.id)
+  // The PIN dialog, for a Wallet whose Signing Check is the App PIN.
+  const prompts = usePrompts()
   const addressBook = useAppStore((s) => s.addressBook)
   const addAddressBookEntry = useAppStore((s) => s.addAddressBookEntry)
   const queryClient = useQueryClient()
@@ -324,7 +327,7 @@ export function SendTab() {
     setOutcome(null)
     setPreflightReport(null)
     try {
-      const base = await signingHandleFor(wallet.id, { openKey: vaultKey, prompts: unavailablePrompts })
+      const base = await signingHandleFor(wallet.id, { openKey: vaultKey, prompts })
 
       /**
        * Re-check the destination AFTER the Signing Check and immediately before

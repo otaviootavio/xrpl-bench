@@ -13,6 +13,7 @@ const h = vi.hoisted(() => ({
   minutes: { X: 5, Y: 5 } as Record<string, number>,
   setLockAutoLock: vi.fn(),
   toastError: vi.fn(),
+  listed: [] as unknown[],
 }))
 
 vi.mock('idb-keyval', () => ({ get: async () => undefined, set: async () => {}, del: async () => {} }))
@@ -26,7 +27,7 @@ vi.mock('@/lib/crypto/keystore', () => ({
   addressFromSeed: () => '',
   generateAndStoreWallet: async () => {},
   importAndStoreWallet: async () => {},
-  listWallets: async () => [],
+  listWallets: async () => h.listed,
   removeWallet: async () => {},
   revealSeed: async () => ({ status: 'cancelled' }),
   addNetworkView: async () => ({}),
@@ -88,6 +89,7 @@ beforeEach(() => {
   h.minutes = { X: 5, Y: 5 }
   h.setLockAutoLock.mockReset().mockResolvedValue({ ok: true })
   h.toastError.mockReset()
+  h.listed = []
   useAppStore.setState({ wallets: [A, B], activeWalletId: 'a', openLocks: { X: OPEN } } as never)
 })
 afterEach(cleanup)
@@ -132,5 +134,31 @@ describe('Settings auto-lock', () => {
     await waitFor(() => expect(useAppStore.getState().openLocks.X.autoLockMinutes).toBe(15))
     expect(h.setLockAutoLock).toHaveBeenCalledWith('X', 15)
     expect(useAppStore.getState().openLocks.Y.autoLockMinutes).toBe(5)
+  })
+})
+
+describe('Settings Remove and the removed Wallet\'s lock', () => {
+  const removeAlpha = async () => {
+    fireEvent.click(screen.getAllByRole('button', { name: 'Remove' })[0])
+    fireEvent.click(await screen.findByRole('button', { name: 'Remove wallet' }))
+  }
+
+  it('closes the lock\'s key in openLocks when no Wallet uses the lock any more', async () => {
+    useAppStore.setState({ openLocks: { X: OPEN, Y: OPEN } } as never)
+    h.listed = [B]
+    renderSettings()
+    await removeAlpha()
+    await waitFor(() => expect(Object.keys(useAppStore.getState().openLocks)).toEqual(['Y']))
+  })
+
+  it('keeps the lock open while another Wallet still uses it', async () => {
+    const A2 = { ...A, id: 'a2', seedId: 'a2', label: 'Alpha two' }
+    useAppStore.setState({ wallets: [A, A2, B], openLocks: { X: OPEN, Y: OPEN } } as never)
+    h.listed = [A2, B]
+    renderSettings()
+    fireEvent.click(screen.getAllByRole('button', { name: 'Remove' })[0])
+    fireEvent.click(await screen.findByRole('button', { name: 'Remove wallet' }))
+    await waitFor(() => expect(useAppStore.getState().wallets.map((w) => w.id)).toEqual(['a2', 'b']))
+    expect(Object.keys(useAppStore.getState().openLocks).sort()).toEqual(['X', 'Y'])
   })
 })

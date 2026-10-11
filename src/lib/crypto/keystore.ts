@@ -3,11 +3,11 @@ import { canonicalNodeUrl, type NetworkId } from '@/lib/xrpl/networks'
 import type { Signer, SigningHandle } from '@/lib/xrpl/writes'
 import { aesDecrypt, aesEncrypt } from './aes'
 import { deriveAesKeyFromBits, HKDF_INFO } from './derive'
-import { getLockInfo, setAutoLockMinutes, type CheckResult } from './lock'
-import { checkLockRequest, type PolicyVerdict } from './policy'
+import { createLock, deleteLock, discardUnusedAppPin, getLockInfo, hasAppPin, setAutoLockMinutes, withAppPin, type CheckResult } from './lock'
+import { checkLockRequest, checkWalletRequest, type NewOpenCheck, type PasskeyCapability, type PolicyVerdict, type SigningKind } from './policy'
 import { b64ToBuf, bufToB64 } from './encoding'
 import { attemptPin, getLockoutState, PBKDF2_ITERATIONS, recordFailure, triesRemaining } from './pin'
-import { assertPasskeyAndDeriveBits, isCancelled, isPrfUnsupported, isWebAuthnSupported, PRF_SALT } from './webauthn'
+import { assertPasskeyAndDeriveBits, isCancelled, isPrfUnsupported, isWebAuthnSupported, PRF_SALT, registerPasskey } from './webauthn'
 import {
   getVaultMeta,
   LEGACY_LOCK_ID,
@@ -420,6 +420,20 @@ export async function revealSeed(walletId: string, ctx: SigningContext): Promise
   return opened
 }
 
+/** The one place a Seed is sealed under a Signing Check (AD-23): a random
+ * Signing Key encrypts the Seed, and only the credential's key wraps the
+ * Signing Key. The Signing Key is never persisted or returned. */
+async function buildSeal(
+  seed: string,
+  credentialKey: CryptoKey,
+  seal: Pick<SigningSeal, 'kind' | 'hkdfInfo' | 'credentialIdB64' | 'prfSaltB64'>,
+): Promise<{ sealedSeed: { ivB64: string; ciphertextB64: string }; signing: SigningSeal }> {
+  const signingKey = await crypto.subtle.generateKey({ name: 'AES-GCM', length: 256 }, true, ['encrypt', 'decrypt'])
+  const wrappedSigningKey = await aesEncrypt(credentialKey, bufToB64(await crypto.subtle.exportKey('raw', signingKey)))
+  const sealedSeed = await aesEncrypt(signingKey, seed)
+  return { sealedSeed, signing: { ...seal, wrappedSigningKey } }
+}
+
 /**
  * Gives a Standard Wallet a Signing Check (AD-23): its Seed is re-encrypted
  * under a random Signing Key wrapped only by the PIN or a passkey, and the
@@ -481,16 +495,12 @@ export async function sealSeedUnderSigningCheck(
   const seed = await aesDecrypt(ctx.openKey, before.ivB64, before.ciphertextB64)
   const wallet = await walletFromSeed(stored, seed)
   const algorithm = algorithmOfSeed(seed)
-  const signingKey = await crypto.subtle.generateKey({ name: 'AES-GCM', length: 256 }, true, ['encrypt', 'decrypt'])
-  const wrappedSigningKey = await aesEncrypt(credentialKey, bufToB64(await crypto.subtle.exportKey('raw', signingKey)))
-  const sealedSeed = await aesEncrypt(signingKey, seed)
-  const signing: SigningSeal = {
+  const { sealedSeed, signing } = await buildSeal(seed, credentialKey, {
     kind,
-    wrappedSigningKey,
     hkdfInfo,
     ...(credentialId ? { credentialIdB64: credentialId } : {}),
     ...(prfSaltB64 ? { prfSaltB64 } : {}),
-  }
+  })
   await mutateStoredWallet(stored.id, (current) => {
     // Another tab or flow changed the ciphertext since it was read: abort,
     // leaving the record exactly as it is.
@@ -521,6 +531,147 @@ export async function removeWallet(walletId: string): Promise<void> {
     const remaining = viewsOf(current).filter((v) => v.walletId !== walletId)
     return remaining.length === 0 ? null : { ...current, views: remaining }
   })
+  // A lock made for Wallets that are all gone goes with the last of them. The
+  // legacy lock never does: its wrappers are the vault's own.
+  const lockId = record.lockId ?? LEGACY_LOCK_ID
+  if (lockId !== LEGACY_LOCK_ID && !(await listStoredWallets()).some((w) => (w.lockId ?? LEGACY_LOCK_ID) === lockId)) {
+    await deleteLock(lockId)
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Creation (AD-22, AD-28): a new Stored Seed Wallet on its own lock
+// ---------------------------------------------------------------------------
+
+export interface CreateStoredWalletInput {
+  label: string
+  network: NetworkId
+  /** A custom Node the caller already proved for `network` (`verifyNode`). */
+  node?: string
+  algorithm: 'ed25519' | 'secp256k1'
+  openCheck: NewOpenCheck
+  autoLockMinutes: number
+  signing: SigningKind
+  /** What the device said about PRF. `unknown` is allowed: creation then fails
+   * closed if the passkey gives no PRF output. */
+  passkey?: PasskeyCapability
+}
+
+export type CreateStoredWalletResult =
+  | CheckResult<{
+      meta: WalletMeta
+      /** The new lock's Open Key (non-extractable), for the caller to open the lock with. */
+      openKey: CryptoKey
+      /** The generated Seed, for the backup screen only. The caller holds it in a
+       * ref and clears it. */
+      seed: string
+    }>
+  | { status: 'refused'; reason: string }
+
+/**
+ * Creates a Stored Seed Wallet on a NEW lock of its own, whatever its Open Check
+ * (so a later edit or auto-lock touches only it). The policy decides first and a
+ * refusal writes nothing. The Seed is generated here, never leaves except in the
+ * result for the backup screen, and exists in exactly one form: under the lock's
+ * Open Key (Standard), or under a Signing Key that only the PIN or a passkey can
+ * unwrap (`sealedSeed` + `signing`, no `encryptedSeed`) — AD-23.
+ *
+ * Order, so a failure leaves the vault as it was: the Signing Check's credential
+ * first (it needs only the Seed), then the lock, then one write of the Wallet. A
+ * failure after the lock is written removes that lock and writes no Wallet. A
+ * typed PIN is `ctx.pin`; it is used and not kept.
+ */
+export async function createStoredWallet(input: CreateStoredWalletInput, ctx: { pin?: string } = {}): Promise<CreateStoredWalletResult> {
+  const verdict = checkWalletRequest({
+    network: input.network,
+    seedMethod: 'stored',
+    openCheck: input.openCheck,
+    autoLockMinutes: input.autoLockMinutes,
+    signing: input.signing,
+    passkey: input.passkey ?? 'unknown',
+  })
+  if (!verdict.ok) return { status: 'refused', reason: verdict.reason }
+  const node = input.node === undefined ? undefined : (canonicalNodeUrl(input.node) ?? undefined)
+  if (input.node !== undefined && !node) {
+    return { status: 'refused', reason: 'A custom Node must be a wss:// address with no username, password, query or fragment.' }
+  }
+  if ((input.openCheck === 'pin' || input.signing === 'pin') && !ctx.pin) return { status: 'cancelled' }
+
+  const hadAppPin = await hasAppPin()
+  const wallet = Wallet.generate(input.algorithm === 'ed25519' ? ECDSA.ed25519 : ECDSA.secp256k1)
+  const seed = wallet.seed!
+  const walletId = crypto.randomUUID()
+  let lockId: string | null = null
+  try {
+    let sealed: { sealedSeed: { ivB64: string; ciphertextB64: string }; signing: SigningSeal } | null = null
+    if (input.signing !== 'standard') {
+      const hkdfInfo = `${SIGN_HKDF_PREFIX}${walletId}:v1`
+      if (input.signing === 'pin') {
+        const proved = await withAppPin(ctx.pin!, hkdfInfo, async (credentialKey) =>
+          buildSeal(seed, credentialKey, { kind: 'pin', hkdfInfo }),
+        )
+        if (proved.status !== 'ok') return await abandon(hadAppPin, proved)
+        sealed = proved.value
+      } else {
+        // Its own passkey, named after the Wallet, and its own PRF salt and
+        // info: no two purposes share derived key material (AD-21).
+        if (!isWebAuthnSupported()) return await abandon(hadAppPin, { status: 'unsupported' })
+        const prfSalt = crypto.getRandomValues(new Uint8Array(32))
+        let credentialIdB64: string
+        let bits: ArrayBuffer
+        try {
+          credentialIdB64 = (await registerPasskey(`${input.label || 'Wallet'} – signing`)).credentialIdB64
+          bits = await assertPasskeyAndDeriveBits(credentialIdB64, prfSalt)
+        } catch (err) {
+          if (isCancelled(err)) return await abandon(hadAppPin, { status: 'cancelled' })
+          if (isPrfUnsupported(err)) return await abandon(hadAppPin, { status: 'unsupported' })
+          throw err
+        }
+        sealed = await buildSeal(seed, await deriveAesKeyFromBits(bits, hkdfInfo), {
+          kind: 'passkey',
+          hkdfInfo,
+          credentialIdB64,
+          prfSaltB64: bufToB64(prfSalt.buffer),
+        })
+      }
+    }
+
+    const lock = await createLock(
+      { network: input.network, openCheck: input.openCheck, autoLockMinutes: input.autoLockMinutes, label: `${input.label || 'Wallet'} – open` },
+      { pin: ctx.pin },
+    )
+    if (lock.status !== 'ok') return await abandon(hadAppPin, lock)
+    lockId = lock.value.id
+
+    const stored: StoredWallet = {
+      id: walletId,
+      label: input.label || 'Wallet',
+      address: wallet.address,
+      createdAt: Date.now(),
+      seedMethod: 'stored',
+      algorithm: input.algorithm,
+      lockId,
+      openCheck: input.openCheck,
+      signingCheck: input.signing,
+      views: [{ walletId, network: input.network, ...(node ? { node } : {}) }],
+      ...(sealed
+        ? { sealedSeed: sealed.sealedSeed, signing: sealed.signing }
+        : { encryptedSeed: await aesEncrypt(lock.value.key, seed) }),
+    }
+    await putStoredWallet(stored)
+    return { status: 'ok', value: { meta: toMetas(stored)[0], openKey: lock.value.key, seed } }
+  } catch (err) {
+    // Atomic: whatever failed after the lock was written takes the lock with it.
+    if (lockId) await deleteLock(lockId).catch(() => {})
+    if (!hadAppPin) await discardUnusedAppPin().catch(() => {})
+    throw err
+  }
+}
+
+/** A creation that stops early: the App PIN it may have just made goes too. */
+async function abandon<R>(hadAppPin: boolean, result: R): Promise<R> {
+  if (!hadAppPin) await discardUnusedAppPin().catch(() => {})
+  return result
 }
 
 /** "Use on another network": a second Wallet over the SAME Seed record — own

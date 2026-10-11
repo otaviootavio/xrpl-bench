@@ -71,9 +71,9 @@ feature, and do not re-derive it.
 | [docs/sprints/passkey-signing-sprints.md](docs/sprints/passkey-signing-sprints.md) | **Planned, not built** (Sprints 18–22). Per-Wallet key setup and passkey-gated signing, PRD §4.14. Contract: `_bmad-output/specs/spec-passkey-signing/`. |
 
 **All twelve epics are built; the passkey-signing plan above is the one open item.** The five tables above are the record of
-what was found, decided, and shipped — read one before touching its area, not
-because more work is pending, but because the reasoning is the load-bearing
-part.
+what was found, decided, and shipped, except the passkey-signing row, which is
+planned — read one before touching its area, because the reasoning is the
+load-bearing part.
 
 ## Gates
 

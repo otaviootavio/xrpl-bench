@@ -680,8 +680,11 @@ for that Network, or a custom one added after a connection test.
   app says so where Devnet is chosen. `[ASSUMPTION]` Devnet can be reset, which
   removes its Accounts, so a Devnet Wallet's address may need refunding from the
   Faucet.
-- `[ASSUMPTION]` The built-in list starts as today's primary and backup per
-  Network (FR-41), plus Devnet's public Node. FR-41's failover holds within the
+- The built-in list, decided 2026-10-11: Mainnet `wss://xrplcluster.com` with
+  backup `wss://s1.ripple.com`; Testnet `wss://s.altnet.rippletest.net:51233`
+  with backup `wss://testnet.xrpl-labs.com`; Devnet
+  `wss://s.devnet.rippletest.net:51233`, no backup. Verify each live before this
+  is built. FR-41's failover holds within the
   built-in list. A custom Node has no implied failover.
 - Mainnet stays unmistakable (FR-39) wherever a Wallet's Network is shown.
 
@@ -705,6 +708,11 @@ needed, and is never stored, in any form, anywhere.
   it. Only a written Seed (FR-69) or a Controlling Wallet (FR-75) recovers the
   funds. §9.3 already treats the domain as permanent; this makes it a hard
   requirement.
+- A Mainnet Passkey-Derived Seed is not offered while production runs on a
+  `*.b-cdn.net` origin (`docs/decisions.md` §8.11). It is `aria-disabled` with
+  that reason until production is on a permanent custom domain the owner
+  controls. Testnet and Devnet may use it. Related Origin Requests are not relied
+  on. *Decided 2026-10-11.*
 - A Passkey-Derived Seed Wallet's Signing Check is always that passkey.
   Standard and App PIN are not offered for it, because without the passkey there
   is no Seed to sign with. See the combination table under FR-67. *Decided
@@ -838,6 +846,7 @@ Master Key, and this Wallet's key becomes that Account's Regular Key.
 #### FR-76: A passkey can be added as an extra key
 A passkey can be added later to an existing Wallet as an additional Regular Key
 for its Account. The Wallet's existing key keeps working.
+- An Account has one Regular Key. If one is already set, adding another replaces it, and the confirm step says in plain words that the old key stops working. *Decided 2026-10-11.*
 
 #### FR-77: Turn off the Account Master Key, from Settings
 From the Settings tab, the user can turn off the Account Master Key of a Wallet
@@ -1172,11 +1181,10 @@ for §4.14. All three were answered by Otavio on 2026-10-10.
 **§4.14 non-blockers,** deferred with `[ASSUMPTION]` defaults in place:
 
 10. **Pre-selected answers at each creation question** (FR-60).
-    *Owner: Otavio. Revisit: §4.14 UX pass.*
-11. **Built-in Node list per Network** (FR-61). Devnet's Node, Faucet, and
-    explorer were verified live on 2026-10-09. What remains is the choice of
-    list.
-    *Owner: Otavio. Revisit: before FR-61 is built.*
+    *Answered 2026-10-11: the FR-60 defaults stand. Revisit only if the §4.14 UX
+    pass finds a reason.*
+11. **Built-in Node list per Network** (FR-61).
+    *Answered 2026-10-11: the list is in FR-61. Live check before build.*
 12. ~~Ever offering "turn off the Account Master Key"~~ — **answered
     2026-10-09: yes, from Settings (FR-77).**
 
@@ -1247,7 +1255,7 @@ nothing is *provably* broken, not that a change works.
   notes rather than being rewritten.
 - **§4.14** — `[ASSUMPTION]` tags inline in FR-60, FR-61, FR-66, FR-68, FR-69,
   FR-72, FR-73, FR-75, FR-77, and FR-78. None blocks a phase: §10 questions 7
-  to 9 were answered 2026-10-10. The rest are §10 questions 10 and 11, or are
-  small enough to settle in the §4.14 UX pass.
+  to 9 were answered 2026-10-10. Questions 10 and 11 were answered
+  2026-10-11. The rest are small enough to settle in the §4.14 UX pass.
 - **§7** — `[ASSUMPTION]` Success metrics are correctness gates rather than usage
   targets. No usage target exists anywhere in the repo record.

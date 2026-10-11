@@ -5,7 +5,7 @@ created: '2026-10-11'
 baseline_revision: 'ac057a5b1629efb3f9238b4b994dd65886c9134c'
 status: 'done'
 review_loop_iteration: 0
-followup_review_recommended: true
+followup_review_recommended: false
 context:
   - '{project-root}/docs/agents/keys-and-secrets.md'
   - '{project-root}/docs/agents/ui-and-design-system.md'
@@ -163,6 +163,41 @@ deferred:
   - `[low]` `reject` edge: persisted derived record has no kind for Mainnet UI (edge) — none named
   - `[low]` `reject` edge: assertAny returns a credential used by another lock (edge) — salts and info differ per purpose, as the spec allows
 
+### 2026-10-11 — Review pass (follow-up)
+- verdicts: 32 findings — high 0, medium 3, low 26, false 3, maybe-false 0
+- findings:
+  - `[medium]` `defer` carried: ordinal lost if the tab closes after the Wallet is written (blind, edge, edge claim) — same row as the first pass
+  - `[medium]` `defer` carried: ordinal unusable because no restore screen exists (blind, intent) — deferred restore item
+  - `[low]` `reject` carried: create/restore wrong-credential does not call recordFailure (blind) — restore on a new device has no counter to protect
+  - `[low]` `reject` isWebAuthnSupported honours the test substitute (blind) — spec mandates the seam; only tests install a substitute
+  - `[low]` `reject` carried: RP_ID_BY_BRANCH hosts duplicate deploy.yml and tag builds fall back (blind) — see first pass
+  - `[low]` `reject` carried: Mainnet rule is a one-suffix denylist (blind) — the intent names b-cdn.net
+  - `[low]` `reject` explicit rp.id breaks the legacy vault passkey on a mismatched deployment (blind) — the browser rejects a mismatched rpId, so it fails closed; the build sets rpId to the served host
+  - `[low]` `reject` carried: up to three passkey prompts with no copy (blind) — spec calls the second prompt normal
+  - `[low]` `reject` carried: ordinal collision shows a refusal (blind) — 6 digits, rare, person retries
+  - `[low]` `reject` device-bound copy names a written Seed or Controlling Wallet (blind, edge claim) — the spec's own wording; stories 7 and 9 build those paths
+  - `[false]` `reject` changeNetwork leaves a selected-but-disabled option (blind) — the verdict reason is shown and the Create button is aria-disabled; same as every Stored combination
+  - `[low]` `reject` carried: no secp256k1 vector (blind) — secp256k1 derived signing was tested in the first pass
+  - `[low]` `reject` carried: resolveRpId mapping has no test (verification-gap) — build configuration; Actions sets GITHUB_REF_NAME and hosts match deploy.yml
+  - `[low]` `patch` refused and unsupported branches of derived creation untested (verification-gap, plus its overstated test title) — added an it.each for both messages in create-wallet-flow.test.tsx
+  - `[low]` `reject` carried: app-store passkey-derived normalisation untested (verification-gap) — no named harm
+  - `[low]` `reject` getRpId throws in createDerivedWallet when no host exists (edge, edge claim) — location.hostname always exists in a browser; throw is loud and nothing is written
+  - `[low]` `reject` addNetworkView judges Mainnet on the build rpId, not the recorded one (edge) — a Wallet bound to another host cannot assert on this one, so the view is unusable, not unsafe
+  - `[low]` `reject` restore with PIN on a device with no App PIN takes one unconfirmed value (edge) — no UI reaches it yet; the restore screen is a deferred item
+  - `[false]` `reject` carried: wrong-passkey attempts bypass hard lock (edge) — AD-25 says a failing passkey counts and the lock never blocks passkey-only Wallets
+  - `[low]` `reject` existing-passkey rpIdHash not checked (edge) — the browser binds the assertion to the requested rpId
+  - `[low]` `reject` carried: tab close on backup step (edge) — the first row's deferral
+  - `[low]` `reject` isTemporaryOrigin ignores a trailing dot or the bare apex (edge) — hostnames come from the build define or location.hostname, neither takes those forms
+  - `[low]` `reject` resolveRpId with an Object.prototype branch name (edge) — no such branch exists
+  - `[low]` `reject` carried: restore has no screen (intent) — deferred
+  - `[low]` `reject` reveal has no UI for a derived Wallet (intent) — reveal flows are story 7; keystore reveal is tested
+  - `[low]` `reject` carried: UI tests mock the keystore (intent) — both layers share the seam; browser pass deferred
+  - `[low]` `reject` carried: component and keystore read the origin differently in tests (intent) — both call getRpId in a real build
+  - `[low]` `reject` carried: existing-passkey kind always unknown (intent) — spec reads BE from attestation only
+  - `[false]` `reject` carried: docs edits outside the flow (intent) — spec lists them
+  - `[low]` `reject` kind statement text differs from recorded rpId in UI (intent) — not shown together by spec
+  - `[low]` `reject` carried: restore PIN path untested (verification-gap) — deferred item
+
 ## Design Notes
 
 "Not device-stored" in AD-24 means the salt is reconstructible from the ordinal, not that the device cannot hold it: signing needs the salt every time, so the record keeps the ordinal (public). `address` is the record's `keyAddress` until AD-18's field exists. Ordinals are generated at random (6 digits) and uniqueness is enforced only locally; the same (credential, ordinal, algorithm) on another device is the same Wallet by design.
@@ -193,3 +228,15 @@ Status: done
 **Verification:** `bun run lint`, `bun run build`, `bun run test` (74 files, 1006 tests) and `bun run check:contrast` pass after the patches; also `GITHUB_REF_NAME=prod bun run test` passed before them. No browser or authenticator run.
 
 **Residual risks:** see the deferred list. On Mainnet with a passkey Open Check a derived Wallet hits the FR-72 refusal until story 7. Restore has no screen.
+
+### Follow-up pass (2026-10-11)
+
+**Review:** patches applied 1 entry (low 1); no high patched, so the work has converged. Deferred: none new. Everything else rejected with the reasons in the Review Triage Log.
+
+**Follow-up review recommended:** false.
+
+**Change:** `create-wallet-flow.test.tsx` gained a parametrised test for the `refused` and `unsupported` creation results.
+
+**Verification:** `bun run lint`, `bun run build`, `bun run test` (74 files, 1008 tests) and `bun run check:contrast` pass. No browser or authenticator run.
+
+**Residual risks:** as before, the deferred list; the passkey, PRF and BE path has met only fakes.

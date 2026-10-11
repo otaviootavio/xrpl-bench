@@ -536,6 +536,25 @@ describe('Passkey-Derived Seed (story 6)', () => {
     expect(screen.getByText('Seed Method')).toBeTruthy()
   })
 
+  it.each([
+    [{ status: 'refused', reason: 'Refused for a stated reason.' }, 'Refused for a stated reason.'],
+    [
+      { status: 'unsupported' },
+      'This device or browser could not use a passkey for this wallet. Nothing was created.',
+    ],
+  ])('a %o result shows its message and leaves the flow on its questions', async (result, message) => {
+    h.capability = 'yes'
+    h.createDerivedWallet.mockResolvedValue(result)
+    await mount()
+    await click(radioNamed(/^Passkey-Derived Seed/))
+    await click(radioNamed('App PIN'))
+    type(screen.getByLabelText(/Choose an App PIN/), '123456')
+    type(screen.getByLabelText(/Confirm the App PIN/), '123456')
+    await click(createButton())
+    expect(await screen.findByText(message)).toBeTruthy()
+    expect(screen.getByText('Seed Method')).toBeTruthy()
+  })
+
   it('continuing from the ordinal commits the Wallet', async () => {
     h.capability = 'yes'
     const onDone = vi.fn()

@@ -69,6 +69,28 @@ const PERSISTED_DEFAULTS: PersistedAppState = {
 }
 
 /**
+ * Story 12.1: a Wallet persisted by an earlier build has no `network` and no
+ * `seedId`. It is given the persisted app-wide network (the same value the
+ * vault migration labels the Seed's first view with) and its own id as Seed id.
+ * Total: a value that is not an array leaves the current wallets alone, never
+ * throws.
+ */
+function normaliseWallets(persisted: unknown, persistedNetwork: unknown, fallback: NetworkId, current: WalletMeta[]): WalletMeta[] {
+  if (!Array.isArray(persisted)) return current
+  const network = persistedNetwork === 'mainnet' || persistedNetwork === 'testnet' ? persistedNetwork : fallback
+  return persisted
+    .filter((w): w is Record<string, unknown> => !!w && typeof w === 'object' && typeof (w as { id?: unknown }).id === 'string')
+    .map((w) => ({
+      ...(w as unknown as WalletMeta),
+      seedId: typeof w.seedId === 'string' ? w.seedId : (w.id as string),
+      network: w.network === 'mainnet' || w.network === 'testnet' ? w.network : network,
+      algorithm: (w.algorithm as WalletMeta['algorithm']) ?? 'unresolved',
+      openCheck: (w.openCheck as WalletMeta['openCheck']) ?? 'pin',
+      signingCheck: (w.signingCheck as WalletMeta['signingCheck']) ?? 'standard',
+    }))
+}
+
+/**
  * Reads the persisted slice into the current shape, on every hydration — the
  * Address Book migration (Epic 9).
  *
@@ -97,7 +119,27 @@ const PERSISTED_DEFAULTS: PersistedAppState = {
 export function mergePersistedAppState<S extends PersistedAppState>(persisted: unknown, current: S): S {
   if (!persisted || typeof persisted !== 'object') return current
   const state = persisted as Record<string, unknown>
-  return { ...current, ...(state as Partial<PersistedAppState>), addressBook: migrateAddressBook(state.addressBook) }
+  return {
+    ...current,
+    ...(state as Partial<PersistedAppState>),
+    addressBook: migrateAddressBook(state.addressBook),
+    wallets: normaliseWallets(state.wallets, state.network, current.network, current.wallets),
+  }
+}
+
+let hydrationSettled = false
+const hydrationWaiters: Array<() => void> = []
+function settleHydration() {
+  hydrationSettled = true
+  hydrationWaiters.splice(0).forEach((resolve) => resolve())
+}
+
+/** Resolves once the persisted slice has been read back OR its read failed.
+ * zustand's `onFinishHydration` fires only on success, so waiting on it alone
+ * hangs forever behind a storage error; on failure the store keeps its
+ * defaults and callers proceed with those. */
+export function appStateSettled(): Promise<void> {
+  return hydrationSettled ? Promise.resolve() : new Promise((resolve) => void hydrationWaiters.push(resolve))
 }
 
 const indexedDbStorage: StateStorage = {
@@ -148,6 +190,7 @@ export const useAppStore = create<AppState>()(
       // place to clear and nothing app-related is left behind in localStorage.
       storage: createJSONStorage(() => indexedDbStorage),
       merge: mergePersistedAppState,
+      onRehydrateStorage: () => () => settleHydration(),
       // Only ever persist non-secret UI/selection state. vaultKey and
       // unlocked are deliberately excluded here.
       partialize: (s): PersistedAppState => ({

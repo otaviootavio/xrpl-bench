@@ -16,8 +16,8 @@ import { SeedReveal } from '@/components/wallet/SeedReveal'
 import { AddressLink } from '@/components/wallet/AddressLink'
 import { useAppStore } from '@/store/app-store'
 import { counterpartyKey, tagNotRecorded } from '@/store/address-book'
-import { NETWORKS } from '@/lib/xrpl/networks'
-import { addressFromSeed, generateAndStoreWallet, importAndStoreWallet, listWallets, parseSeedInput, removeWallet, revealSeed } from '@/lib/crypto/keystore'
+import { NETWORKS, NETWORK_IDS, type NetworkId } from '@/lib/xrpl/networks'
+import { addNetworkView, addressFromSeed, generateAndStoreWallet, importAndStoreWallet, listWallets, parseSeedInput, removeWallet, revealSeed } from '@/lib/crypto/keystore'
 import { RESET_INCOMPLETE_MESSAGE, tearDownAllLocalState, clearCachedAccountData } from '@/lib/teardown'
 import { checkBeforeImport, IMPORT_WARNING_COPY, INVALID_SEED_MESSAGE, type ImportWarning } from '@/lib/seed-import'
 import { toast } from '@/lib/notify'
@@ -63,14 +63,14 @@ export function SettingsTab() {
   const getRevealedSeed = useCallback(() => revealedSeedRef.current, [])
 
   async function refreshWallets() {
-    setWallets(await listWallets())
+    setWallets(await listWallets(network))
   }
 
   /** The vault write for an import, and everything that follows a completed
    * add. Reached only after the pre-flight check: directly when it found
    * nothing to warn about, or from "Import anyway". */
   async function storeImported(seed: string, key: CryptoKey) {
-    const meta = await importAndStoreWallet(label || 'Wallet', seed, key)
+    const meta = await importAndStoreWallet(label || 'Wallet', seed, key, network)
     await refreshWallets()
     setActiveWalletId(meta.id)
     finishAdd()
@@ -89,7 +89,7 @@ export function SettingsTab() {
     if (addMode === 'generate') {
       setBusy(true)
       try {
-        const { meta } = await generateAndStoreWallet(label || 'Wallet', vaultKey)
+        const { meta } = await generateAndStoreWallet(label || 'Wallet', vaultKey, network)
         await refreshWallets()
         setActiveWalletId(meta.id)
         finishAdd()
@@ -167,11 +167,23 @@ export function SettingsTab() {
     setSeedVisibleFor(null)
   }
 
+  /** "Use on another network": a second Wallet over the same Seed record, so a
+   * funded address is never lost from view. Nothing new is encrypted. */
+  async function handleUseOnOtherNetwork(walletId: string, target: NetworkId) {
+    try {
+      await addNetworkView(walletId, target)
+      await refreshWallets()
+      toast.success(`Wallet added on ${NETWORKS[target].label}.`)
+    } catch (err: any) {
+      toast.error(err?.message ?? 'Could not add the wallet on that network.')
+    }
+  }
+
   async function handleRemove(id: string) {
     await removeWallet(id)
     await refreshWallets()
     if (activeWalletId === id) {
-      const remaining = await listWallets()
+      const remaining = await listWallets(network)
       setActiveWalletId(remaining[0]?.id ?? null)
     }
     // AD-16: the removed wallet's balances/history leave the query cache. The
@@ -267,6 +279,7 @@ export function SettingsTab() {
                   )}
                 </div>
                 <AddressLink address={w.address} />
+                <p className="mt-1 text-xs text-muted-foreground">Network: {NETWORKS[w.network].label}</p>
               </div>
               <div className="flex flex-wrap gap-2">
                 {w.id !== activeWalletId && (
@@ -274,6 +287,11 @@ export function SettingsTab() {
                     Use this wallet
                   </Button>
                 )}
+                {NETWORK_IDS.filter((n) => !wallets.some((o) => o.seedId === w.seedId && o.network === n)).map((n) => (
+                  <Button key={n} variant="outline" size="sm" aria-label={`Use ${w.label} on ${NETWORKS[n].label}`} onClick={() => void handleUseOnOtherNetwork(w.id, n)}>
+                    Use on {NETWORKS[n].label}
+                  </Button>
+                ))}
                 <Button variant="outline" size="sm" onClick={() => setConfirmRevealFor(w.id)}>
                   Reveal seed
                 </Button>
@@ -558,7 +576,10 @@ export function SettingsTab() {
           <DialogHeader>
             <DialogTitle>Remove this wallet?</DialogTitle>
             <DialogDescription>
-              This app will no longer hold the encrypted seed for this wallet. Make sure you have your own backup — this cannot be
+              {confirmRemove && wallets.filter((o) => o.seedId === wallets.find((x) => x.id === confirmRemove)?.seedId).length > 1
+                ? 'This removes this wallet from this network only. The encrypted seed stays, because the same wallet is still set up on another network. '
+                : 'This app will no longer hold the encrypted seed for this wallet. '}
+              Make sure you have your own backup — this cannot be
               undone from within the app.
             </DialogDescription>
           </DialogHeader>

@@ -3,7 +3,7 @@ import { bufToB64, b64ToBuf } from './encoding'
 // A fixed, app-wide salt for the WebAuthn PRF extension. This is not a
 // secret (PRF salts don't need to be) — it just needs to be stable so the
 // same passkey always derives the same key material across unlocks.
-const PRF_SALT = new TextEncoder().encode('xrpl-wallet:vault-unlock:v1')
+export const PRF_SALT = new TextEncoder().encode('xrpl-wallet:vault-unlock:v1')
 
 export function isWebAuthnSupported(): boolean {
   return typeof window !== 'undefined' && !!window.PublicKeyCredential

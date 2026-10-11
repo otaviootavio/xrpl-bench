@@ -85,7 +85,7 @@ function installShell() {
 
 async function seedResidue() {
   const s = useAppStore.getState()
-  s.setWallets([{ id: 'w1', label: 'Savings', address: 'rAliceAddressLabelThatMustNotSurvive' } as never])
+  s.setWallets([{ id: 'w1', seedId: 'w1', network: 'testnet', label: 'Savings', address: 'rAliceAddressLabelThatMustNotSurvive' } as never])
   s.setActiveWalletId('w1')
   s.addAddressBookEntry({ address: 'rBobCounterpartyThatMustNotSurvive', label: 'Bob — landlord' })
   useAppStore.setState({ unlocked: true } as never)
@@ -174,8 +174,8 @@ describe('Settings — Erase everything', () => {
 describe('Settings — Remove one wallet', () => {
   it('leaves the precache and the service-worker registration alone, and does not reset the device', async () => {
     const { cacheStorage, live, sw, registration } = installShell()
-    const keep = { id: 'w2', label: 'Spending', address: 'rCarolSecondWalletAddress' }
-    useAppStore.getState().setWallets([{ id: 'w1', label: 'Savings', address: 'rAliceAddressLabelThatMustNotSurvive' }, keep] as never)
+    const keep = { id: 'w2', seedId: 'w2', network: 'testnet', label: 'Spending', address: 'rCarolSecondWalletAddress' }
+    useAppStore.getState().setWallets([{ id: 'w1', seedId: 'w1', network: 'testnet', label: 'Savings', address: 'rAliceAddressLabelThatMustNotSurvive' }, keep] as never)
     useAppStore.getState().setActiveWalletId('w1')
     h.listWallets.mockResolvedValue([keep])
     renderSettings()

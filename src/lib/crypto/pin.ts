@@ -1,7 +1,7 @@
 import { bufToB64, b64ToBuf } from './encoding'
 
 // OWASP's current guidance for PBKDF2-HMAC-SHA256 is 600,000 iterations.
-const PBKDF2_ITERATIONS = 600_000
+export const PBKDF2_ITERATIONS = 600_000
 
 export function generateSalt(): string {
   return bufToB64(crypto.getRandomValues(new Uint8Array(16)).buffer)

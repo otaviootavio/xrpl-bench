@@ -95,7 +95,7 @@ export function Onboarding() {
       setVaultKey(key)
 
       if (mode === 'generate') {
-        const { meta, seed } = await generateAndStoreWallet('My Wallet', key)
+        const { meta, seed } = await generateAndStoreWallet('My Wallet', key, network)
         setPendingMeta(meta)
         pendingSeedRef.current = seed
         setHasPendingSeed(true)
@@ -120,8 +120,8 @@ export function Onboarding() {
           setStep('import-warning')
           return
         }
-        const meta = await importAndStoreWallet('My Wallet', seed, key)
-        const wallets = await listWallets()
+        const meta = await importAndStoreWallet('My Wallet', seed, key, network)
+        const wallets = await listWallets(network)
         clearSeeds()
         commitToStore(key, meta, wallets)
         toast.success('Wallet imported.')
@@ -135,7 +135,7 @@ export function Onboarding() {
 
   async function finishBackup() {
     if (!vaultKey || !pendingMeta) return
-    const wallets = await listWallets()
+    const wallets = await listWallets(network)
     clearSeeds()
     commitToStore(vaultKey, pendingMeta, wallets)
   }
@@ -147,8 +147,8 @@ export function Onboarding() {
     if (!vaultKey || !seed) return
     setBusy(true)
     try {
-      const meta = await importAndStoreWallet('My Wallet', seed, vaultKey)
-      const wallets = await listWallets()
+      const meta = await importAndStoreWallet('My Wallet', seed, vaultKey, network)
+      const wallets = await listWallets(network)
       clearSeeds()
       setImportWarning(null)
       commitToStore(vaultKey, meta, wallets)

@@ -5,7 +5,7 @@ import { derivePinKeyBits, generateSalt } from './pin'
 import { aesEncrypt, aesDecrypt } from './aes'
 import { bufToB64, b64ToBuf } from './encoding'
 
-const HKDF_INFO = 'xrpl-wallet:unlock-method-key:v1'
+export const HKDF_INFO = 'xrpl-wallet:unlock-method-key:v1'
 const MAX_ATTEMPTS_BEFORE_HARD_LOCK = 8
 const BACKOFF_STARTS_AT_ATTEMPT = 3
 const DEFAULT_AUTO_LOCK_MINUTES = 5

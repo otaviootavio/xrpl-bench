@@ -4,8 +4,8 @@ import { TooltipProvider } from '@/components/ui/tooltip'
 import { Onboarding } from '@/pages/Onboarding'
 import { Unlock } from '@/pages/Unlock'
 import { Main } from '@/pages/Main'
-import { useAppStore } from '@/store/app-store'
-import { listWallets } from '@/lib/crypto/keystore'
+import { appStateSettled, useAppStore } from '@/store/app-store'
+import { listWallets, migrateLegacyVault } from '@/lib/crypto/keystore'
 import { restoreSession } from '@/lib/crypto/auth'
 import { setTxInFlightReporter } from '@/lib/xrpl/writes'
 
@@ -27,6 +27,21 @@ const queryClient = new QueryClient({
   },
 })
 
+/** Story 12.1 / AD-27: the legacy-vault relabel, run once per app start and only
+ * here — in a build the user has already activated. Idempotent and atomic in the
+ * vault; an error leaves every Wallet on its legacy shape, still openable. */
+let migration: Promise<void> | null = null
+function migrateOnce(): Promise<void> {
+  migration ??= appStateSettled()
+    .then(() => {
+      const { network, autoLockMinutes } = useAppStore.getState()
+      return migrateLegacyVault({ network, autoLockMinutes })
+    })
+    .then(() => undefined)
+    .catch(() => undefined)
+  return migration
+}
+
 function Gate() {
   const wallets = useAppStore((s) => s.wallets)
   const setWallets = useAppStore((s) => s.setWallets)
@@ -42,7 +57,7 @@ function Gate() {
     // referentially stable, so listing them here is safe and complete
     // (docs/decisions.md guardrail #2: never disable exhaustive-deps).
     let cancelled = false
-    listWallets().then(async (stored) => {
+    migrateOnce().then(() => listWallets(useAppStore.getState().network)).then(async (stored) => {
       if (cancelled) return
       setWallets(stored)
       if (!activeWalletId && stored.length > 0) setActiveWalletId(stored[0].id)

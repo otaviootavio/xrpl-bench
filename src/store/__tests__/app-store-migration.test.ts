@@ -26,6 +26,11 @@ import { suppressesFirstSendWarning } from '../address-book'
 const EXCHANGE = 'rHb9CJAWyB4rj91VRWn96DkukG4bwdtyTh'
 const OTHER = 'rPT1Sjq2YGrBMTttX4GZHjKu9dyfzbpAYe'
 const WALLETS = [{ id: 'w1', label: 'Savings', address: 'r4NagxniGTmPRr8yBRXRD6NNpZP7FfP4KR' }]
+/** Story 12.1: read into the per-Wallet shape — the persisted app-wide network
+ * ('mainnet' in this blob) becomes the Wallet's network; nothing else changes. */
+const NORMALISED_WALLETS = [
+  { ...WALLETS[0], seedId: 'w1', network: 'mainnet', algorithm: 'unresolved', openCheck: 'pin', signingCheck: 'standard' },
+]
 
 /** A blob as the build before this change persisted it. */
 function legacyBlob(addressBook: unknown) {
@@ -68,7 +73,7 @@ describe('app store — a version-0 Address Book survives the shape change', () 
     await useAppStore.persist.rehydrate()
 
     const s = useAppStore.getState()
-    expect(s.wallets).toEqual(WALLETS)
+    expect(s.wallets).toEqual(NORMALISED_WALLETS)
     expect(s.activeWalletId).toBe('w1')
     expect(s.network).toBe('mainnet')
     expect(s.autoLockMinutes).toBe(15)
@@ -89,7 +94,7 @@ describe('app store — a version-0 Address Book survives the shape change', () 
     const stored = JSON.parse(h.idb.get(APP_STATE_STORAGE_KEY)!)
     expect(stored.version).toBe(0)
     expect(stored.state.addressBook).toEqual([{ address: EXCHANGE }, { address: EXCHANGE, destinationTag: '9' }])
-    expect(stored.state.wallets).toEqual(WALLETS)
+    expect(stored.state.wallets).toEqual(NORMALISED_WALLETS)
   })
 
   it('reads what this build wrote back unchanged — the migration is idempotent', async () => {
@@ -117,7 +122,7 @@ describe('app store — a version-0 Address Book survives the shape change', () 
 
     const s = useAppStore.getState()
     expect(s.addressBook).toEqual([])
-    expect(s.wallets).toEqual(WALLETS)
+    expect(s.wallets).toEqual(NORMALISED_WALLETS)
   })
 
   it('reads back a book with networks unchanged, and keeps writing version 0', async () => {

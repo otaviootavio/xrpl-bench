@@ -1,11 +1,14 @@
 import { decodeSeed, ECDSA, Wallet } from 'xrpl'
 import { canonicalNodeUrl, type NetworkId } from '@/lib/xrpl/networks'
+import type { Signer, SigningHandle } from '@/lib/xrpl/writes'
 import { aesDecrypt, aesEncrypt } from './aes'
 import { HKDF_INFO } from './auth'
-import { bufToB64 } from './encoding'
-import { PBKDF2_ITERATIONS } from './pin'
-import { PRF_SALT } from './webauthn'
+import { deriveAesKeyFromBits } from './derive'
+import { b64ToBuf, bufToB64 } from './encoding'
+import { attemptPin, getLockoutState, PBKDF2_ITERATIONS, recordFailure, triesRemaining } from './pin'
+import { assertPasskeyAndDeriveBits, isCancelled, isPrfUnsupported, isWebAuthnSupported, PRF_SALT } from './webauthn'
 import {
+  getVaultMeta,
   LEGACY_LOCK_ID,
   legacyOpenCheck,
   listStoredWallets,
@@ -15,6 +18,7 @@ import {
   type OpenCheck,
   type SeedAlgorithm,
   type SigningCheck,
+  type SigningSeal,
   type StoredWallet,
   type WalletView,
 } from './db'
@@ -168,21 +172,142 @@ async function storeWallet(label: string, seed: string, vaultKey: CryptoKey, net
   return toMetas(stored)[0]
 }
 
-/** Decrypts a wallet's seed transiently to build a signing Wallet instance.
- * The caller must not store the returned Wallet/seed beyond the immediate
- * signing operation — see docs/decisions.md guardrail #3 (memory hygiene).
- *
- * `walletId` names a view; it is resolved to its Seed record. A record whose
- * algorithm is still `unresolved` has it derived here, from the Seed, and
- * stored only if the address it gives equals the stored address — otherwise
- * this throws and stores nothing (fails closed, AD-18). */
-export async function unlockWalletForSigning(walletId: string, vaultKey: CryptoKey): Promise<Wallet> {
-  const all = await listStoredWallets()
-  const stored = findSeedRecord(all, walletId)
-  if (!stored) throw new Error('Wallet not found in local vault.')
-  const seed = await aesDecrypt(vaultKey, stored.encryptedSeed.ivB64, stored.encryptedSeed.ciphertextB64)
-  if (stored.algorithm && stored.algorithm !== 'unresolved') return Wallet.fromSeed(seed)
+// ---------------------------------------------------------------------------
+// Signing (AD-22, AD-23, AD-25)
+// ---------------------------------------------------------------------------
 
+/** What a check yields (FR-66..68). Never carries a message holding key
+ * material. `cancelled` is a dismissed prompt and never counts toward the PIN
+ * lockout; `wrong-credential` always does. */
+export type CheckResult<T> =
+  | { status: 'ok'; value: T }
+  | { status: 'wrong-credential'; kind: 'pin' | 'passkey'; triesRemaining: number }
+  | { status: 'cancelled' }
+  | { status: 'unsupported' }
+  | { status: 'locked-out'; hard: boolean; lockedUntil: number }
+
+/** How the keystore asks the person for a credential without importing UI
+ * (parent AD-1). `pin` resolves the PIN typed, or `null` if the prompt was
+ * dismissed; it is told how many tries remain. A passkey needs no callback: its
+ * prompt is the browser's own. */
+export interface Prompts {
+  pin(info: { triesRemaining: number }): Promise<string | null>
+}
+
+/** What a check needs. `openKey` is the session's key: it opens a Standard
+ * Wallet and, by construction, nothing else (AD-23). */
+export interface SigningContext {
+  openKey: CryptoKey | null
+  prompts: Prompts
+}
+
+/** A check that did not pass, thrown by a `SigningHandle.open` so the choke
+ * point submits nothing. Carries the typed result, never a Seed or a key. */
+export class SigningCheckError extends Error {
+  readonly result: Exclude<CheckResult<unknown>, { status: 'ok' }>
+  constructor(result: Exclude<CheckResult<unknown>, { status: 'ok' }>) {
+    super(describeCheckFailure(result))
+    this.name = 'SigningCheckError'
+    this.result = result
+  }
+}
+
+export function describeCheckFailure(result: Exclude<CheckResult<unknown>, { status: 'ok' }>): string {
+  switch (result.status) {
+    case 'cancelled':
+      return 'Cancelled. Nothing was signed.'
+    case 'unsupported':
+      return 'This device or browser cannot use that passkey to sign. Nothing was signed.'
+    case 'locked-out':
+      return result.hard
+        ? 'Too many failed PIN attempts. Nothing was signed.'
+        : `Too many failed PIN attempts. Try again in ${Math.max(1, Math.ceil((result.lockedUntil - Date.now()) / 1000))}s.`
+    case 'wrong-credential':
+      return result.kind === 'passkey'
+        ? 'Passkey verification failed. Nothing was signed.'
+        : `Incorrect PIN. ${result.triesRemaining} ${result.triesRemaining === 1 ? 'try' : 'tries'} remaining.`
+  }
+}
+
+/** The null prompts: a PIN prompt that is always dismissed. Until the prompt
+ * dialogs exist, a Wallet with a Signing Check cannot be opened from a screen,
+ * and fails closed as a cancellation. */
+export const unavailablePrompts: Prompts = { pin: async () => null }
+
+const SIGN_HKDF_PREFIX = 'xrpl-bench:sign:'
+
+async function importSigningKey(rawB64: string): Promise<CryptoKey> {
+  return crypto.subtle.importKey('raw', b64ToBuf(rawB64), 'AES-GCM', false, ['encrypt', 'decrypt'])
+}
+
+/** Runs one Signing Check against a sealed record and, if it passes, returns
+ * the Signing Key (non-extractable, local to the caller). The PIN or passkey
+ * key is derived and used for one unwrap and dropped. A wrong credential is
+ * proven by the unwrap failing, never by deriving. */
+async function openSigningKey(seal: SigningSeal, ctx: SigningContext): Promise<CheckResult<CryptoKey>> {
+  if (seal.kind === 'pin') {
+    // Checked before prompting: a locked PIN must not be asked for. A
+    // passkey-only check never reaches this branch, so a hard lock never blocks it.
+    const lockout = await getLockoutState()
+    if (lockout.hardLocked || lockout.locked) {
+      return { status: 'locked-out', hard: lockout.hardLocked, lockedUntil: lockout.lockedUntil }
+    }
+    const pin = await ctx.prompts.pin({ triesRemaining: await triesRemaining() })
+    if (pin === null) return { status: 'cancelled' }
+    const attempt = await attemptPin(pin, async (bits) => {
+      const methodKey = await deriveAesKeyFromBits(bits, seal.hkdfInfo)
+      return importSigningKey(await aesDecrypt(methodKey, seal.wrappedSigningKey.ivB64, seal.wrappedSigningKey.ciphertextB64))
+    })
+    if (attempt.status === 'ok') return { status: 'ok', value: attempt.value }
+    if (attempt.status === 'locked-out') return attempt
+    return { status: 'wrong-credential', kind: 'pin', triesRemaining: attempt.triesRemaining }
+  }
+
+  if (!isWebAuthnSupported() || !seal.credentialIdB64 || !seal.prfSaltB64) return { status: 'unsupported' }
+  let bits: ArrayBuffer
+  try {
+    bits = await assertPasskeyAndDeriveBits(seal.credentialIdB64, new Uint8Array(b64ToBuf(seal.prfSaltB64)))
+  } catch (err) {
+    if (isCancelled(err)) return { status: 'cancelled' }
+    if (isPrfUnsupported(err)) return { status: 'unsupported' }
+    throw err
+  }
+  try {
+    const methodKey = await deriveAesKeyFromBits(bits, seal.hkdfInfo)
+    return { status: 'ok', value: await importSigningKey(await aesDecrypt(methodKey, seal.wrappedSigningKey.ivB64, seal.wrappedSigningKey.ciphertextB64)) }
+  } catch {
+    // A presented assertion that cannot unwrap counts, as it does at unlock.
+    await recordFailure()
+    return { status: 'wrong-credential', kind: 'passkey', triesRemaining: await triesRemaining() }
+  }
+}
+
+/** Decrypts one Seed record's Seed: under the Signing Key if it carries a
+ * Signing Check, else under the session's Open key. There is no path that
+ * decrypts a sealed record with `openKey` — it has no `encryptedSeed` to
+ * decrypt, and the Signing Key is wrapped only by the credential (AD-23). */
+async function openSeed(stored: StoredWallet, ctx: SigningContext): Promise<CheckResult<string>> {
+  // A record that says it has a Signing Check but lacks its seal must never
+  // fall through to the session key: fail closed.
+  if (stored.signingCheck && stored.signingCheck !== 'standard' && !(stored.signing && stored.sealedSeed)) {
+    throw new Error('This wallet record is incomplete. Nothing was signed.')
+  }
+  if (stored.signing || stored.sealedSeed) {
+    if (!stored.signing || !stored.sealedSeed) throw new Error('This wallet record is incomplete. Nothing was signed.')
+    const key = await openSigningKey(stored.signing, ctx)
+    if (key.status !== 'ok') return key
+    return { status: 'ok', value: await aesDecrypt(key.value, stored.sealedSeed.ivB64, stored.sealedSeed.ciphertextB64) }
+  }
+  if (!ctx.openKey) throw new Error('Wallet is locked.')
+  if (!stored.encryptedSeed) throw new Error('Wallet not found in local vault.')
+  return { status: 'ok', value: await aesDecrypt(ctx.openKey, stored.encryptedSeed.ivB64, stored.encryptedSeed.ciphertextB64) }
+}
+
+/** An `unresolved` algorithm is derived here, from the Seed, and stored only if
+ * the address it gives equals the stored address — otherwise this throws and
+ * stores nothing (fails closed, AD-18). */
+async function walletFromSeed(stored: StoredWallet, seed: string): Promise<Wallet> {
+  if (stored.algorithm && stored.algorithm !== 'unresolved') return Wallet.fromSeed(seed)
   const algorithm = algorithmOfSeed(seed)
   const wallet = Wallet.fromSeed(seed, { algorithm: algorithm === 'ed25519' ? ECDSA.ed25519 : ECDSA.secp256k1 })
   if (wallet.address !== stored.address) {
@@ -200,11 +325,165 @@ export async function unlockWalletForSigning(walletId: string, vaultKey: CryptoK
   return wallet
 }
 
-/** Reveals the plaintext seed for backup/re-verification, behind the same
- * unlock gate — account-onboarding.md US-6. */
-export async function revealSeed(walletId: string, vaultKey: CryptoKey): Promise<string> {
-  const wallet = await unlockWalletForSigning(walletId, vaultKey)
-  return wallet.seed!
+async function seedRecordFor(walletId: string): Promise<StoredWallet> {
+  const stored = findSeedRecord(await listStoredWallets(), walletId)
+  if (!stored) throw new Error('Wallet not found in local vault.')
+  return stored
+}
+
+/**
+ * Runs the Wallet's Signing Check inside `lib/crypto` and returns a one-use
+ * `Signer` (AD-22). The Seed and the Signing Key live only in closures, cleared
+ * in `finally`; the Signer signs once and is spent. A Standard Wallet is opened
+ * with `ctx.openKey` (throws `Wallet is locked.` without it). Every other
+ * outcome is a typed result and nothing is returned that could sign.
+ */
+export async function openSigner(walletId: string, ctx: SigningContext): Promise<CheckResult<Signer>> {
+  const stored = await seedRecordFor(walletId)
+  let seed: string | null = null
+  let wallet: Wallet | null = null
+  try {
+    const opened = await openSeed(stored, ctx)
+    if (opened.status !== 'ok') return opened
+    seed = opened.value
+    wallet = await walletFromSeed(stored, seed)
+    let held: Wallet | null = wallet
+    const signer: Signer = {
+      sign(tx) {
+        if (!held) throw new Error('This signer was already used.')
+        const w = held
+        held = null
+        // check-write-choke-point-allow
+        return w.sign(tx)
+      },
+      dispose() {
+        held = null
+      },
+    }
+    wallet = null
+    return { status: 'ok', value: signer }
+  } finally {
+    seed = null
+    wallet = null
+  }
+}
+
+/** The handle `submitAndClassify` takes. `open` runs the check on demand — the
+ * choke point calls it after autofill — and throws `SigningCheckError` on any
+ * result but ok. */
+export async function signingHandleFor(walletId: string, ctx: SigningContext): Promise<SigningHandle> {
+  const stored = await seedRecordFor(walletId)
+  return {
+    address: stored.address,
+    async open() {
+      const result = await openSigner(walletId, ctx)
+      if (result.status !== 'ok') throw new SigningCheckError(result)
+      return result.value
+    },
+  }
+}
+
+/** The one sanctioned way a Seed leaves `lib/crypto`: the same check as
+ * signing, the Seed returned to the reveal screen only (AD-22). The caller
+ * holds it in a ref and clears it. */
+export async function revealSeed(walletId: string, ctx: SigningContext): Promise<CheckResult<string>> {
+  const stored = await seedRecordFor(walletId)
+  const opened = await openSeed(stored, ctx)
+  if (opened.status !== 'ok') return opened
+  await walletFromSeed(stored, opened.value)
+  return opened
+}
+
+/**
+ * Gives a Standard Wallet a Signing Check (AD-23): its Seed is re-encrypted
+ * under a random Signing Key wrapped only by the PIN or a passkey, and the
+ * Open-key ciphertext is deleted in the same IndexedDB transaction. Any failure
+ * leaves the old record untouched. The PIN is proven against the App PIN's own
+ * wrapper first (counted); a passkey must produce PRF output (else
+ * `unsupported`). The address is unchanged. The edit flow, policy and dialogs
+ * belong to later stories; this is only the write.
+ */
+export async function sealSeedUnderSigningCheck(
+  walletId: string,
+  kind: 'pin' | 'passkey',
+  ctx: SigningContext,
+): Promise<CheckResult<WalletMeta>> {
+  const stored = await seedRecordFor(walletId)
+  if (stored.signing || stored.sealedSeed) throw new Error('This wallet already has a signing check.')
+  if (!stored.encryptedSeed) throw new Error('Wallet not found in local vault.')
+  if (!ctx.openKey) throw new Error('Wallet is locked.')
+  const before = stored.encryptedSeed
+
+  const hkdfInfo = `${SIGN_HKDF_PREFIX}${stored.id}:v1`
+  let credentialKey: CryptoKey
+  let credentialId: string | undefined
+  let prfSaltB64: string | undefined
+
+  if (kind === 'pin') {
+    const lockout = await getLockoutState()
+    if (lockout.hardLocked || lockout.locked) {
+      return { status: 'locked-out', hard: lockout.hardLocked, lockedUntil: lockout.lockedUntil }
+    }
+    const pin = await ctx.prompts.pin({ triesRemaining: await triesRemaining() })
+    if (pin === null) return { status: 'cancelled' }
+    const meta = await getVaultMeta()
+    const appWrapper = meta.wrappedMasterKeyForPin
+    if (!appWrapper) throw new Error('No PIN has been set up for this device.')
+    const attempt = await attemptPin(pin, async (bits) => {
+      // Proof the PIN is the App PIN: its wrapper decrypts under it.
+      await aesDecrypt(await deriveAesKeyFromBits(bits, HKDF_INFO), appWrapper.ivB64, appWrapper.ciphertextB64)
+      return deriveAesKeyFromBits(bits, hkdfInfo)
+    })
+    if (attempt.status === 'locked-out') return attempt
+    if (attempt.status === 'wrong-credential') return { status: 'wrong-credential', kind: 'pin', triesRemaining: attempt.triesRemaining }
+    credentialKey = attempt.value
+  } else {
+    const meta = await getVaultMeta()
+    if (!isWebAuthnSupported() || !meta.passkeyCredentialIdB64) return { status: 'unsupported' }
+    credentialId = meta.passkeyCredentialIdB64
+    const salt = crypto.getRandomValues(new Uint8Array(32))
+    prfSaltB64 = bufToB64(salt.buffer)
+    try {
+      credentialKey = await deriveAesKeyFromBits(await assertPasskeyAndDeriveBits(credentialId, salt), hkdfInfo)
+    } catch (err) {
+      if (isCancelled(err)) return { status: 'cancelled' }
+      if (isPrfUnsupported(err)) return { status: 'unsupported' }
+      throw err
+    }
+  }
+
+  const seed = await aesDecrypt(ctx.openKey, before.ivB64, before.ciphertextB64)
+  const wallet = await walletFromSeed(stored, seed)
+  const algorithm = algorithmOfSeed(seed)
+  const signingKey = await crypto.subtle.generateKey({ name: 'AES-GCM', length: 256 }, true, ['encrypt', 'decrypt'])
+  const wrappedSigningKey = await aesEncrypt(credentialKey, bufToB64(await crypto.subtle.exportKey('raw', signingKey)))
+  const sealedSeed = await aesEncrypt(signingKey, seed)
+  const signing: SigningSeal = {
+    kind,
+    wrappedSigningKey,
+    hkdfInfo,
+    ...(credentialId ? { credentialIdB64: credentialId } : {}),
+    ...(prfSaltB64 ? { prfSaltB64 } : {}),
+  }
+  await mutateStoredWallet(stored.id, (current) => {
+    // Another tab or flow changed the ciphertext since it was read: abort,
+    // leaving the record exactly as it is.
+    if (current.signing || current.encryptedSeed?.ciphertextB64 !== before.ciphertextB64) {
+      throw new Error('This wallet changed while its signing check was being set. Nothing was changed.')
+    }
+    const { encryptedSeed: _old, ...rest } = current
+    return {
+      ...rest,
+      algorithm: current.algorithm && current.algorithm !== 'unresolved' ? current.algorithm : algorithm,
+      sealedSeed,
+      signing,
+      signingCheck: kind,
+    }
+  })
+  void wallet
+  const meta = (await listWallets()).find((w) => w.id === walletId)
+  if (!meta) throw new Error('Wallet not found in local vault.')
+  return { status: 'ok', value: meta }
 }
 
 /** Removes one Wallet. Its Seed record goes with its last view and not before:

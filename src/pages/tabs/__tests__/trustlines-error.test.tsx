@@ -7,7 +7,7 @@ const useTrustLines = vi.fn()
 /** Named, so a test can see what a TrustSet discards and for whom. */
 const invalidateQueries = vi.fn()
 const submitTrustSet = vi.fn()
-const unlockWalletForSigning = vi.fn()
+const signingHandleFor = vi.fn()
 
 vi.mock('@/hooks/useTrustLines', () => ({ useTrustLines: (...a: unknown[]) => useTrustLines(...a) }))
 vi.mock('@/hooks/useServerReserves', () => ({
@@ -28,7 +28,8 @@ vi.mock('@/hooks/useSpendableBalance', () => ({
 }))
 vi.mock('@tanstack/react-query', () => ({ useQueryClient: () => ({ invalidateQueries }) }))
 vi.mock('@/lib/crypto/keystore', () => ({
-  unlockWalletForSigning: (...args: unknown[]) => unlockWalletForSigning(...args),
+  signingHandleFor: (...args: unknown[]) => signingHandleFor(...args),
+  unavailablePrompts: { pin: async () => null },
 }))
 vi.mock('@/lib/xrpl/writes', () => ({
   submitTrustSet: (...args: unknown[]) => submitTrustSet(...args),
@@ -53,6 +54,20 @@ import { TrustLinesTab } from '../TrustLinesTab'
 import { queryKeys } from '@/lib/xrpl/query-keys'
 
 const WALLET_ADDRESS = 'rBoGUS9uiK9m3Kk6qnGRvWWCwAeN8hF3wR'
+
+/** A handle whose Signing Check passes at once. */
+const signed = vi.fn()
+const fakeHandle = () => ({
+  address: WALLET_ADDRESS,
+  open: async () => ({ sign: (tx: unknown) => (signed(tx), { tx_blob: '00', hash: 'AA' }), dispose: () => {} }),
+})
+/** A submit that, like the choke point, opens the Signer before reporting `outcome`. */
+const opening = (outcome: unknown) => async (_network: unknown, handle: { open(): Promise<{ sign(tx: unknown): unknown; dispose(): void }> }) => {
+  const signer = await handle.open()
+  signer.sign({})
+  signer.dispose()
+  return outcome
+}
 const ISSUER = 'rHb9CJAWyB4rj91VRWn96DkukG4bwdtyTh'
 
 function query(overrides: Record<string, unknown> = {}) {
@@ -66,14 +81,15 @@ beforeEach(() => {
   invalidateQueries.mockClear()
   submitTrustSet.mockReset()
   activeNode = undefined
-  unlockWalletForSigning.mockReset()
+  signingHandleFor.mockReset()
+  signed.mockClear()
 })
 afterEach(cleanup)
 
 describe('TrustLinesTab — a TrustSet discards the whole account group', () => {
   it('invalidates every account-scoped entry for the active wallet after a submit', async () => {
-    unlockWalletForSigning.mockResolvedValue({ address: WALLET_ADDRESS })
-    submitTrustSet.mockResolvedValue({ status: 'validated', resultCode: 'tesSUCCESS', hash: 'EF' })
+    signingHandleFor.mockImplementation(async () => fakeHandle())
+    submitTrustSet.mockImplementation(opening({ status: 'validated', resultCode: 'tesSUCCESS', hash: 'EF' }))
     render(<TrustLinesTab />)
     fireEvent.click(screen.getByRole('button', { name: 'Add trust line' }))
     fireEvent.change(screen.getByLabelText('Issuer address'), { target: { value: ISSUER } })
@@ -97,8 +113,8 @@ describe('TrustLinesTab — a TrustSet discards the whole account group', () => 
 describe('TrustLinesTab — the active Wallet\'s Node', () => {
   it('reaches the submit as its trailing argument and the read hooks', async () => {
     activeNode = 'wss://node.example.com'
-    unlockWalletForSigning.mockResolvedValue({ address: WALLET_ADDRESS })
-    submitTrustSet.mockResolvedValue({ status: 'validated', resultCode: 'tesSUCCESS', hash: 'EF' })
+    signingHandleFor.mockImplementation(async () => fakeHandle())
+    submitTrustSet.mockImplementation(opening({ status: 'validated', resultCode: 'tesSUCCESS', hash: 'EF' }))
     render(<TrustLinesTab />)
     fireEvent.click(screen.getByRole('button', { name: 'Add trust line' }))
     fireEvent.change(screen.getByLabelText('Issuer address'), { target: { value: ISSUER } })

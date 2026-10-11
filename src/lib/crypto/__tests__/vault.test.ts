@@ -8,6 +8,11 @@ const stores: Record<string, Map<string, any>> = { vault: new Map(), wallets: ne
 vi.mock('../db', () => ({
   getVaultMeta: async () => stores.vault.get('vault') ?? { key: 'vault', failedAttempts: 0 },
   putVaultMeta: async (meta: any) => void stores.vault.set('vault', meta),
+  mutateVaultMeta: async (change: (m: any) => any) => {
+    const next = change(stores.vault.get('vault') ?? { key: 'vault', failedAttempts: 0 })
+    stores.vault.set('vault', next)
+    return next
+  },
   wipeVaultDatabase: async () => {
     for (const s of Object.values(stores)) s.clear()
   },

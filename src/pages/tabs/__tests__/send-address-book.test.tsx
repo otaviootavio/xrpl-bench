@@ -20,7 +20,7 @@ const useRecommendedFee = vi.fn()
 const useTrustLines = vi.fn()
 const fetchQuery = vi.fn()
 const submitXrpPayment = vi.fn()
-const unlockWalletForSigning = vi.fn()
+const signingHandleFor = vi.fn()
 const invalidateQueries = vi.fn()
 const addAddressBookEntry = vi.fn()
 let network: 'mainnet' | 'testnet' = 'testnet'
@@ -39,7 +39,8 @@ vi.mock('@/components/ui/select', () => ({
 }))
 vi.mock('@tanstack/react-query', () => ({ useQueryClient: () => ({ invalidateQueries, fetchQuery }) }))
 vi.mock('@/lib/crypto/keystore', () => ({
-  unlockWalletForSigning: (...args: unknown[]) => unlockWalletForSigning(...args),
+  signingHandleFor: (...args: unknown[]) => signingHandleFor(...args),
+  unavailablePrompts: { pin: async () => null },
 }))
 vi.mock('@/lib/xrpl/writes', () => ({
   submitXrpPayment: (...args: unknown[]) => submitXrpPayment(...args),
@@ -62,6 +63,20 @@ import { SendTab } from '../SendTab'
 
 const EXCHANGE = 'rHb9CJAWyB4rj91VRWn96DkukG4bwdtyTh'
 const WALLET_ADDRESS = 'r4NagxniGTmPRr8yBRXRD6NNpZP7FfP4KR'
+
+/** A handle whose Signing Check passes at once. */
+const signed = vi.fn()
+const fakeHandle = () => ({
+  address: WALLET_ADDRESS,
+  open: async () => ({ sign: (tx: unknown) => (signed(tx), { tx_blob: '00', hash: 'AA' }), dispose: () => {} }),
+})
+/** A submit that, like the choke point, opens the Signer before reporting `outcome`. */
+const opening = (outcome: unknown) => async (_network: unknown, handle: { open(): Promise<{ sign(tx: unknown): unknown; dispose(): void }> }) => {
+  const signer = await handle.open()
+  signer.sign({})
+  signer.dispose()
+  return outcome
+}
 const NOW = 1_800_000_000_000
 
 function info() {
@@ -95,8 +110,9 @@ beforeEach(() => {
   useRecommendedFee.mockReturnValue({ data: '12', isError: false, refetch: vi.fn() })
   useTrustLines.mockReturnValue({ data: [] })
   fetchQuery.mockImplementation(async () => info())
-  unlockWalletForSigning.mockResolvedValue({ address: WALLET_ADDRESS })
-  submitXrpPayment.mockResolvedValue({ status: 'validated', resultCode: 'tesSUCCESS', hash: 'AB' })
+  signed.mockClear()
+  signingHandleFor.mockImplementation(async () => fakeHandle())
+  submitXrpPayment.mockImplementation(opening({ status: 'validated', resultCode: 'tesSUCCESS', hash: 'AB' }))
 })
 
 afterEach(() => {

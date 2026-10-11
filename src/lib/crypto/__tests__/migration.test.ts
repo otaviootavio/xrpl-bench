@@ -81,7 +81,9 @@ import {
   removeWallet,
   revealSeed,
   setWalletNode,
-  unlockWalletForSigning,
+  openSigner,
+  signingHandleFor,
+  unavailablePrompts,
   generateAndStoreWallet,
 } from '../keystore'
 import { HKDF_INFO } from '../auth'
@@ -106,6 +108,13 @@ async function legacyRecord(id: string, key: CryptoKey, wallet: Wallet) {
 const INPUT = { network: 'mainnet' as const, autoLockMinutes: 10 }
 
 let key: CryptoKey
+const ctx = () => ({ openKey: key, prompts: unavailablePrompts })
+/** The address of the Wallet a Standard open gives a Signer for. */
+async function openedAddress(id: string) {
+  const handle = await signingHandleFor(id, ctx())
+  ;(await handle.open()).dispose()
+  return handle.address
+}
 beforeEach(async () => {
   if (!globalThis.crypto?.subtle) Object.defineProperty(globalThis, 'crypto', { value: webcrypto, configurable: true })
   h.state.stores = { wallets: new Map(), vault: new Map(), session: new Map() }
@@ -184,8 +193,8 @@ describe('legacy vault migration', () => {
 
     expect(h.state.stores.vault.has('lock:legacy')).toBe(false)
     for (const r of before) expect(h.state.stores.wallets.get(r.id)).toEqual(r)
-    expect((await unlockWalletForSigning('w1', key)).address).toBe(a.address)
-    expect((await unlockWalletForSigning('w2', key)).address).toBe(b.address)
+    expect(await openedAddress('w1')).toBe(a.address)
+    expect(await openedAddress('w2')).toBe(b.address)
   })
 
   it('does not bump the schema version and holds no Seed in anything it writes', async () => {
@@ -227,7 +236,7 @@ describe('first decrypt resolves the algorithm', () => {
     const [r] = await seedLegacy(w)
     await migrateLegacyVault(INPUT)
     expect(h.state.stores.wallets.get('w1').algorithm).toBe('unresolved')
-    expect((await unlockWalletForSigning('w1', key)).address).toBe(w.address)
+    expect(await openedAddress('w1')).toBe(w.address)
     const after = h.state.stores.wallets.get('w1')
     expect(after.algorithm).toBe(algorithm)
     expect(after.encryptedSeed).toEqual(r.encryptedSeed)
@@ -237,7 +246,7 @@ describe('first decrypt resolves the algorithm', () => {
     const [r] = await seedLegacy(Wallet.generate())
     h.state.stores.wallets.set('w1', { ...r, address: Wallet.generate().address })
     await migrateLegacyVault(INPUT)
-    await expect(unlockWalletForSigning('w1', key)).rejects.toThrow(/does not match/)
+    await expect(openSigner('w1', ctx())).rejects.toThrow(/does not match/)
     expect(h.state.stores.wallets.get('w1').algorithm).toBe('unresolved')
   })
 })
@@ -257,7 +266,7 @@ describe('Wallets as views over a Seed record', () => {
     const metas = await listWallets()
     expect(metas.map((m) => [m.id, m.network])).toEqual([['w1', 'mainnet'], [added.id, 'testnet']])
     // The new view unlocks the same Seed.
-    expect(await revealSeed(added.id, key)).toBe(w.seed)
+    expect(await revealSeed(added.id, ctx())).toEqual({ status: 'ok', value: w.seed })
   })
 
   it('rejects a network the Seed already has a view on', async () => {
@@ -356,7 +365,7 @@ describe('review follow-ups', () => {
     await seedLegacy(w)
     await migrateLegacyVault(INPUT)
     h.state.failNextPutOn = 'wallets'
-    expect(await revealSeed('w1', key)).toBe(w.seed)
+    expect(await revealSeed('w1', ctx())).toEqual({ status: 'ok', value: w.seed })
     expect(h.state.stores.wallets.get('w1').algorithm).toBe('unresolved')
   })
 })

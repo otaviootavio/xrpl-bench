@@ -5,6 +5,18 @@ import { bufToB64, b64ToBuf } from './encoding'
 // same passkey always derives the same key material across unlocks.
 export const PRF_SALT = new TextEncoder().encode('xrpl-wallet:vault-unlock:v1')
 
+/** True for a ceremony the user dismissed or that timed out. Never a wrong
+ * credential, so it never counts toward the PIN lockout (AD-25). */
+export function isCancelled(err: unknown): boolean {
+  const name = (err as { name?: unknown } | null)?.name
+  return name === 'NotAllowedError' || name === 'AbortError'
+}
+
+/** True when the authenticator ran but gave no PRF output. */
+export function isPrfUnsupported(err: unknown): boolean {
+  return (err as { name?: unknown } | null)?.name === 'PrfUnsupportedError'
+}
+
 export function isWebAuthnSupported(): boolean {
   return typeof window !== 'undefined' && !!window.PublicKeyCredential
 }
@@ -50,7 +62,7 @@ export async function registerPasskey(userIdLabel: string): Promise<{ credential
  * the user cancels/fails verification — the caller (auth.ts) is responsible
  * for the retry/backoff policy, never for silently bypassing this.
  */
-export async function assertPasskeyAndDeriveBits(credentialIdB64: string): Promise<ArrayBuffer> {
+export async function assertPasskeyAndDeriveBits(credentialIdB64: string, salt: BufferSource = PRF_SALT): Promise<ArrayBuffer> {
   const challenge = crypto.getRandomValues(new Uint8Array(32))
   const credentialId = b64ToBuf(credentialIdB64)
 
@@ -59,17 +71,20 @@ export async function assertPasskeyAndDeriveBits(credentialIdB64: string): Promi
       challenge,
       allowCredentials: [{ id: credentialId, type: 'public-key' }],
       userVerification: 'required',
-      extensions: { prf: { eval: { first: PRF_SALT } } } as AuthenticationExtensionsClientInputs,
+      extensions: { prf: { eval: { first: salt } } } as AuthenticationExtensionsClientInputs,
       timeout: 60_000,
     },
   })) as PublicKeyCredential | null
 
-  if (!assertion) throw new Error('Unlock was cancelled.')
+  if (!assertion) throw Object.assign(new Error('Unlock was cancelled.'), { name: 'NotAllowedError' })
 
   const extResults = assertion.getClientExtensionResults() as { prf?: { results?: { first?: ArrayBuffer } } }
   const bits = extResults.prf?.results?.first
   if (!bits) {
-    throw new Error('This device/browser does not support the PRF extension needed to unlock with a passkey. Use your PIN instead.')
+    throw Object.assign(
+      new Error('This device/browser does not support the PRF extension needed to unlock with a passkey. Use your PIN instead.'),
+      { name: 'PrfUnsupportedError' },
+    )
   }
   return bits
 }

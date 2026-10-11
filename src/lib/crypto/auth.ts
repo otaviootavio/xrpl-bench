@@ -1,27 +1,19 @@
 import { getVaultMeta, putVaultMeta, wipeVaultDatabase, putUnlockedSession, getUnlockedSession, clearUnlockedSession } from './db'
 import { deriveAesKeyFromBits } from './derive'
 import { assertPasskeyAndDeriveBits, isWebAuthnSupported, registerPasskey } from './webauthn'
-import { derivePinKeyBits, generateSalt } from './pin'
+import { derivePinKeyBits, generateSalt, getLockoutState, recordFailure, resetFailures } from './pin'
 import { aesEncrypt, aesDecrypt } from './aes'
 import { bufToB64, b64ToBuf } from './encoding'
 
 export const HKDF_INFO = 'xrpl-wallet:unlock-method-key:v1'
-const MAX_ATTEMPTS_BEFORE_HARD_LOCK = 8
-const BACKOFF_STARTS_AT_ATTEMPT = 3
 const DEFAULT_AUTO_LOCK_MINUTES = 5
 
-export type UnlockMethod = 'passkey' | 'pin'
+// The shared PIN counter lives in pin.ts (AD-25); Unlock.tsx and callers keep
+// importing it from here.
+export { getLockoutState }
+export type { UnlockLockoutState } from './pin'
 
-export interface UnlockLockoutState {
-  locked: boolean
-  hardLocked: boolean // per docs/decisions.md: after 8 fails, require re-import via seed
-  backoffMs: number
-  remainingMs: number
-  /** Absolute epoch-ms the backoff expires at (0 if not backed off). Exposed
-   * so the UI can derive a countdown without calling Date.now() during
-   * render, which makes the value unstable across re-renders. */
-  lockedUntil: number
-}
+export type UnlockMethod = 'passkey' | 'pin'
 
 async function generateMasterKey(): Promise<CryptoKey> {
   return crypto.subtle.generateKey({ name: 'AES-GCM', length: 256 }, true, ['encrypt', 'decrypt'])
@@ -110,30 +102,6 @@ export async function hasPasskeyRegistered(): Promise<boolean> {
   return !!meta.passkeyCredentialIdB64 && !!meta.wrappedMasterKeyForPasskey
 }
 
-export async function getLockoutState(): Promise<UnlockLockoutState> {
-  const meta = await getVaultMeta()
-  const now = Date.now()
-  const hardLocked = meta.failedAttempts >= MAX_ATTEMPTS_BEFORE_HARD_LOCK
-  const backoffMs =
-    meta.failedAttempts >= BACKOFF_STARTS_AT_ATTEMPT
-      ? Math.min(2 ** (meta.failedAttempts - BACKOFF_STARTS_AT_ATTEMPT) * 1000, 60_000)
-      : 0
-  const remainingMs = meta.lockedUntil ? Math.max(0, meta.lockedUntil - now) : 0
-  return { locked: remainingMs > 0, hardLocked, backoffMs, remainingMs, lockedUntil: meta.lockedUntil ?? 0 }
-}
-
-async function recordFailure(): Promise<void> {
-  const meta = await getVaultMeta()
-  const failedAttempts = meta.failedAttempts + 1
-  const backoffMs = failedAttempts >= BACKOFF_STARTS_AT_ATTEMPT ? Math.min(2 ** (failedAttempts - BACKOFF_STARTS_AT_ATTEMPT) * 1000, 60_000) : 0
-  await putVaultMeta({ ...meta, failedAttempts, lockedUntil: backoffMs > 0 ? Date.now() + backoffMs : undefined })
-}
-
-async function recordSuccess(): Promise<void> {
-  const meta = await getVaultMeta()
-  await putVaultMeta({ ...meta, failedAttempts: 0, lockedUntil: undefined })
-}
-
 /**
  * Unlocks the vault via the requested method, enforcing the backoff/hard-
  * lock policy from docs/decisions.md. Derives the method-specific key, then
@@ -200,7 +168,7 @@ export async function unlockVault(method: UnlockMethod, pin?: string, autoLockMi
     throw new Error(method === 'passkey' ? 'Passkey verification failed.' : 'Incorrect PIN.')
   }
 
-  await recordSuccess()
+  await resetFailures()
   await putUnlockedSession(masterKey, Date.now() + autoLockMinutes * 60_000)
   return masterKey
 }

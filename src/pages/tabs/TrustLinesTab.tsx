@@ -13,7 +13,7 @@ import { useTrustLines } from '@/hooks/useTrustLines'
 import { useServerReserves } from '@/hooks/useServerReserves'
 import { useSpendableBalance } from '@/hooks/useSpendableBalance'
 import { submitTrustSet } from '@/lib/xrpl/writes'
-import { unlockWalletForSigning } from '@/lib/crypto/keystore'
+import { signingHandleFor, unavailablePrompts } from '@/lib/crypto/keystore'
 import { formatXrp, displayCurrencyCode, coversOwnerReserve } from '@/lib/xrpl/money'
 import { describeResultCode } from '@/lib/xrpl/result-codes'
 import { invalidateAccountScoped } from '@/lib/xrpl/query-keys'
@@ -44,8 +44,8 @@ export function TrustLinesTab() {
     if (!wallet || !vaultKey) return
     setBusy(true)
     try {
-      const signingWallet = await unlockWalletForSigning(wallet.id, vaultKey)
-      const result = await submitTrustSet(network, signingWallet, { currency: currencyArg, issuer: issuerArg, limit: limitArg }, node)
+      const signing = await signingHandleFor(wallet.id, { openKey: vaultKey, prompts: unavailablePrompts })
+      const result = await submitTrustSet(network, signing, { currency: currencyArg, issuer: issuerArg, limit: limitArg }, node)
       if (result.status === 'validated') {
         toast.success('Trust line updated.')
         setOpen(false)

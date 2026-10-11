@@ -17,8 +17,8 @@ import { useSpendableBalance } from '@/hooks/useSpendableBalance'
 import { useRecommendedFee } from '@/hooks/useRecommendedFee'
 import { useTrustLines } from '@/hooks/useTrustLines'
 import { useDestinationCheck } from '@/hooks/useDestinationCheck'
-import { submitXrpPayment, submitIssuedPayment, type SubmitOutcome } from '@/lib/xrpl/writes'
-import { unlockWalletForSigning } from '@/lib/crypto/keystore'
+import { submitXrpPayment, submitIssuedPayment, type SigningHandle, type SubmitOutcome } from '@/lib/xrpl/writes'
+import { signingHandleFor, unavailablePrompts } from '@/lib/crypto/keystore'
 import { formatXrp, xrpToDropsString, displayCurrencyCode, MAX_FEE_DROPS } from '@/lib/xrpl/money'
 import { checkFunds, heldTokenLines, selectedTokenLine, spendableReadState, tokenAssetKey } from '@/lib/xrpl/funds-check'
 import { readStateOf, type ReadState } from '@/lib/read-state'
@@ -45,6 +45,15 @@ type PreflightReason = 'failed' | 'tag-required' | 'guard-closed' | 'not-activat
 function sameFeeFact(a: ReadState<string>, b: ReadState<string>): boolean {
   if (a.status !== b.status) return false
   return a.status !== 'ok' || (b.status === 'ok' && a.value === b.value)
+}
+
+/** Thrown from the post-check destination re-check: nothing was signed. */
+class PreflightAbort extends Error {
+  readonly reason: PreflightReason
+  constructor(reason: PreflightReason) {
+    super('preflight-abort')
+    this.reason = reason
+  }
 }
 
 export function SendTab() {
@@ -314,10 +323,10 @@ export function SendTab() {
     setOutcome(null)
     setPreflightReport(null)
     try {
-      const signingWallet = await unlockWalletForSigning(wallet.id, vaultKey)
+      const base = await signingHandleFor(wallet.id, { openKey: vaultKey, prompts: unavailablePrompts })
 
       /**
-       * Re-check the destination AFTER the unlock and immediately before
+       * Re-check the destination AFTER the Signing Check and immediately before
        * submitting. The unlock can take seconds (passphrase typing, passkey
        * prompt, key derivation), and the answer the operator was shown can age
        * out inside that gap.
@@ -330,52 +339,63 @@ export function SendTab() {
        * permission that authorises this payment is at most
        * `DESTINATION_CHECK_FRESHNESS_MS` old at the moment of submission.
        */
-      let latest: DestinationInfo
-      try {
-        latest = await fetchDestinationInfoOnce(queryClient, network, destination, asset, node)
-      } catch {
-        // Inline, not the Annunciator: this is a failed READ of data with a
-        // place on screen (AD-8). Nothing was signed and no fee was spent.
-        report('failed')
-        setConfirmingFor(null)
-        return
+      const recheckDestination = async () => {
+        let latest: DestinationInfo
+        try {
+          latest = await fetchDestinationInfoOnce(queryClient, network, destination, asset, node)
+        } catch {
+          // Inline, not the Annunciator: this is a failed READ of data with a
+          // place on screen (AD-8). Nothing was signed and no fee was spent.
+          throw new PreflightAbort('failed')
+        }
+        if (latest.requireDestTag && tagValue === undefined) {
+          throw new PreflightAbort('tag-required')
+        }
+        /**
+         * A destination fact the operator was SHOWN may not change under them
+         * between the displayed check and the submission.
+         *
+         * Compared against the displayed answer, never against a constant. Both
+         * facts are legitimately false on a form that sends: an unactivated
+         * address is activated BY a payment, and neither fact joins `canSend` —
+         * they warn without blocking, and that stays true. What is refused is
+         * only the contradiction: shown activated and now not, shown a trust
+         * line and now none. `=== true` states the "was it shown?" half
+         * explicitly, so a token send (where `hasTrustLine` is undefined for XRP)
+         * and an address that was already unactivated on screen both pass.
+         *
+         * Both sides test `=== false` rather than falsiness, so neither depends
+         * on the other running first. `latest.hasTrustLine` is legitimately
+         * `undefined` — for XRP, and for an account that does not exist
+         * (query-reads.ts skips the trust-line read then) — and undefined is not
+         * a contradiction of anything.
+         *
+         * `destInfo` here is the render closure's — the answer that was on
+         * screen when this handler was entered — which is the whole point.
+         */
+        if (destInfo?.exists === true && latest.exists === false) {
+          throw new PreflightAbort('not-activated')
+        }
+        if (destInfo?.hasTrustLine === true && latest.hasTrustLine === false) {
+          throw new PreflightAbort('no-trust-line')
+        }
       }
-      if (latest.requireDestTag && tagValue === undefined) {
-        report('tag-required')
-        setConfirmingFor(null)
-        return
-      }
-      /**
-       * A destination fact the operator was SHOWN may not change under them
-       * between the displayed check and the submission.
-       *
-       * Compared against the displayed answer, never against a constant. Both
-       * facts are legitimately false on a form that sends: an unactivated
-       * address is activated BY a payment, and neither fact joins `canSend` —
-       * they warn without blocking, and that stays true. What is refused is
-       * only the contradiction: shown activated and now not, shown a trust
-       * line and now none. `=== true` states the "was it shown?" half
-       * explicitly, so a token send (where `hasTrustLine` is undefined for XRP)
-       * and an address that was already unactivated on screen both pass.
-       *
-       * Both sides test `=== false` rather than falsiness, so neither depends
-       * on the other running first. `latest.hasTrustLine` is legitimately
-       * `undefined` — for XRP, and for an account that does not exist
-       * (query-reads.ts skips the trust-line read then) — and undefined is not
-       * a contradiction of anything.
-       *
-       * `destInfo` here is the render closure's — the answer that was on
-       * screen when this handler was entered — which is the whole point.
-       */
-      if (destInfo?.exists === true && latest.exists === false) {
-        report('not-activated')
-        setConfirmingFor(null)
-        return
-      }
-      if (destInfo?.hasTrustLine === true && latest.hasTrustLine === false) {
-        report('no-trust-line')
-        setConfirmingFor(null)
-        return
+      // The check (a prompt that can take as long as the person does) runs
+      // inside `open`, which the choke point calls after autofill; the
+      // destination re-check follows it and before anything is signed. A
+      // refusal disposes the Signer and aborts with a sentinel.
+      const signing: SigningHandle = {
+        address: base.address,
+        async open() {
+          const signer = await base.open()
+          try {
+            await recheckDestination()
+          } catch (err) {
+            signer.dispose()
+            throw err
+          }
+          return signer
+        },
       }
 
       /**
@@ -393,7 +413,7 @@ export function SendTab() {
       const feeDrops = pinnedFee?.status === 'ok' ? pinnedFee.value : undefined
       let result: SubmitOutcome
       if (asset === 'XRP') {
-        result = await submitXrpPayment(network, signingWallet, {
+        result = await submitXrpPayment(network, signing, {
           destination,
           amountDrops: xrpToDropsString(amount),
           destinationTag: tagValue,
@@ -401,7 +421,7 @@ export function SendTab() {
         }, node)
       } else {
         const [currency, issuer] = asset.split('|')
-        result = await submitIssuedPayment(network, signingWallet, {
+        result = await submitIssuedPayment(network, signing, {
           destination,
           currency,
           issuer,
@@ -439,6 +459,11 @@ export function SendTab() {
         result.status === 'expired' ? queryClient.invalidateQueries({ queryKey: queryKeys.recommendedFee(network) }) : null,
       ])
     } catch (err: any) {
+      if (err instanceof PreflightAbort) {
+        report(err.reason)
+        setConfirmingFor(null)
+        return
+      }
       toast.error(err?.message ?? 'Send failed.')
       // The intent to confirm goes too, deliberately rather than as a side
       // effect of whether the probe happened to bump `dataUpdatedAt`. A throw

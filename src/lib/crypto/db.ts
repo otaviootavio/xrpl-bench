@@ -11,6 +11,21 @@ export type SeedAlgorithm = 'ed25519' | 'secp256k1' | 'unresolved'
 export type OpenCheck = 'pin' | 'passkey' | 'either'
 export type SigningCheck = 'standard' | 'passkey' | 'pin'
 
+/** How a Signing Check's key is wrapped (AD-23). Holds only public derivation
+ * inputs and the wrapped Signing Key: nothing here opens the Seed without the
+ * PIN or the passkey. The Signing Key and the credential-derived key are never
+ * persisted. `hkdfInfo` and `prfSaltB64` are generated at creation and stored,
+ * never recomputed from a constant (AD-21). */
+export interface SigningSeal {
+  kind: 'pin' | 'passkey'
+  /** The random Signing Key (raw, base64) encrypted under the credential key. */
+  wrappedSigningKey: { ivB64: string; ciphertextB64: string }
+  hkdfInfo: string
+  /** Passkey only: the credential asserted and the PRF salt for `(seed, 'sign')`. */
+  credentialIdB64?: string
+  prfSaltB64?: string
+}
+
 /** A Wallet is a view `(walletId, network, node)` over one Seed record
  * (AD-18). `node` is a custom Node's `wss://` URL that passed the network-id
  * check (AD-20); absent, the network's built-in Nodes are used. */
@@ -28,8 +43,14 @@ export interface StoredWallet {
   id: string
   label: string
   address: string
-  encryptedSeed: { ivB64: string; ciphertextB64: string }
+  /** Absent once the Seed carries a Signing Check: its ciphertext exists in
+   * exactly one form (AD-23), and an older build then finds none and fails
+   * closed. */
+  encryptedSeed?: { ivB64: string; ciphertextB64: string }
   createdAt: number
+  /** The Seed under the Signing Key. Present only with `signing`. */
+  sealedSeed?: { ivB64: string; ciphertextB64: string }
+  signing?: SigningSeal
   seedMethod?: SeedMethod
   algorithm?: SeedAlgorithm
   lockId?: string
@@ -164,6 +185,23 @@ export async function legacyOpenCheck(): Promise<OpenCheck> {
  * credential id and its wrapper are both present. */
 function openCheckOf(meta: VaultMeta | undefined): OpenCheck {
   return meta?.passkeyCredentialIdB64 && meta.wrappedMasterKeyForPasskey ? 'either' : 'pin'
+}
+
+/**
+ * Reads the vault meta, applies `change`, and writes the result back in ONE
+ * transaction — the only way the PIN failure count moves, so two parallel wrong
+ * guesses each add one rather than sharing a count (AD-25).
+ */
+export async function mutateVaultMeta(change: (current: VaultMeta) => VaultMeta): Promise<VaultMeta> {
+  const db = await getDb()
+  const tx = db.transaction('vault', 'readwrite')
+  const done = tx.done
+  done.catch(() => {})
+  const existing = (await tx.store.get('vault')) as VaultMeta | undefined
+  const next = change(existing ?? { key: 'vault', failedAttempts: 0 })
+  await tx.store.put(next)
+  await done
+  return next
 }
 
 /**

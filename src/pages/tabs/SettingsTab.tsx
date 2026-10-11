@@ -19,7 +19,7 @@ import { AddressLink } from '@/components/wallet/AddressLink'
 import { useAppStore, useActiveNetwork } from '@/store/app-store'
 import { counterpartyKey, tagNotRecorded } from '@/store/address-book'
 import { NETWORKS, NETWORK_IDS, type NetworkId } from '@/lib/xrpl/networks'
-import { addNetworkView, addressFromSeed, generateAndStoreWallet, importAndStoreWallet, listWallets, parseSeedInput, removeWallet, revealSeed } from '@/lib/crypto/keystore'
+import { addNetworkView, addressFromSeed, generateAndStoreWallet, importAndStoreWallet, listWallets, parseSeedInput, removeWallet, revealSeed, unavailablePrompts, describeCheckFailure } from '@/lib/crypto/keystore'
 import { RESET_INCOMPLETE_MESSAGE, tearDownAllLocalState, clearCachedAccountData } from '@/lib/teardown'
 import { checkBeforeImport, IMPORT_WARNING_COPY, INVALID_SEED_MESSAGE, type ImportWarning } from '@/lib/seed-import'
 import { toast } from '@/lib/notify'
@@ -167,7 +167,12 @@ export function SettingsTab() {
   async function handleConfirmReveal(id: string) {
     if (!vaultKey) return
     try {
-      revealedSeedRef.current = await revealSeed(id, vaultKey)
+      const result = await revealSeed(id, { openKey: vaultKey, prompts: unavailablePrompts })
+      if (result.status !== 'ok') {
+        toast.error(result.status === 'cancelled' ? 'Cancelled. The seed was not revealed.' : describeCheckFailure(result))
+        return
+      }
+      revealedSeedRef.current = result.value
       setSeedVisibleFor(id)
       setConfirmRevealFor(null)
     } catch (err: any) {

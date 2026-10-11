@@ -1,4 +1,4 @@
-import { Wallet, type Payment, type SubmittableTransaction, type TrustSet, TrustSetFlags } from 'xrpl'
+import { type Payment, type SubmittableTransaction, type TrustSet, TrustSetFlags } from 'xrpl'
 import { getXrplClient, holdXrplClient } from './client'
 import type { NetworkId } from './networks'
 import { MAX_FEE_DROPS, feeWithinCap, formatXrp, isCanonicalPositiveDrops } from './money'
@@ -70,6 +70,32 @@ export class FeeAboveCapError extends Error {
   }
 }
 
+/**
+ * A one-use signing capability (AD-22). Structural, so `xrpl` never imports
+ * `crypto`: `lib/crypto/keystore` builds one that satisfies it. It holds the
+ * Seed only in a closure, valid for one `sign`, and `dispose` clears it whether
+ * or not `sign` ran.
+ */
+export interface Signer {
+  sign(tx: SubmittableTransaction): { tx_blob: string; hash: string }
+  dispose(): void
+}
+
+/**
+ * What the choke point is given instead of a `Wallet`. `open` runs the
+ * Wallet's Signing Check (a PIN or passkey prompt, possibly long) and returns a
+ * `Signer`; the choke point calls it after autofill and before the ledger
+ * window is fixed, so a slow prompt cannot eat the window (AD-22). It rejects
+ * when the check fails or is cancelled, and nothing is then signed.
+ */
+export interface SigningHandle {
+  address: string
+  open(): Promise<Signer>
+}
+
+/** rippled's own default distance to `LastLedgerSequence` (xrpl.js autofill). */
+const LEDGER_WINDOW = 20
+
 export type SubmitOutcome =
   | { status: 'validated'; hash: string; resultCode: string; ledgerIndex?: number }
   /** In a validated ledger, but the transaction did NOT do what was asked and
@@ -95,7 +121,7 @@ function classify(resultCode: string): 'validated' | 'claimed' | 'failed' {
  */
 export async function submitAndClassify(
   network: NetworkId,
-  wallet: Wallet,
+  signing: SigningHandle,
   tx: SubmittableTransaction,
   node?: string,
 ): Promise<SubmitOutcome> {
@@ -123,8 +149,26 @@ export async function submitAndClassify(
     const prepared = await client.autofill(tx)
     // Thrown inside the `try`, so the in-flight depth is still lowered.
     if (!feeWithinCap(prepared.Fee)) throw new FeeAboveCapError(prepared.Fee)
-    const signed = wallet.sign(prepared)
-    const lastLedgerSequence = prepared.LastLedgerSequence
+    // The Signing Check runs HERE, after the fee was shown and capped and
+    // before the window is fixed. It may take as long as the user does.
+    const signer = await signing.open()
+    let signed: { tx_blob: string; hash: string }
+    let lastLedgerSequence: number | undefined
+    try {
+      // The window starts at the validated ledger as it is NOW, not as it was
+      // at autofill. A caller-supplied `LastLedgerSequence` is kept.
+      let toSign: SubmittableTransaction = prepared
+      if (tx.LastLedgerSequence === undefined) {
+        const res = await client.request({ command: 'ledger', ledger_index: 'validated' })
+        const validated = res.result.ledger_index
+        if (typeof validated !== 'number') throw new Error('The current ledger could not be read, so nothing was signed.')
+        toSign = { ...prepared, LastLedgerSequence: validated + LEDGER_WINDOW }
+      }
+      lastLedgerSequence = toSign.LastLedgerSequence
+      signed = signer.sign(toSign)
+    } finally {
+      signer.dispose()
+    }
     try {
       const res = await client.submitAndWait(signed.tx_blob)
       const meta = res.result.meta
@@ -180,7 +224,7 @@ async function isExpiry(err: unknown, network: NetworkId, lastLedgerSequence?: n
 
 export async function submitXrpPayment(
   network: NetworkId,
-  wallet: Wallet,
+  signing: SigningHandle,
   params: {
     destination: string
     amountDrops: string
@@ -194,18 +238,18 @@ export async function submitXrpPayment(
 ): Promise<SubmitOutcome> {
   const tx: Payment = {
     TransactionType: 'Payment',
-    Account: wallet.address,
+    Account: signing.address,
     Destination: params.destination,
     Amount: params.amountDrops,
     ...(params.destinationTag !== undefined ? { DestinationTag: params.destinationTag } : {}),
     ...(params.feeDrops !== undefined ? { Fee: params.feeDrops } : {}),
   }
-  return submitAndClassify(network, wallet, tx, node)
+  return submitAndClassify(network, signing, tx, node)
 }
 
 export async function submitIssuedPayment(
   network: NetworkId,
-  wallet: Wallet,
+  signing: SigningHandle,
   params: {
     destination: string
     currency: string
@@ -221,29 +265,29 @@ export async function submitIssuedPayment(
 ): Promise<SubmitOutcome> {
   const tx: Payment = {
     TransactionType: 'Payment',
-    Account: wallet.address,
+    Account: signing.address,
     Destination: params.destination,
     Amount: { currency: params.currency, issuer: params.issuer, value: params.value },
     ...(params.destinationTag !== undefined ? { DestinationTag: params.destinationTag } : {}),
     ...(params.feeDrops !== undefined ? { Fee: params.feeDrops } : {}),
   }
-  return submitAndClassify(network, wallet, tx, node)
+  return submitAndClassify(network, signing, tx, node)
 }
 
 export async function submitTrustSet(
   network: NetworkId,
-  wallet: Wallet,
+  signing: SigningHandle,
   params: { currency: string; issuer: string; limit: string }, // limit "0" removes the line
   node?: string,
 ): Promise<SubmitOutcome> {
   const tx: TrustSet = {
     TransactionType: 'TrustSet',
-    Account: wallet.address,
+    Account: signing.address,
     LimitAmount: { currency: params.currency, issuer: params.issuer, value: params.limit },
     // Holders should not let balances ripple through their trust lines —
     // rippling is for issuers. Without NoRipple a holder's balance can shift
     // as a side effect of unrelated payments between other parties.
     Flags: TrustSetFlags.tfSetNoRipple,
   }
-  return submitAndClassify(network, wallet, tx, node)
+  return submitAndClassify(network, signing, tx, node)
 }

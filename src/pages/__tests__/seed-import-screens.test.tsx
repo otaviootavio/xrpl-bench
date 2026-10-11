@@ -26,13 +26,14 @@ vi.mock('@/lib/notify', () => ({
 }))
 
 const importAndStoreWallet = vi.fn()
+const generateAndStoreWallet = vi.fn()
 const addressFromSeed = vi.fn()
 vi.mock('@/lib/crypto/keystore', () => ({
   // The stub keeps the real contract: trim, then accept only a Seed.
   parseSeedInput: (raw: string) => (raw.trim() === SEED ? SEED : null),
   addressFromSeed: (seed: string) => addressFromSeed(seed),
   importAndStoreWallet: (...args: unknown[]) => importAndStoreWallet(...args),
-  generateAndStoreWallet: vi.fn(),
+  generateAndStoreWallet: (...args: unknown[]) => generateAndStoreWallet(...args),
   listWallets: async () => [{ id: 'w-new', label: 'Wallet', address: ADDRESS, createdAt: 0 }],
   removeWallet: vi.fn(),
   revealSeed: vi.fn(),
@@ -59,7 +60,6 @@ vi.mock('@/hooks/useAppUpdate', () => ({
     declineCurrent: vi.fn(),
   }),
 }))
-vi.mock('@/components/wallet/NetworkSelector', () => ({ NetworkSelector: () => null }))
 vi.mock('@/components/wallet/AddressLink', () => ({ AddressLink: ({ address }: { address: string }) => <span>{address}</span> }))
 vi.mock('@/lib/teardown', () => ({ tearDownAllLocalState: vi.fn(), clearCachedAccountData: vi.fn() }))
 
@@ -80,6 +80,8 @@ vi.mock('@/store/app-store', () => ({
       lock: vi.fn(),
       unlock: vi.fn(),
     }),
+  useActiveNetwork: () => 'testnet',
+  useActiveNode: () => undefined,
 }))
 
 import { Onboarding } from '../Onboarding'
@@ -100,6 +102,7 @@ beforeEach(() => {
   toastSuccess.mockReset()
   importAndStoreWallet.mockReset().mockResolvedValue({ id: 'w-new', label: 'Wallet', address: ADDRESS, createdAt: 0 })
   addressFromSeed.mockReset().mockReturnValue(ADDRESS)
+  generateAndStoreWallet.mockReset().mockResolvedValue({ meta: { id: 'w-new' }, seed: SEED })
   fetchQuery.mockReset()
   setActiveWalletId.mockReset()
 })
@@ -287,5 +290,70 @@ describe('Onboarding: the Seed survives the move from the import step to the PIN
     expect(addressFromSeed).toHaveBeenCalledWith(SEED)
     expect(addressFromSeed).not.toHaveBeenCalledWith('')
     expect(toastSuccess).toHaveBeenCalledWith('Wallet imported.')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// The Network choice reaches the pre-check and the write, on both screens.
+// ---------------------------------------------------------------------------
+
+const radio = (name: RegExp) => fireEvent.click(screen.getByRole('radio', { name }))
+const NETWORK_LABEL = { mainnet: /^Mainnet/, devnet: /^Devnet/ } as const
+
+describe.each(['mainnet', 'devnet'] as const)('choosing %s', (network) => {
+  it('Onboarding import: the pre-check and the write use it', async () => {
+    ledger.masterKeyEnabled()
+    render(<Onboarding />)
+    radio(NETWORK_LABEL[network])
+    await click('Import an existing wallet')
+    ;(document.getElementById('seed') as HTMLInputElement).value = SEED
+    await click('Continue')
+    fireEvent.change(document.getElementById('pin')!, { target: { value: '123456' } })
+    fireEvent.change(document.getElementById('pin-confirm')!, { target: { value: '123456' } })
+    await click('Continue')
+    expect(fetchQuery.mock.calls[0][0].queryKey).toEqual(['accountState', network, ADDRESS])
+    expect(importAndStoreWallet.mock.calls[0][3]).toBe(network)
+  })
+
+  it('Onboarding generate: the new Wallet is created on it', async () => {
+    render(<Onboarding />)
+    radio(NETWORK_LABEL[network])
+    await click('Create a new wallet')
+    fireEvent.change(document.getElementById('pin')!, { target: { value: '123456' } })
+    fireEvent.change(document.getElementById('pin-confirm')!, { target: { value: '123456' } })
+    await click('Continue')
+    expect(generateAndStoreWallet.mock.calls[0][2]).toBe(network)
+  })
+
+  it('Settings import: the pre-check and the write use it, and "Import anyway" keeps it', async () => {
+    ledger.masterKeyDisabled()
+    render(<SettingsTab />)
+    await click('Add wallet')
+    radio(NETWORK_LABEL[network])
+    await click('Import')
+    ;(document.getElementById('wseed') as HTMLInputElement).value = SEED
+    await click('Add')
+    expect(fetchQuery.mock.calls[0][0].queryKey).toEqual(['accountState', network, ADDRESS])
+    await click('Import anyway')
+    expect(importAndStoreWallet.mock.calls[0][3]).toBe(network)
+  })
+
+  it('Settings generate: the new Wallet is created on it', async () => {
+    render(<SettingsTab />)
+    await click('Add wallet')
+    radio(NETWORK_LABEL[network])
+    await click('Add')
+    expect(generateAndStoreWallet.mock.calls[0][2]).toBe(network)
+  })
+})
+
+describe('Settings: the Network choice is reset for the next Add', () => {
+  it('returns to Testnet after an add completes', async () => {
+    render(<SettingsTab />)
+    await click('Add wallet')
+    radio(/^Mainnet/)
+    await click('Add')
+    await click('Add wallet')
+    expect((screen.getByRole('radio', { name: /^Testnet/ }) as HTMLInputElement).checked).toBe(true)
   })
 })

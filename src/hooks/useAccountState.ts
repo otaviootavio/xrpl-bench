@@ -6,10 +6,10 @@ import type { NetworkId } from '@/lib/xrpl/networks'
 // Every query key includes network + address — the single-source-of-truth
 // guardrail from docs/decisions.md: switching either can never leave stale
 // cross-wallet/cross-network data on screen, because the key itself changes.
-export function useAccountState(network: NetworkId, address: string | null) {
+export function useAccountState(network: NetworkId, address: string | null, node?: string) {
   return useQuery({
     queryKey: queryKeys.accountState(network, address),
-    queryFn: () => fetchAccountState(network, address as string),
+    queryFn: () => fetchAccountState(network, address as string, node),
     enabled: !!address,
     refetchInterval: 15_000,
   })

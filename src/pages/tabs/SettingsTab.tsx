@@ -1,7 +1,9 @@
 import { useCallback, useRef, useState } from 'react'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { NetworkSelector } from '@/components/wallet/NetworkSelector'
+import { NetworkChoice } from '@/components/wallet/NetworkChoice'
+import { WalletNodeSection } from '@/components/wallet/WalletNodeSection'
+import { DevnetNotice } from '@/components/wallet/DevnetNotice'
 import { StatusLegend } from '@/components/ui/lamp'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { ExternalLinkIcon } from 'lucide-react'
@@ -14,7 +16,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogT
 import { Separator } from '@/components/ui/separator'
 import { SeedReveal } from '@/components/wallet/SeedReveal'
 import { AddressLink } from '@/components/wallet/AddressLink'
-import { useAppStore } from '@/store/app-store'
+import { useAppStore, useActiveNetwork } from '@/store/app-store'
 import { counterpartyKey, tagNotRecorded } from '@/store/address-book'
 import { NETWORKS, NETWORK_IDS, type NetworkId } from '@/lib/xrpl/networks'
 import { addNetworkView, addressFromSeed, generateAndStoreWallet, importAndStoreWallet, listWallets, parseSeedInput, removeWallet, revealSeed } from '@/lib/crypto/keystore'
@@ -24,7 +26,11 @@ import { toast } from '@/lib/notify'
 import { useQueryClient } from '@tanstack/react-query'
 
 export function SettingsTab() {
-  const network = useAppStore((s) => s.network)
+  // Only the fallback for a record the vault migration has not reached
+  // (`listWallets`); every ledger read takes its network from its own Wallet.
+  const activeNetwork = useActiveNetwork()
+  // The network a Wallet added here will live on — fixed at creation (AD-19).
+  const [addNetwork, setAddNetwork] = useState<NetworkId>('testnet')
   const wallets = useAppStore((s) => s.wallets)
   const setWallets = useAppStore((s) => s.setWallets)
   const activeWalletId = useAppStore((s) => s.activeWalletId)
@@ -60,17 +66,20 @@ export function SettingsTab() {
   // the input inside it — closes when the warning opens, so the value has to
   // be held somewhere that outlives the input: a ref, never state.
   const pendingImportSeedRef = useRef<string | null>(null)
+  // The network the pre-check ran against: the store uses this one, never the
+  // current radio, so check and write cannot disagree.
+  const pendingImportNetworkRef = useRef<NetworkId>('testnet')
   const getRevealedSeed = useCallback(() => revealedSeedRef.current, [])
 
   async function refreshWallets() {
-    setWallets(await listWallets(network))
+    setWallets(await listWallets(activeNetwork))
   }
 
   /** The vault write for an import, and everything that follows a completed
    * add. Reached only after the pre-flight check: directly when it found
    * nothing to warn about, or from "Import anyway". */
-  async function storeImported(seed: string, key: CryptoKey) {
-    const meta = await importAndStoreWallet(label || 'Wallet', seed, key, network)
+  async function storeImported(seed: string, key: CryptoKey, net: NetworkId) {
+    const meta = await importAndStoreWallet(label || 'Wallet', seed, key, net)
     await refreshWallets()
     setActiveWalletId(meta.id)
     finishAdd()
@@ -80,6 +89,7 @@ export function SettingsTab() {
     pendingImportSeedRef.current = null
     toast.success('Wallet added.')
     setAddOpen(false)
+    setAddNetwork('testnet')
     setLabel('')
     if (seedInputRef.current) seedInputRef.current.value = ''
   }
@@ -89,7 +99,7 @@ export function SettingsTab() {
     if (addMode === 'generate') {
       setBusy(true)
       try {
-        const { meta } = await generateAndStoreWallet(label || 'Wallet', vaultKey, network)
+        const { meta } = await generateAndStoreWallet(label || 'Wallet', vaultKey, addNetwork)
         await refreshWallets()
         setActiveWalletId(meta.id)
         finishAdd()
@@ -111,16 +121,18 @@ export function SettingsTab() {
       toast.error(INVALID_SEED_MESSAGE)
       return
     }
+    const net = addNetwork
     setBusy(true)
     try {
-      const warning = await checkBeforeImport(queryClient, network, addressFromSeed(seed))
+      const warning = await checkBeforeImport(queryClient, net, addressFromSeed(seed))
       if (warning) {
         pendingImportSeedRef.current = seed
+        pendingImportNetworkRef.current = net
         setAddOpen(false)
         setImportWarning(warning)
         return
       }
-      await storeImported(seed, vaultKey)
+      await storeImported(seed, vaultKey, net)
     } catch (err: any) {
       toast.error(err?.message ?? 'Could not add wallet.')
     } finally {
@@ -134,7 +146,7 @@ export function SettingsTab() {
     if (!vaultKey || !seed || busy) return
     setBusy(true)
     try {
-      await storeImported(seed, vaultKey)
+      await storeImported(seed, vaultKey, pendingImportNetworkRef.current)
       setImportWarning(null)
     } catch (err: any) {
       toast.error(err?.message ?? 'Could not add wallet.')
@@ -149,6 +161,7 @@ export function SettingsTab() {
     pendingImportSeedRef.current = null
     setImportWarning(null)
     setLabel('')
+    setAddNetwork('testnet')
   }
 
   async function handleConfirmReveal(id: string) {
@@ -183,7 +196,7 @@ export function SettingsTab() {
     await removeWallet(id)
     await refreshWallets()
     if (activeWalletId === id) {
-      const remaining = await listWallets(network)
+      const remaining = await listWallets(activeNetwork)
       setActiveWalletId(remaining[0]?.id ?? null)
     }
     // AD-16: the removed wallet's balances/history leave the query cache. The
@@ -212,16 +225,6 @@ export function SettingsTab() {
   return (
     <div className="flex flex-col gap-4">
       <Card>
-        <CardHeader>
-          <CardTitle>Network</CardTitle>
-          <CardDescription>Mainnet uses real funds. Testnet is for trying the wallet safely.</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <NetworkSelector />
-        </CardContent>
-      </Card>
-
-      <Card>
         <CardHeader className="sm:flex-row sm:items-baseline sm:justify-between">
           <div>
             <CardTitle>Wallets</CardTitle>
@@ -229,7 +232,11 @@ export function SettingsTab() {
           </div>
           {/* Not closable while a check or a write is running: closing reads as
               "stop", and the write would still land behind it. */}
-          <Dialog open={addOpen} onOpenChange={(o) => !busy && setAddOpen(o)}>
+          <Dialog open={addOpen} onOpenChange={(o) => {
+              if (busy) return
+              setAddOpen(o)
+              if (!o) setAddNetwork('testnet')
+            }}>
             <DialogTrigger asChild>
               <Button>Add wallet</Button>
             </DialogTrigger>
@@ -245,6 +252,7 @@ export function SettingsTab() {
                 </div>
                 {/* Frozen with the dialog while a check or a write runs: switching
                     to Generate mid-import would show one path while the other lands. */}
+                <NetworkChoice value={addNetwork} onChange={setAddNetwork} disabled={busy} />
                 <div className="flex gap-2">
                   <Button variant={addMode === 'generate' ? 'default' : 'outline'} onClick={() => setAddMode('generate')} type="button" disabled={busy}>
                     Generate
@@ -279,7 +287,12 @@ export function SettingsTab() {
                   )}
                 </div>
                 <AddressLink address={w.address} />
-                <p className="mt-1 text-xs text-muted-foreground">Network: {NETWORKS[w.network].label}</p>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Network: {NETWORKS[w.network].label}
+                  {w.network === 'mainnet' && ' — real funds'}
+                </p>
+                {w.network === 'devnet' && <DevnetNotice network={w.network} />}
+                <WalletNodeSection wallet={w} />
               </div>
               <div className="flex flex-wrap gap-2">
                 {w.id !== activeWalletId && (

@@ -97,6 +97,7 @@ export async function submitAndClassify(
   network: NetworkId,
   wallet: Wallet,
   tx: SubmittableTransaction,
+  node?: string,
 ): Promise<SubmitOutcome> {
   // app-versioning-and-updates.md US-5: the single choke point every write
   // passes through, so the update flow always sees an accurate "is anything
@@ -113,7 +114,7 @@ export async function submitAndClassify(
     // Held, not merely fetched: `submitAndWait` polls on this one client until
     // the transaction settles, so a read replacing it after a dropped socket
     // must not close it under the wait (see `holdXrplClient`).
-    const held = await holdXrplClient(network)
+    const held = await holdXrplClient(network, node)
     release = held.release
     const client = held.client
     // A `Fee` already on `tx` (Send pins the figure it showed) is left alone
@@ -142,7 +143,7 @@ export async function submitAndClassify(
       // Detected structurally (comparing the validated ledger index against the
       // tx's own LastLedgerSequence) rather than by matching on error-message
       // text, which silently reclassifies whenever xrpl.js rewords it.
-      if (await isExpiry(err, network, lastLedgerSequence)) {
+      if (await isExpiry(err, network, lastLedgerSequence, node)) {
         return { status: 'expired', hash: signed.hash }
       }
       throw err
@@ -159,7 +160,7 @@ export async function submitAndClassify(
   }
 }
 
-async function isExpiry(err: unknown, network: NetworkId, lastLedgerSequence?: number): Promise<boolean> {
+async function isExpiry(err: unknown, network: NetworkId, lastLedgerSequence?: number, node?: string): Promise<boolean> {
   // Read structurally, not by `instanceof XrplError` (see `narrow.ts`): an
   // expiry missed here would be rethrown as a failure.
   const { name, message } = isRecord(err) ? err : {}
@@ -168,7 +169,7 @@ async function isExpiry(err: unknown, network: NetworkId, lastLedgerSequence?: n
   }
   if (lastLedgerSequence === undefined) return false
   try {
-    const client = await getXrplClient(network)
+    const client = await getXrplClient(network, node)
     const res = await client.request({ command: 'ledger', ledger_index: 'validated' })
     const validatedIndex = res.result.ledger_index
     return typeof validatedIndex === 'number' && validatedIndex > lastLedgerSequence
@@ -189,6 +190,7 @@ export async function submitXrpPayment(
      * subject to the choke point's cap. */
     feeDrops?: string
   },
+  node?: string,
 ): Promise<SubmitOutcome> {
   const tx: Payment = {
     TransactionType: 'Payment',
@@ -198,7 +200,7 @@ export async function submitXrpPayment(
     ...(params.destinationTag !== undefined ? { DestinationTag: params.destinationTag } : {}),
     ...(params.feeDrops !== undefined ? { Fee: params.feeDrops } : {}),
   }
-  return submitAndClassify(network, wallet, tx)
+  return submitAndClassify(network, wallet, tx, node)
 }
 
 export async function submitIssuedPayment(
@@ -215,6 +217,7 @@ export async function submitIssuedPayment(
      * subject to the choke point's cap. */
     feeDrops?: string
   },
+  node?: string,
 ): Promise<SubmitOutcome> {
   const tx: Payment = {
     TransactionType: 'Payment',
@@ -224,13 +227,14 @@ export async function submitIssuedPayment(
     ...(params.destinationTag !== undefined ? { DestinationTag: params.destinationTag } : {}),
     ...(params.feeDrops !== undefined ? { Fee: params.feeDrops } : {}),
   }
-  return submitAndClassify(network, wallet, tx)
+  return submitAndClassify(network, wallet, tx, node)
 }
 
 export async function submitTrustSet(
   network: NetworkId,
   wallet: Wallet,
   params: { currency: string; issuer: string; limit: string }, // limit "0" removes the line
+  node?: string,
 ): Promise<SubmitOutcome> {
   const tx: TrustSet = {
     TransactionType: 'TrustSet',
@@ -241,5 +245,5 @@ export async function submitTrustSet(
     // as a side effect of unrelated payments between other parties.
     Flags: TrustSetFlags.tfSetNoRipple,
   }
-  return submitAndClassify(network, wallet, tx)
+  return submitAndClassify(network, wallet, tx, node)
 }

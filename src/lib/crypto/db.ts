@@ -11,10 +11,13 @@ export type SeedAlgorithm = 'ed25519' | 'secp256k1' | 'unresolved'
 export type OpenCheck = 'pin' | 'passkey' | 'either'
 export type SigningCheck = 'standard' | 'passkey' | 'pin'
 
-/** A Wallet is a view `(walletId, network)` over one Seed record (AD-18). */
+/** A Wallet is a view `(walletId, network, node)` over one Seed record
+ * (AD-18). `node` is a custom Node's `wss://` URL that passed the network-id
+ * check (AD-20); absent, the network's built-in Nodes are used. */
 export interface WalletView {
   walletId: string
   network: NetworkId
+  node?: string
 }
 
 /** A Seed record. `id` is the Seed id and, for the first view, also its

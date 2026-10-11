@@ -46,9 +46,9 @@ export interface SpendableBalance {
 
 // viewing-balances.md US-2: spendable = balance - base_reserve - (owner_reserve * ownerCount).
 // The arithmetic itself lives in money.ts (AD-7); this hook only supplies the inputs.
-export function useSpendableBalance(network: NetworkId, address: string | null): SpendableBalance {
-  const accountState = useAccountState(network, address)
-  const reserves = useServerReserves(network)
+export function useSpendableBalance(network: NetworkId, address: string | null, node?: string): SpendableBalance {
+  const accountState = useAccountState(network, address, node)
+  const reserves = useServerReserves(network, node)
 
   const base = {
     reserveFailed: reserves.isError,

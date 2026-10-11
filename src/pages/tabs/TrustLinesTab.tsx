@@ -8,7 +8,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogD
 import { Skeleton } from '@/components/ui/skeleton'
 import { TrustLineRow } from '@/components/wallet/TrustLineRow'
 import { QueryErrorState } from '@/components/wallet/QueryErrorState'
-import { useAppStore, useActiveWallet } from '@/store/app-store'
+import { useAppStore, useActiveWallet, useActiveNetwork, useActiveNode } from '@/store/app-store'
 import { useTrustLines } from '@/hooks/useTrustLines'
 import { useServerReserves } from '@/hooks/useServerReserves'
 import { useSpendableBalance } from '@/hooks/useSpendableBalance'
@@ -21,12 +21,13 @@ import { useQueryClient } from '@tanstack/react-query'
 import { toast } from '@/lib/notify'
 
 export function TrustLinesTab() {
-  const network = useAppStore((s) => s.network)
+  const network = useActiveNetwork()
+  const node = useActiveNode()
   const wallet = useActiveWallet()
   const vaultKey = useAppStore((s) => s.vaultKey)
-  const trustLines = useTrustLines(network, wallet?.address ?? null)
-  const reserves = useServerReserves(network)
-  const { spendableDrops } = useSpendableBalance(network, wallet?.address ?? null)
+  const trustLines = useTrustLines(network, wallet?.address ?? null, node)
+  const reserves = useServerReserves(network, node)
+  const { spendableDrops } = useSpendableBalance(network, wallet?.address ?? null, node)
   const queryClient = useQueryClient()
 
   const [open, setOpen] = useState(false)
@@ -44,7 +45,7 @@ export function TrustLinesTab() {
     setBusy(true)
     try {
       const signingWallet = await unlockWalletForSigning(wallet.id, vaultKey)
-      const result = await submitTrustSet(network, signingWallet, { currency: currencyArg, issuer: issuerArg, limit: limitArg })
+      const result = await submitTrustSet(network, signingWallet, { currency: currencyArg, issuer: issuerArg, limit: limitArg }, node)
       if (result.status === 'validated') {
         toast.success('Trust line updated.')
         setOpen(false)

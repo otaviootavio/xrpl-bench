@@ -80,6 +80,7 @@ import {
   migrateLegacyVault,
   removeWallet,
   revealSeed,
+  setWalletNode,
   unlockWalletForSigning,
   generateAndStoreWallet,
 } from '../keystore'
@@ -357,5 +358,45 @@ describe('review follow-ups', () => {
     h.state.failNextPutOn = 'wallets'
     expect(await revealSeed('w1', key)).toBe(w.seed)
     expect(h.state.stores.wallets.get('w1').algorithm).toBe('unresolved')
+  })
+})
+
+describe('a Node is a field of one Wallet view (story 2)', () => {
+  it('migrated Wallets carry no node, so they use the built-in Nodes', async () => {
+    await seedLegacy(Wallet.generate())
+    await migrateLegacyVault(INPUT)
+    expect((await listWallets())[0].node).toBeUndefined()
+  })
+
+  it('stores a node on that view only, touching no ciphertext, and clears it', async () => {
+    const [r] = await seedLegacy(Wallet.generate())
+    await migrateLegacyVault(INPUT)
+    const added = await addNetworkView('w1', 'testnet')
+
+    const meta = await setWalletNode(added.id, 'wss://node.example.com')
+    expect(meta.node).toBe('wss://node.example.com')
+    const metas = await listWallets()
+    expect(metas.find((m) => m.id === 'w1')?.node).toBeUndefined()
+    expect(metas.find((m) => m.id === added.id)?.node).toBe('wss://node.example.com')
+    expect(h.state.stores.wallets.get('w1').encryptedSeed).toEqual(r.encryptedSeed)
+
+    expect((await setWalletNode(added.id, undefined)).node).toBeUndefined()
+    expect(h.state.stores.wallets.get('w1').views.find((v: { walletId: string }) => v.walletId === added.id)).not.toHaveProperty('node')
+  })
+
+  it('canonicalises a node, and throws on one that could carry a secret or is not wss', async () => {
+    await seedLegacy(Wallet.generate())
+    await migrateLegacyVault(INPUT)
+    expect((await setWalletNode('w1', 'WSS://Node.Example.com/')).node).toBe('wss://node.example.com')
+    for (const bad of ['wss://u:p@x.example.com', 'wss://x.example.com/?k=v', 'wss://x.example.com/#f', 'ws://x.example.com']) {
+      await expect(setWalletNode('w1', bad)).rejects.toThrow(/wss:\/\//)
+    }
+    expect((await listWallets())[0].node).toBe('wss://node.example.com')
+  })
+
+  it('adds a Devnet view like any other network', async () => {
+    await seedLegacy(Wallet.generate())
+    await migrateLegacyVault(INPUT)
+    expect((await addNetworkView('w1', 'devnet')).network).toBe('devnet')
   })
 })

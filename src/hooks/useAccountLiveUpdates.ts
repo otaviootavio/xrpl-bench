@@ -18,7 +18,7 @@ import type { NetworkId } from '@/lib/xrpl/networks'
  * `useEffect` rather than a TanStack Query hook (docs/decisions.md
  * guardrail #1 is about reads, not about subscribing to a push stream).
  */
-export function useAccountLiveUpdates(network: NetworkId, address: string | null) {
+export function useAccountLiveUpdates(network: NetworkId, address: string | null, node?: string) {
   const queryClient = useQueryClient()
 
   useEffect(() => {
@@ -51,7 +51,7 @@ export function useAccountLiveUpdates(network: NetworkId, address: string | null
 
     let subscribedClient: Awaited<ReturnType<typeof getXrplClient>> | null = null
 
-    getXrplClient(network).then(async (client) => {
+    getXrplClient(network, node).then(async (client) => {
       if (cancelled) return
       subscribedClient = client
       client.on('transaction', handleTransaction)
@@ -61,6 +61,9 @@ export function useAccountLiveUpdates(network: NetworkId, address: string | null
         // Subscription failure isn't fatal — the existing refetchInterval
         // polling on each hook remains as a fallback.
       }
+    }).catch(() => {
+      // No client (unreachable Node, or a custom Node that failed its network
+      // check): nothing is subscribed. The polling reads surface the error.
     })
 
     return () => {
@@ -76,7 +79,7 @@ export function useAccountLiveUpdates(network: NetworkId, address: string | null
         // Best-effort — the connection may already be closing.
       })
     }
-  }, [network, address, queryClient])
+  }, [network, address, node, queryClient])
 }
 
 /** True if any affected ledger entry belongs to this account — covers

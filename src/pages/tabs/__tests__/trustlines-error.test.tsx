@@ -9,7 +9,7 @@ const invalidateQueries = vi.fn()
 const submitTrustSet = vi.fn()
 const unlockWalletForSigning = vi.fn()
 
-vi.mock('@/hooks/useTrustLines', () => ({ useTrustLines: () => useTrustLines() }))
+vi.mock('@/hooks/useTrustLines', () => ({ useTrustLines: (...a: unknown[]) => useTrustLines(...a) }))
 vi.mock('@/hooks/useServerReserves', () => ({
   useServerReserves: () => ({ data: { baseReserveDrops: '1000000', ownerReserveDrops: '200000' } }),
 }))
@@ -38,11 +38,14 @@ vi.mock('@/lib/xrpl/writes', () => ({
 vi.mock('@/components/wallet/TrustLineRow', () => ({
   TrustLineRow: ({ line }: { line: { currency: string } }) => <div>row:{line.currency}</div>,
 }))
+let activeNode: string | undefined
 vi.mock('@/store/app-store', () => ({
   // A real vaultKey: with `null` here `submit` returns at its first line and a
   // TrustSet never reaches the invalidation.
   useAppStore: (selector: (s: { network: string; vaultKey: object }) => unknown) =>
     selector({ network: 'testnet', vaultKey: {} }),
+  useActiveNetwork: () => 'testnet',
+  useActiveNode: () => activeNode,
   useActiveWallet: () => ({ id: 'w1', address: 'rBoGUS9uiK9m3Kk6qnGRvWWCwAeN8hF3wR', label: 'Test' }),
 }))
 
@@ -62,6 +65,7 @@ beforeEach(() => {
   useTrustLines.mockReturnValue(query({ data: [] }))
   invalidateQueries.mockClear()
   submitTrustSet.mockReset()
+  activeNode = undefined
   unlockWalletForSigning.mockReset()
 })
 afterEach(cleanup)
@@ -87,6 +91,23 @@ describe('TrustLinesTab — a TrustSet discards the whole account group', () => 
     ]) {
       expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: key })
     }
+  })
+})
+
+describe('TrustLinesTab — the active Wallet\'s Node', () => {
+  it('reaches the submit as its trailing argument and the read hooks', async () => {
+    activeNode = 'wss://node.example.com'
+    unlockWalletForSigning.mockResolvedValue({ address: WALLET_ADDRESS })
+    submitTrustSet.mockResolvedValue({ status: 'validated', resultCode: 'tesSUCCESS', hash: 'EF' })
+    render(<TrustLinesTab />)
+    fireEvent.click(screen.getByRole('button', { name: 'Add trust line' }))
+    fireEvent.change(screen.getByLabelText('Issuer address'), { target: { value: ISSUER } })
+    fireEvent.change(screen.getByLabelText('Currency code'), { target: { value: 'USD' } })
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Create trust line' }))
+    })
+    expect(submitTrustSet.mock.calls[0][3]).toBe('wss://node.example.com')
+    expect(useTrustLines).toHaveBeenCalledWith('testnet', WALLET_ADDRESS, 'wss://node.example.com')
   })
 })
 

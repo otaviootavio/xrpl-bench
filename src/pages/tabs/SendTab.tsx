@@ -10,7 +10,7 @@ import { AmountInput, validateAmountString } from '@/components/wallet/AmountInp
 import { TxLink } from '@/components/wallet/AddressLink'
 import { TxStatusBadge } from '@/components/wallet/TxStatusBadge'
 import { QueryErrorState } from '@/components/wallet/QueryErrorState'
-import { useAppStore, useActiveWallet } from '@/store/app-store'
+import { useAppStore, useActiveWallet, useActiveNetwork, useActiveNode } from '@/store/app-store'
 import type { NetworkId } from '@/lib/xrpl/networks'
 import { ReadingValue } from '@/components/wallet/ReadingValue'
 import { useSpendableBalance } from '@/hooks/useSpendableBalance'
@@ -48,7 +48,8 @@ function sameFeeFact(a: ReadState<string>, b: ReadState<string>): boolean {
 }
 
 export function SendTab() {
-  const network = useAppStore((s) => s.network)
+  const network = useActiveNetwork()
+  const node = useActiveNode()
   const wallet = useActiveWallet()
   const vaultKey = useAppStore((s) => s.vaultKey)
   const addressBook = useAppStore((s) => s.addressBook)
@@ -121,17 +122,17 @@ export function SendTab() {
    * the amount field and the readout rows all consume these, so the four facts
    * are told apart in one place rather than re-derived per consumer.
    */
-  const spendable = useSpendableBalance(network, wallet?.address ?? null)
+  const spendable = useSpendableBalance(network, wallet?.address ?? null, node)
   const spendableState = spendableReadState(spendable)
-  const fee = useRecommendedFee(network)
+  const fee = useRecommendedFee(network, node)
   /** The fee, only when it was actually read for the network on screen now —
    * never a fabricated one, and never a value retained under a read in error
    * (docs/decisions.md §12, rule 2). */
   const feeState: ReadState<string> = readStateOf(fee)
-  const trustLines = useTrustLines(network, wallet?.address ?? null)
+  const trustLines = useTrustLines(network, wallet?.address ?? null, node)
   const trustLinesState = readStateOf(trustLines)
 
-  const destCheck = useDestinationCheck(network, destination, asset)
+  const destCheck = useDestinationCheck(network, destination, asset, node)
   const destQuery = destCheck.query
   const destInfo = destCheck.info
   const destinationValid = destCheck.destinationValid
@@ -331,7 +332,7 @@ export function SendTab() {
        */
       let latest: DestinationInfo
       try {
-        latest = await fetchDestinationInfoOnce(queryClient, network, destination, asset)
+        latest = await fetchDestinationInfoOnce(queryClient, network, destination, asset, node)
       } catch {
         // Inline, not the Annunciator: this is a failed READ of data with a
         // place on screen (AD-8). Nothing was signed and no fee was spent.
@@ -397,7 +398,7 @@ export function SendTab() {
           amountDrops: xrpToDropsString(amount),
           destinationTag: tagValue,
           feeDrops,
-        })
+        }, node)
       } else {
         const [currency, issuer] = asset.split('|')
         result = await submitIssuedPayment(network, signingWallet, {
@@ -407,7 +408,7 @@ export function SendTab() {
           value: amount,
           destinationTag: tagValue,
           feeDrops,
-        })
+        }, node)
       }
       setOutcome(result)
       setConfirmingFor(null)

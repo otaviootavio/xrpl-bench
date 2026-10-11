@@ -11,6 +11,8 @@ import { setUpVaultAuth, hasPasskeyRegistered } from '@/lib/crypto/auth'
 import { addressFromSeed, parseSeedInput, generateAndStoreWallet, importAndStoreWallet, listWallets, type WalletMeta } from '@/lib/crypto/keystore'
 import { checkBeforeImport, IMPORT_WARNING_COPY, INVALID_SEED_MESSAGE, type ImportWarning } from '@/lib/seed-import'
 import { useAppStore } from '@/store/app-store'
+import { NetworkChoice } from '@/components/wallet/NetworkChoice'
+import type { NetworkId } from '@/lib/xrpl/networks'
 import { useQueryClient } from '@tanstack/react-query'
 import { toast } from '@/lib/notify'
 import { BUILD, shortSha, sourceUrl } from '@/lib/build-info'
@@ -60,9 +62,13 @@ export function Onboarding() {
   // time — as this screen used to — read `''`, and import never got as far as
   // the probe.
   const pendingImportSeedRef = useRef<string | null>(null)
+  // The network the import was started for; check and write both use it.
+  const pendingImportNetworkRef = useRef<NetworkId>('testnet')
 
   const queryClient = useQueryClient()
-  const network = useAppStore((s) => s.network)
+  // The new Wallet's network, chosen here and fixed on its record (AD-19).
+  // Testnet is pre-selected: nothing real is at stake until it is changed.
+  const [network, setNewWalletNetwork] = useState<NetworkId>('testnet')
   const setWallets = useAppStore((s) => s.setWallets)
   const setActiveWalletId = useAppStore((s) => s.setActiveWalletId)
   const unlock = useAppStore((s) => s.unlock)
@@ -114,14 +120,15 @@ export function Onboarding() {
         // completing import, so nothing is written to the vault until the
         // user has seen the warning and chosen to continue. An account that
         // could not be read warns too (lib/seed-import.ts).
-        const warning = await checkBeforeImport(queryClient, network, addressFromSeed(seed))
+        const importNetwork = pendingImportNetworkRef.current
+        const warning = await checkBeforeImport(queryClient, importNetwork, addressFromSeed(seed))
         if (warning) {
           setImportWarning(warning)
           setStep('import-warning')
           return
         }
-        const meta = await importAndStoreWallet('My Wallet', seed, key, network)
-        const wallets = await listWallets(network)
+        const meta = await importAndStoreWallet('My Wallet', seed, key, importNetwork)
+        const wallets = await listWallets(importNetwork)
         clearSeeds()
         commitToStore(key, meta, wallets)
         toast.success('Wallet imported.')
@@ -147,8 +154,8 @@ export function Onboarding() {
     if (!vaultKey || !seed) return
     setBusy(true)
     try {
-      const meta = await importAndStoreWallet('My Wallet', seed, vaultKey, network)
-      const wallets = await listWallets(network)
+      const meta = await importAndStoreWallet('My Wallet', seed, vaultKey, pendingImportNetworkRef.current)
+      const wallets = await listWallets(pendingImportNetworkRef.current)
       clearSeeds()
       setImportWarning(null)
       commitToStore(vaultKey, meta, wallets)
@@ -185,6 +192,7 @@ export function Onboarding() {
               <CardDescription>Generate a brand-new wallet, or import one you already have.</CardDescription>
             </CardHeader>
             <CardContent className="flex flex-col gap-3">
+              <NetworkChoice value={network} onChange={setNewWalletNetwork} disabled={busy} />
               <Button
                 onClick={() => {
                   setMode('generate')
@@ -236,6 +244,7 @@ export function Onboarding() {
                   const seed = parseSeedInput(importSeedRef.current?.value ?? '')
                   if (seed) {
                     pendingImportSeedRef.current = seed
+                    pendingImportNetworkRef.current = network
                     setStep('vault-setup')
                   } else {
                     toast.error(INVALID_SEED_MESSAGE)

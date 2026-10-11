@@ -7,7 +7,7 @@ import { ReceiveTab } from './tabs/ReceiveTab'
 import { HistoryTab } from './tabs/HistoryTab'
 import { TrustLinesTab } from './tabs/TrustLinesTab'
 import { SettingsTab } from './tabs/SettingsTab'
-import { useAppStore, useActiveWallet } from '@/store/app-store'
+import { useActiveWallet, useActiveNetwork, useActiveNode } from '@/store/app-store'
 import { useIncomingPaymentNotifications } from '@/hooks/useIncomingPaymentNotifications'
 import { useAccountLiveUpdates } from '@/hooks/useAccountLiveUpdates'
 import { useAutoLock } from '@/hooks/useAutoLock'
@@ -38,10 +38,11 @@ const PANELS = [
 ] as const
 
 export function Main() {
-  const network = useAppStore((s) => s.network)
+  const network = useActiveNetwork()
+  const node = useActiveNode()
   const wallet = useActiveWallet()
-  useIncomingPaymentNotifications(network, wallet?.address ?? null)
-  useAccountLiveUpdates(network, wallet?.address ?? null)
+  useIncomingPaymentNotifications(network, wallet?.address ?? null, node)
+  useAccountLiveUpdates(network, wallet?.address ?? null, node)
   useAutoLock()
   useClearCacheOnLock()
   // US-2's "persistent, quiet marker": a lamp on the Settings tab, so an

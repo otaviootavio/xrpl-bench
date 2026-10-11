@@ -675,3 +675,60 @@ describe('the fee cap on every write, and the pinned fee', () => {
     expect(log.at(-1)).toBe('in-flight:false')
   })
 })
+
+describe('every write forwards the Wallet\'s Node', () => {
+  const NODE = 'wss://node.example.com'
+  const PARAMS = { destination: 'rPT1Sjq2YGrBMTttX4GZHjKu9dyfzbpAYe', amountDrops: '1000000' }
+
+  /** Records the URL of each client built, and lets a test drop the socket. */
+  function nodeClient(opts: { failSubmit?: boolean } = {}) {
+    const urls: string[] = []
+    const state = { connected: true }
+    setXrplClientFactory((url) => {
+      urls.push(url)
+      return {
+        isConnected: () => state.connected,
+        connect: async () => {},
+        disconnect: async () => {},
+        autofill: async (tx: any) => ({ ...tx, Fee: '12', Sequence: 1, LastLedgerSequence: 100 }),
+        submitAndWait: async () => {
+          if (opts.failSubmit) {
+            state.connected = false
+            throw new Error('connection dropped')
+          }
+          return { result: { meta: { TransactionResult: 'tesSUCCESS' }, ledger_index: 42 } }
+        },
+        request: async () => ({ result: { ledger_index: 101 } }),
+      } as any
+    })
+    return urls
+  }
+
+  it('submitXrpPayment, submitIssuedPayment and submitTrustSet reach only the custom Node', async () => {
+    const urls = nodeClient()
+    await submitXrpPayment('mainnet', wallet, PARAMS, NODE)
+    await submitIssuedPayment(
+      'mainnet',
+      wallet,
+      { ...PARAMS, currency: 'USD', issuer: 'rHb9CJAWyB4rj91VRWn96DkukG4bwdtyTh', value: '1' },
+      NODE,
+    )
+    await submitTrustSet('mainnet', wallet, { currency: 'USD', issuer: 'rHb9CJAWyB4rj91VRWn96DkukG4bwdtyTh', limit: '10' }, NODE)
+    // One pooled client, built for the custom Node and never for a built-in one.
+    expect(urls).toEqual([NODE])
+  })
+
+  it('submitAndClassify forwards it to the hold and to the expiry check', async () => {
+    const urls = nodeClient({ failSubmit: true })
+    const outcome = await submitAndClassify(
+      'mainnet',
+      wallet,
+      { TransactionType: 'Payment', Account: wallet.address, Destination: PARAMS.destination, Amount: '1' },
+      NODE,
+    )
+    expect(outcome.status).toBe('expired')
+    // The hold built it, the dropped socket made the expiry check build another
+    // — both for the custom Node.
+    expect(urls).toEqual([NODE, NODE])
+  })
+})

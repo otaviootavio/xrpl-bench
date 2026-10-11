@@ -80,7 +80,7 @@ function seededQueryClient() {
 
 async function seedStore() {
   const s = useAppStore.getState()
-  s.setNetwork('mainnet')
+  useAppStore.setState({ network: 'mainnet' })
   s.setWallets([{ id: 'w1', label: 'Savings', address: 'rAliceAddressLabelThatMustNotSurvive' } as never])
   s.setActiveWalletId('w1')
   s.addAddressBookEntry({ address: 'rBobCounterpartyThatMustNotSurvive', label: 'Bob — landlord' })

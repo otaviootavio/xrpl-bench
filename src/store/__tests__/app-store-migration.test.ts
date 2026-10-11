@@ -146,7 +146,7 @@ describe('app store — a version-0 Address Book survives the shape change', () 
   })
 
   it('keeps an entry whose network this build does not know, as not recorded', async () => {
-    h.idb.set(APP_STATE_STORAGE_KEY, legacyBlob([{ address: EXCHANGE, network: 'devnet', destinationTag: '4' }]))
+    h.idb.set(APP_STATE_STORAGE_KEY, legacyBlob([{ address: EXCHANGE, network: 'signet', destinationTag: '4' }]))
     await useAppStore.persist.rehydrate()
 
     expect(useAppStore.getState().addressBook).toEqual([{ address: EXCHANGE, destinationTag: '4' }])

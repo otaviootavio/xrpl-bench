@@ -107,6 +107,23 @@ export async function invalidateDestinationCheck(
   await client.invalidateQueries({ queryKey: ['destinationInfo', network, destination] })
 }
 
+/**
+ * Marks every network-scoped entry stale for one network — ledger-wide reserves
+ * and fee, and every destination check — so the next read goes to whichever
+ * Node the Wallet now uses. Called when a Wallet's Node changes: the cached
+ * figures were answered by the old Node.
+ */
+export async function invalidateNetworkScoped(
+  client: Pick<QueryClient, 'invalidateQueries'>,
+  network: NetworkId,
+): Promise<void> {
+  await Promise.all([
+    client.invalidateQueries({ queryKey: queryKeys.serverReserves(network) }),
+    client.invalidateQueries({ queryKey: queryKeys.recommendedFee(network) }),
+    client.invalidateQueries({ queryKey: ['destinationInfo', network] }),
+  ])
+}
+
 export const queryKeys = {
   ...accountScoped,
 

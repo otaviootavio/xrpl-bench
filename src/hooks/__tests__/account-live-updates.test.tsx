@@ -15,7 +15,8 @@ const fakeClient = {
 }
 
 vi.mock('@tanstack/react-query', () => ({ useQueryClient: () => ({ invalidateQueries }) }))
-vi.mock('@/lib/xrpl/client', () => ({ getXrplClient: () => Promise.resolve(fakeClient) }))
+const getXrplClient = vi.fn((..._args: unknown[]) => Promise.resolve(fakeClient))
+vi.mock('@/lib/xrpl/client', () => ({ getXrplClient: (...a: unknown[]) => getXrplClient(...a) }))
 
 import { useAccountLiveUpdates } from '../useAccountLiveUpdates'
 import { queryKeys } from '@/lib/xrpl/query-keys'
@@ -33,6 +34,8 @@ async function mountAndSubscribe() {
 beforeEach(() => {
   handler = null
   invalidateQueries.mockClear()
+  getXrplClient.mockClear()
+  getXrplClient.mockImplementation(() => Promise.resolve(fakeClient))
 })
 afterEach(cleanup)
 
@@ -56,5 +59,36 @@ describe('useAccountLiveUpdates — a stream event discards the whole account gr
     act(() => handler!({ tx_json: { Account: 'rPT1Sjq2YGrBMTttX4GZHjKu9dyfzbpAYe' }, meta: { AffectedNodes: [] } }))
 
     expect(invalidateQueries).not.toHaveBeenCalled()
+  })
+})
+
+describe('useAccountLiveUpdates — the Wallet\'s Node', () => {
+  const NODE = 'wss://node.example.com'
+  const tick = () => act(async () => void (await new Promise((r) => setTimeout(r, 0))))
+
+  it('asks the pool for (network, node) and re-subscribes when the node changes', async () => {
+    const { rerender } = renderHook(({ node }: { node?: string }) => useAccountLiveUpdates('testnet', ADDRESS, node), {
+      initialProps: { node: NODE } as { node?: string },
+    })
+    await tick()
+    expect(getXrplClient).toHaveBeenLastCalledWith('testnet', NODE)
+
+    rerender({ node: undefined })
+    await tick()
+    expect(getXrplClient).toHaveBeenLastCalledWith('testnet', undefined)
+    expect(getXrplClient).toHaveBeenCalledTimes(2)
+    expect(fakeClient.off).toHaveBeenCalled()
+  })
+
+  it('a rejected client (a Node that failed its check) causes no unhandled rejection', async () => {
+    const unhandled = vi.fn()
+    process.on('unhandledRejection', unhandled)
+    getXrplClient.mockImplementation(() => Promise.reject(new Error('wrong network')))
+    renderHook(() => useAccountLiveUpdates('mainnet', ADDRESS, NODE))
+    await tick()
+    await new Promise((r) => setTimeout(r, 10))
+    process.off('unhandledRejection', unhandled)
+    expect(unhandled).not.toHaveBeenCalled()
+    expect(handler).toBeNull()
   })
 })

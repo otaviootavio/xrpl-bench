@@ -1,12 +1,12 @@
 import { LockIcon } from 'lucide-react'
-import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { useAppStore, useActiveWallet } from '@/store/app-store'
-import { NetworkSelector } from '@/components/wallet/NetworkSelector'
+import { NetworkPlate } from '@/components/wallet/NetworkPlate'
+import { NETWORKS } from '@/lib/xrpl/networks'
 
 /**
- * The chassis nameplate and its range selectors.
+ * The chassis nameplate, the Wallet picker and the active Wallet's network.
  *
  * Below `sm` the controls take their own row rather than compressing: with a
  * second wallet present the row is title + 160px + 112px + 36px, which does not
@@ -14,7 +14,6 @@ import { NetworkSelector } from '@/components/wallet/NetworkSelector'
  * clipped off the right edge (docs/decisions.md §6.12).
  */
 export function AppHeader() {
-  const network = useAppStore((s) => s.network)
   const wallets = useAppStore((s) => s.wallets)
   const activeWalletId = useAppStore((s) => s.activeWalletId)
   const setActiveWalletId = useAppStore((s) => s.setActiveWalletId)
@@ -30,11 +29,6 @@ export function AppHeader() {
             an <h1> it made all six tabs report the same outline (§6.4). The
             screen's own <h1> lives in the active panel. */}
         <span className="panel-legend text-[0.75rem] tracking-[0.22em] text-foreground">XRPL Bench</span>
-        {/* The Select below already names the network, so the badge does not
-            repeat it. What it carries is the thing worth flagging: on Mainnet
-            the funds are real. `warning`, not `destructive` — Mainnet is the
-            normal production network, not a dangerous one (§6.7). */}
-        {network === 'mainnet' && <Badge variant="warning">Real funds</Badge>}
       </div>
       <div className="flex w-full items-center justify-end gap-2 sm:w-auto">
         {wallets.length > 1 && (
@@ -45,13 +39,13 @@ export function AppHeader() {
             <SelectContent>
               {wallets.map((w) => (
                 <SelectItem key={w.id} value={w.id}>
-                  {w.label}
+                  {w.label} · {NETWORKS[w.network].label}
                 </SelectItem>
               ))}
             </SelectContent>
           </Select>
         )}
-        <NetworkSelector />
+        <NetworkPlate />
         {wallet && (
           <Button variant="outline" size="icon" onClick={lock} aria-label="Lock wallet">
             <LockIcon className="size-4" />

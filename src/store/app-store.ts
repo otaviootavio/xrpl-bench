@@ -1,13 +1,18 @@
 import { create } from 'zustand'
 import { persist, createJSONStorage, type StateStorage } from 'zustand/middleware'
 import { get as idbGet, set as idbSet, del as idbDel } from 'idb-keyval'
-import type { NetworkId } from '@/lib/xrpl/networks'
+import { canonicalNodeUrl, isNetworkId, type NetworkId } from '@/lib/xrpl/networks'
 import type { WalletMeta } from '@/lib/crypto/keystore'
 import { endSession } from '@/lib/crypto/auth'
 import { migrateAddressBook, upsertAddressBookEntry, type AddressBookEntry } from '@/store/address-book'
 
 interface AppState {
   // Non-secret, persisted state
+  /** NOT the network any read uses (AD-19): the active Wallet's `network` is.
+   * This field survives only as the story-1 migration input — the network a
+   * pre-per-Wallet build had selected — and, on write (`partialize`), as a
+   * mirror of the active Wallet's network so a rolled-back build opens on the
+   * network the user was last on. Read it through `useActiveNetwork()`. */
   network: NetworkId
   wallets: WalletMeta[]
   activeWalletId: string | null
@@ -36,7 +41,6 @@ interface AppState {
    * zero", not "the most recent write's state". */
   txInFlight: boolean
 
-  setNetwork: (network: NetworkId) => void
   setWallets: (wallets: WalletMeta[]) => void
   setActiveWalletId: (id: string | null) => void
   setAutoLockMinutes: (minutes: number) => void
@@ -77,13 +81,17 @@ const PERSISTED_DEFAULTS: PersistedAppState = {
  */
 function normaliseWallets(persisted: unknown, persistedNetwork: unknown, fallback: NetworkId, current: WalletMeta[]): WalletMeta[] {
   if (!Array.isArray(persisted)) return current
-  const network = persistedNetwork === 'mainnet' || persistedNetwork === 'testnet' ? persistedNetwork : fallback
+  const network = isNetworkId(persistedNetwork) ? persistedNetwork : fallback
   return persisted
     .filter((w): w is Record<string, unknown> => !!w && typeof w === 'object' && typeof (w as { id?: unknown }).id === 'string')
     .map((w) => ({
       ...(w as unknown as WalletMeta),
       seedId: typeof w.seedId === 'string' ? w.seedId : (w.id as string),
-      network: w.network === 'mainnet' || w.network === 'testnet' ? w.network : network,
+      network: isNetworkId(w.network) ? w.network : network,
+      // A custom Node must pass the shared validator (wss://, no userinfo, query
+      // or fragment); anything else on a persisted record is dropped, so a Wallet falls back to its built-in Nodes rather than
+      // contacting a host nobody proved.
+      node: canonicalNodeUrl(w.node) ?? undefined,
       algorithm: (w.algorithm as WalletMeta['algorithm']) ?? 'unresolved',
       openCheck: (w.openCheck as WalletMeta['openCheck']) ?? 'pin',
       signingCheck: (w.signingCheck as WalletMeta['signingCheck']) ?? 'standard',
@@ -161,7 +169,6 @@ export const useAppStore = create<AppState>()(
       unlocked: false,
       txInFlight: false,
 
-      setNetwork: (network) => set({ network }),
       setWallets: (wallets) => set({ wallets }),
       setActiveWalletId: (activeWalletId) => set({ activeWalletId }),
       setAutoLockMinutes: (autoLockMinutes) => set({ autoLockMinutes }),
@@ -194,7 +201,7 @@ export const useAppStore = create<AppState>()(
       // Only ever persist non-secret UI/selection state. vaultKey and
       // unlocked are deliberately excluded here.
       partialize: (s): PersistedAppState => ({
-        network: s.network,
+        network: s.wallets.find((w) => w.id === s.activeWalletId)?.network ?? s.network,
         wallets: s.wallets,
         activeWalletId: s.activeWalletId,
         addressBook: s.addressBook,
@@ -228,4 +235,17 @@ export async function clearPersistedAppState(): Promise<void> {
 
 export function useActiveWallet(): WalletMeta | null {
   return useAppStore((s) => s.wallets.find((w) => w.id === s.activeWalletId) ?? null)
+}
+
+/** The network every ledger read and every network display uses: the active
+ * Wallet's (AD-19). With no Wallet there is no account to read; the persisted
+ * mirror is returned so a screen that needs a value (Onboarding's default)
+ * has one. */
+export function useActiveNetwork(): NetworkId {
+  return useAppStore((s) => s.wallets.find((w) => w.id === s.activeWalletId)?.network ?? s.network)
+}
+
+/** The active Wallet's custom Node URL, or undefined for the built-in Nodes. */
+export function useActiveNode(): string | undefined {
+  return useAppStore((s) => s.wallets.find((w) => w.id === s.activeWalletId)?.node)
 }

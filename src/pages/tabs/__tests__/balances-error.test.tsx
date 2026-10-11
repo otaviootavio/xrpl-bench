@@ -8,7 +8,7 @@ const useServerReserves = vi.fn()
 const useSpendableBalance = vi.fn()
 /** Named, so a test can see what the faucet discards and for whom. */
 const invalidateQueries = vi.fn()
-const requestTestnetFunds = vi.fn()
+const requestFaucetFunds = vi.fn()
 
 vi.mock('@/hooks/useAccountState', () => ({ useAccountState: () => useAccountState() }))
 vi.mock('@/hooks/useTrustLines', () => ({ useTrustLines: () => useTrustLines() }))
@@ -16,11 +16,13 @@ vi.mock('@/hooks/useServerReserves', () => ({ useServerReserves: () => useServer
 vi.mock('@/hooks/useSpendableBalance', () => ({ useSpendableBalance: () => useSpendableBalance() }))
 vi.mock('@tanstack/react-query', () => ({ useQueryClient: () => ({ invalidateQueries }) }))
 vi.mock('@/lib/xrpl/faucet', () => ({
-  requestTestnetFunds: (...args: unknown[]) => requestTestnetFunds(...args),
+  requestFaucetFunds: (...args: unknown[]) => requestFaucetFunds(...args),
 }))
 vi.mock('@/components/wallet/AddressDisplay', () => ({ AddressDisplay: () => <div /> }))
 vi.mock('@/store/app-store', () => ({
   useAppStore: (selector: (s: { network: string }) => unknown) => selector({ network: 'testnet' }),
+  useActiveNetwork: () => 'testnet',
+  useActiveNode: () => undefined,
   useActiveWallet: () => ({ id: 'w1', address: 'rBoGUS9uiK9m3Kk6qnGRvWWCwAeN8hF3wR', label: 'Test' }),
 }))
 
@@ -65,19 +67,19 @@ beforeEach(() => {
   useServerReserves.mockReturnValue(reservesOk())
   useSpendableBalance.mockReturnValue(spendable())
   invalidateQueries.mockClear()
-  requestTestnetFunds.mockReset()
+  requestFaucetFunds.mockReset()
 })
 afterEach(cleanup)
 
 describe('BalancesTab — the faucet discards the whole account group', () => {
   it('invalidates every account-scoped entry for the active wallet after funding', async () => {
-    requestTestnetFunds.mockResolvedValue({ amountXrp: '100' })
+    requestFaucetFunds.mockResolvedValue({ amountXrp: '100' })
     render(<BalancesTab />)
     await act(async () => {
       fireEvent.click(screen.getByRole('button', { name: 'Fund with Testnet XRP' }))
     })
 
-    expect(requestTestnetFunds).toHaveBeenCalledWith('testnet', WALLET_ADDRESS)
+    expect(requestFaucetFunds).toHaveBeenCalledWith('testnet', WALLET_ADDRESS)
     for (const key of [
       queryKeys.accountState('testnet', WALLET_ADDRESS),
       queryKeys.accountTx('testnet', WALLET_ADDRESS),

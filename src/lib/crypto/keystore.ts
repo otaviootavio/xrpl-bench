@@ -1,5 +1,5 @@
 import { decodeSeed, ECDSA, Wallet } from 'xrpl'
-import type { NetworkId } from '@/lib/xrpl/networks'
+import { canonicalNodeUrl, type NetworkId } from '@/lib/xrpl/networks'
 import { aesDecrypt, aesEncrypt } from './aes'
 import { HKDF_INFO } from './auth'
 import { bufToB64 } from './encoding'
@@ -28,6 +28,9 @@ export interface WalletMeta {
   address: string
   createdAt: number
   network: NetworkId
+  /** A custom Node's `wss://` URL, proven for `network` when it was saved.
+   * Absent: the network's built-in Nodes. */
+  node?: string
   algorithm: SeedAlgorithm
   openCheck: OpenCheck
   signingCheck: SigningCheck
@@ -48,6 +51,7 @@ function toMetas(w: StoredWallet, fallbackNetwork?: NetworkId): WalletMeta[] {
     address: w.address,
     createdAt: w.createdAt,
     network: v.network,
+    ...(v.node ? { node: v.node } : {}),
     algorithm: w.algorithm ?? 'unresolved',
     openCheck: w.openCheck ?? 'pin',
     signingCheck: w.signingCheck ?? 'standard',
@@ -233,6 +237,30 @@ export async function addNetworkView(walletId: string, network: NetworkId): Prom
   })
   if (!added) throw new Error('This wallet is already set up on that network.')
   const meta = (await listWallets(network)).find((w) => w.id === newWalletId)
+  if (!meta) throw new Error('Wallet not found in local vault.')
+  return meta
+}
+
+/** Sets or clears (`undefined`) the custom Node on one Wallet's view only —
+ * AD-18/19. The caller has already proven `node` for the Wallet's network
+ * (`verifyNode`); this stores it and touches nothing else, ciphertext
+ * included. Returns the Wallet's refreshed meta. */
+export async function setWalletNode(walletId: string, node: string | undefined): Promise<WalletMeta> {
+  const canonical = node === undefined ? undefined : canonicalNodeUrl(node)
+  if (node !== undefined && !canonical) {
+    throw new Error('A custom Node must be a wss:// address with no username, password, query or fragment.')
+  }
+  const record = findSeedRecord(await listStoredWallets(), walletId)
+  if (!record) throw new Error('Wallet not found in local vault.')
+  await mutateStoredWallet(record.id, (current) => ({
+    ...current,
+    views: viewsOf(current).map((v) => {
+      if (v.walletId !== walletId) return v
+      const { node: _previous, ...rest } = v
+      return canonical ? { ...rest, node: canonical } : rest
+    }),
+  }))
+  const meta = (await listWallets()).find((w) => w.id === walletId)
   if (!meta) throw new Error('Wallet not found in local vault.')
   return meta
 }

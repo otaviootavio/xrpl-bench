@@ -55,6 +55,7 @@ import { useAppStore } from '@/store/app-store'
 const base = { label: 'Savings', address: 'rSharedAddress', createdAt: 1, algorithm: 'ed25519', openCheck: 'pin', signingCheck: 'standard' }
 const MAINNET = { ...base, id: 'w1', seedId: 's1', network: 'mainnet' }
 const TESTNET = { ...base, id: 'w2', seedId: 's1', network: 'testnet' }
+const DEVNET = { ...base, id: 'w4', seedId: 's1', network: 'devnet' }
 const OTHER = { ...base, id: 'w3', seedId: 's2', label: 'Spending', address: 'rOther', network: 'mainnet' }
 
 function renderSettings() {
@@ -87,8 +88,8 @@ describe('Settings — use on another network', () => {
     expect(screen.queryByRole('button', { name: /Use \w+ on Mainnet/ })).toBeNull()
   })
 
-  it('offers nothing for a Seed that already has both views', () => {
-    setWallets([MAINNET, TESTNET])
+  it('offers nothing for a Seed that already has every network\'s view', () => {
+    setWallets([MAINNET, TESTNET, DEVNET])
     renderSettings()
     expect(screen.queryByRole('button', { name: /^Use .* on / })).toBeNull()
   })

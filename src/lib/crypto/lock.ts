@@ -151,7 +151,7 @@ interface OpenPlan {
   prfSalt: BufferSource
   autoLockMinutes: number
   pin?: Wrapped
-  passkey?: { credentialIdB64: string; wrapped: Wrapped }
+  passkey?: { credentialIdB64: string; wrapped: Wrapped; rpId?: string }
   noneKey?: CryptoKey
 }
 
@@ -168,7 +168,7 @@ async function planFor(lockId: string): Promise<OpenPlan> {
       pin: meta.pinSaltB64 ? meta.wrappedMasterKeyForPin : undefined,
       passkey:
         meta.passkeyCredentialIdB64 && meta.wrappedMasterKeyForPasskey
-          ? { credentialIdB64: meta.passkeyCredentialIdB64, wrapped: meta.wrappedMasterKeyForPasskey }
+          ? { credentialIdB64: meta.passkeyCredentialIdB64, wrapped: meta.wrappedMasterKeyForPasskey, ...(meta.rpId ? { rpId: meta.rpId } : {}) }
           : undefined,
     }
   }
@@ -180,7 +180,7 @@ async function planFor(lockId: string): Promise<OpenPlan> {
     pin: record.wrappedOpenKeyForPin,
     passkey:
       record.passkeyCredentialIdB64 && record.wrappedOpenKeyForPasskey
-        ? { credentialIdB64: record.passkeyCredentialIdB64, wrapped: record.wrappedOpenKeyForPasskey }
+        ? { credentialIdB64: record.passkeyCredentialIdB64, wrapped: record.wrappedOpenKeyForPasskey, ...(record.rpId ? { rpId: record.rpId } : {}) }
         : undefined,
     noneKey: record.openCheck === 'none' ? record.openKey : undefined,
   }
@@ -227,7 +227,7 @@ export async function openLock(lockId: string, method: OpenMethod, ctx: { pin?: 
   if (!isWebAuthnSupported()) return { status: 'unsupported' }
   let bits: ArrayBuffer
   try {
-    bits = await assertPasskeyAndDeriveBits(plan.passkey.credentialIdB64, plan.prfSalt)
+    bits = await assertPasskeyAndDeriveBits(plan.passkey.credentialIdB64, plan.prfSalt, plan.passkey.rpId)
   } catch (err) {
     // A dismissed ceremony or a device with no PRF: nothing wrong was presented.
     if (isCancelled(err)) return { status: 'cancelled' }
@@ -258,6 +258,11 @@ export interface CreateLockInput {
   autoLockMinutes: number
   /** Names a new passkey in the browser's own prompt. */
   label?: string
+  /** A passkey-Open-Check lock on a Passkey-Derived Wallet uses the Wallet's own
+   * credential instead of registering another (one passkey, FR-70). It still
+   * gets its own random PRF salt and `hkdfInfo`: no two purposes share derived
+   * key material (AD-21). */
+  reuseCredential?: { credentialIdB64: string; rpId: string }
 }
 
 export type CreateLockResult = CheckResult<{ id: string; key: CryptoKey }> | { status: 'refused'; reason: string }
@@ -381,19 +386,27 @@ export async function createLock(input: CreateLockInput, ctx: { pin?: string } =
   if (!isWebAuthnSupported()) return { status: 'unsupported' }
   const prfSalt = crypto.getRandomValues(new Uint8Array(32))
   let credentialIdB64: string
+  let rpId: string | undefined
   let bits: ArrayBuffer
   try {
-    credentialIdB64 = (await registerPasskey(input.label ?? 'XRPL Bench wallet')).credentialIdB64
+    if (input.reuseCredential) {
+      credentialIdB64 = input.reuseCredential.credentialIdB64
+      rpId = input.reuseCredential.rpId
+    } else {
+      const registered = await registerPasskey(input.label ?? 'XRPL Bench wallet')
+      credentialIdB64 = registered.credentialIdB64
+      rpId = registered.rpId
+    }
     // An authenticator may skip PRF evaluation at registration, so the
     // assertion that follows is the normal path, not a retry (AD-24).
-    bits = await assertPasskeyAndDeriveBits(credentialIdB64, prfSalt)
+    bits = await assertPasskeyAndDeriveBits(credentialIdB64, prfSalt, rpId)
   } catch (err) {
     if (isCancelled(err)) return { status: 'cancelled' }
     if (isPrfUnsupported(err)) return { status: 'unsupported' }
     throw err
   }
   const wrappedOpenKeyForPasskey = await wrapOpenKey(extractable, await deriveAesKeyFromBits(bits, hkdfInfo))
-  await putLockRecord({ ...base, prfSaltB64: bufToB64(prfSalt.buffer), passkeyCredentialIdB64: credentialIdB64, wrappedOpenKeyForPasskey })
+  await putLockRecord({ ...base, prfSaltB64: bufToB64(prfSalt.buffer), passkeyCredentialIdB64: credentialIdB64, ...(rpId ? { rpId } : {}), wrappedOpenKeyForPasskey })
   return { status: 'ok', value: { id, key: sealed } }
 }
 

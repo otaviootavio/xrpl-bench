@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -6,7 +6,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { NetworkChoice } from '@/components/wallet/NetworkChoice'
 import { SeedReveal } from '@/components/wallet/SeedReveal'
-import { createStoredWallet, describeCheckFailure, listWallets, type WalletMeta } from '@/lib/crypto/keystore'
+import { createDerivedWallet, createStoredWallet, describeCheckFailure, listWallets, type WalletMeta } from '@/lib/crypto/keystore'
 import { hasAppPin, startLockSession } from '@/lib/crypto/lock'
 import { triesRemaining } from '@/lib/crypto/pin'
 import {
@@ -17,7 +17,7 @@ import {
   type SeedMethod,
   type SigningKind,
 } from '@/lib/crypto/policy'
-import { detectPrfSupport } from '@/lib/crypto/webauthn'
+import { detectPrfSupport, getRpId } from '@/lib/crypto/webauthn'
 import { verifyNode } from '@/lib/xrpl/client'
 import { builtInNodes, type NetworkId } from '@/lib/xrpl/networks'
 import { useAppStore } from '@/store/app-store'
@@ -48,6 +48,27 @@ export interface CreateWalletFlowProps {
 }
 
 type Step = 'questions' | 'backup'
+
+/** What a Passkey-Derived creation leaves for the backup step. All public: the
+ * ordinal rebuilds the Wallet on a new device, and is shown once here. */
+interface DerivedBackup {
+  ordinal: string
+  label: string
+  /** `undefined`: the authenticator did not say (or an existing passkey was used). */
+  backupEligible?: boolean
+}
+
+/** The consequence of the passkey's kind, in plain words (FR-71). */
+function kindStatement(backupEligible: boolean | undefined): { title: string; body: string } {
+  const synced = 'Access to your passkey provider account (for example your Apple, Google or password-manager account) opens this wallet.'
+  const bound = 'If you lose this device, the wallet can be recovered only with a written Seed or a Controlling Wallet.'
+  if (backupEligible === true) return { title: 'This passkey is synced', body: synced }
+  if (backupEligible === false) return { title: 'This passkey is device-bound', body: bound }
+  return {
+    title: 'We could not tell whether this passkey is synced or device-bound',
+    body: `If it is synced: ${synced.charAt(0).toLowerCase()}${synced.slice(1)} If it is device-bound: ${bound.charAt(0).toLowerCase()}${bound.slice(1)}`,
+  }
+}
 
 const MAX_PIN_FIELD_HINT = 'The App PIN must be at least 6 digits.'
 
@@ -158,6 +179,18 @@ function CreateWalletForm({ capability, onDone, onInProgressChange, defaultLabel
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [backedUp, setBackedUp] = useState(false)
+  const [passkeyChoice, setPasskeyChoice] = useState<'new' | 'existing'>('new')
+  const [derivedBackup, setDerivedBackup] = useState<DerivedBackup | null>(null)
+  // The host the build's rpId is bound to: the one the domain warning names and
+  // the Mainnet rule reads. Never read from the page's location here. When it
+  // cannot be determined it stays undefined, and policy refuses Mainnet.
+  const origin = useMemo(() => {
+    try {
+      return getRpId()
+    } catch {
+      return undefined
+    }
+  }, [])
 
   // Secrets and the key: refs only, never state.
   const pinRef = useRef<HTMLInputElement | null>(null)
@@ -211,7 +244,7 @@ function CreateWalletForm({ capability, onDone, onInProgressChange, defaultLabel
     autoLockMinutes,
     signing,
     passkey: capability,
-    passkeyDerivedBuilt: false,
+    origin,
   })
 
   function changeNetwork(next: NetworkId) {
@@ -221,7 +254,8 @@ function CreateWalletForm({ capability, onDone, onInProgressChange, defaultLabel
     setNodeMode('builtin')
     setVerifiedNode(null)
     setNodeReason(null)
-    if (!signingTouched) setSigning(defaultSigning(next, capability))
+    if (seedMethod === 'passkey-derived') setSigning('passkey')
+    else if (!signingTouched) setSigning(defaultSigning(next, capability))
   }
 
   async function testNode() {
@@ -283,6 +317,40 @@ function CreateWalletForm({ capability, onDone, onInProgressChange, defaultLabel
     onInProgressChange?.(true)
     let created = false
     try {
+      if (seedMethod === 'passkey-derived') {
+        const derived = await createDerivedWallet(
+          {
+            label: label.trim() || 'Wallet',
+            network,
+            ...(nodeMode === 'custom' && verifiedNode ? { node: verifiedNode } : {}),
+            algorithm,
+            openCheck,
+            autoLockMinutes,
+            passkeyChoice,
+            passkey: capability,
+          },
+          { pin },
+        )
+        if (derived.status === 'ok') {
+          pendingRef.current = { meta: derived.value.meta, key: derived.value.openKey, autoLockMinutes }
+          setDerivedBackup({
+            ordinal: derived.value.ordinal,
+            label: derived.value.meta.label,
+            ...(derived.value.backupEligible === undefined ? {} : { backupEligible: derived.value.backupEligible }),
+          })
+          created = true
+          setStep('backup')
+        } else if (derived.status === 'refused') {
+          setError(derived.reason)
+        } else if (derived.status === 'cancelled') {
+          setError('Cancelled. Nothing was created.')
+        } else if (derived.status === 'unsupported') {
+          setError('This device or browser could not use a passkey for this wallet. Nothing was created.')
+        } else {
+          setError(`${describeCheckFailure(derived)} Nothing was created.`)
+        }
+        return
+      }
       const result = await createStoredWallet(
         {
           label: label.trim() || 'Wallet',
@@ -342,6 +410,7 @@ function CreateWalletForm({ capability, onDone, onInProgressChange, defaultLabel
       setActiveWalletId(pending.meta.id)
       seedRef.current = null
       pendingRef.current = null
+      setDerivedBackup(null)
       onInProgressChange?.(false)
       onDone?.(pending.meta)
     } catch (err: unknown) {
@@ -349,6 +418,42 @@ function CreateWalletForm({ capability, onDone, onInProgressChange, defaultLabel
     } finally {
       setBusy(false)
     }
+  }
+
+  if (step === 'backup' && derivedBackup) {
+    const kind = kindStatement(derivedBackup.backupEligible)
+    return (
+      <div className="flex flex-col gap-4">
+        <div>
+          <h2 className="text-sm font-medium">Write down your ordinal</h2>
+          <p className="text-sm text-muted-foreground">
+            This wallet has no Seed stored anywhere. Your passkey plus this number rebuild the wallet. This version has no restore screen yet. The number is shown only now.
+          </p>
+        </div>
+        <div className="panel-well px-3 py-2">
+          <p className="text-xs text-muted-foreground">Ordinal for “{derivedBackup.label}”</p>
+          <p className="font-mono text-lg tracking-widest" aria-label={`Ordinal ${derivedBackup.ordinal.split('').join(' ')}`}>
+            {derivedBackup.ordinal}
+          </p>
+        </div>
+        <div className="text-sm">
+          <p className="font-medium">{kind.title}</p>
+          <p className="text-muted-foreground">{kind.body}</p>
+        </div>
+        <label className="flex items-center gap-2 text-sm">
+          <Checkbox checked={backedUp} onCheckedChange={(v) => setBackedUp(v === true)} />
+          I've written down the ordinal with this wallet's name.
+        </label>
+        {error && (
+          <p role="alert" className="text-sm text-text-destructive">
+            {error}
+          </p>
+        )}
+        <Button disabled={!backedUp || busy} onClick={() => void finishBackup()}>
+          Continue to my wallet
+        </Button>
+      </div>
+    )
   }
 
   if (step === 'backup') {
@@ -441,16 +546,56 @@ function CreateWalletForm({ capability, onDone, onInProgressChange, defaultLabel
           label="Stored Seed"
           detail="A Seed is generated here and kept on this device, encrypted."
           state={options.seedMethod.stored}
-          onSelect={() => setSeedMethod('stored')}
+          onSelect={() => {
+            setSeedMethod('stored')
+            setSigningTouched(false)
+            setSigning(defaultSigning(network, capability))
+          }}
         />
         <Choice
           name={`${group}-seed`}
           checked={seedMethod === 'passkey-derived'}
           label="Passkey-Derived Seed"
+          detail="No Seed is stored: it is computed from your passkey each time it is needed."
           state={options.seedMethod['passkey-derived']}
-          onSelect={() => setSeedMethod('passkey-derived')}
+          onSelect={() => {
+            setSeedMethod('passkey-derived')
+            // Its only Signing Check is its passkey (FR-67).
+            setSigningTouched(true)
+            setSigning('passkey')
+          }}
         />
       </Axis>
+
+      {seedMethod === 'passkey-derived' && (
+        <>
+          <Axis legend="Passkey">
+            <Choice
+              name={`${group}-passkey`}
+              checked={passkeyChoice === 'new'}
+              label="Create a new passkey"
+              detail="Named after this wallet."
+              state={{ available: true }}
+              onSelect={() => setPasskeyChoice('new')}
+            />
+            <Choice
+              name={`${group}-passkey`}
+              checked={passkeyChoice === 'existing'}
+              label="Use an existing passkey"
+              detail="Your browser lists the passkeys on this device for this app."
+              state={{ available: true }}
+              onSelect={() => setPasskeyChoice('existing')}
+            />
+          </Axis>
+          <Alert variant="warning">
+            <AlertTitle>This Seed depends on the app's domain</AlertTitle>
+            <AlertDescription>
+              {origin ? `Your passkey is tied to ${origin}. ` : 'Your passkey is tied to the address this app is served from. '}
+              If the app's domain ever changes, this wallet cannot be opened from the passkey. It could then be recovered only with a written Seed or a Controlling Wallet.
+            </AlertDescription>
+          </Alert>
+        </>
+      )}
 
       <Axis legend="Signature type">
         <Choice name={`${group}-algo`} checked={algorithm === 'ed25519'} label="Ed25519" state={{ available: true }} onSelect={() => setAlgorithm('ed25519')} />

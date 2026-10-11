@@ -43,7 +43,9 @@ expanded in `docs/agents/`.
   boundary. Never `Number()` a drops value.
 - No secret ever enters `localStorage`, React state, a store, the URL, or
   anything serializable — not even in development.
-- An unlock is proven by decrypting known ciphertext, never by deriving a key.
+- An unlock is proven by decrypting known ciphertext, never by deriving a key. A
+  Passkey-Derived Seed has no ciphertext: its proof is that the address the
+  passkey derives equals the Wallet's recorded address.
 - Every ledger read goes through a TanStack Query hook whose key comes from the
   one key factory. An account-scoped key includes the active wallet *and* the
   active network; a ledger-wide or device-scoped read is a named exception on

@@ -66,13 +66,13 @@ export async function setUpVaultAuth(userLabel: string, pin: string, autoLockMin
 
   if (isWebAuthnSupported()) {
     try {
-      const { credentialIdB64, prfSupported } = await registerPasskey(userLabel)
+      const { credentialIdB64, prfSupported, rpId } = await registerPasskey(userLabel)
       if (prfSupported) {
-        const passkeyBits = await assertPasskeyAndDeriveBits(credentialIdB64)
+        const passkeyBits = await assertPasskeyAndDeriveBits(credentialIdB64, undefined, rpId)
         const passkeyKey = await deriveAesKeyFromBits(passkeyBits, HKDF_INFO)
         const wrappedMasterKeyForPasskey = await wrapMasterKey(masterKey, passkeyKey)
         const current = await getVaultMeta()
-        await putVaultMeta({ ...current, passkeyCredentialIdB64: credentialIdB64, wrappedMasterKeyForPasskey })
+        await putVaultMeta({ ...current, passkeyCredentialIdB64: credentialIdB64, wrappedMasterKeyForPasskey, ...(rpId ? { rpId } : {}) })
       }
     } catch {
       // Passkey registration is best-effort; the PIN fallback still works.

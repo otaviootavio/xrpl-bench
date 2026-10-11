@@ -16,13 +16,19 @@ const h = vi.hoisted(() => ({
   pinReadFails: false,
   verifyDeferred: null as null | ((ok: boolean) => void),
   createStoredWallet: vi.fn(),
+  createDerivedWallet: vi.fn(),
+  rpId: 'localhost' as string | null,
   verifyNode: vi.fn(),
   startLockSession: vi.fn(async () => {}),
   policyOverride: null as null | ((described: any) => any),
 }))
 
 vi.mock('idb-keyval', () => ({ get: async () => undefined, set: async () => {}, del: async () => {} }))
-vi.mock('@/lib/crypto/webauthn', () => ({ detectPrfSupport: async () => h.capability }))
+vi.mock('@/lib/crypto/webauthn', () => ({ detectPrfSupport: async () => h.capability, getRpId: () => {
+    if (h.rpId === null) throw new Error('no rpId')
+    return h.rpId
+  },
+}))
 vi.mock('@/lib/crypto/lock', () => ({
   hasAppPin: async () => {
     if (h.pinReadFails) throw new Error('idb down')
@@ -34,6 +40,7 @@ vi.mock('@/lib/crypto/pin', () => ({ triesRemaining: async () => 8 }))
 vi.mock('@/lib/xrpl/client', () => ({ verifyNode: (...a: unknown[]) => h.verifyNode(...a) }))
 vi.mock('@/lib/crypto/keystore', () => ({
   createStoredWallet: (...a: unknown[]) => h.createStoredWallet(...a),
+  createDerivedWallet: (...a: unknown[]) => h.createDerivedWallet(...a),
   listWallets: async () => [META],
   describeCheckFailure: (r: { status: string; triesRemaining?: number }) =>
     r.status === 'wrong-credential' ? `Incorrect PIN. ${r.triesRemaining} tries remaining.` : 'Locked out.',
@@ -62,6 +69,7 @@ const META = {
   algorithm: 'ed25519',
   openCheck: 'pin',
   signingCheck: 'standard',
+  seedMethod: 'stored',
 }
 const KEY = { type: 'secret' } as unknown as CryptoKey
 const created = () => ({ status: 'ok', value: { meta: META, openKey: KEY, seed: SEED } })
@@ -84,6 +92,8 @@ beforeEach(() => {
   h.verifyDeferred = null
   h.policyOverride = null
   h.createStoredWallet.mockReset().mockResolvedValue(created())
+  h.createDerivedWallet.mockReset().mockResolvedValue({ status: 'ok', value: { meta: { ...META, seedMethod: 'passkey-derived' }, openKey: KEY, ordinal: '048213', backupEligible: true } })
+  h.rpId = 'localhost'
   h.verifyNode.mockReset().mockResolvedValue(undefined)
   h.startLockSession.mockClear()
   useAppStore.setState({ wallets: [], activeWalletId: null, openLocks: {} } as never)
@@ -146,15 +156,33 @@ describe('the questions and their pre-selected answers', () => {
 })
 
 describe('unavailable answers', () => {
-  it('Passkey-Derived is aria-disabled with its reason as text, and does nothing when clicked', async () => {
+  it('Passkey-Derived without PRF is aria-disabled with the reason as text, and does nothing when clicked', async () => {
     await mount()
     const derived = radioNamed(/^Passkey-Derived Seed/)
     expect(derived.getAttribute('aria-disabled')).toBe('true')
-    expect(screen.getByText('Not available in this version yet')).toBeTruthy()
     await click(derived)
     expect(radioNamed(/^Stored Seed/).checked).toBe(true)
     expect(derived.checked).toBe(false)
     expect(derived.disabled).toBe(false) // aria-disabled, not removed from the reading order
+    expect(screen.queryByText(/Not available in this version yet/)).toBeNull()
+  })
+
+  it('Passkey-Derived on Mainnet at a b-cdn.net origin is aria-disabled with the reason, and creation is refused', async () => {
+    h.capability = 'yes'
+    h.rpId = 'sites-xrpl-bench-prod-pdbywc.b-cdn.net'
+    await mount()
+    await click(radioNamed(/^Passkey-Derived Seed/))
+    expect(radioNamed(/^Passkey-Derived Seed/).checked).toBe(true)
+    await click(radioNamed(/^Mainnet/))
+    const derived = radioNamed(/^Passkey-Derived Seed/)
+    expect(derived.getAttribute('aria-disabled')).toBe('true')
+    expect(screen.getAllByText(/tied to a temporary web address/).length).toBeGreaterThan(0)
+    expect(createButton().getAttribute('aria-disabled')).toBe('true')
+    await click(createButton())
+    expect(h.createDerivedWallet).not.toHaveBeenCalled()
+    // Testnet is unaffected.
+    await click(radioNamed(/^Testnet/))
+    expect(radioNamed(/^Passkey-Derived Seed/).getAttribute('aria-disabled')).toBeNull()
   })
 
   it('Mainnet: no Open Check and an auto-lock under a minute are aria-disabled with reasons, and creation cannot proceed', async () => {
@@ -189,7 +217,7 @@ describe('unavailable answers', () => {
     await mount()
     expect(radioNamed('Passkey').getAttribute('aria-disabled')).toBe('true')
     expect(radioNamed(/^Passkey only/).getAttribute('aria-disabled')).toBe('true')
-    expect(screen.getAllByText(/cannot use a passkey/).length).toBe(2)
+    expect(screen.getAllByText(/cannot use a passkey/).length).toBe(3) // Passkey, Passkey only, Passkey-Derived
     expect(radioNamed('App PIN').checked).toBe(true)
   })
 
@@ -197,7 +225,7 @@ describe('unavailable answers', () => {
     h.capability = 'unknown'
     await mount()
     expect(radioNamed('Passkey').getAttribute('aria-disabled')).toBeNull()
-    expect(screen.getAllByText('Checked when the passkey is created.').length).toBe(2)
+    expect(screen.getAllByText('Checked when the passkey is created.').length).toBe(3)
     expect(radioNamed('App PIN').checked).toBe(true)
   })
 
@@ -426,5 +454,103 @@ describe('the Node', () => {
     await click(radioNamed(/^Devnet/))
     expect(radioNamed(/^Built-in Nodes/).checked).toBe(true)
     expect(screen.queryByLabelText(/Node address/)).toBeNull()
+  })
+})
+
+describe('Passkey-Derived Seed (story 6)', () => {
+  it('on Mainnet with an unknown origin the option is aria-disabled with a visible reason', async () => {
+    h.capability = 'yes'
+    h.rpId = null
+    await mount()
+    await click(radioNamed(/^Mainnet/))
+    expect(radioNamed(/^Passkey-Derived Seed/).getAttribute('aria-disabled')).toBe('true')
+    expect(screen.getAllByText(/could not be determined/).length).toBeGreaterThan(0)
+    await click(radioNamed(/^Testnet/))
+    expect(radioNamed(/^Passkey-Derived Seed/).getAttribute('aria-disabled')).toBeNull()
+  })
+
+  it('shows the domain warning and the existing-or-new choice before creation, and nothing for a stored Seed', async () => {
+    h.capability = 'yes'
+    await mount()
+    expect(screen.queryByText(/depends on the app's domain/)).toBeNull()
+    await click(radioNamed(/^Passkey-Derived Seed/))
+    expect(screen.getByText(/depends on the app's domain/)).toBeTruthy()
+    expect(screen.getByText(/tied to localhost/)).toBeTruthy()
+    expect(screen.getByText(/Controlling Wallet/)).toBeTruthy()
+    expect(radioNamed(/^Create a new passkey/).checked).toBe(true)
+    expect(radioNamed(/^Use an existing passkey/).checked).toBe(false)
+    // Its Signing Check is its passkey, and the others are aria-disabled with the policy's reason.
+    expect(radioNamed(/^Passkey only/).checked).toBe(true)
+    expect(radioNamed(/^Standard/).getAttribute('aria-disabled')).toBe('true')
+    await click(radioNamed(/^Stored Seed/))
+    expect(screen.queryByText(/depends on the app's domain/)).toBeNull()
+    expect(radioNamed(/^Standard/).checked).toBe(true)
+  })
+
+  it('creates through createDerivedWallet with the chosen passkey, then shows the ordinal once and the kind statement, and no Seed', async () => {
+    h.capability = 'yes'
+    await mount({ onDone: vi.fn() })
+    await click(radioNamed(/^Passkey-Derived Seed/))
+    await click(radioNamed(/^Use an existing passkey/))
+    await click(radioNamed('App PIN'))
+    type(screen.getByLabelText(/Choose an App PIN/), '123456')
+    type(screen.getByLabelText(/Confirm the App PIN/), '123456')
+    await click(createButton())
+    expect(h.createStoredWallet).not.toHaveBeenCalled()
+    expect(h.createDerivedWallet).toHaveBeenCalledTimes(1)
+    expect(h.createDerivedWallet.mock.calls[0][0]).toMatchObject({ passkeyChoice: 'existing', network: 'testnet', algorithm: 'ed25519' })
+    expect(await screen.findByText('048213')).toBeTruthy()
+    expect(screen.getByText('This passkey is synced')).toBeTruthy()
+    expect(screen.getByText(/no restore screen yet/)).toBeTruthy()
+    expect(screen.getByText(/passkey provider account/)).toBeTruthy()
+    expect(screen.queryByText(/Back up your seed/)).toBeNull()
+    expect(useAppStore.getState().wallets).toEqual([])
+  })
+
+  it.each([
+    [false, 'This passkey is device-bound', /written Seed or a Controlling Wallet/],
+    [undefined, /could not tell whether this passkey is synced or device-bound/, /If it is synced.*If it is device-bound/],
+  ])('states the kind for BE %s', async (backupEligible, title, body) => {
+    h.capability = 'yes'
+    h.createDerivedWallet.mockResolvedValue({ status: 'ok', value: { meta: META, openKey: KEY, ordinal: '111222', backupEligible } })
+    await mount()
+    await click(radioNamed(/^Passkey-Derived Seed/))
+    await click(radioNamed('App PIN'))
+    type(screen.getByLabelText(/Choose an App PIN/), '123456')
+    type(screen.getByLabelText(/Confirm the App PIN/), '123456')
+    await click(createButton())
+    expect(await screen.findByText(title)).toBeTruthy()
+    expect(screen.getByText(body)).toBeTruthy()
+  })
+
+  it('a refusal or a cancel shows the reason and leaves the flow on its questions', async () => {
+    h.capability = 'yes'
+    h.createDerivedWallet.mockResolvedValue({ status: 'cancelled' })
+    await mount()
+    await click(radioNamed(/^Passkey-Derived Seed/))
+    await click(radioNamed('App PIN'))
+    type(screen.getByLabelText(/Choose an App PIN/), '123456')
+    type(screen.getByLabelText(/Confirm the App PIN/), '123456')
+    await click(createButton())
+    expect(await screen.findByText('Cancelled. Nothing was created.')).toBeTruthy()
+    expect(screen.getByText('Seed Method')).toBeTruthy()
+  })
+
+  it('continuing from the ordinal commits the Wallet', async () => {
+    h.capability = 'yes'
+    const onDone = vi.fn()
+    await mount({ onDone })
+    await click(radioNamed(/^Passkey-Derived Seed/))
+    await click(radioNamed('App PIN'))
+    type(screen.getByLabelText(/Choose an App PIN/), '123456')
+    type(screen.getByLabelText(/Confirm the App PIN/), '123456')
+    await click(createButton())
+    await screen.findByText('048213')
+    expect((screen.getByRole('button', { name: /Continue to my wallet/ }) as HTMLButtonElement).disabled).toBe(true)
+    await click(screen.getByRole('checkbox'))
+    await click(screen.getByRole('button', { name: /Continue to my wallet/ }))
+    await waitFor(() => expect(onDone).toHaveBeenCalled())
+    expect(h.startLockSession).toHaveBeenCalled()
+    expect(useAppStore.getState().activeWalletId).toBe('w1')
   })
 })

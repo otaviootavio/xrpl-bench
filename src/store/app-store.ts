@@ -143,6 +143,7 @@ function normaliseWallets(persisted: unknown, persistedNetwork: unknown, fallbac
       // contacting a host nobody proved.
       node: canonicalNodeUrl(w.node) ?? undefined,
       algorithm: (w.algorithm as WalletMeta['algorithm']) ?? 'unresolved',
+      seedMethod: w.seedMethod === 'passkey-derived' ? 'passkey-derived' : 'stored',
       openCheck: (w.openCheck as WalletMeta['openCheck']) ?? 'pin',
       signingCheck: (w.signingCheck as WalletMeta['signingCheck']) ?? 'standard',
     }))

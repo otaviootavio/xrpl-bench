@@ -44,6 +44,25 @@ file before editing anything under `src/lib/crypto/`.
   written removes that lock; removing a Wallet's last view removes its lock
   (never the legacy one). A PIN Signing Check is asked through the PIN dialog
   (`usePrompts()`), never `unavailablePrompts`.
+- **A Passkey-Derived Seed is computed, never stored.** Only
+  `keystore.createDerivedWallet` makes one, and its record has no
+  `encryptedSeed`, `sealedSeed` or `signing`: just the public `derived` inputs
+  (credential id, rpId, ordinal, backup-eligible flag). The Seed is
+  `Wallet.fromEntropy(HKDF(PRF(SHA-256('xrpl-bench:seed:v1' | ordinal))))`
+  (`derive.ts`), held for one signature or reveal and dropped. Its salt and info
+  string are frozen — `derive.test.ts` pins a vector; never "tidy" them. There is
+  no ciphertext to decrypt, so the unlock proof is the address: a derived address
+  that differs from the record's is `wrong-credential` and counts; a cancelled
+  prompt never does. When the same passkey is also the Open Check, the lock keeps
+  its own random PRF salt and `hkdfInfo`.
+- **Every rpId comes from `getRpId()`** (`webauthn.ts`), which reads the build's
+  `__RP_ID__` (set per branch in `vite.config.ts`) and falls back to
+  `location.hostname` only when none is set. Nothing else reads the page host. Every new
+  credential record stores the rpId it was registered under; later assertions
+  pass it. The Mainnet refusal for a Passkey-Derived Seed on `*.b-cdn.net` lives
+  in `policy.ts`, not in a component.
+- **Tests reach WebAuthn through `substituteCredentials` / `resetCredentials`**
+  (AD-12), not by stubbing `navigator`.
 - **Register every new persistence owner in `lib/teardown.ts`**
   (`PERSISTED_ACCOUNT_DATA`). "Remove everything" calls `tearDownAllLocalState`
   and clears nothing field by field.

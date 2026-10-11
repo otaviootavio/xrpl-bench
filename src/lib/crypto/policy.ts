@@ -1,4 +1,7 @@
 import type { NetworkId } from '@/lib/xrpl/networks'
+import type { SeedMethod } from './db'
+
+export type { SeedMethod }
 
 /**
  * AD-28: the one place that says which Open Check and auto-lock combinations
@@ -62,8 +65,6 @@ export function checkLockRequest(req: LockRequest): PolicyVerdict {
 // The whole Wallet request (story 5): Seed Method, Signing Check, FR-72
 // ---------------------------------------------------------------------------
 
-/** FR-62. `passkey-derived` exists in policy and is not offered yet (story 6). */
-export type SeedMethod = 'stored' | 'passkey-derived'
 /** FR-66. `standard` is no Signing Check: the Open Key opens the Seed. */
 export type SigningKind = 'standard' | 'passkey' | 'pin'
 /** Whether this device can do WebAuthn PRF. `unknown` is the honest answer on
@@ -77,12 +78,37 @@ export interface WalletRequest {
   autoLockMinutes: number
   signing: SigningKind
   passkey: PasskeyCapability
+  /** The host the build's rpId is bound to (`getRpId()`), passed in as context:
+   * the Mainnet rule for a Passkey-Derived Seed reads it (AD-24). Absent on
+   * Mainnet is refused, never allowed. */
+  origin?: string
   /** Story 7 supplies this: the written, word-confirmed Seed (FR-72). Story 5
    * never sets it, so a Mainnet passkey-only Wallet is refused. */
   writtenSeedConfirmed?: boolean
 }
 
-export const NOT_BUILT_YET = 'Not available in this version yet'
+/** A Passkey-Derived Seed is bound to the domain it was made under. The preview
+ * host is not a domain anyone should bind Mainnet funds to (Related Origin
+ * Requests are not used). */
+export const MAINNET_DERIVED_ORIGIN_REASON =
+  'A Passkey-Derived Seed on Mainnet is not available on this address: it would be tied to a temporary web address. Use Testnet or Devnet, or a Stored Seed.'
+export const MAINNET_DERIVED_UNKNOWN_ORIGIN_REASON =
+  "A Passkey-Derived Seed on Mainnet is not available because this app's web address could not be determined."
+const TEMPORARY_HOST_SUFFIX = '.b-cdn.net'
+
+/** True when `origin` (a host) is a temporary `*.b-cdn.net` address. */
+export function isTemporaryOrigin(origin: string | undefined): boolean {
+  return !!origin && origin.toLowerCase().endsWith(TEMPORARY_HOST_SUFFIX)
+}
+
+/** Why a Passkey-Derived Seed cannot be made here, whatever else is chosen. */
+function derivedBlock(network: NetworkId, passkey: PasskeyCapability, origin: string | undefined): PolicyVerdict {
+  if (passkey === 'no') return { ok: false, reason: NO_PRF_REASON }
+  // Fails closed: an unknown origin cannot be shown not to be a temporary one.
+  if (network === 'mainnet' && !origin) return { ok: false, reason: MAINNET_DERIVED_UNKNOWN_ORIGIN_REASON }
+  if (network === 'mainnet' && isTemporaryOrigin(origin)) return { ok: false, reason: MAINNET_DERIVED_ORIGIN_REASON }
+  return { ok: true }
+}
 export const NO_PRF_REASON = 'This device or browser cannot use a passkey to protect a wallet.'
 export const PRF_CHECKED_LATER_NOTE = 'Checked when the passkey is created.'
 export const WRITTEN_SEED_REASON =
@@ -112,8 +138,11 @@ function usesPasskey(openCheck: NewOpenCheck, signing: SigningKind): boolean {
 /** The one verdict on a Wallet being created: Seed Method and Signing Check
  * (FR-67), the Open Check and auto-lock floors (FR-65), passkey capability and
  * the written-Seed rule (FR-72). Creation calls it and refuses before any write. */
-export function checkWalletRequest(req: WalletRequest, opts: { passkeyDerivedBuilt?: boolean } = {}): PolicyVerdict {
-  if (req.seedMethod === 'passkey-derived' && !opts.passkeyDerivedBuilt) return { ok: false, reason: NOT_BUILT_YET }
+export function checkWalletRequest(req: WalletRequest): PolicyVerdict {
+  if (req.seedMethod === 'passkey-derived') {
+    const block = derivedBlock(req.network, req.passkey, req.origin)
+    if (!block.ok) return block
+  }
   const signing = checkSigningCheck(req.seedMethod, req.signing)
   if (!signing.ok) return signing
   const lock = checkLockRequest(req)
@@ -140,7 +169,8 @@ export interface OptionsContext {
   autoLockMinutes: number
   signing: SigningKind
   passkey: PasskeyCapability
-  passkeyDerivedBuilt: boolean
+  /** The host the build's rpId is bound to; see `WalletRequest.origin`. */
+  origin?: string
 }
 
 export interface DescribedOptions {
@@ -159,6 +189,12 @@ function passkeyState(passkey: PasskeyCapability): OptionState {
   return { available: true }
 }
 
+function derivedState(ctx: OptionsContext): OptionState {
+  const block = derivedBlock(ctx.network, ctx.passkey, ctx.origin)
+  if (!block.ok) return { available: false, reason: block.reason }
+  return passkeyState(ctx.passkey)
+}
+
 function fromVerdict(verdict: PolicyVerdict): OptionState {
   return verdict.ok ? { available: true } : { available: false, reason: verdict.reason }
 }
@@ -170,7 +206,7 @@ function fromVerdict(verdict: PolicyVerdict): OptionState {
 export function describeOptions(ctx: OptionsContext): DescribedOptions {
   const seedMethod: Record<SeedMethod, OptionState> = {
     stored: { available: true },
-    'passkey-derived': ctx.passkeyDerivedBuilt ? { available: true } : { available: false, reason: NOT_BUILT_YET },
+    'passkey-derived': derivedState(ctx),
   }
   // `none` is judged on the network alone: the chosen minutes are a different question.
   const openCheck: Record<NewOpenCheck, OptionState> = {
@@ -194,6 +230,6 @@ export function describeOptions(ctx: OptionsContext): DescribedOptions {
     openCheck,
     autoLock,
     signing,
-    combination: checkWalletRequest(ctx, { passkeyDerivedBuilt: ctx.passkeyDerivedBuilt }),
+    combination: checkWalletRequest(ctx),
   }
 }

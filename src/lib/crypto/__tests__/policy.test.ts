@@ -5,7 +5,8 @@ import {
   checkWalletRequest,
   describeOptions,
   NO_PRF_REASON,
-  NOT_BUILT_YET,
+  MAINNET_DERIVED_ORIGIN_REASON,
+  MAINNET_DERIVED_UNKNOWN_ORIGIN_REASON,
   PRF_CHECKED_LATER_NOTE,
   requiresWrittenSeed,
   WRITTEN_SEED_REASON,
@@ -21,7 +22,8 @@ const request: WalletRequest = {
   signing: 'standard',
   passkey: 'yes',
 }
-const context: OptionsContext = { ...request, passkeyDerivedBuilt: false }
+const context: OptionsContext = { ...request }
+const TEMPORARY = 'sites-xrpl-bench-prod-pdbywc.b-cdn.net'
 
 describe('Signing Check by Seed Method (FR-67)', () => {
   it.each(['standard', 'passkey', 'pin'] as const)('Stored Seed allows %s', (signing) => {
@@ -65,16 +67,42 @@ describe('checkWalletRequest', () => {
     expect(checkWalletRequest({ ...request, signing: 'passkey', passkey: 'unknown' })).toEqual({ ok: true })
     expect(checkWalletRequest({ ...request, passkey: 'no' })).toEqual({ ok: true })
   })
-  it('refuses Passkey-Derived while it is not built', () => {
-    expect(checkWalletRequest({ ...request, seedMethod: 'passkey-derived', signing: 'passkey' })).toEqual({ ok: false, reason: NOT_BUILT_YET })
-    expect(checkWalletRequest({ ...request, seedMethod: 'passkey-derived', signing: 'passkey' }, { passkeyDerivedBuilt: true })).toEqual({ ok: true })
+  it('allows Passkey-Derived with its passkey Signing Check, and only that', () => {
+    expect(checkWalletRequest({ ...request, seedMethod: 'passkey-derived', signing: 'passkey' })).toEqual({ ok: true })
+    expect(checkWalletRequest({ ...request, seedMethod: 'passkey-derived', signing: 'standard' }).ok).toBe(false)
+  })
+  it('refuses Passkey-Derived where the device has no PRF', () => {
+    expect(checkWalletRequest({ ...request, seedMethod: 'passkey-derived', signing: 'passkey', passkey: 'no' })).toEqual({ ok: false, reason: NO_PRF_REASON })
+  })
+  it('refuses Passkey-Derived on Mainnet while the origin is *.b-cdn.net, and only there', () => {
+    const mainnet = { ...request, network: 'mainnet' as const, seedMethod: 'passkey-derived' as const, openCheck: 'pin' as const, signing: 'passkey' as const }
+    expect(checkWalletRequest({ ...mainnet, origin: TEMPORARY })).toEqual({ ok: false, reason: MAINNET_DERIVED_ORIGIN_REASON })
+    expect(checkWalletRequest({ ...mainnet, origin: 'wallet.example.com' })).toEqual({ ok: true })
+    // An unknown origin fails closed on Mainnet.
+    expect(checkWalletRequest(mainnet)).toEqual({ ok: false, reason: MAINNET_DERIVED_UNKNOWN_ORIGIN_REASON })
+    expect(describeOptions({ ...context, network: 'mainnet' }).seedMethod['passkey-derived']).toEqual({ available: false, reason: MAINNET_DERIVED_UNKNOWN_ORIGIN_REASON })
+    // Testnet and Devnet are unaffected.
+    expect(checkWalletRequest({ ...request, seedMethod: 'passkey-derived', signing: 'passkey' })).toEqual({ ok: true })
+    expect(checkWalletRequest({ ...request, seedMethod: 'passkey-derived', signing: 'passkey', origin: TEMPORARY })).toEqual({ ok: true })
+    expect(checkWalletRequest({ ...request, network: 'devnet', seedMethod: 'passkey-derived', signing: 'passkey', origin: TEMPORARY })).toEqual({ ok: true })
   })
 })
 
 describe('describeOptions', () => {
-  it('shows Passkey-Derived as unavailable with the reason', () => {
-    expect(describeOptions(context).seedMethod['passkey-derived']).toEqual({ available: false, reason: NOT_BUILT_YET })
+  it('Passkey-Derived follows the capability: yes, unknown with the note, no with the reason', () => {
+    expect(describeOptions(context).seedMethod['passkey-derived']).toEqual({ available: true })
+    expect(describeOptions({ ...context, passkey: 'unknown' }).seedMethod['passkey-derived']).toEqual({ available: true, note: PRF_CHECKED_LATER_NOTE })
+    expect(describeOptions({ ...context, passkey: 'no' }).seedMethod['passkey-derived']).toEqual({ available: false, reason: NO_PRF_REASON })
     expect(describeOptions(context).seedMethod.stored).toEqual({ available: true })
+  })
+  it('Passkey-Derived is unavailable with a reason on Mainnet at a b-cdn.net origin only', () => {
+    expect(describeOptions({ ...context, network: 'mainnet', origin: TEMPORARY }).seedMethod['passkey-derived']).toEqual({
+      available: false,
+      reason: MAINNET_DERIVED_ORIGIN_REASON,
+    })
+    expect(describeOptions({ ...context, network: 'mainnet', origin: 'wallet.example.com' }).seedMethod['passkey-derived']).toEqual({ available: true })
+    expect(describeOptions({ ...context, network: 'testnet', origin: TEMPORARY }).seedMethod['passkey-derived']).toEqual({ available: true })
+    expect(describeOptions({ ...context, network: 'devnet', origin: TEMPORARY }).seedMethod['passkey-derived']).toEqual({ available: true })
   })
   it('gives each unavailable answer a reason from the policy', () => {
     const mainnet = describeOptions({ ...context, network: 'mainnet' })
@@ -96,7 +124,7 @@ describe('describeOptions', () => {
     expect(describeOptions(context).openCheck.passkey).toEqual({ available: true })
   })
   it('Passkey-Derived allows only the passkey Signing Check', () => {
-    const d = describeOptions({ ...context, seedMethod: 'passkey-derived', passkeyDerivedBuilt: true })
+    const d = describeOptions({ ...context, seedMethod: 'passkey-derived' })
     expect(d.signing.standard.available).toBe(false)
     expect(d.signing.pin.available).toBe(false)
     expect(d.signing.passkey.available).toBe(true)

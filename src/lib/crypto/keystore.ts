@@ -2,12 +2,21 @@ import { decodeSeed, ECDSA, Wallet } from 'xrpl'
 import { canonicalNodeUrl, type NetworkId } from '@/lib/xrpl/networks'
 import type { Signer, SigningHandle } from '@/lib/xrpl/writes'
 import { aesDecrypt, aesEncrypt } from './aes'
-import { deriveAesKeyFromBits, HKDF_INFO } from './derive'
+import { deriveAesKeyFromBits, generateOrdinal, HKDF_INFO, isOrdinal, seedSalt, walletFromSeedPrf } from './derive'
 import { createLock, deleteLock, discardUnusedAppPin, getLockInfo, hasAppPin, setAutoLockMinutes, withAppPin, type CheckResult } from './lock'
 import { checkLockRequest, checkWalletRequest, type NewOpenCheck, type PasskeyCapability, type PolicyVerdict, type SigningKind } from './policy'
 import { b64ToBuf, bufToB64 } from './encoding'
 import { attemptPin, getLockoutState, PBKDF2_ITERATIONS, recordFailure, triesRemaining } from './pin'
-import { assertPasskeyAndDeriveBits, isCancelled, isPrfUnsupported, isWebAuthnSupported, PRF_SALT, registerPasskey } from './webauthn'
+import {
+  assertAnyPasskeyAndDeriveBits,
+  assertPasskeyAndDeriveBits,
+  getRpId,
+  isCancelled,
+  isPrfUnsupported,
+  isWebAuthnSupported,
+  PRF_SALT,
+  registerPasskey,
+} from './webauthn'
 import {
   getVaultMeta,
   LEGACY_LOCK_ID,
@@ -17,6 +26,7 @@ import {
   putStoredWallet,
   type OpenCheck,
   type SeedAlgorithm,
+  type SeedMethod,
   type SigningCheck,
   type SigningSeal,
   type StoredWallet,
@@ -39,6 +49,8 @@ export interface WalletMeta {
    * Absent: the network's built-in Nodes. */
   node?: string
   algorithm: SeedAlgorithm
+  /** How the Seed exists: stored under a key, or computed from a passkey (FR-62). */
+  seedMethod: SeedMethod
   openCheck: OpenCheck
   signingCheck: SigningCheck
 }
@@ -61,6 +73,7 @@ function toMetas(w: StoredWallet, fallbackNetwork?: NetworkId): WalletMeta[] {
     network: v.network,
     ...(v.node ? { node: v.node } : {}),
     algorithm: w.algorithm ?? 'unresolved',
+    seedMethod: w.seedMethod ?? 'stored',
     openCheck: w.openCheck ?? 'pin',
     signingCheck: w.signingCheck ?? 'standard',
   }))
@@ -292,7 +305,7 @@ async function openSigningKey(seal: SigningSeal, ctx: SigningContext): Promise<C
   if (!isWebAuthnSupported() || !seal.credentialIdB64 || !seal.prfSaltB64) return { status: 'unsupported' }
   let bits: ArrayBuffer
   try {
-    bits = await assertPasskeyAndDeriveBits(seal.credentialIdB64, new Uint8Array(b64ToBuf(seal.prfSaltB64)))
+    bits = await assertPasskeyAndDeriveBits(seal.credentialIdB64, new Uint8Array(b64ToBuf(seal.prfSaltB64)), seal.rpId)
   } catch (err) {
     if (isCancelled(err)) return { status: 'cancelled' }
     if (isPrfUnsupported(err)) return { status: 'unsupported' }
@@ -308,11 +321,42 @@ async function openSigningKey(seal: SigningSeal, ctx: SigningContext): Promise<C
   }
 }
 
+/** Computes a Passkey-Derived Wallet's Seed from one passkey assertion (AD-24).
+ * There is no ciphertext: the unlock proof is the address. One assertion yields
+ * the Seed AND is the Signing Check; an address that is not the record's is a
+ * wrong credential and counts like a failed check, a cancelled prompt never
+ * does. The PRF output and the derived Wallet are locals, dropped on return. */
+async function openDerivedSeed(stored: StoredWallet): Promise<CheckResult<string>> {
+  const info = stored.derived
+  if (!info || stored.encryptedSeed || stored.sealedSeed || stored.signing) {
+    throw new Error('This wallet record is incomplete. Nothing was signed.')
+  }
+  if (stored.algorithm !== 'ed25519' && stored.algorithm !== 'secp256k1') {
+    throw new Error('This wallet record is incomplete. Nothing was signed.')
+  }
+  if (!isWebAuthnSupported()) return { status: 'unsupported' }
+  let bits: ArrayBuffer
+  try {
+    bits = await assertPasskeyAndDeriveBits(info.credentialIdB64, await seedSalt(info.ordinal), info.rpId)
+  } catch (err) {
+    if (isCancelled(err)) return { status: 'cancelled' }
+    if (isPrfUnsupported(err)) return { status: 'unsupported' }
+    throw err
+  }
+  const wallet = await walletFromSeedPrf(bits, stored.algorithm)
+  if (wallet.address !== stored.address) {
+    await recordFailure()
+    return { status: 'wrong-credential', kind: 'passkey', triesRemaining: await triesRemaining() }
+  }
+  return { status: 'ok', value: wallet.seed! }
+}
+
 /** Decrypts one Seed record's Seed: under the Signing Key if it carries a
  * Signing Check, else under the session's Open key. There is no path that
  * decrypts a sealed record with `openKey` — it has no `encryptedSeed` to
  * decrypt, and the Signing Key is wrapped only by the credential (AD-23). */
 async function openSeed(stored: StoredWallet, ctx: SigningContext): Promise<CheckResult<string>> {
+  if (stored.seedMethod === 'passkey-derived') return openDerivedSeed(stored)
   // A record that says it has a Signing Check but lacks its seal must never
   // fall through to the session key: fail closed.
   if (stored.signingCheck && stored.signingCheck !== 'standard' && !(stored.signing && stored.sealedSeed)) {
@@ -426,7 +470,7 @@ export async function revealSeed(walletId: string, ctx: SigningContext): Promise
 async function buildSeal(
   seed: string,
   credentialKey: CryptoKey,
-  seal: Pick<SigningSeal, 'kind' | 'hkdfInfo' | 'credentialIdB64' | 'prfSaltB64'>,
+  seal: Pick<SigningSeal, 'kind' | 'hkdfInfo' | 'credentialIdB64' | 'prfSaltB64' | 'rpId'>,
 ): Promise<{ sealedSeed: { ivB64: string; ciphertextB64: string }; signing: SigningSeal }> {
   const signingKey = await crypto.subtle.generateKey({ name: 'AES-GCM', length: 256 }, true, ['encrypt', 'decrypt'])
   const wrappedSigningKey = await aesEncrypt(credentialKey, bufToB64(await crypto.subtle.exportKey('raw', signingKey)))
@@ -449,6 +493,7 @@ export async function sealSeedUnderSigningCheck(
   ctx: SigningContext,
 ): Promise<CheckResult<WalletMeta>> {
   const stored = await seedRecordFor(walletId)
+  if (stored.seedMethod === 'passkey-derived') throw new Error('A Passkey-Derived Seed has no stored Seed to seal.')
   if (stored.signing || stored.sealedSeed) throw new Error('This wallet already has a signing check.')
   if (!stored.encryptedSeed) throw new Error('Wallet not found in local vault.')
   if (!ctx.openKey) throw new Error('Wallet is locked.')
@@ -458,6 +503,7 @@ export async function sealSeedUnderSigningCheck(
   let credentialKey: CryptoKey
   let credentialId: string | undefined
   let prfSaltB64: string | undefined
+  let legacyRpId: string | undefined
 
   if (kind === 'pin') {
     const lockout = await getLockoutState()
@@ -481,10 +527,11 @@ export async function sealSeedUnderSigningCheck(
     const meta = await getVaultMeta()
     if (!isWebAuthnSupported() || !meta.passkeyCredentialIdB64) return { status: 'unsupported' }
     credentialId = meta.passkeyCredentialIdB64
+    legacyRpId = meta.rpId
     const salt = crypto.getRandomValues(new Uint8Array(32))
     prfSaltB64 = bufToB64(salt.buffer)
     try {
-      credentialKey = await deriveAesKeyFromBits(await assertPasskeyAndDeriveBits(credentialId, salt), hkdfInfo)
+      credentialKey = await deriveAesKeyFromBits(await assertPasskeyAndDeriveBits(credentialId, salt, meta.rpId), hkdfInfo)
     } catch (err) {
       if (isCancelled(err)) return { status: 'cancelled' }
       if (isPrfUnsupported(err)) return { status: 'unsupported' }
@@ -500,6 +547,7 @@ export async function sealSeedUnderSigningCheck(
     hkdfInfo,
     ...(credentialId ? { credentialIdB64: credentialId } : {}),
     ...(prfSaltB64 ? { prfSaltB64 } : {}),
+    ...(credentialId && legacyRpId ? { rpId: legacyRpId } : {}),
   })
   await mutateStoredWallet(stored.id, (current) => {
     // Another tab or flow changed the ciphertext since it was read: abort,
@@ -618,10 +666,13 @@ export async function createStoredWallet(input: CreateStoredWalletInput, ctx: { 
         if (!isWebAuthnSupported()) return await abandon(hadAppPin, { status: 'unsupported' })
         const prfSalt = crypto.getRandomValues(new Uint8Array(32))
         let credentialIdB64: string
+        let rpId: string | undefined
         let bits: ArrayBuffer
         try {
-          credentialIdB64 = (await registerPasskey(`${input.label || 'Wallet'} – signing`)).credentialIdB64
-          bits = await assertPasskeyAndDeriveBits(credentialIdB64, prfSalt)
+          const registered = await registerPasskey(`${input.label || 'Wallet'} – signing`)
+          credentialIdB64 = registered.credentialIdB64
+          rpId = registered.rpId
+          bits = await assertPasskeyAndDeriveBits(credentialIdB64, prfSalt, rpId)
         } catch (err) {
           if (isCancelled(err)) return await abandon(hadAppPin, { status: 'cancelled' })
           if (isPrfUnsupported(err)) return await abandon(hadAppPin, { status: 'unsupported' })
@@ -632,6 +683,7 @@ export async function createStoredWallet(input: CreateStoredWalletInput, ctx: { 
           hkdfInfo,
           credentialIdB64,
           prfSaltB64: bufToB64(prfSalt.buffer),
+          ...(rpId ? { rpId } : {}),
         })
       }
     }
@@ -674,6 +726,209 @@ async function abandon<R>(hadAppPin: boolean, result: R): Promise<R> {
   return result
 }
 
+// ---------------------------------------------------------------------------
+// Creation (AD-24): a Passkey-Derived Seed Wallet. The Seed exists in no stored form.
+// ---------------------------------------------------------------------------
+
+export interface CreateDerivedWalletInput {
+  label: string
+  network: NetworkId
+  /** A custom Node the caller already proved for `network` (`verifyNode`). */
+  node?: string
+  algorithm: 'ed25519' | 'secp256k1'
+  openCheck: NewOpenCheck
+  autoLockMinutes: number
+  /** `new` registers a passkey named after the Wallet; `existing` asserts with no
+   * `allowCredentials` and takes the credential id from the result (FR-70). */
+  passkeyChoice: 'new' | 'existing'
+  passkey?: PasskeyCapability
+  /** Supplied only by a restore. A new Wallet gets a fresh one. */
+  ordinal?: string
+  /** A restore accepts the derived Wallet only if it is this address. */
+  expectedAddress?: string
+}
+
+export type CreateDerivedWalletResult =
+  | CheckResult<{
+      meta: WalletMeta
+      /** The new lock's Open Key (non-extractable), for the caller to open the lock with. */
+      openKey: CryptoKey
+      /** Public. Shown once so the person can write it down; rebuilds the Wallet on a new device. */
+      ordinal: string
+      /** The BE flag read at registration. `undefined`: not readable (an existing passkey, or an
+       * authenticator that did not say) — the caller states both consequences. */
+      backupEligible?: boolean
+    }>
+  | { status: 'refused'; reason: string }
+
+/**
+ * Creates a Passkey-Derived Seed Wallet on a NEW lock of its own. The record
+ * holds no `encryptedSeed`, `sealedSeed` or `signing`: only the public inputs
+ * that recompute the Seed from the passkey (credential id, rpId, ordinal, BE).
+ * The PRF output and the derived Wallet are locals, dropped on return.
+ *
+ * Order, so a failure leaves the vault as it was: policy, then the passkey
+ * (registered for a new one, then asserted for the `seed` salt — a second prompt
+ * after registration is the normal path, AD-24), then the derived address is checked
+ * (a restore's expected address) and the (credential, ordinal, algorithm) triple
+ * is checked for a duplicate, then the lock, then one write of the Wallet. A
+ * failure after the lock is written removes it.
+ */
+export async function createDerivedWallet(input: CreateDerivedWalletInput, ctx: { pin?: string } = {}): Promise<CreateDerivedWalletResult> {
+  const rpId = getRpId()
+  const verdict = checkWalletRequest({
+    network: input.network,
+    seedMethod: 'passkey-derived',
+    openCheck: input.openCheck,
+    autoLockMinutes: input.autoLockMinutes,
+    signing: 'passkey',
+    passkey: input.passkey ?? 'unknown',
+    origin: rpId,
+  })
+  if (!verdict.ok) return { status: 'refused', reason: verdict.reason }
+  const node = input.node === undefined ? undefined : (canonicalNodeUrl(input.node) ?? undefined)
+  if (input.node !== undefined && !node) {
+    return { status: 'refused', reason: 'A custom Node must be a wss:// address with no username, password, query or fragment.' }
+  }
+  if (input.ordinal !== undefined && !isOrdinal(input.ordinal)) {
+    return { status: 'refused', reason: 'The ordinal is the 6-digit number shown when the wallet was created.' }
+  }
+  if (input.openCheck === 'pin' && !ctx.pin) return { status: 'cancelled' }
+  if (!isWebAuthnSupported()) return { status: 'unsupported' }
+
+  const hadAppPin = await hasAppPin()
+  const ordinal = input.ordinal ?? generateOrdinal()
+  const walletId = crypto.randomUUID()
+  let lockId: string | null = null
+  try {
+    const salt = await seedSalt(ordinal)
+    let credentialIdB64: string
+    let backupEligible: boolean | undefined
+    let bits: ArrayBuffer | null
+    try {
+      if (input.passkeyChoice === 'new') {
+        const registered = await registerPasskey(`${input.label || 'Wallet'} – seed`)
+        credentialIdB64 = registered.credentialIdB64
+        backupEligible = registered.backupEligible
+        // The authenticator may have skipped PRF at registration: this assertion
+        // is what derives, and a device with no PRF fails here, writing nothing.
+        bits = await assertPasskeyAndDeriveBits(credentialIdB64, salt, rpId)
+      } else {
+        const found = await assertAnyPasskeyAndDeriveBits(salt, rpId)
+        credentialIdB64 = found.credentialIdB64
+        bits = found.bits
+      }
+    } catch (err) {
+      if (isCancelled(err)) return await abandon(hadAppPin, { status: 'cancelled' })
+      if (isPrfUnsupported(err)) return await abandon(hadAppPin, { status: 'unsupported' })
+      throw err
+    }
+    const wallet = await walletFromSeedPrf(bits, input.algorithm)
+    bits = null
+    const address = wallet.address
+    if (input.expectedAddress !== undefined && address !== input.expectedAddress) {
+      return await abandon(hadAppPin, { status: 'wrong-credential', kind: 'passkey', triesRemaining: await triesRemaining() })
+    }
+    const taken = (await listStoredWallets()).some(
+      (w) =>
+        w.derived?.credentialIdB64 === credentialIdB64 &&
+        w.derived.ordinal === ordinal &&
+        w.algorithm === input.algorithm,
+    )
+    if (taken) {
+      return await abandon(hadAppPin, {
+        status: 'refused' as const,
+        reason: 'A wallet from this passkey with this ordinal and signature type already exists on this device.',
+      })
+    }
+
+    // One passkey rule (FR-70): when the Open Check is this same passkey, the
+    // lock reuses the credential — but with its own random PRF salt and info.
+    const lock = await createLock(
+      {
+        network: input.network,
+        openCheck: input.openCheck,
+        autoLockMinutes: input.autoLockMinutes,
+        label: `${input.label || 'Wallet'} – open`,
+        reuseCredential: { credentialIdB64, rpId },
+      },
+      { pin: ctx.pin },
+    )
+    if (lock.status !== 'ok') return await abandon(hadAppPin, lock)
+    lockId = lock.value.id
+
+    const stored: StoredWallet = {
+      id: walletId,
+      label: input.label || 'Wallet',
+      address,
+      createdAt: Date.now(),
+      seedMethod: 'passkey-derived',
+      algorithm: input.algorithm,
+      lockId,
+      openCheck: input.openCheck,
+      signingCheck: 'passkey',
+      views: [{ walletId, network: input.network, ...(node ? { node } : {}) }],
+      derived: { credentialIdB64, rpId, ordinal, ...(backupEligible === undefined ? {} : { backupEligible }) },
+    }
+    await putStoredWallet(stored)
+    return { status: 'ok', value: { meta: toMetas(stored)[0], openKey: lock.value.key, ordinal, ...(backupEligible === undefined ? {} : { backupEligible }) } }
+  } catch (err) {
+    if (lockId) await deleteLock(lockId).catch(() => {})
+    if (!hadAppPin) await discardUnusedAppPin().catch(() => {})
+    throw err
+  }
+}
+
+export interface RestorePasskeyWalletOptions {
+  /** The address the Wallet must derive to. A restore is accepted only on a match. */
+  expectedAddress: string
+  label?: string
+  /** Defaults to a passkey Open Check on this passkey. */
+  openCheck?: NewOpenCheck
+  autoLockMinutes?: number
+  passkey?: PasskeyCapability
+}
+
+/**
+ * Rebuilds a Passkey-Derived Wallet on a device with no local storage from the
+ * same passkey (asserted with no `allowCredentials`), the ordinal the person
+ * wrote down, and the signature type (AD-24). Accepted only if the derived
+ * address is `expectedAddress`; a mismatch is a wrong credential and writes
+ * nothing. A PIN Open Check asks for the App PIN through `prompts.pin`. A keystore
+ * function only: its screen is a later story.
+ */
+export async function restorePasskeyWallet(
+  ordinal: string,
+  algorithm: 'ed25519' | 'secp256k1',
+  network: NetworkId,
+  node: string | undefined,
+  prompts: Prompts,
+  options: RestorePasskeyWalletOptions,
+): Promise<CreateDerivedWalletResult> {
+  const openCheck = options.openCheck ?? 'passkey'
+  let pin: string | undefined
+  if (openCheck === 'pin') {
+    const typed = await prompts.pin({ triesRemaining: await triesRemaining() })
+    if (typed === null) return { status: 'cancelled' }
+    pin = typed
+  }
+  return createDerivedWallet(
+    {
+      label: options.label ?? 'Restored wallet',
+      network,
+      ...(node ? { node } : {}),
+      algorithm,
+      openCheck,
+      autoLockMinutes: options.autoLockMinutes ?? 5,
+      passkeyChoice: 'existing',
+      passkey: options.passkey ?? 'unknown',
+      ordinal,
+      expectedAddress: options.expectedAddress,
+    },
+    { pin },
+  )
+}
+
 /** "Use on another network": a second Wallet over the SAME Seed record — own
  * walletId, no new ciphertext. Rejects a network the Seed already has a view
  * on. */
@@ -684,6 +939,26 @@ export async function addNetworkView(walletId: string, network: NetworkId): Prom
     throw new Error('This wallet is not migrated yet. Restart the app and try again.')
   }
   await assertLockAllowsNetwork(record.lockId ?? LEGACY_LOCK_ID, network)
+  if (record.seedMethod === 'passkey-derived') {
+    // A derived Seed gets no view that creation policy would have refused (AD-28).
+    const info = await getLockInfo(record.lockId ?? LEGACY_LOCK_ID)
+    let origin: string | undefined
+    try {
+      origin = getRpId()
+    } catch {
+      origin = undefined
+    }
+    const verdict = checkWalletRequest({
+      network,
+      seedMethod: 'passkey-derived',
+      openCheck: info.openCheck === 'none' ? 'none' : info.openCheck === 'passkey' ? 'passkey' : 'pin',
+      autoLockMinutes: info.autoLockMinutes,
+      signing: 'passkey',
+      passkey: 'unknown',
+      origin,
+    })
+    if (!verdict.ok) throw new Error(verdict.reason)
+  }
   const newWalletId = crypto.randomUUID()
   let added = false
   await mutateStoredWallet(record.id, (current) => {

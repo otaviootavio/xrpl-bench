@@ -830,6 +830,14 @@ repository is not an invitation; publishing a URL and asking people to fund it
 is. Treat "attach the final production hostname" as a prerequisite of that step,
 not a later improvement.
 
+**Passkey-Derived Seeds raise the stakes of this origin.** A Passkey-Derived
+Seed Wallet is bound to the rpId it was made under (AD-24): a domain change makes
+its passkey unreachable, not only its stored data. So `policy.ts` refuses a
+Passkey-Derived Seed on Mainnet while the build's rpId ends `.b-cdn.net`
+(Testnet and Devnet are unaffected), and the creation flow states the domain
+dependency before the Wallet is made. The rpId is set per branch in
+`vite.config.ts` (`__RP_ID__`); Related Origin Requests are not used.
+
 **Also:** never install the staging site as a PWA and never put Mainnet funds in
 it. It is a public, unauthenticated URL with its own origin and its own separate
 vault.

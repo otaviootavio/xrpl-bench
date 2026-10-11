@@ -1,8 +1,8 @@
 import { openDB, type DBSchema, type IDBPDatabase } from 'idb'
 import type { NetworkId } from '@/lib/xrpl/networks'
 
-/** Seed Method (FR-62). Only `stored` exists until a later story. */
-export type SeedMethod = 'stored'
+/** Seed Method (FR-62), the one declaration; `policy.ts` re-exports it. */
+export type SeedMethod = 'stored' | 'passkey-derived'
 /** `unresolved` until the first decryption derives it from the Seed itself and
  * checks it against the stored address — never guessed (AD-18). */
 export type SeedAlgorithm = 'ed25519' | 'secp256k1' | 'unresolved'
@@ -25,6 +25,19 @@ export interface SigningSeal {
   /** Passkey only: the credential asserted and the PRF salt for `(seed, 'sign')`. */
   credentialIdB64?: string
   prfSaltB64?: string
+  /** Passkey only: the rpId the credential was registered under (AD-24). Absent on
+   * a credential registered before it was recorded. */
+  rpId?: string
+}
+
+/** What a Passkey-Derived Seed Wallet records instead of a Seed (AD-24): all
+ * public. `ordinal` rebuilds the `seed` PRF salt; `backupEligible` is the BE
+ * flag read at registration, absent when it could not be read. */
+export interface DerivedSeedInfo {
+  credentialIdB64: string
+  rpId: string
+  ordinal: string
+  backupEligible?: boolean
 }
 
 /** A Wallet is a view `(walletId, network, node)` over one Seed record
@@ -52,6 +65,9 @@ export interface StoredWallet {
   /** The Seed under the Signing Key. Present only with `signing`. */
   sealedSeed?: { ivB64: string; ciphertextB64: string }
   signing?: SigningSeal
+  /** Passkey-Derived only. Such a record has no `encryptedSeed`, `sealedSeed` or
+   * `signing`: its Seed exists in no stored form. */
+  derived?: DerivedSeedInfo
   seedMethod?: SeedMethod
   algorithm?: SeedAlgorithm
   lockId?: string
@@ -79,6 +95,8 @@ export interface LockRecord {
   /** The Open Key encrypted under this lock's own passkey. */
   wrappedOpenKeyForPasskey?: { ivB64: string; ciphertextB64: string }
   passkeyCredentialIdB64?: string
+  /** The rpId that passkey was registered under (AD-24). */
+  rpId?: string
   /** `none` only: the Open Key itself, a non-extractable CryptoKey, which
    * parent AD-5 permits in IndexedDB. */
   openKey?: CryptoKey
@@ -97,6 +115,8 @@ export const lockKey = (id: string) => `lock:${id}`
 export interface VaultMeta {
   key: 'vault'
   passkeyCredentialIdB64?: string
+  /** The rpId the legacy passkey was registered under, when recorded (AD-24). */
+  rpId?: string
   pinSaltB64?: string
   wrappedMasterKeyForPin?: { ivB64: string; ciphertextB64: string }
   wrappedMasterKeyForPasskey?: { ivB64: string; ciphertextB64: string }

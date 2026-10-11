@@ -1,0 +1,153 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Passkey Signing Forge</title>
+<meta name="description" content="Forge report, 2026-10-09: per-wallet key setup and passkey-gated signing for xrpl-bench. Outcome: hardened.">
+<style>
+:root{
+  --bg:#f3efe6;--panel:#fffdf8;--panel-2:#f7f2e7;--ink:#1f1c17;--ink-2:#565046;--rule:#d6cdb9;
+  --seal:#9b2c1f;--seal-2:#7a1f15;--seal-ink:#fff4ea;--ok:#2f5d34;--ok-bg:#e4efe1;--no:#8a2a1c;--no-bg:#f6e1dc;
+  --open:#6a4a00;--open-bg:#f8ecd0;--mono:ui-monospace,"SFMono-Regular",Menlo,Consolas,monospace;
+  --serif:"Iowan Old Style","Palatino Linotype",Palatino,Georgia,serif;--sans:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  color-scheme:light;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#15130f;--panel:#1e1b16;--panel-2:#26221b;--ink:#ede6d8;--ink-2:#b8af9f;--rule:#3c362c;
+    --seal:#c2483a;--seal-2:#8f2c21;--seal-ink:#fff4ea;--ok:#9fd09b;--ok-bg:#1c2d1b;--no:#f0a090;--no-bg:#3a1b15;
+    --open:#f0c76a;--open-bg:#33280f;color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#15130f;--panel:#1e1b16;--panel-2:#26221b;--ink:#ede6d8;--ink-2:#b8af9f;--rule:#3c362c;
+  --seal:#c2483a;--seal-2:#8f2c21;--seal-ink:#fff4ea;--ok:#9fd09b;--ok-bg:#1c2d1b;--no:#f0a090;--no-bg:#3a1b15;
+  --open:#f0c76a;--open-bg:#33280f;color-scheme:dark;
+}
+*,*::before,*::after{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.55 var(--sans);overflow-x:hidden}
+main{max-width:980px;margin:0 auto;padding:24px 16px 64px}
+h1,h2,h3{font-family:var(--serif);line-height:1.15;margin:0}
+p,li{overflow-wrap:anywhere}
+code{font-family:var(--mono);font-size:.9em}
+.hero{display:grid;gap:20px;align-items:center;background:var(--panel);border:1px solid var(--rule);border-radius:8px;padding:24px 20px}
+@media (min-width:760px){.hero{grid-template-columns:1fr 220px}}
+.eyebrow{font:600 12px/1.3 var(--mono);letter-spacing:.14em;text-transform:uppercase;color:var(--ink-2)}
+.hero h1{font-size:clamp(30px,6vw,46px);margin:8px 0 10px}
+.hero p{margin:0;color:var(--ink-2);max-width:60ch}
+.seal{width:200px;max-width:100%;justify-self:center}
+section{margin-top:40px}
+section>h2{font-size:clamp(22px,4vw,30px);margin-bottom:12px}
+.panel{background:var(--panel);border:1px solid var(--rule);border-radius:8px;padding:16px 18px}
+ol.flow{margin:0;padding-left:22px}
+ol.flow li{margin:8px 0}
+ul.items{list-style:none;margin:0;padding:0;display:grid;gap:8px}
+ul.items li{padding:10px 12px;border-radius:6px;border:1px solid var(--rule);background:var(--panel-2)}
+.lbl{display:inline-block;font:700 11px/1 var(--mono);letter-spacing:.08em;text-transform:uppercase;padding:4px 6px 3px;border-radius:3px;margin-right:8px;vertical-align:1px}
+.lock{background:var(--ok-bg);color:var(--ok);border:1px solid var(--ok)}
+.kill{background:var(--no-bg);color:var(--no);border:1px solid var(--no)}
+.open{background:var(--open-bg);color:var(--open);border:1px dashed var(--open)}
+.cast{display:grid;gap:12px;grid-template-columns:repeat(auto-fill,minmax(min(100%,260px),1fr))}
+.cast div{background:var(--panel);border:1px solid var(--rule);border-radius:8px;padding:12px 14px}
+.cast b{font-family:var(--serif);font-size:18px}
+.cast small{display:block;color:var(--ink-2);font-family:var(--mono);font-size:12px;margin:2px 0 6px}
+.cast p{margin:0;font-style:italic;color:var(--ink-2);font-size:15px}
+.note{color:var(--ink-2);font-size:14px;margin-top:10px}
+</style>
+</head>
+<body>
+<main>
+  <header class="hero">
+    <div>
+      <div class="eyebrow">xrpl-bench · forge report · 2026-10-09</div>
+      <h1>Per-wallet key setup &amp; passkey-gated signing</h1>
+      <p>Started as "the passkey approves every signature" and became a creation flow where each wallet picks its network, node, how its secret key works, its signature type, and its own checks for opening and for signing.</p>
+    </div>
+    <svg class="seal" viewBox="0 0 200 200" role="img" aria-label="Wax seal stamped HARDENED">
+      <defs>
+        <path id="ring" d="M100,100 m-70,0 a70,70 0 1,1 140,0 a70,70 0 1,1 -140,0"/>
+      </defs>
+      <path fill="var(--seal-2)" d="M100 8l14 10 17-3 8 15 16 6 1 17 12 12-6 16 6 16-12 12-1 17-16 6-8 15-17-3-14 10-14-10-17 3-8-15-16-6-1-17-12-12 6-16-6-16 12-12 1-17 16-6 8-15 17 3z"/>
+      <circle cx="100" cy="100" r="80" fill="var(--seal)"/>
+      <circle cx="100" cy="100" r="62" fill="none" stroke="var(--seal-ink)" stroke-width="1.5" stroke-dasharray="3 4" opacity=".8"/>
+      <text font-family="ui-monospace,Menlo,monospace" font-size="11" letter-spacing="3" fill="var(--seal-ink)"><textPath href="#ring" startOffset="4%">PASSKEY · SIGNING · FORGED · 2026</textPath></text>
+      <text x="100" y="98" text-anchor="middle" font-family="Georgia,serif" font-weight="700" font-size="21" fill="var(--seal-ink)" letter-spacing="1">HARDENED</text>
+      <text x="100" y="120" text-anchor="middle" font-family="ui-monospace,Menlo,monospace" font-size="10" fill="var(--seal-ink)" opacity=".9">22 LOCKS · 1 PARKED</text>
+    </svg>
+  </header>
+
+  <section>
+    <h2>The threat it targets</h2>
+    <div class="panel"><p style="margin:0">Someone using a phone that is <b>already unlocked</b>. It helps somewhat against malicious code in the page, and adds little against stolen device storage, which is already encrypted.</p></div>
+  </section>
+
+  <section>
+    <h2>The creation flow</h2>
+    <div class="panel">
+      <ol class="flow">
+        <li><b>Network</b>: Mainnet / Testnet / Devnet, then the <b>node</b>: pick from the list, or add a custom one with a connection test.</li>
+        <li><b>How the secret key works</b>: "Your passkey creates the seed. Same passkey on a new phone = same wallet." <i>or</i> "A new random seed, locked on this phone. A new phone needs your written seed."</li>
+        <li><b>Signature type</b>: Ed25519 / secp256k1.</li>
+        <li><b>Check when the app opens</b>, per wallet: required on Mainnet (PIN or passkey, auto-lock ≥ 1 min), optional on Testnet/Devnet.</li>
+        <li><b>Check on every signature</b>: none, or exactly one of passkey only / PIN only.</li>
+      </ol>
+      <p class="note">Later, outside creation: "Will this wallet be controlled by a master key?" and "Add a passkey as an extra key."</p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Locked decisions</h2>
+    <ul class="items">
+      <li><span class="lbl lock">lock</span>A wallet with a signing check has its own seed key, which the session <code>vaultKey</code> cannot open. <code>vaultKey</code> itself stays.</li>
+      <li><span class="lbl lock">lock</span>Revealing the seed requires the same check as signing. Passkey-created seeds can always be revealed, and the screen never says "cannot be exported".</li>
+      <li><span class="lbl lock">lock</span>The signing PIN is the app PIN. Wrong tries share the unlock screen's count and hard lock, and cancelled passkey prompts never count.</li>
+      <li><span class="lbl lock">lock</span>One passkey rule everywhere: use an existing passkey or create a new one, named after the wallet, with a separate salt for each use.</li>
+      <li><span class="lbl lock">lock</span>Synced and device-bound passkeys are both allowed. The app states the consequence of the kind it got.</li>
+      <li><span class="lbl lock">lock</span>The app opens freely. Names are visible, but balances and addresses of locked wallets stay hidden.</li>
+      <li><span class="lbl lock">lock</span>Existing wallets keep working unchanged. Checks can be edited later, but the seed method can't. Weakening a check requires passing it first.</li>
+      <li><span class="lbl lock">lock</span>Reverses the mandatory PIN fallback (<code>decisions.md</code> §1): a Mainnet wallet protected only by a passkey requires a confirmed written seed.</li>
+      <li><span class="lbl lock">lock</span>Any wallet can be a master key. If it's on the same phone as the wallet it controls, a plain warning says so. An offline device signs by QR.</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>Rejected and why</h2>
+    <ul class="items">
+      <li><span class="lbl kill">rejected</span>A passkey signature accepted directly by XRPL: the ledger accepts only secp256k1/Ed25519, and WebAuthn signs its own wrapper data.</li>
+      <li><span class="lbl kill">rejected</span>A passkey prompt while <code>vaultKey</code> can still decrypt the seed: it would be for show only.</li>
+      <li><span class="lbl kill">rejected</span>A separate signing PIN: easy to forget, and a second lockout to maintain.</li>
+      <li><span class="lbl kill">rejected</span>An app-wide open check: it would make "no check on Testnet" meaningless next to a Mainnet wallet.</li>
+      <li><span class="lbl kill">rejected</span>Splitting keys with a server (MPC), Smart Escrows, Xahau Hooks: no backend, or not a way to authorize an account.</li>
+      <li><span class="lbl kill">parked</span><code>largeBlob</code> (seed inside the passkey): uneven support, no Firefox. If it's ever used, store only the encrypted seed.</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>Weak points that survived</h2>
+    <ul class="items">
+      <li><span class="lbl open">open</span>Passkey-derived keys are tied to the app's domain. A domain change loses them, so the domain is permanent.</li>
+      <li><span class="lbl open">open</span>Offline QR signing: the default expiry is about 1 minute (20 ledgers). Set it explicitly, e.g. +75 ledgers ≈ 5 minutes.</li>
+      <li><span class="lbl open">open</span>Per-wallet locks are a real change to the vault, not just a screen.</li>
+      <li><span class="lbl open">open</span>Pre-selected defaults, "turn off master key" (recommend not offering it), and the built-in node list go to the PRD.</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>Who pressure-tested it</h2>
+    <div class="cast">
+      <div><b>🔒 Vex</b><small>Security engineer · custom persona</small><p>"A prompt is only a check if the session can't open the seed without it."</p></div>
+      <div><b>😤 Grumbal</b><small>The Adversary · custom persona</small><p>"A master on the same phone gives the thief everything."</p></div>
+      <div><b>🌶️ Boundary</b><small>Edge-case hunter · custom persona</small><p>"Which PIN? Which passkey? Describe the day you change phones."</p></div>
+      <div><b>🏗️ Winston</b><small>System architect · BMad</small><p>"The vault needs a lock per wallet now."</p></div>
+      <div><b>🎨 Sally</b><small>UX designer · BMad</small><p>"Locked cards with Unlock; one checkbox only where it works."</p></div>
+      <div><b>📋 John</b><small>Product manager · BMad</small><p>"What happens to the wallets that already exist?"</p></div>
+      <div><b>🧾 Dara</b><small>Hardware-wallet product lead · outside voice</small><p>"Name the attacker it stops."</p></div>
+      <div><b>📱 Inês</b><small>Wallet support lead · outside voice</small><p>"'I changed phones and can't send': explain it before it happens."</p></div>
+      <div><b>💼 Teo</b><small>Daily XRPL user · outside voice</small><p>"Two PINs means a sticky note."</p></div>
+      <div><b>🧑‍💻 Kenji</b><small>Cryptography engineer · outside voice</small><p>"A different salt per use gives unrelated keys from one passkey."</p></div>
+    </div>
+  </section>
+</main>
+</body>
+</html>

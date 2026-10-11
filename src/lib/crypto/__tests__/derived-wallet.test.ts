@@ -423,13 +423,49 @@ describe('Mainnet and the origin', () => {
     expect(recordOf(meta.id).derived.rpId).toBe('wallet.example.com')
   })
 
-  it('on a custom domain with a passkey Open Check hits the written-Seed refusal until story 7', async () => {
+  it('on a custom domain with a passkey Open Check and no callback is refused, writing nothing', async () => {
     vi.stubGlobal('location', { hostname: 'wallet.example.com' })
     expect(await createDerivedWallet({ ...base, network: 'mainnet', openCheck: 'passkey' })).toMatchObject({
       status: 'refused',
       reason: expect.stringContaining('written, confirmed Seed'),
     })
     emptyVault()
+  })
+
+  it('with a passkey Open Check the Seed is shown after the address is derived and before the lock; confirmed, it is recorded', async () => {
+    vi.stubGlobal('location', { hostname: 'wallet.example.com' })
+    let seen: { seed: string; locks: number; wallets: number } | null = null
+    const { meta } = ok(
+      await createDerivedWallet(
+        { ...base, network: 'mainnet', openCheck: 'passkey' },
+        {
+          confirmWrittenSeed: async (seed) => {
+            seen = { seed, locks: lockRecords().length, wallets: h.state.stores.wallets.size }
+            return true
+          },
+        },
+      ),
+    )
+    expect(seen).toMatchObject({ locks: 0, wallets: 0 })
+    expect(Wallet.fromSeed(seen!.seed).address).toBe(meta.address)
+    expect(recordOf(meta.id).writtenSeedConfirmedAt).toBeGreaterThan(0)
+    expect(JSON.stringify(recordOf(meta.id))).not.toContain(seen!.seed)
+  })
+
+  it('cancelling at the confirm writes nothing', async () => {
+    vi.stubGlobal('location', { hostname: 'wallet.example.com' })
+    expect(
+      await createDerivedWallet({ ...base, network: 'mainnet', openCheck: 'passkey' }, { confirmWrittenSeed: async () => false }),
+    ).toEqual({ status: 'cancelled' })
+    emptyVault()
+  })
+
+  it('is not asked with an App PIN Open Check or off Mainnet', async () => {
+    vi.stubGlobal('location', { hostname: 'wallet.example.com' })
+    const confirm = vi.fn(async () => true)
+    ok(await createDerivedWallet({ ...base, network: 'mainnet' }, { pin: PIN, confirmWrittenSeed: confirm }))
+    ok(await createDerivedWallet({ ...base, openCheck: 'passkey' }, { confirmWrittenSeed: confirm }))
+    expect(confirm).not.toHaveBeenCalled()
   })
 
   it('Testnet and Devnet are allowed at a b-cdn.net origin', async () => {

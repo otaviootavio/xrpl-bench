@@ -3,8 +3,8 @@ import { canonicalNodeUrl, type NetworkId } from '@/lib/xrpl/networks'
 import type { Signer, SigningHandle } from '@/lib/xrpl/writes'
 import { aesDecrypt, aesEncrypt } from './aes'
 import { deriveAesKeyFromBits, generateOrdinal, HKDF_INFO, isOrdinal, seedSalt, walletFromSeedPrf } from './derive'
-import { createLock, deleteLock, discardUnusedAppPin, getLockInfo, hasAppPin, setAutoLockMinutes, withAppPin, type CheckResult } from './lock'
-import { checkLockRequest, checkWalletRequest, type NewOpenCheck, type PasskeyCapability, type PolicyVerdict, type SigningKind } from './policy'
+import { createLock, deleteLock, discardUnusedAppPin, getLockInfo, hasAppPin, openLock, setAutoLockMinutes, withAppPin, type CheckResult } from './lock'
+import { checkLockRequest, checkWalletRequest, requiresWrittenSeed, type NewOpenCheck, type PasskeyCapability, type PolicyVerdict, type SigningKind } from './policy'
 import { b64ToBuf, bufToB64 } from './encoding'
 import { attemptPin, getLockoutState, PBKDF2_ITERATIONS, recordFailure, triesRemaining } from './pin'
 import {
@@ -458,10 +458,46 @@ export async function signingHandleFor(walletId: string, ctx: SigningContext): P
  * holds it in a ref and clears it. */
 export async function revealSeed(walletId: string, ctx: SigningContext): Promise<CheckResult<string>> {
   const stored = await seedRecordFor(walletId)
-  const opened = await openSeed(stored, ctx)
+  let signingCtx = ctx
+  // A Standard Wallet's Seed is under its lock's Open Key, so the session alone
+  // would reveal it. Re-pass the lock's own Open Check first (FR-69), proving it
+  // without writing a session: the reveal never extends or replaces one. A sealed
+  // Wallet has its Signing Check and a Passkey-Derived one its passkey instead.
+  // A record that claims a Signing Check without its seal is not Standard: it fails closed in `openSeed`.
+  const standard =
+    stored.seedMethod !== 'passkey-derived' && (!stored.signingCheck || stored.signingCheck === 'standard') && !stored.signing && !stored.sealedSeed
+  if (standard) {
+    const passed = await repassOpenCheck(stored.lockId ?? LEGACY_LOCK_ID, ctx.prompts)
+    if (passed.status !== 'ok') return passed
+    if (passed.value) signingCtx = { ...ctx, openKey: passed.value }
+  }
+  const opened = await openSeed(stored, signingCtx)
   if (opened.status !== 'ok') return opened
   await walletFromSeed(stored, opened.value)
   return opened
+}
+
+/** Passes a lock's Open Check again, for a reveal, and returns its Open Key
+ * (`null` for Open Check `none`, which needs nothing). PIN lock: the PIN; passkey
+ * lock: the passkey; the legacy `either` lock: the passkey when this device can
+ * use one, else the PIN. A wrong PIN counts and a cancelled prompt never does
+ * (AD-25). Nothing is persisted. */
+async function repassOpenCheck(lockId: string, prompts: Prompts): Promise<CheckResult<CryptoKey | null>> {
+  const info = await getLockInfo(lockId)
+  if (info.openCheck === 'none') return { status: 'ok', value: null }
+  const usePasskey = info.openCheck === 'passkey' || (info.openCheck === 'either' && info.passkey && isWebAuthnSupported())
+  if (usePasskey) {
+    const opened = await openLock(lockId, 'passkey', { persist: false })
+    return opened.status === 'ok' ? { status: 'ok', value: opened.value.key } : opened
+  }
+  const lockout = await getLockoutState()
+  if (lockout.hardLocked || lockout.locked) {
+    return { status: 'locked-out', hard: lockout.hardLocked, lockedUntil: lockout.lockedUntil }
+  }
+  const pin = await prompts.pin({ triesRemaining: await triesRemaining() })
+  if (pin === null) return { status: 'cancelled' }
+  const opened = await openLock(lockId, 'pin', { pin, persist: false })
+  return opened.status === 'ok' ? { status: 'ok', value: opened.value.key } : opened
 }
 
 /** The one place a Seed is sealed under a Signing Check (AD-23): a random
@@ -629,8 +665,12 @@ export type CreateStoredWalletResult =
  * failure after the lock is written removes that lock and writes no Wallet. A
  * typed PIN is `ctx.pin`; it is used and not kept.
  */
-export async function createStoredWallet(input: CreateStoredWalletInput, ctx: { pin?: string } = {}): Promise<CreateStoredWalletResult> {
+export async function createStoredWallet(
+  input: CreateStoredWalletInput,
+  ctx: { pin?: string; confirmWrittenSeed?: ConfirmWrittenSeed } = {},
+): Promise<CreateStoredWalletResult> {
   const verdict = checkWalletRequest({
+    canConfirmWrittenSeed: !!ctx.confirmWrittenSeed,
     network: input.network,
     seedMethod: 'stored',
     openCheck: input.openCheck,
@@ -651,6 +691,10 @@ export async function createStoredWallet(input: CreateStoredWalletInput, ctx: { 
   const walletId = crypto.randomUUID()
   let lockId: string | null = null
   try {
+    // FR-72: the Seed is shown and confirmed before any credential, lock or
+    // Wallet is written. A refusal here leaves the vault exactly as it was.
+    const confirmedAt = await confirmedAtFor(input.network, input.openCheck, input.signing, ctx.confirmWrittenSeed, seed)
+    if (confirmedAt === 'cancelled') return await abandon(hadAppPin, { status: 'cancelled' })
     let sealed: { sealedSeed: { ivB64: string; ciphertextB64: string }; signing: SigningSeal } | null = null
     if (input.signing !== 'standard') {
       const hkdfInfo = `${SIGN_HKDF_PREFIX}${walletId}:v1`
@@ -706,6 +750,7 @@ export async function createStoredWallet(input: CreateStoredWalletInput, ctx: { 
       openCheck: input.openCheck,
       signingCheck: input.signing,
       views: [{ walletId, network: input.network, ...(node ? { node } : {}) }],
+      ...(confirmedAt ? { writtenSeedConfirmedAt: confirmedAt } : {}),
       ...(sealed
         ? { sealedSeed: sealed.sealedSeed, signing: sealed.signing }
         : { encryptedSeed: await aesEncrypt(lock.value.key, seed) }),
@@ -718,6 +763,25 @@ export async function createStoredWallet(input: CreateStoredWalletInput, ctx: { 
     if (!hadAppPin) await discardUnusedAppPin().catch(() => {})
     throw err
   }
+}
+
+/** Shows the Seed to the person and asks them to confirm they wrote it down
+ * (FR-72). Resolves `true` to proceed. */
+export type ConfirmWrittenSeed = (seed: string) => Promise<boolean>
+
+/** Runs the written-Seed confirmation when the combination needs one: the time it
+ * was confirmed, `undefined` when none is needed, or `'cancelled'`. A rule that
+ * needs it with no callback was already refused by the policy. */
+async function confirmedAtFor(
+  network: NetworkId,
+  openCheck: NewOpenCheck,
+  signing: SigningKind,
+  confirm: ConfirmWrittenSeed | undefined,
+  seed: string,
+): Promise<number | undefined | 'cancelled'> {
+  if (!requiresWrittenSeed(network, openCheck, signing)) return undefined
+  if (!confirm || !(await confirm(seed))) return 'cancelled'
+  return Date.now()
 }
 
 /** A creation that stops early: the App PIN it may have just made goes too. */
@@ -774,9 +838,13 @@ export type CreateDerivedWalletResult =
  * is checked for a duplicate, then the lock, then one write of the Wallet. A
  * failure after the lock is written removes it.
  */
-export async function createDerivedWallet(input: CreateDerivedWalletInput, ctx: { pin?: string } = {}): Promise<CreateDerivedWalletResult> {
+export async function createDerivedWallet(
+  input: CreateDerivedWalletInput,
+  ctx: { pin?: string; confirmWrittenSeed?: ConfirmWrittenSeed } = {},
+): Promise<CreateDerivedWalletResult> {
   const rpId = getRpId()
   const verdict = checkWalletRequest({
+    canConfirmWrittenSeed: !!ctx.confirmWrittenSeed,
     network: input.network,
     seedMethod: 'passkey-derived',
     openCheck: input.openCheck,
@@ -842,6 +910,11 @@ export async function createDerivedWallet(input: CreateDerivedWalletInput, ctx: 
       })
     }
 
+    // FR-72: the derived Seed is shown and confirmed now that its address is
+    // known to be right, and before the lock or Wallet is written.
+    const confirmedAt = await confirmedAtFor(input.network, input.openCheck, 'passkey', ctx.confirmWrittenSeed, wallet.seed!)
+    if (confirmedAt === 'cancelled') return await abandon(hadAppPin, { status: 'cancelled' })
+
     // One passkey rule (FR-70): when the Open Check is this same passkey, the
     // lock reuses the credential — but with its own random PRF salt and info.
     const lock = await createLock(
@@ -869,6 +942,7 @@ export async function createDerivedWallet(input: CreateDerivedWalletInput, ctx: 
       signingCheck: 'passkey',
       views: [{ walletId, network: input.network, ...(node ? { node } : {}) }],
       derived: { credentialIdB64, rpId, ordinal, ...(backupEligible === undefined ? {} : { backupEligible }) },
+      ...(confirmedAt ? { writtenSeedConfirmedAt: confirmedAt } : {}),
     }
     await putStoredWallet(stored)
     return { status: 'ok', value: { meta: toMetas(stored)[0], openKey: lock.value.key, ordinal, ...(backupEligible === undefined ? {} : { backupEligible }) } }
@@ -887,6 +961,8 @@ export interface RestorePasskeyWalletOptions {
   openCheck?: NewOpenCheck
   autoLockMinutes?: number
   passkey?: PasskeyCapability
+  /** Without it, a Mainnet passkey-only restore stays refused: it has no screen. */
+  confirmWrittenSeed?: ConfirmWrittenSeed
 }
 
 /**
@@ -925,7 +1001,7 @@ export async function restorePasskeyWallet(
       ordinal,
       expectedAddress: options.expectedAddress,
     },
-    { pin },
+    { pin, ...(options.confirmWrittenSeed ? { confirmWrittenSeed: options.confirmWrittenSeed } : {}) },
   )
 }
 

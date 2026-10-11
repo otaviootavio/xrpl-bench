@@ -74,6 +74,9 @@ export interface StoredWallet {
   openCheck?: OpenCheck
   signingCheck?: SigningCheck
   views?: WalletView[]
+  /** When the person wrote the Seed down and typed back the challenged groups
+   * (FR-72). Additive; absent on every record made without that step. */
+  writtenSeedConfirmedAt?: number
 }
 
 /** `lock:<id>` in the `vault` store. Holds the derivation inputs a lock's keys

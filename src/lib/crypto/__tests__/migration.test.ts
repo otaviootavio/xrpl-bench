@@ -79,7 +79,6 @@ import {
   listWallets,
   migrateLegacyVault,
   removeWallet,
-  revealSeed,
   setWalletNode,
   openSigner,
   signingHandleFor,
@@ -265,8 +264,9 @@ describe('Wallets as views over a Seed record', () => {
 
     const metas = await listWallets()
     expect(metas.map((m) => [m.id, m.network])).toEqual([['w1', 'mainnet'], [added.id, 'testnet']])
-    // The new view unlocks the same Seed.
-    expect(await revealSeed(added.id, ctx())).toEqual({ status: 'ok', value: w.seed })
+    // The new view unlocks the same Seed. (A reveal would re-pass the legacy lock's
+    // Open Check, which this fixture has no PIN for; the choke point does not.)
+    expect(await openedAddress(added.id)).toBe(w.address)
   })
 
   it('rejects a network the Seed already has a view on', async () => {
@@ -365,7 +365,7 @@ describe('review follow-ups', () => {
     await seedLegacy(w)
     await migrateLegacyVault(INPUT)
     h.state.failNextPutOn = 'wallets'
-    expect(await revealSeed('w1', ctx())).toEqual({ status: 'ok', value: w.seed })
+    expect(await openedAddress('w1')).toBe(w.address)
     expect(h.state.stores.wallets.get('w1').algorithm).toBe('unresolved')
   })
 })

@@ -204,7 +204,11 @@ async function finish(lockId: string, key: CryptoKey, autoLockMinutes: number, p
  * On success the session is persisted under `session:<lockId>` (the legacy
  * lock under `session`) with the lock's own expiry.
  */
-export async function openLock(lockId: string, method: OpenMethod, ctx: { pin?: string } = {}): Promise<CheckResult<OpenedLock>> {
+export async function openLock(
+  lockId: string,
+  method: OpenMethod,
+  ctx: { pin?: string; /** `false`: prove the check only; the session is not written (a reveal). */ persist?: boolean } = {},
+): Promise<CheckResult<OpenedLock>> {
   const plan = await planFor(lockId)
 
   if (method === 'none') {
@@ -220,7 +224,7 @@ export async function openLock(lockId: string, method: OpenMethod, ctx: { pin?: 
     )
     if (attempt.status === 'locked-out') return attempt
     if (attempt.status === 'wrong-credential') return { status: 'wrong-credential', kind: 'pin', triesRemaining: attempt.triesRemaining }
-    return finish(lockId, attempt.value, plan.autoLockMinutes)
+    return finish(lockId, attempt.value, plan.autoLockMinutes, ctx.persist !== false)
   }
 
   if (!plan.passkey) return { status: 'unsupported' }
@@ -242,8 +246,9 @@ export async function openLock(lockId: string, method: OpenMethod, ctx: { pin?: 
     return { status: 'wrong-credential', kind: 'passkey', triesRemaining: await triesRemaining() }
   }
   // A passkey proves the owner, but must not undo a PIN hard lock (AD-25).
-  if (!(await getLockoutState()).hardLocked) await resetFailures()
-  return finish(lockId, key, plan.autoLockMinutes)
+  // A reveal only proves the check again: it must not clear the PIN failure count.
+  if (ctx.persist !== false && !(await getLockoutState()).hardLocked) await resetFailures()
+  return finish(lockId, key, plan.autoLockMinutes, ctx.persist !== false)
 }
 
 // ---------------------------------------------------------------------------

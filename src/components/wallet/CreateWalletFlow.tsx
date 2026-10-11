@@ -6,6 +6,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { NetworkChoice } from '@/components/wallet/NetworkChoice'
 import { SeedReveal } from '@/components/wallet/SeedReveal'
+import { answersMatch, pickChallenge, type ChallengeGroup } from '@/lib/seed-confirmation'
 import { createDerivedWallet, createStoredWallet, describeCheckFailure, listWallets, type WalletMeta } from '@/lib/crypto/keystore'
 import { hasAppPin, startLockSession } from '@/lib/crypto/lock'
 import { triesRemaining } from '@/lib/crypto/pin'
@@ -47,7 +48,10 @@ export interface CreateWalletFlowProps {
   defaultLabel?: string
 }
 
-type Step = 'questions' | 'backup'
+/** `confirm-seed`: the Seed is shown and three groups of it typed back, BEFORE
+ * anything is written (FR-72). `finish`: a confirmed Stored Wallet is written and
+ * only needs its lock opened. */
+type Step = 'questions' | 'confirm-seed' | 'finish' | 'backup'
 
 /** What a Passkey-Derived creation leaves for the backup step. All public: the
  * ordinal rebuilds the Wallet on a new device, and is shown once here. */
@@ -196,6 +200,14 @@ function CreateWalletForm({ capability, onDone, onInProgressChange, defaultLabel
   const pinRef = useRef<HTMLInputElement | null>(null)
   const pinConfirmRef = useRef<HTMLInputElement | null>(null)
   const seedRef = useRef<string | null>(null)
+  // The pending written-Seed confirmation: resolved by the step's buttons, or
+  // `false` if the flow is left. Answers live in uncontrolled inputs, never state.
+  const confirmResolveRef = useRef<((ok: boolean) => void) | null>(null)
+  const answerRefs = useRef<Array<HTMLInputElement | null>>([])
+  const [challenge, setChallenge] = useState<ChallengeGroup[]>([])
+  const [mismatch, setMismatch] = useState(false)
+  // True once the person has confirmed: the keystore is now writing, so the step's buttons are inert.
+  const [confirmSettled, setConfirmSettled] = useState(false)
   const pendingRef = useRef<{ meta: WalletMeta; key: CryptoKey; autoLockMinutes: number } | null>(null)
   const getSeed = useCallback(() => seedRef.current, [])
 
@@ -233,6 +245,8 @@ function CreateWalletForm({ capability, onDone, onInProgressChange, defaultLabel
       // Leaving the flow drops the Seed and the key with it.
       seedRef.current = null
       pendingRef.current = null
+      confirmResolveRef.current?.(false)
+      confirmResolveRef.current = null
     },
     [],
   )
@@ -245,7 +259,53 @@ function CreateWalletForm({ capability, onDone, onInProgressChange, defaultLabel
     signing,
     passkey: capability,
     origin,
+    // This flow asks for the written Seed itself (the `confirm-seed` step).
+    canConfirmWrittenSeed: true,
   })
+
+  /** The pre-write callback the keystore calls with the new Seed (FR-72): shows
+   * the step and resolves once the person confirms or cancels. */
+  function confirmWrittenSeed(seed: string): Promise<boolean> {
+    return new Promise<boolean>((resolve) => {
+      seedRef.current = seed
+      confirmResolveRef.current = resolve
+      setChallenge(pickChallenge(seed.length))
+      setMismatch(false)
+      setConfirmSettled(false)
+      setStep('confirm-seed')
+    })
+  }
+
+  function clearAnswers() {
+    for (const input of answerRefs.current) if (input) input.value = ''
+  }
+
+  function settleConfirmation(ok: boolean) {
+    if (!confirmResolveRef.current) return
+    const resolve = confirmResolveRef.current
+    confirmResolveRef.current = null
+    // The Seed leaves this component the moment the step ends: the keystore has it.
+    seedRef.current = null
+    clearAnswers()
+    setChallenge([])
+    if (ok) setConfirmSettled(true)
+    resolve?.(ok)
+    if (!ok) setStep('questions')
+  }
+
+  function checkAnswers() {
+    const seed = seedRef.current
+    if (!seed) return
+    const answers = challenge.map((_, i) => answerRefs.current[i]?.value ?? '')
+    if (!answersMatch(seed, challenge, answers)) {
+      // Unlimited tries; the wrong answers are cleared, never kept or logged.
+      clearAnswers()
+      setMismatch(true)
+      return
+    }
+    setMismatch(false)
+    settleConfirmation(true)
+  }
 
   function changeNetwork(next: NetworkId) {
     setNewWalletNetwork(next)
@@ -329,7 +389,7 @@ function CreateWalletForm({ capability, onDone, onInProgressChange, defaultLabel
             passkeyChoice,
             passkey: capability,
           },
-          { pin },
+          { pin, confirmWrittenSeed },
         )
         if (derived.status === 'ok') {
           pendingRef.current = { meta: derived.value.meta, key: derived.value.openKey, autoLockMinutes }
@@ -362,14 +422,21 @@ function CreateWalletForm({ capability, onDone, onInProgressChange, defaultLabel
           signing,
           passkey: capability,
         },
-        { pin },
+        { pin, confirmWrittenSeed },
       )
       switch (result.status) {
         case 'ok':
-          seedRef.current = result.value.seed
           pendingRef.current = { meta: result.value.meta, key: result.value.openKey, autoLockMinutes }
           created = true
-          setStep('backup')
+          if (options.writtenSeedRequired) {
+            // Already written down and confirmed before anything was stored: no
+            // second backup screen, and the Seed is not kept.
+            setStep('finish')
+            await finishBackup(true)
+          } else {
+            seedRef.current = result.value.seed
+            setStep('backup')
+          }
           break
         case 'refused':
           setError(result.reason)
@@ -397,9 +464,9 @@ function CreateWalletForm({ capability, onDone, onInProgressChange, defaultLabel
     }
   }
 
-  async function finishBackup() {
+  async function finishBackup(fromCreate = false) {
     const pending = pendingRef.current
-    if (!pending || busy) return
+    if (!pending || (busy && !fromCreate)) return
     setBusy(true)
     try {
       await startLockSession(pending.meta.lockId, pending.key, pending.autoLockMinutes)
@@ -418,6 +485,76 @@ function CreateWalletForm({ capability, onDone, onInProgressChange, defaultLabel
     } finally {
       setBusy(false)
     }
+  }
+
+  if (step === 'confirm-seed') {
+    return (
+      <div className="flex flex-col gap-4">
+        <div>
+          <h2 className="text-sm font-medium">Write down your Seed</h2>
+          <p className="text-sm text-muted-foreground">
+            {network === 'mainnet' ? 'This is a Mainnet wallet: it holds real funds. ' : ''}
+            Your passkey is the only check on this wallet, so a written Seed is how you get your funds back if the passkey is lost. Write it on paper and keep it offline. Nothing is saved until you have typed three parts of it back.
+          </p>
+        </div>
+        <SeedReveal getSeed={getSeed} heading="Anyone with this Seed can take your funds" />
+        <div className="grid gap-2">
+          {challenge.map((part, i) => (
+            <div key={part.from} className="grid gap-1">
+              <Label htmlFor={`${group}-confirm-${i}`}>
+                Characters {part.from}–{part.to}
+              </Label>
+              <Input
+                id={`${group}-confirm-${i}`}
+                ref={(el) => {
+                  answerRefs.current[i] = el
+                }}
+                autoComplete="off"
+                autoCapitalize="off"
+                autoCorrect="off"
+                spellCheck={false}
+                maxLength={8}
+                className="font-data"
+                aria-invalid={mismatch ? true : undefined}
+              />
+            </div>
+          ))}
+        </div>
+        {mismatch && (
+          <p role="alert" className="text-sm text-text-destructive">
+            That does not match. Check what you wrote.
+          </p>
+        )}
+        <div className="flex flex-wrap gap-2">
+          <Button type="button" disabled={confirmSettled} onClick={checkAnswers}>
+            Check what I wrote
+          </Button>
+          <Button type="button" variant="outline" disabled={confirmSettled} onClick={() => settleConfirmation(false)}>
+            Cancel
+          </Button>
+        </div>
+      </div>
+    )
+  }
+
+  if (step === 'finish') {
+    return (
+      <div className="flex flex-col gap-4">
+        <p role="status" className="text-sm text-muted-foreground">
+          {error ? 'The wallet was created but could not be opened.' : 'Opening your wallet…'}
+        </p>
+        {error && (
+          <p role="alert" className="text-sm text-text-destructive">
+            {error}
+          </p>
+        )}
+        {error && (
+          <Button disabled={busy} onClick={() => void finishBackup()}>
+            Try again
+          </Button>
+        )}
+      </div>
+    )
   }
 
   if (step === 'backup' && derivedBackup) {
@@ -461,7 +598,7 @@ function CreateWalletForm({ capability, onDone, onInProgressChange, defaultLabel
       <div className="flex flex-col gap-4">
         <div>
           <h2 className="text-sm font-medium">Back up your seed</h2>
-          <p className="text-sm text-muted-foreground">This is the only way to recover your wallet.</p>
+          <p className="text-sm text-muted-foreground">Write it down: it is how you recover this wallet.</p>
         </div>
         <SeedReveal getSeed={getSeed} />
         <label className="flex items-center gap-2 text-sm">

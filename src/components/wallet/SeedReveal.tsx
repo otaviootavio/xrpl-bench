@@ -14,7 +14,7 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
  * during render to hand it over (which React flags, since a ref change alone
  * won't re-render). Nothing here ever puts the value in a serializable place.
  */
-export function SeedReveal({ getSeed }: { getSeed: () => string | null }) {
+export function SeedReveal({ getSeed, heading = 'Anyone with this seed can take your funds' }: { getSeed: () => string | null; heading?: string }) {
   const [visible, setVisible] = useState(false)
   const [copied, setCopied] = useState(false)
   const outputRef = useRef<HTMLSpanElement | null>(null)
@@ -41,7 +41,7 @@ export function SeedReveal({ getSeed }: { getSeed: () => string | null }) {
   return (
     <div className="space-y-3">
       <Alert variant="warning">
-        <AlertTitle>This is the ONLY way to recover your wallet</AlertTitle>
+        <AlertTitle>{heading}</AlertTitle>
         <AlertDescription>
           Write it down and store it somewhere safe and offline. Anyone with this seed has full control of your funds. This app
           never transmits it anywhere.

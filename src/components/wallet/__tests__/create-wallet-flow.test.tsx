@@ -141,17 +141,12 @@ describe('the questions and their pre-selected answers', () => {
     expect(radioNamed(/^App PIN only/).checked).toBe(true)
   })
 
-  it('the pre-selected pair on Mainnet with PRF is refused, with the reason in visible text', async () => {
+  it('the pre-selected pair on Mainnet with PRF is allowed, because this flow confirms the written Seed first', async () => {
     h.capability = 'yes'
     await mount()
     await click(radioNamed(/^Mainnet/))
-    expect(screen.getByText(/needs a written, confirmed Seed/)).toBeTruthy()
-    expect(createButton().getAttribute('aria-disabled')).toBe('true')
-    await click(createButton())
-    expect(h.createStoredWallet).not.toHaveBeenCalled()
-    // One App PIN check clears it.
-    await click(radioNamed(/^App PIN only/))
     expect(createButton().getAttribute('aria-disabled')).toBeNull()
+    expect(screen.queryByText(/needs a written, confirmed Seed/)).toBeNull()
   })
 })
 
@@ -311,7 +306,7 @@ describe('the App PIN', () => {
     type(screen.getByLabelText('Confirm the App PIN'), '123456')
     await click(createButton())
     expect(h.createStoredWallet).toHaveBeenCalledTimes(1)
-    expect(h.createStoredWallet.mock.calls[0][1]).toEqual({ pin: '123456' })
+    expect(h.createStoredWallet.mock.calls[0][1]).toMatchObject({ pin: '123456' })
     expect(h.createStoredWallet.mock.calls[0][0]).toMatchObject({
       network: 'testnet',
       algorithm: 'ed25519',
@@ -571,5 +566,156 @@ describe('Passkey-Derived Seed (story 6)', () => {
     await waitFor(() => expect(onDone).toHaveBeenCalled())
     expect(h.startLockSession).toHaveBeenCalled()
     expect(useAppStore.getState().activeWalletId).toBe('w1')
+  })
+})
+
+describe('Written-Seed confirmation (story 7)', () => {
+  /** A keystore that behaves as the real one: asks the callback, writes only on yes. */
+  function realisticStored() {
+    h.createStoredWallet.mockImplementation(async (_input: unknown, ctx: { confirmWrittenSeed: (seed: string) => Promise<boolean> }) =>
+      (await ctx.confirmWrittenSeed(SEED)) ? created() : { status: 'cancelled' },
+    )
+  }
+  const groups = () =>
+    Array.from(document.querySelectorAll('label'))
+      .map((l) => ({ m: /^Characters (\d+)–(\d+)$/.exec(l.textContent ?? ''), l }))
+      .filter((x) => !!x.m)
+      .map(({ m, l }) => ({ from: Number(m![1]), to: Number(m![2]), el: document.getElementById(l.htmlFor) as HTMLInputElement }))
+
+  async function startMainnetPasskeyOnly() {
+    h.capability = 'yes'
+    realisticStored()
+    const done = vi.fn()
+    await mount({ onDone: done })
+    await click(radioNamed(/^Mainnet/))
+    await click(createButton())
+    await screen.findByText('Write down your Seed')
+    return done
+  }
+
+  it('shows the step before anything is committed, asks for three groups by character range, and says Mainnet', async () => {
+    await startMainnetPasskeyOnly()
+    expect(screen.getByText(/This is a Mainnet wallet/)).toBeTruthy()
+    const asked = groups()
+    expect(asked).toHaveLength(3)
+    for (const g of asked) expect(g.to - g.from).toBe(3)
+    expect(new Set(asked.map((g) => g.from)).size).toBe(3)
+    expect(useAppStore.getState().wallets).toEqual([])
+    expect(h.startLockSession).not.toHaveBeenCalled()
+  })
+
+  it('a wrong group stays on the step with the plain message, clears the answers, and allows another try', async () => {
+    const done = await startMainnetPasskeyOnly()
+    for (const g of groups()) type(g.el, 'zzzz')
+    await click(screen.getByRole('button', { name: 'Check what I wrote' }))
+    expect(screen.getByText('That does not match. Check what you wrote.')).toBeTruthy()
+    for (const g of groups()) expect(g.el.value).toBe('')
+    expect(done).not.toHaveBeenCalled()
+    expect(h.startLockSession).not.toHaveBeenCalled()
+    // Unlimited tries: the right answer still goes through.
+    for (const g of groups()) type(g.el, SEED.slice(g.from - 1, g.to))
+    await click(screen.getByRole('button', { name: 'Check what I wrote' }))
+    await waitFor(() => expect(done).toHaveBeenCalledWith(META))
+  })
+
+  it('typing the challenged groups finishes directly: no second backup screen, no Seed kept', async () => {
+    const done = await startMainnetPasskeyOnly()
+    for (const g of groups()) type(g.el, ` ${SEED.slice(g.from - 1, g.to)} `)
+    await click(screen.getByRole('button', { name: 'Check what I wrote' }))
+    await waitFor(() => expect(done).toHaveBeenCalledWith(META))
+    expect(screen.queryByText('Back up your seed')).toBeNull()
+    expect(h.startLockSession).toHaveBeenCalledWith('lock-1', KEY, 5)
+    expect(JSON.stringify(useAppStore.getState().wallets)).not.toContain(SEED)
+  })
+
+  it('Cancel writes nothing and returns to the questions', async () => {
+    const done = await startMainnetPasskeyOnly()
+    await click(screen.getByRole('button', { name: 'Cancel' }))
+    await screen.findByText('Seed Method')
+    expect(screen.getByText(/Nothing was created/)).toBeTruthy()
+    expect(done).not.toHaveBeenCalled()
+    expect(h.startLockSession).not.toHaveBeenCalled()
+    expect(useAppStore.getState().wallets).toEqual([])
+  })
+
+  it('Testnet never shows the step: it goes to the ordinary backup', async () => {
+    h.createStoredWallet.mockResolvedValue(created())
+    await mount()
+    await click(radioNamed(/^No Open Check/))
+    await click(createButton())
+    expect(await screen.findByText('Back up your seed')).toBeTruthy()
+    expect(screen.queryByText('Write down your Seed')).toBeNull()
+  })
+
+  it('a Passkey-Derived Mainnet wallet is confirmed first, then shows its ordinal', async () => {
+    h.capability = 'yes'
+    h.createDerivedWallet.mockImplementation(async (_input: unknown, ctx: { confirmWrittenSeed: (seed: string) => Promise<boolean> }) =>
+      (await ctx.confirmWrittenSeed(SEED))
+        ? { status: 'ok', value: { meta: { ...META, seedMethod: 'passkey-derived' }, openKey: KEY, ordinal: '048213', backupEligible: true } }
+        : { status: 'cancelled' },
+    )
+    await mount()
+    await click(radioNamed(/^Mainnet/))
+    await click(radioNamed(/^Passkey-Derived Seed/))
+    await click(createButton())
+    await screen.findByText('Write down your Seed')
+    for (const g of groups()) type(g.el, SEED.slice(g.from - 1, g.to))
+    await click(screen.getByRole('button', { name: 'Check what I wrote' }))
+    expect(await screen.findByText('048213')).toBeTruthy()
+  })
+
+  it('Check and Cancel are inert once the confirmation is settled, while the keystore writes', async () => {
+    h.capability = 'yes'
+    let release: () => void = () => {}
+    h.createStoredWallet.mockImplementation(async (_i: unknown, ctx: { confirmWrittenSeed: (seed: string) => Promise<boolean> }) => {
+      await ctx.confirmWrittenSeed(SEED)
+      await new Promise<void>((r) => (release = r))
+      return created()
+    })
+    await mount()
+    await click(radioNamed(/^Mainnet/))
+    await click(createButton())
+    await screen.findByText('Write down your Seed')
+    for (const g of groups()) type(g.el, SEED.slice(g.from - 1, g.to))
+    await click(screen.getByRole('button', { name: 'Check what I wrote' }))
+    expect((screen.getByRole('button', { name: 'Check what I wrote' }) as HTMLButtonElement).disabled).toBe(true)
+    expect((screen.getByRole('button', { name: 'Cancel' }) as HTMLButtonElement).disabled).toBe(true)
+    await click(screen.getByRole('button', { name: 'Cancel' }))
+    expect(screen.queryByText('Seed Method')).toBeNull()
+    await act(async () => release())
+  })
+
+  it('leaving during the step resolves the keystore callback false, so nothing is written', async () => {
+    h.capability = 'yes'
+    let outcome: boolean | null = null
+    h.createStoredWallet.mockImplementation(async (_i: unknown, ctx: { confirmWrittenSeed: (seed: string) => Promise<boolean> }) => {
+      outcome = await ctx.confirmWrittenSeed(SEED)
+      return outcome ? created() : { status: 'cancelled' }
+    })
+    const { unmount } = render(<CreateWalletFlow />)
+    await screen.findByText('Seed Method')
+    await click(radioNamed(/^Mainnet/))
+    await click(createButton())
+    await screen.findByText('Write down your Seed')
+    unmount()
+    await waitFor(() => expect(outcome).toBe(false))
+    expect(h.startLockSession).not.toHaveBeenCalled()
+  })
+
+  it('a failed lock start shows the error on the finish step, and Try again retries', async () => {
+    h.capability = 'yes'
+    realisticStored()
+    h.startLockSession.mockRejectedValueOnce(new Error('idb down'))
+    const done = vi.fn()
+    await mount({ onDone: done })
+    await click(radioNamed(/^Mainnet/))
+    await click(createButton())
+    await screen.findByText('Write down your Seed')
+    for (const g of groups()) type(g.el, SEED.slice(g.from - 1, g.to))
+    await click(screen.getByRole('button', { name: 'Check what I wrote' }))
+    expect(await screen.findByText('idb down')).toBeTruthy()
+    expect(done).not.toHaveBeenCalled()
+    await click(screen.getByRole('button', { name: 'Try again' }))
+    await waitFor(() => expect(done).toHaveBeenCalledWith(META))
   })
 })

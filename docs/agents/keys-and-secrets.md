@@ -55,6 +55,16 @@ file before editing anything under `src/lib/crypto/`.
   that differs from the record's is `wrong-credential` and counts; a cancelled
   prompt never does. When the same passkey is also the Open Check, the lock keeps
   its own random PRF salt and `hkdfInfo`.
+- **A Mainnet Wallet whose only check is a passkey is created only after its
+  Seed is written down and confirmed.** `policy.ts` decides
+  (`requiresWrittenSeed`); `createStoredWallet` and `createDerivedWallet` call
+  `ctx.confirmWrittenSeed(seed)` after the Seed exists and before any credential,
+  lock or Wallet is written (`false` is `cancelled` and writes nothing, no callback
+  is `refused`). The flow holds the Seed in `seedRef` for that step only and the
+  typed groups in uncontrolled inputs (`seed-confirmation.ts`). Revealing a
+  Standard Wallet's Seed re-passes its Open Check with `openLock(..., { persist:
+  false })`: a reveal never writes or extends a session. No copy may claim a key
+  is unrevealable; a test scans for that wording.
 - **Every rpId comes from `getRpId()`** (`webauthn.ts`), which reads the build's
   `__RP_ID__` (set per branch in `vite.config.ts`) and falls back to
   `location.hostname` only when none is set. Nothing else reads the page host. Every new

@@ -1462,3 +1462,16 @@ that uses it, since the failure count is shared; Wallets checked only by
 passkey keep working, and recovery stays re-import from Seed. No App PIN exists
 until a Wallet chooses one.
 
+
+**Written-Seed confirmation and reveal (story 7, 2026-10-11).** FR-72's rule is
+built in `policy.ts` (`canConfirmWrittenSeed`, `writtenSeedRequired`): a Mainnet
+Wallet whose only check is a passkey is created only when the caller supplies a
+`confirmWrittenSeed` callback, which shows the Seed and asks for three random
+4-character groups of it (`src/lib/seed-confirmation.ts`). It runs after the
+Seed exists and before any credential, lock or Wallet is written; a refusal
+writes nothing, and the record notes `writtenSeedConfirmedAt`. A direct keystore
+call with no callback, and restore, stay refused. Revealing a Standard Wallet's
+Seed re-passes its Open Check without writing a session (`openLock` with
+`persist: false`); a sealed Wallet asks its Signing Check, a Passkey-Derived one
+its passkey, and the confirm dialog names which. A copy-guard test bans wording
+that calls a key unrevealable: the Seed is revealable behind its checks.

@@ -21,7 +21,7 @@ import { usePrompts } from '@/hooks/usePrompts'
 import { useAppStore, useActiveNetwork, useWalletOpenKey } from '@/store/app-store'
 import { counterpartyKey, tagNotRecorded } from '@/store/address-book'
 import { NETWORKS, NETWORK_IDS, type NetworkId } from '@/lib/xrpl/networks'
-import { addNetworkView, addressFromSeed, importAndStoreWallet, listWallets, parseSeedInput, removeWallet, revealSeed, setLockAutoLock, describeCheckFailure } from '@/lib/crypto/keystore'
+import { addNetworkView, addressFromSeed, importAndStoreWallet, listWallets, parseSeedInput, removeWallet, revealSeed, setLockAutoLock, describeCheckFailure, type WalletMeta } from '@/lib/crypto/keystore'
 import { getLockInfo } from '@/lib/crypto/lock'
 import { LEGACY_LOCK_ID } from '@/lib/crypto/db'
 import { queryKeys } from '@/lib/xrpl/query-keys'
@@ -29,6 +29,31 @@ import { RESET_INCOMPLETE_MESSAGE, tearDownAllLocalState, clearCachedAccountData
 import { checkBeforeImport, IMPORT_WARNING_COPY, INVALID_SEED_MESSAGE, type ImportWarning } from '@/lib/seed-import'
 import { toast } from '@/lib/notify'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
+
+/** Which check the reveal will ask next, in plain words (FR-69). Mirrors
+ * `keystore.revealSeed`: a sealed Wallet its Signing Check, a Passkey-Derived one
+ * its passkey, a Standard one its Open Check (none: nothing more). */
+function revealCheckSentence(wallet: WalletMeta | undefined): string {
+  if (!wallet) return ''
+  if (wallet.seedMethod === 'passkey-derived') return 'After you confirm, your passkey will be asked.'
+  // The legacy lock's real check is read from the lock at reveal time, not from this meta.
+  const standard = !wallet.signingCheck || wallet.signingCheck === 'standard'
+  if (wallet.lockId === 'legacy' && standard) {
+    return "After you confirm, your passkey or App PIN will be asked, whichever this wallet's lock uses."
+  }
+  if (wallet.signingCheck === 'pin') return 'After you confirm, your App PIN will be asked.'
+  if (wallet.signingCheck === 'passkey') return 'After you confirm, your passkey will be asked.'
+  switch (wallet.openCheck) {
+    case 'pin':
+      return 'After you confirm, your App PIN will be asked.'
+    case 'passkey':
+      return 'After you confirm, your passkey will be asked.'
+    case 'either':
+      return 'After you confirm, your passkey will be asked, or your App PIN if this device cannot use one.'
+    default:
+      return 'This wallet has no further check: confirming here shows the seed.'
+  }
+}
 
 export function SettingsTab() {
   // Only the fallback for a record the vault migration has not reached
@@ -604,7 +629,8 @@ export function SettingsTab() {
             <DialogTitle>Reveal this wallet's seed?</DialogTitle>
             <DialogDescription>
               Your seed grants full control of this wallet's funds to anyone who sees it. Make sure nobody can see your screen and
-              that you are not being recorded before continuing.
+              that you are not being recorded before continuing.{' '}
+              {revealCheckSentence(wallets.find((w) => w.id === confirmRevealFor))}
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>

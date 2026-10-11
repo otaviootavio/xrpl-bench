@@ -44,10 +44,14 @@ describe('the written-Seed rule (FR-72)', () => {
     expect(requiresWrittenSeed('mainnet', 'pin', 'passkey')).toBe(false)
     expect(requiresWrittenSeed('testnet', 'passkey', 'passkey')).toBe(false)
   })
-  it('is refused until the confirmation exists, and allowed once story 7 supplies it', () => {
+  it('is refused unless the caller can confirm the written Seed, and allowed when it can or already has', () => {
     const passkeyOnly = { ...request, network: 'mainnet' as const, openCheck: 'passkey' as const, signing: 'passkey' as const }
     expect(checkWalletRequest(passkeyOnly)).toEqual({ ok: false, reason: WRITTEN_SEED_REASON })
+    expect(checkWalletRequest({ ...passkeyOnly, canConfirmWrittenSeed: true })).toEqual({ ok: true })
     expect(checkWalletRequest({ ...passkeyOnly, writtenSeedConfirmed: true })).toEqual({ ok: true })
+  })
+  it('never claims the confirmation is unavailable "in this version"', () => {
+    expect(WRITTEN_SEED_REASON).not.toMatch(/yet|version/)
   })
 })
 
@@ -135,5 +139,12 @@ describe('describeOptions', () => {
     expect(d.combination).toEqual({ ok: false, reason: WRITTEN_SEED_REASON })
     // Each answer alone is fine: the refusal belongs to the pair.
     expect(d.openCheck.passkey.available && d.signing.passkey.available).toBe(true)
+    expect(d.writtenSeedRequired).toBe(true)
+    expect(describeOptions(context).writtenSeedRequired).toBe(false)
+  })
+  it('a screen that can confirm the Seed is allowed the pair, and is told the step is required', () => {
+    const d = describeOptions({ ...context, network: 'mainnet', openCheck: 'passkey', signing: 'passkey', canConfirmWrittenSeed: true })
+    expect(d.combination).toEqual({ ok: true })
+    expect(d.writtenSeedRequired).toBe(true)
   })
 })

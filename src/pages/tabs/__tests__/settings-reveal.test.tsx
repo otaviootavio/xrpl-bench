@@ -67,6 +67,37 @@ beforeEach(() => {
 })
 afterEach(cleanup)
 
+describe('SettingsTab reveal seed: the dialog names the check', () => {
+  async function dialogFor(wallet: Record<string, unknown>) {
+    useAppStore.setState({
+      wallets: [{ ...W, ...wallet }],
+      openLocks: { legacy: { key: {} as CryptoKey, autoLockMinutes: 5 }, 'lock-1': { key: {} as CryptoKey, autoLockMinutes: 5 } },
+    } as never)
+    render(
+      <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+        <TooltipProvider>
+          <SettingsTab />
+        </TooltipProvider>
+      </QueryClientProvider>,
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'Reveal seed' }))
+    return (await screen.findByRole('dialog')).textContent ?? ''
+  }
+
+  it.each([
+    ['a PIN Open Check', { lockId: 'lock-1' }, /App PIN will be asked/],
+    ['the legacy lock, whichever check it uses', {}, /passkey or App PIN will be asked, whichever this wallet's lock uses/],
+    ['a passkey Open Check', { lockId: 'lock-1', openCheck: 'passkey' }, /passkey will be asked/],
+    ['an either lock off the legacy id', { lockId: 'lock-1', openCheck: 'either' }, /passkey will be asked, or your App PIN/],
+    ['no Open Check', { lockId: 'lock-1', openCheck: 'none' }, /no further check/],
+    ['a PIN Signing Check', { openCheck: 'passkey', signingCheck: 'pin' }, /App PIN will be asked/],
+    ['a passkey Signing Check', { signingCheck: 'passkey' }, /passkey will be asked/],
+    ['a Passkey-Derived Seed', { seedMethod: 'passkey-derived', signingCheck: 'passkey' }, /passkey will be asked/],
+  ])('%s', async (_name, change, expected) => {
+    expect(await dialogFor(change)).toMatch(expected)
+  })
+})
+
 describe('SettingsTab reveal seed', () => {
   it('shows the seed on ok', async () => {
     h.revealSeed.mockResolvedValue({ status: 'ok', value: 'sSECRETSEED' })

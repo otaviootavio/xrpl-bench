@@ -83,6 +83,7 @@ vi.mock('idb', () => ({
 // salt (a different purpose) gives a different key, as on a real authenticator.
 const w = vi.hoisted(() => ({
   mode: 'ok' as 'ok' | 'cancel' | 'no-prf' | 'other-key',
+  supported: true,
   asserts: 0,
   registers: 0,
   salts: [] as string[],
@@ -92,7 +93,7 @@ vi.mock('../webauthn', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../webauthn')>()
   return {
     ...actual,
-    isWebAuthnSupported: () => true,
+    isWebAuthnSupported: () => w.supported,
     registerPasskey: async (name: string) => {
       w.names.push(name)
       w.registers += 1
@@ -119,6 +120,7 @@ import { LEGACY_LOCK_ID } from '../db'
 import { discardUnusedAppPin, getLockInfo, openLock } from '../lock'
 import { addNetworkView, createStoredWallet, listWallets, openSigner, removeWallet, revealSeed, type CreateStoredWalletInput, type Prompts } from '../keystore'
 import { aesDecrypt } from '../aes'
+import { putVaultMeta, getVaultMeta } from '../db'
 
 const PIN = '123456'
 const pinPrompt = (pin: string | null): Prompts => ({ pin: async () => pin })
@@ -151,6 +153,7 @@ beforeEach(() => {
   h.state.stores = { wallets: new Map(), vault: new Map(), session: new Map() }
   h.state.failNextPutOn = null
   w.mode = 'ok'
+  w.supported = true
   w.asserts = 0
   w.registers = 0
   w.salts = []
@@ -302,7 +305,7 @@ describe('the policy refuses before any write', () => {
   it.each([
     ['Mainnet with no Open Check', { network: 'mainnet', openCheck: 'none' }],
     ['Mainnet under a minute', { network: 'mainnet', autoLockMinutes: 0.5 }],
-    ['Mainnet with only a passkey (written Seed not available yet)', { network: 'mainnet', openCheck: 'passkey', signing: 'passkey' }],
+    ['Mainnet with only a passkey and no confirmation callback', { network: 'mainnet', openCheck: 'passkey', signing: 'passkey' }],
     ['Mainnet passkey Open Check with Standard signing', { network: 'mainnet', openCheck: 'passkey', signing: 'standard' }],
     ['a passkey on a device with no PRF', { openCheck: 'passkey', passkey: 'no' }],
     ['a passkey signing check on a device with no PRF', { signing: 'passkey', passkey: 'no' }],
@@ -391,5 +394,180 @@ describe('removing the last Wallet on a created lock', () => {
     const legacy = (await generateAndStoreWallet('L', key, 'testnet')).meta
     await removeWallet(legacy.id)
     expect(h.state.stores.vault.get('lock:legacy')).toBeDefined()
+  })
+})
+
+describe('the written-Seed confirmation (FR-72)', () => {
+  const passkeyOnly = { ...base, network: 'mainnet', openCheck: 'passkey', signing: 'passkey' } as const
+
+  it('Mainnet passkey-only: the callback sees the Seed before any credential, lock or Wallet exists, then the record notes it', async () => {
+    let seen: { seed: string; registers: number; locks: number; wallets: number } | null = null
+    const result = await createStoredWallet(passkeyOnly, {
+      confirmWrittenSeed: async (seed) => {
+        seen = { seed, registers: w.registers, locks: lockRecords().length, wallets: h.state.stores.wallets.size }
+        return true
+      },
+    })
+    const { meta, seed } = ok(result)
+    expect(seen).toEqual({ seed, registers: 0, locks: 0, wallets: 0 })
+    expect(typeof recordOf(meta.id).writtenSeedConfirmedAt).toBe('number')
+    expect(JSON.stringify([...h.state.stores.wallets.values(), ...h.state.stores.vault.values()])).not.toContain(seed)
+  })
+
+  it('also for a Standard Signing Check', async () => {
+    const { meta } = ok(await createStoredWallet({ ...passkeyOnly, signing: 'standard' }, { confirmWrittenSeed: async () => true }))
+    expect(recordOf(meta.id).writtenSeedConfirmedAt).toBeGreaterThan(0)
+  })
+
+  it('cancelling at the confirm writes no credential, lock or Wallet', async () => {
+    expect(await createStoredWallet(passkeyOnly, { confirmWrittenSeed: async () => false })).toEqual({ status: 'cancelled' })
+    expect(w.registers).toBe(0)
+    emptyVault()
+  })
+
+  it('with no callback a direct keystore call is refused with the written-Seed reason', async () => {
+    const result = await createStoredWallet(passkeyOnly)
+    expect(result).toMatchObject({ status: 'refused', reason: expect.stringContaining('written, confirmed Seed') })
+    expect(w.registers).toBe(0)
+    emptyVault()
+  })
+
+  it('is never asked on Testnet, Devnet, or Mainnet with a PIN check', async () => {
+    const confirm = vi.fn(async () => true)
+    ok(await createStoredWallet(base, { pin: PIN, confirmWrittenSeed: confirm }))
+    ok(await createStoredWallet({ ...base, network: 'devnet', openCheck: 'passkey', signing: 'passkey' }, { confirmWrittenSeed: confirm }))
+    ok(await createStoredWallet({ ...base, network: 'mainnet', openCheck: 'passkey', signing: 'pin' }, { pin: PIN, confirmWrittenSeed: confirm }))
+    ok(await createStoredWallet({ ...base, network: 'mainnet', openCheck: 'pin', signing: 'passkey' }, { pin: PIN, confirmWrittenSeed: confirm }))
+    expect(confirm).not.toHaveBeenCalled()
+    for (const rec of h.state.stores.wallets.values()) expect(rec.writtenSeedConfirmedAt).toBeUndefined()
+  })
+})
+
+describe('revealing a Seed (FR-69)', () => {
+  const sessionWrites = () => h.state.stores.session.size
+  const countingPin = (pin: string | null) => {
+    const p = { calls: 0, pin: async () => (p.calls++, pin) }
+    return p
+  }
+
+  it('a Standard Wallet on a PIN lock asks the PIN, shows the Seed, and writes no session', async () => {
+    const { meta, openKey, seed } = ok(await createStoredWallet(base, { pin: PIN }))
+    const prompt = countingPin(PIN)
+    expect(await revealSeed(meta.id, { openKey, prompts: prompt })).toEqual({ status: 'ok', value: seed })
+    expect(prompt.calls).toBe(1)
+    expect(sessionWrites()).toBe(0)
+  })
+
+  it('a wrong PIN counts and reveals nothing; a cancelled prompt does not count', async () => {
+    const { meta, openKey } = ok(await createStoredWallet(base, { pin: PIN }))
+    expect(await revealSeed(meta.id, { openKey, prompts: pinPrompt('000000') })).toMatchObject({ status: 'wrong-credential', kind: 'pin' })
+    expect(failedAttempts()).toBe(1)
+    expect(await revealSeed(meta.id, { openKey, prompts: pinPrompt(null) })).toEqual({ status: 'cancelled' })
+    expect(failedAttempts()).toBe(1)
+    expect(sessionWrites()).toBe(0)
+  })
+
+  it('a Standard Wallet on a passkey lock asks the passkey, and a cancel counts nothing', async () => {
+    const { meta, openKey, seed } = ok(await createStoredWallet({ ...base, openCheck: 'passkey' }))
+    w.asserts = 0
+    expect(await revealSeed(meta.id, { openKey, prompts: pinPrompt(null) })).toEqual({ status: 'ok', value: seed })
+    expect(w.asserts).toBe(1)
+    w.mode = 'cancel'
+    expect(await revealSeed(meta.id, { openKey, prompts: pinPrompt(null) })).toEqual({ status: 'cancelled' })
+    expect(failedAttempts()).toBe(0)
+    expect(sessionWrites()).toBe(0)
+  })
+
+  it('a passkey that cannot open the lock is a wrong credential: no Seed', async () => {
+    const { meta, openKey } = ok(await createStoredWallet({ ...base, openCheck: 'passkey' }))
+    w.mode = 'other-key'
+    expect(await revealSeed(meta.id, { openKey, prompts: pinPrompt(null) })).toMatchObject({ status: 'wrong-credential', kind: 'passkey' })
+  })
+
+  it('Open Check none needs only the confirm dialog: no prompt at all', async () => {
+    const { meta, openKey, seed } = ok(await createStoredWallet({ ...base, openCheck: 'none' }))
+    const prompt = countingPin(null)
+    expect(await revealSeed(meta.id, { openKey, prompts: prompt })).toEqual({ status: 'ok', value: seed })
+    expect(prompt.calls).toBe(0)
+    expect(w.asserts).toBe(0)
+  })
+
+  it('a sealed Wallet asks its Signing Check only, not the Open Check as well', async () => {
+    const { meta, openKey, seed } = ok(await createStoredWallet({ ...base, signing: 'pin' }, { pin: PIN }))
+    const prompt = countingPin(PIN)
+    expect(await revealSeed(meta.id, { openKey, prompts: prompt })).toEqual({ status: 'ok', value: seed })
+    expect(prompt.calls).toBe(1)
+  })
+})
+
+describe('a throwing confirmation callback', () => {
+  it('leaves no lock, Wallet, or App PIN behind, and the error surfaces', async () => {
+    const boom = new Error('dialog crashed')
+    await expect(
+      createStoredWallet({ ...base, network: 'mainnet', openCheck: 'passkey', signing: 'passkey' }, { confirmWrittenSeed: async () => { throw boom } }),
+    ).rejects.toBe(boom)
+    expect(w.registers).toBe(0)
+    emptyVault()
+  })
+})
+
+describe('revealing on a legacy lock (FR-69)', () => {
+  async function legacyWallet(passkey: boolean) {
+    const { generateAndStoreWallet } = await import('../keystore')
+    const key = await setUpVaultAuth('t', PIN)
+    if (!passkey) {
+      const meta = await getVaultMeta()
+      await putVaultMeta({ ...meta, passkeyCredentialIdB64: undefined, wrappedMasterKeyForPasskey: undefined })
+    }
+    const { meta, seed } = await generateAndStoreWallet('L', key, 'testnet')
+    h.state.stores.session.clear()
+    return { meta, seed, key }
+  }
+  const countingPin = (pin: string | null) => {
+    const p = { calls: 0, pin: async () => (p.calls++, pin) }
+    return p
+  }
+
+  it('PIN-only: asks the PIN, a wrong PIN counts, and no session is written', async () => {
+    const { meta, seed, key } = await legacyWallet(false)
+    expect((await getLockInfo('legacy')).openCheck).toBe('pin')
+    const wrong = countingPin('000000')
+    expect(await revealSeed(meta.id, { openKey: key, prompts: wrong })).toMatchObject({ status: 'wrong-credential', kind: 'pin' })
+    expect(wrong.calls).toBe(1)
+    expect(failedAttempts()).toBe(1)
+    const right = countingPin(PIN)
+    expect(await revealSeed(meta.id, { openKey: key, prompts: right })).toEqual({ status: 'ok', value: seed })
+    expect(right.calls).toBe(1)
+    expect(h.state.stores.session.size).toBe(0)
+  })
+
+  it("'either': asks the passkey when WebAuthn is supported, without touching the PIN or the failure count", async () => {
+    const { meta, seed, key } = await legacyWallet(true)
+    expect((await getLockInfo('legacy')).openCheck).toBe('either')
+    const prompt = countingPin(null)
+    w.asserts = 0
+    expect(await revealSeed(meta.id, { openKey: key, prompts: prompt })).toEqual({ status: 'ok', value: seed })
+    expect(w.asserts).toBe(1)
+    expect(prompt.calls).toBe(0)
+    expect(h.state.stores.session.size).toBe(0)
+  })
+
+  it("'either': a passkey reveal does not clear the PIN failure count", async () => {
+    const { meta, key } = await legacyWallet(true)
+    const meta0 = await getVaultMeta()
+    await putVaultMeta({ ...meta0, failedAttempts: 3 })
+    expect((await revealSeed(meta.id, { openKey: key, prompts: pinPrompt(null) })).status).toBe('ok')
+    expect(failedAttempts()).toBe(3)
+  })
+
+  it("'either': falls back to the PIN when WebAuthn is not supported", async () => {
+    const { meta, seed, key } = await legacyWallet(true)
+    w.supported = false
+    w.asserts = 0
+    const prompt = countingPin(PIN)
+    expect(await revealSeed(meta.id, { openKey: key, prompts: prompt })).toEqual({ status: 'ok', value: seed })
+    expect(prompt.calls).toBe(1)
+    expect(w.asserts).toBe(0)
+    expect(h.state.stores.session.size).toBe(0)
   })
 })

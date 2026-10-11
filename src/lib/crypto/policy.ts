@@ -82,9 +82,12 @@ export interface WalletRequest {
    * the Mainnet rule for a Passkey-Derived Seed reads it (AD-24). Absent on
    * Mainnet is refused, never allowed. */
   origin?: string
-  /** Story 7 supplies this: the written, word-confirmed Seed (FR-72). Story 5
-   * never sets it, so a Mainnet passkey-only Wallet is refused. */
+  /** The written, word-confirmed Seed (FR-72), already confirmed. */
   writtenSeedConfirmed?: boolean
+  /** The caller will make the person write the Seed down and confirm it before
+   * anything is written (story 7). Without it, or `writtenSeedConfirmed`, a
+   * Mainnet passkey-only Wallet is refused. Testnet and Devnet never ask. */
+  canConfirmWrittenSeed?: boolean
 }
 
 /** A Passkey-Derived Seed is bound to the domain it was made under. The preview
@@ -112,7 +115,7 @@ function derivedBlock(network: NetworkId, passkey: PasskeyCapability, origin: st
 export const NO_PRF_REASON = 'This device or browser cannot use a passkey to protect a wallet.'
 export const PRF_CHECKED_LATER_NOTE = 'Checked when the passkey is created.'
 export const WRITTEN_SEED_REASON =
-  'A Mainnet wallet whose only check is a passkey needs a written, confirmed Seed, so it can be recovered if the passkey is lost. That confirmation is not available in this version yet: use the App PIN for one of the two checks.'
+  'A Mainnet wallet whose only check is a passkey needs a written, confirmed Seed, so it can be recovered if the passkey is lost. This screen cannot ask for that confirmation: use the App PIN for one of the two checks.'
 
 /** The auto-lock choices the creation flow offers, in minutes. */
 export const AUTO_LOCK_CHOICES = [0.5, 1, 5, 15, 30] as const
@@ -148,7 +151,7 @@ export function checkWalletRequest(req: WalletRequest): PolicyVerdict {
   const lock = checkLockRequest(req)
   if (!lock.ok) return lock
   if (usesPasskey(req.openCheck, req.signing) && req.passkey === 'no') return { ok: false, reason: NO_PRF_REASON }
-  if (requiresWrittenSeed(req.network, req.openCheck, req.signing) && !req.writtenSeedConfirmed) {
+  if (requiresWrittenSeed(req.network, req.openCheck, req.signing) && !req.writtenSeedConfirmed && !req.canConfirmWrittenSeed) {
     return { ok: false, reason: WRITTEN_SEED_REASON }
   }
   return { ok: true }
@@ -171,6 +174,8 @@ export interface OptionsContext {
   passkey: PasskeyCapability
   /** The host the build's rpId is bound to; see `WalletRequest.origin`. */
   origin?: string
+  /** See `WalletRequest.canConfirmWrittenSeed`. */
+  canConfirmWrittenSeed?: boolean
 }
 
 export interface DescribedOptions {
@@ -181,6 +186,9 @@ export interface DescribedOptions {
   /** The verdict on the answers as chosen together. Creation cannot proceed
    * unless it is ok; its reason is shown as visible text. */
   combination: PolicyVerdict
+  /** True when creating this combination makes the person write down and confirm
+   * the Seed first (FR-72). The screen renders the step; it never decides it. */
+  writtenSeedRequired: boolean
 }
 
 function passkeyState(passkey: PasskeyCapability): OptionState {
@@ -231,5 +239,6 @@ export function describeOptions(ctx: OptionsContext): DescribedOptions {
     autoLock,
     signing,
     combination: checkWalletRequest(ctx),
+    writtenSeedRequired: requiresWrittenSeed(ctx.network, ctx.openCheck, ctx.signing),
   }
 }

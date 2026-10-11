@@ -302,7 +302,9 @@ consecutive failures the Wallet requires full re-import from Seed.
   confirmed action. Whether the user should be warned as the count approaches
   eight is unresolved and tracked in §10.
 - *Planned change (FR-68): wrong App PINs at a Signing Check share this count
-  and its hard lock, and the prompt states the tries left.*
+  and its hard lock, and the prompt states the tries left. The hard lock blocks
+  the App PIN for every Wallet that uses it; Wallets checked only by passkey
+  keep working.*
 
 #### FR-10: Auto-lock on inactivity
 The app locks after inactivity — default 5 minutes, user-configurable to
@@ -702,10 +704,10 @@ needed, and is never stored, in any form, anywhere.
   it. Only a written Seed (FR-69) or a Controlling Wallet (FR-75) recovers the
   funds. §9.3 already treats the domain as permanent; this makes it a hard
   requirement.
-- `[ASSUMPTION]` A Passkey-Derived Seed Wallet's Signing Check is always that
-  passkey. Standard and App PIN are not offered for it, because without the
-  passkey there is no Seed to sign with. See the combination table under FR-67
-  and §10 question 7.
+- A Passkey-Derived Seed Wallet's Signing Check is always that passkey.
+  Standard and App PIN are not offered for it, because without the passkey there
+  is no Seed to sign with. See the combination table under FR-67. *Decided
+  2026-10-10 (§10 question 7).*
 
 #### FR-64: Signature type
 The user picks Ed25519 or secp256k1. Both are valid XRPL key types, and the
@@ -748,7 +750,7 @@ session's key. Only that Wallet's Signing Check opens it.
 | Seed Method | Signing Check: Standard | Passkey only | App PIN only |
 |---|---|---|---|
 | Stored Seed | yes | yes | yes |
-| Passkey-Derived Seed | no `[ASSUMPTION]` | yes | no `[ASSUMPTION]` |
+| Passkey-Derived Seed | no | yes | no |
 
 #### FR-68: The signing PIN is the App PIN
 A PIN Signing Check is the App PIN. There is no separate signing PIN.
@@ -757,8 +759,15 @@ A PIN Signing Check is the App PIN. There is no separate signing PIN.
 - A cancelled or dismissed passkey prompt never counts (FR-9).
 - The prompt states, in plain words, how many tries remain before the hard lock.
   This answers §10 question 2 for the signing prompt.
-- `[ASSUMPTION]` The App PIN is set the first time any Wallet chooses a PIN
-  check. A device where no Wallet uses a PIN has no App PIN.
+- The hard lock blocks the App PIN for **every** Wallet that uses it, at both
+  its Open Check and its Signing Check, because the count is shared. A Wallet
+  whose checks are all passkeys keeps working. Recovery for a PIN-using Wallet
+  is re-import from Seed, as in FR-9. `[ASSUMPTION]` For a Passkey-Derived Seed
+  Wallet whose Open Check is the App PIN, the passkey producing its Seed counts
+  as that re-import. *Decided 2026-10-10 (§10 question 8).*
+- The App PIN is set the first time any Wallet chooses a PIN check. A device
+  where no Wallet uses a PIN has no App PIN. Existing Wallets keep the PIN they
+  have (FR-74). *Decided 2026-10-10 (§10 question 9).*
 
 #### FR-69: Revealing the Seed passes the Signing Check
 Revealing a Wallet's Seed requires that Wallet's Signing Check, in addition to
@@ -921,7 +930,7 @@ this PRD previously failed to state.
 ### 6.3 Planned, not built
 
 - **§4.14 Per-Wallet Key Setup and Signing Checks** — FR-60 through FR-78. Its
-  phase-blockers are §10 questions 7 to 9. FR-74 (existing Wallets carry over
+  phase-blockers, §10 questions 7 to 9, were answered 2026-10-10. FR-74 (existing Wallets carry over
   unchanged) is the precondition for shipping any of it.
 
 ## 7. Success Metrics
@@ -1136,26 +1145,28 @@ is not deferred, it is forgotten.
    open only until §4.14 ships.
    *Owner: Otavio. Revisit: when FR-61 ships; close it then.*
 
-**§4.14 phase-blockers.** These have to be resolved before architecture or epics
-for §4.14. Each has an `[ASSUMPTION]` in place so the draft is complete, not so
-the question is closed.
+**§4.14 phase-blockers.** These had to be resolved before architecture or epics
+for §4.14. All three were answered by Otavio on 2026-10-10.
 
 7. **Which Signing Checks can a Passkey-Derived Seed Wallet have?** The Seed
    exists only while the passkey produces it, so Standard and App PIN would need
    the Seed held somewhere between signatures, which contradicts "never stored".
-   The draft allows passkey only (FR-63, FR-67).
-   *Owner: Otavio. Revisit: before §4.14 architecture.*
+   *Answered 2026-10-10: passkey only (FR-63, FR-67). Storing the Seed between
+   signatures would make it a Stored Seed Wallet.*
 8. **What does the hard lock lock, now that checks are per Wallet?** FR-9's
    eighth failure blocks "the unlock path", and recovery is re-import from Seed.
    With a shared App PIN count (FR-68), it is unclear whether the hard lock
    blocks the App PIN for every Wallet or only for the Wallet where it was
    reached, and what recovery means for a Passkey-Derived Seed Wallet, whose
    passkey still works.
-   *Owner: Otavio. Revisit: before §4.14 architecture.*
+   *Answered 2026-10-10: the hard lock blocks the App PIN for every Wallet that
+   uses it; Wallets checked only by passkey keep working; recovery stays
+   re-import from Seed (FR-68).*
 9. **Does an App PIN exist on a device where no Wallet uses one?** The draft
    says no (FR-68). That affects FR-9's count and the migration (FR-74), where
    every existing Wallet keeps the PIN it has.
-   *Owner: Otavio. Revisit: before §4.14 architecture.*
+   *Answered 2026-10-10: no. The App PIN is created the first time a Wallet
+   chooses it (FR-68).*
 
 **§4.14 non-blockers,** deferred with `[ASSUMPTION]` defaults in place:
 
@@ -1230,9 +1241,9 @@ nothing is *provably* broken, not that a change works.
 - **§0** — The as-built frame now has one planned exception, §4.14, decided
   2026-10-09. Shipped FRs keep describing what ships, and carry *Planned change*
   notes rather than being rewritten.
-- **§4.14** — `[ASSUMPTION]` tags inline in FR-60, FR-61, FR-63, FR-66, FR-67,
-  FR-68, FR-69, FR-72, FR-73, FR-75, FR-77, and FR-78. The ones that block a
-  phase are §10 questions 7 to 9. The rest are §10 questions 10 and 11, or are
+- **§4.14** — `[ASSUMPTION]` tags inline in FR-60, FR-61, FR-66, FR-68, FR-69,
+  FR-72, FR-73, FR-75, FR-77, and FR-78. None blocks a phase: §10 questions 7
+  to 9 were answered 2026-10-10. The rest are §10 questions 10 and 11, or are
   small enough to settle in the §4.14 UX pass.
 - **§7** — `[ASSUMPTION]` Success metrics are correctness gates rather than usage
   targets. No usage target exists anywhere in the repo record.

@@ -1,0 +1,79 @@
+- id: "1"
+  title: Per-Wallet locks in the vault, with migration of existing Wallets
+  description: >-
+    Reshape the vault so each Wallet has its own lock, and relabel every existing Wallet as Stored Seed with its current Unlock Method as Open Check and Standard signing (CAP-10).
+    This is the precondition for every other story; it ships only on user acceptance and must not weaken any Wallet.
+  spec_checkpoint: true
+  done_checkpoint: true
+  invoke_dev_with: >-
+    Follow architecture AD-21 and AD-27: relabel, do not re-encrypt; rollback may degrade only new data. Seed and key material never enter state or storage in the clear.
+- id: "2"
+  title: Network and Node per Wallet, including Devnet
+  description: >-
+    Make Network and Node fields of the Wallet with the built-in lists in check-rules.md, a custom Node that must prove its network id, and Devnet faucet and explorer (CAP-2).
+    A locked or Node-mismatched Wallet issues no read.
+  invoke_dev_with: >-
+    Follow AD-19 and AD-20. A Node reporting no network_id is accepted for Mainnet only. Query keys keep Wallet and Network.
+- id: "3"
+  title: Structural Signing Check and one-use Signer
+  description: >-
+    Give a Wallet an own-key Seed that only its Signing Check opens, hand callers a one-use Signer through the single write choke point, and share the App PIN failure count and hard lock (CAP-5).
+    Success is that no path yields the Seed without the check.
+  spec_checkpoint: true
+  done_checkpoint: true
+  invoke_dev_with: >-
+    Follow AD-22, AD-23, AD-25. Prove the check by decryption, never derivation. Add a test that fails if any code path opens the Seed with the session key.
+- id: "4"
+  title: Per-Wallet Open Check, auto-lock, and locked-Wallet view
+  description: >-
+    Each Wallet has its own Open Check and auto-lock with Mainnet floors, and a locked Wallet shows only its name (CAP-4).
+    Teardown has a per-Wallet scope.
+  invoke_dev_with: >-
+    Follow AD-26. A locked Wallet issues no ledger read; auto-lock minimum 1 minute on Mainnet.
+- id: "5"
+  title: Creation flow for Stored Seed Wallets, with check policy
+  description: >-
+    Build the one-question-per-axis creation flow, signature type choice, pre-selected answers, and the single policy function for legal check combinations (CAP-1, CAP-3 stored half).
+    Unsupported answers are aria-disabled with a visible reason.
+  invoke_dev_with: >-
+    Follow AD-28; the combination table and defaults are in check-rules.md.
+- id: "6"
+  title: Passkey-Derived Seed with passkey rule and kind statement
+  description: >-
+    Offer Passkey-Derived Seeds where PRF is available, with per-purpose derivation, the existing-or-new passkey choice, the synced versus device-bound statement, and the domain warning (CAP-3 passkey half, CAP-7).
+    Mainnet is disabled while production is on b-cdn.net.
+  spec_checkpoint: true
+  invoke_dev_with: >-
+    Follow AD-24; the rpId is explicit and recorded. Use the WebAuthn test seam (AD-12) for tests.
+- id: "7"
+  title: Written-Seed confirmation and Seed reveal behind the Signing Check
+  description: >-
+    Require a confirmed written Seed before a passkey-only Mainnet Wallet exists, and require the Signing Check plus confirm to reveal any Seed (CAP-8, CAP-6).
+    No screen says the key cannot be exported.
+- id: "8"
+  title: Edit a Wallet's checks and passkey
+  description: >-
+    Let the user change Open Check, auto-lock, Signing Check, and passkey, re-encrypting the Seed with the address unchanged and requiring the affected current check first (CAP-9).
+    Mainnet floors and the written-Seed rule hold after edits.
+  invoke_dev_with: >-
+    Edits are atomic (AD-28): a failed re-encrypt leaves the old lock intact.
+- id: "9"
+  title: Controlling Wallet, Regular Key, and extra passkey key
+  description: >-
+    Add the later step that makes a Wallet controlled by a Controlling Wallet and lets a passkey be added as an extra Regular Key, replacing any existing one with a confirm (CAP-11).
+    Control is claimed only after on-ledger validation.
+  invoke_dev_with: >-
+    Follow AD-29; ledger state is read, never remembered, and an errored read blocks.
+- id: "10"
+  title: Turn the Account Master Key off and on from Settings
+  description: >-
+    Offer disabling and re-enabling the Account Master Key only with a validated Regular Key, with exact-consequence confirm and the Signing Check (CAP-12).
+    State is read from the ledger; a failed read shows unknown.
+  spec_checkpoint: true
+- id: "11"
+  title: Two-device signing by QR
+  description: >-
+    An online device builds the unsigned transaction with an explicit LastLedgerSequence and an offline XRPL Bench device signs it by QR (CAP-13).
+    Expiry is stated beforehand and an expired transaction is reported as expired.
+  invoke_dev_with: >-
+    Follow AD-30; one codec, and the online side verifies what comes back. Use roughly +75 ledgers; no Tickets.

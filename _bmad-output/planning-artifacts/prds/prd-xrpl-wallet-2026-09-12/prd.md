@@ -271,7 +271,8 @@ An app PIN is set during onboarding alongside the passkey and is never optional.
 - A device with no platform authenticator can still reach every function.
 - *Planned change: superseded by FR-65 and FR-72. Each Wallet's checks are its
   own choice. A Mainnet Wallet whose only check is a passkey needs a confirmed
-  written Seed instead of a PIN. This reverses `docs/decisions.md` §1.*
+  written Seed instead of a PIN. This reverses `docs/decisions.md` §2's
+  fallback row; see §15 there.*
 
 #### FR-8: Unlock is proven by decryption
 No Unlock Method is trusted because it produced a key.
@@ -1191,12 +1192,15 @@ defers to is wrong, recorded so §0's tie-break rule is applied with open eyes.
   Planned §4.14 makes passkey-only a real per-Wallet choice again (FR-65,
   FR-72), but through PRF, not platform secure storage. The epic file is still
   stale either way.
-- `docs/decisions.md` §1 records the mandatory PIN fallback that planned §4.14
-  reverses (FR-7's note, FR-72). It needs a superseding entry when §4.14 is
-  decided in the repo.
-- `PRODUCT.md` and `docs/user-stories/INDEX.md` list regular-key rotation as out
-  of scope. Planned FR-75 and FR-76 narrow that (§6.2).
-- §4.14 has no epic file and no entry in `docs/user-stories/INDEX.md`.
+- *Resolved 2026-10-10:* `docs/decisions.md` §2 recorded the mandatory PIN
+  fallback that planned §4.14 reverses (FR-7's note, FR-72); §15 now records the
+  planned supersession, and the §2 rows point to it.
+- *Resolved 2026-10-10:* `PRODUCT.md` and `docs/user-stories/INDEX.md` listed
+  regular-key rotation as deferred. Both now keep only multi-signing deferred
+  and point to §4.14 as planned.
+- §4.14 has no epic file. `docs/user-stories/INDEX.md` now lists it as planned.
+- `docs/user-stories/INDEX.md`'s Quick Reference has no Devnet facts; they are in
+  the addendum §8 until §4.14 is built.
 - `docs/user-stories/INDEX.md` lists neither an Address Book epic nor an epic
   file, though the capability ships and FR-21 and FR-45 depend on it (§4.11).
 - `CLAUDE.md`'s five-document table has no row for the product layer, though it

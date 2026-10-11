@@ -24,9 +24,12 @@ This is the functional scope reference for the wallet. It exists to keep every f
 - Checks (deferred/cancellable payments)
 - Escrow (time/condition-locked payments)
 - Payment Channels (streaming micro-payments)
-- Multi-signing / regular key rotation
+- Multi-signing
 
 These are legitimate native XRPL features and can become their own epics later, but they are not required for a minimum functional self-custody wallet.
+
+**Planned (decided, not built — no epic file yet):**
+- Per-Wallet key setup and signing checks, including regular keys and turning off the account master key. Specified in the PRD (`_bmad-output/planning-artifacts/prds/prd-xrpl-wallet-2026-09-12/prd.md` §4.14); see `docs/decisions.md` §15.
 
 ## Epics
 

@@ -26,14 +26,14 @@ These close out the open questions raised in the earlier gap analysis, so they d
 | Address book | **Yes, shipped (Epic 9).** Local-only, no on-chain component. Every validated send records the counterparty it paid (network, address, tag) automatically; the app writes no labels and has no add/edit/delete controls. Settings lists every network's entries. Pre-existing entries are kept and shown with their network and (if tagless) tag as "Not recorded". The persisted version stays 0 so an older build still reads the slice instead of discarding it; a rollback can only drop the recorded network, which turns entries back into unrecorded ones (more warnings, never fewer). |
 | Auto-lock timeout | Default **5 minutes** of inactivity; user-configurable to 1/5/15/30 min. Immediate lock on app backgrounding on mobile; on desktop a **30-second grace window** applies instead (see §5, 2026-09-01). |
 | Failed unlock attempts | Exponential backoff starting at the 3rd failed passkey/PIN attempt; after 8 consecutive failures, the wallet requires full re-import via seed (no silent unlimited retry). |
-| Non-biometric fallback for unlock | **Mandatory**, not optional: an app-level password/PIN is set during onboarding alongside the passkey, for environments with no platform authenticator. Passkey is preferred; PIN is the guaranteed fallback. |
+| Non-biometric fallback for unlock | **Mandatory**, not optional: an app-level password/PIN is set during onboarding alongside the passkey, for environments with no platform authenticator. Passkey is preferred; PIN is the guaranteed fallback. *Planned to be superseded — see §15.* |
 | Disabled master key on import | Wallet checks `account_flags`/`lsfDisableMasterKey` immediately after import; if set, it warns before completing import that this seed may not be able to sign transactions. |
 | Trust line limit editing | **In scope**, add as a new story in `tokens-and-trustlines.md` (a second `TrustSet` on an existing line, not just create/remove). |
 | Frozen trust lines | Wallet shows a "frozen by issuer" badge on affected trust lines/balances and disables sending that asset. |
 | Stuck/expired transactions | Wallet tracks `LastLedgerSequence`; once the ledger closes past it without validation, the transaction is marked "expired, not applied" and the user can retry with a fresh transaction (new sequence) — never blind-resubmit the same signed blob. |
 | Background payment notifications | **Deferred** — Web Push requires a server to hold subscriptions and send, which §1's no-backend architecture rules out. In-app notification only for now; see §5 (2026-09-01). |
 | Fiat-equivalent balance display | **Explicitly deferred**, not silently missing — no price-oracle dependency in v1. |
-| Custom/failover RPC endpoints | v1 ships one hardcoded public endpoint per network plus one hardcoded backup for failover; no user-editable custom endpoint yet. *(Implemented 2026-09-01 in `lib/xrpl/networks.ts` / `client.ts`.)* |
+| Custom/failover RPC endpoints | v1 ships one hardcoded public endpoint per network plus one hardcoded backup for failover; no user-editable custom endpoint yet. *(Implemented 2026-09-01 in `lib/xrpl/networks.ts` / `client.ts`.)* *Planned to change — see §15.* |
 
 ---
 
@@ -1417,3 +1417,40 @@ their fee exceeds the 0.01 XRP cap. The confirmation is recorded in the
 Intent of
 `_bmad-output/implementation-artifacts/spec-epic-6-retro-11-reset-unregisters-service-worker.md`,
 and in Decisions 3 and 10 of `spec-fee-cap-and-shown-fee.md`.
+
+---
+
+## 15. Planned: per-Wallet key setup and signing checks — decided, not built
+
+Decided 2026-10-09 and 2026-10-10 by Otavio, from the forged idea in
+`_bmad-output/forge/passkey-gated-signing/forged-idea.md`. Specified in the PRD
+(`_bmad-output/planning-artifacts/prds/prd-xrpl-wallet-2026-09-12/prd.md`
+§4.14, FR-60 to FR-78), which is authoritative for the requirements; this entry
+records only what it changes here. **Nothing below ships yet.** Until it does,
+§2 describes the app as built.
+
+**What it will supersede.**
+
+- **§2's mandatory PIN fallback.** Each Wallet chooses its own Open Check and
+  Signing Check. A Mainnet Wallet whose only check is a passkey needs a
+  confirmed written Seed instead of a PIN (FR-65, FR-72). The App PIN exists
+  only once some Wallet chooses it (FR-68).
+- **§2's fixed endpoints.** Each Wallet has a Network and a Node, chosen from a
+  built-in list or added after a connection test (FR-61). Devnet joins Mainnet
+  and Testnet.
+- **The deferral of regular keys** in `PRODUCT.md` and
+  `docs/user-stories/INDEX.md`. Setting a Regular Key, adding a passkey as an
+  extra key, and turning off the Account Master Key from Settings are planned
+  (FR-75 to FR-77). Multi-signing stays deferred.
+
+**What it keeps.** An unlock — and now a Signing Check — is proven by
+decrypting known ciphertext, never by deriving a key (FR-8, FR-67). A Signing
+Check runs on every signature, through the one write choke point (§14).
+
+**Decided 2026-10-10 (PRD §10 questions 7 to 9).** A Passkey-Derived Seed
+Wallet signs by passkey only, because storing its Seed between signatures would
+make it a Stored Seed Wallet. The hard lock blocks the App PIN for every Wallet
+that uses it, since the failure count is shared; Wallets checked only by
+passkey keep working, and recovery stays re-import from Seed. No App PIN exists
+until a Wallet chooses one.
+

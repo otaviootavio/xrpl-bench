@@ -8,7 +8,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogD
 import { Skeleton } from '@/components/ui/skeleton'
 import { TrustLineRow } from '@/components/wallet/TrustLineRow'
 import { QueryErrorState } from '@/components/wallet/QueryErrorState'
-import { useAppStore, useActiveWallet, useActiveNetwork, useActiveNode } from '@/store/app-store'
+import { useActiveWallet, useActiveNetwork, useActiveNode, useWalletOpenKey } from '@/store/app-store'
 import { useTrustLines } from '@/hooks/useTrustLines'
 import { useServerReserves } from '@/hooks/useServerReserves'
 import { useSpendableBalance } from '@/hooks/useSpendableBalance'
@@ -24,7 +24,8 @@ export function TrustLinesTab() {
   const network = useActiveNetwork()
   const node = useActiveNode()
   const wallet = useActiveWallet()
-  const vaultKey = useAppStore((s) => s.vaultKey)
+  // The Open Key of THIS Wallet's lock, never another's (AD-21).
+  const vaultKey = useWalletOpenKey(wallet?.id)
   const trustLines = useTrustLines(network, wallet?.address ?? null, node)
   const reserves = useServerReserves(network, node)
   const { spendableDrops } = useSpendableBalance(network, wallet?.address ?? null, node)

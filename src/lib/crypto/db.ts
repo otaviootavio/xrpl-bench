@@ -7,8 +7,9 @@ export type SeedMethod = 'stored'
  * checks it against the stored address — never guessed (AD-18). */
 export type SeedAlgorithm = 'ed25519' | 'secp256k1' | 'unresolved'
 /** `either` is a legacy Wallet whose app-wide unlock accepts a PIN or a
- * passkey (AD-25). */
-export type OpenCheck = 'pin' | 'passkey' | 'either'
+ * passkey (AD-25). `none` is a Testnet or Devnet lock with no Open Check (AD-21,
+ * AD-28). */
+export type OpenCheck = 'pin' | 'passkey' | 'either' | 'none'
 export type SigningCheck = 'standard' | 'passkey' | 'pin'
 
 /** How a Signing Check's key is wrapped (AD-23). Holds only public derivation
@@ -65,10 +66,22 @@ export interface LockRecord {
   key: string
   id: string
   hkdfInfo: string
-  prfSaltB64: string
+  /** The PRF salt of the lock's passkey. Absent on a lock with no passkey. */
+  prfSaltB64?: string
   pbkdf2: { iterations: number; hash: 'SHA-256'; keyBits: number }
   autoLockMinutes: number
   createdAt: number
+  /** Story 4 (additive; the legacy lock has none of these, its wrappers live in
+   * the vault meta). The Open Check this lock was created with. */
+  openCheck?: OpenCheck
+  /** The Open Key (raw, base64) encrypted under the App PIN's key for this lock. */
+  wrappedOpenKeyForPin?: { ivB64: string; ciphertextB64: string }
+  /** The Open Key encrypted under this lock's own passkey. */
+  wrappedOpenKeyForPasskey?: { ivB64: string; ciphertextB64: string }
+  passkeyCredentialIdB64?: string
+  /** `none` only: the Open Key itself, a non-extractable CryptoKey, which
+   * parent AD-5 permits in IndexedDB. */
+  openKey?: CryptoKey
 }
 
 export const LEGACY_LOCK_ID = 'legacy'
@@ -87,6 +100,9 @@ export interface VaultMeta {
   pinSaltB64?: string
   wrappedMasterKeyForPin?: { ivB64: string; ciphertextB64: string }
   wrappedMasterKeyForPasskey?: { ivB64: string; ciphertextB64: string }
+  /** Known ciphertext that proves the App PIN when no legacy wrapper exists
+   * (story 4): written when the App PIN is created by a non-legacy lock. */
+  pinVerifier?: { ivB64: string; ciphertextB64: string; hkdfInfo: string }
   failedAttempts: number
   lockedUntil?: number
 }
@@ -100,7 +116,8 @@ export interface VaultMeta {
 // every lock path (manual lock, auto-lock timeout, backgrounding, wallet
 // removal) — see lib/crypto/auth.ts and store/app-store.ts.
 export interface UnlockedSession {
-  key: 'session'
+  /** `session` for the legacy lock, `session:<lockId>` for any other. */
+  key: string
   masterKey: CryptoKey
   expiresAt: number
 }
@@ -301,27 +318,66 @@ export async function migrateLegacyVault(input: LegacyMigrationInput): Promise<b
   }
 }
 
-export async function putUnlockedSession(masterKey: CryptoKey, expiresAt: number): Promise<void> {
+/** One persisted session per open lock (AD-21). The legacy lock keeps its
+ * pre-story-4 key, so a refresh across the update still restores it. */
+export const sessionKeyOf = (lockId: string) => (lockId === LEGACY_LOCK_ID ? 'session' : `session:${lockId}`)
+
+export async function putLockSession(lockId: string, masterKey: CryptoKey, expiresAt: number): Promise<void> {
   const db = await getDb()
-  await db.put('session', { key: 'session', masterKey, expiresAt })
+  await db.put('session', { key: sessionKeyOf(lockId), masterKey, expiresAt })
 }
 
-/** Returns the persisted session's master key if one exists and hasn't
- * expired, otherwise null (and clears an expired entry). */
-export async function getUnlockedSession(): Promise<CryptoKey | null> {
+/** Returns a lock's persisted key and its persisted expiry if one exists and
+ * hasn't expired, otherwise null (and clears an expired entry). */
+export async function getLockSession(lockId: string): Promise<{ key: CryptoKey; expiresAt: number } | null> {
   const db = await getDb()
-  const existing = await db.get('session', 'session')
+  const existing = await db.get('session', sessionKeyOf(lockId))
   if (!existing) return null
   if (existing.expiresAt <= Date.now()) {
-    await db.delete('session', 'session')
+    await db.delete('session', sessionKeyOf(lockId))
     return null
   }
-  return existing.masterKey
+  return { key: existing.masterKey, expiresAt: existing.expiresAt }
 }
 
-export async function clearUnlockedSession(): Promise<void> {
+/** Moves a persisted session's expiry — and ONLY if the entry still exists, in
+ * one transaction. A lock that closed while an extend was in flight has no entry
+ * left, so the late write does nothing and a refresh cannot restore it. */
+export async function extendLockSessionExpiry(lockId: string, expiresAt: number): Promise<void> {
   const db = await getDb()
-  await db.delete('session', 'session')
+  const tx = db.transaction('session', 'readwrite')
+  const done = tx.done
+  done.catch(() => {})
+  const existing = await tx.store.get(sessionKeyOf(lockId))
+  if (existing) await tx.store.put({ ...existing, expiresAt })
+  await done
+}
+
+export async function clearLockSession(lockId: string): Promise<void> {
+  const db = await getDb()
+  await db.delete('session', sessionKeyOf(lockId))
+}
+
+export async function clearAllLockSessions(): Promise<void> {
+  const db = await getDb()
+  await db.clear('session')
+}
+
+export async function getLockRecord(lockId: string): Promise<LockRecord | undefined> {
+  const db = await getDb()
+  return (await db.get('vault', lockKey(lockId))) as LockRecord | undefined
+}
+
+export async function putLockRecord(record: LockRecord): Promise<void> {
+  const db = await getDb()
+  await db.put('vault', record)
+}
+
+/** Every `lock:<id>` record. */
+export async function listLockRecords(): Promise<LockRecord[]> {
+  const db = await getDb()
+  const all = (await db.getAll('vault')) as Array<VaultMeta | LockRecord>
+  return all.filter((r): r is LockRecord => r.key.startsWith('lock:'))
 }
 
 /** Full teardown — wallet removal / logout must wipe the vault, per

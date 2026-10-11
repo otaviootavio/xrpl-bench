@@ -8,6 +8,8 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { SeedReveal } from '@/components/wallet/SeedReveal'
 import { ChassisShell } from '@/components/ChassisShell'
 import { setUpVaultAuth, hasPasskeyRegistered } from '@/lib/crypto/auth'
+import { DEFAULT_AUTO_LOCK_MINUTES } from '@/lib/crypto/lock'
+import { LEGACY_LOCK_ID } from '@/lib/crypto/db'
 import { addressFromSeed, parseSeedInput, generateAndStoreWallet, importAndStoreWallet, listWallets, type WalletMeta } from '@/lib/crypto/keystore'
 import { checkBeforeImport, IMPORT_WARNING_COPY, INVALID_SEED_MESSAGE, type ImportWarning } from '@/lib/seed-import'
 import { useAppStore } from '@/store/app-store'
@@ -22,10 +24,10 @@ type Step = 'choice' | 'vault-setup' | 'import-seed' | 'backup-confirm' | 'impor
 
 /**
  * IMPORTANT: this component intentionally does NOT call the app store's
- * `unlock()`/`setWallets()`/`setActiveWalletId()` until the entire flow is
+ * `openLock()`/`setWallets()`/`setActiveWalletId()` until the entire flow is
  * finished (seed backed up for a new wallet, or any import warning
  * dismissed). App.tsx's top-level Gate switches to <Main> the instant
- * `wallets.length > 0 && unlocked`, so committing those earlier would skip
+ * `wallets.length > 0`, so committing those earlier would skip
  * straight past the seed-backup screen — a real bug caught during browser
  * validation (the wallet's own account-onboarding.md US-6 requires an
  * explicit backup confirmation before continuing).
@@ -71,12 +73,14 @@ export function Onboarding() {
   const [network, setNewWalletNetwork] = useState<NetworkId>('testnet')
   const setWallets = useAppStore((s) => s.setWallets)
   const setActiveWalletId = useAppStore((s) => s.setActiveWalletId)
-  const unlock = useAppStore((s) => s.unlock)
+  const openLock = useAppStore((s) => s.openLock)
 
   function commitToStore(key: CryptoKey, meta: WalletMeta, wallets: WalletMeta[]) {
+    // The lock first: the Gate shows Main the moment `wallets` is non-empty, and
+    // a Wallet whose lock is not yet open would flash its locked view.
+    openLock(LEGACY_LOCK_ID, key, DEFAULT_AUTO_LOCK_MINUTES)
     setWallets(wallets)
     setActiveWalletId(meta.id)
-    unlock(key)
   }
 
   function clearSeeds() {

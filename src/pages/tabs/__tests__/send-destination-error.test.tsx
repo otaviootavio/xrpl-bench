@@ -70,6 +70,7 @@ vi.mock('@/store/app-store', () => ({
     // A real vaultKey: with `null` here `doSend` returns at its first line and
     // every submit-path assertion below would pass without reaching the guard.
     selector({ network, vaultKey: {}, addressBook: [], addAddressBookEntry: vi.fn() }),
+  useWalletOpenKey: () => ({}),
   useActiveNetwork: () => network,
   useActiveNode: () => undefined,
   useActiveWallet: () => ({ id: 'w1', address: walletAddress, label: 'Test' }),

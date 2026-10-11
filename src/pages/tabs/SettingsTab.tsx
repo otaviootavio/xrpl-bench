@@ -16,14 +16,16 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogT
 import { Separator } from '@/components/ui/separator'
 import { SeedReveal } from '@/components/wallet/SeedReveal'
 import { AddressLink } from '@/components/wallet/AddressLink'
-import { useAppStore, useActiveNetwork } from '@/store/app-store'
+import { useAppStore, useActiveNetwork, useWalletOpenKey } from '@/store/app-store'
 import { counterpartyKey, tagNotRecorded } from '@/store/address-book'
 import { NETWORKS, NETWORK_IDS, type NetworkId } from '@/lib/xrpl/networks'
-import { addNetworkView, addressFromSeed, generateAndStoreWallet, importAndStoreWallet, listWallets, parseSeedInput, removeWallet, revealSeed, unavailablePrompts, describeCheckFailure } from '@/lib/crypto/keystore'
-import { RESET_INCOMPLETE_MESSAGE, tearDownAllLocalState, clearCachedAccountData } from '@/lib/teardown'
+import { addNetworkView, addressFromSeed, generateAndStoreWallet, importAndStoreWallet, listWallets, parseSeedInput, removeWallet, revealSeed, setLockAutoLock, unavailablePrompts, describeCheckFailure } from '@/lib/crypto/keystore'
+import { getLockInfo } from '@/lib/crypto/lock'
+import { queryKeys } from '@/lib/xrpl/query-keys'
+import { RESET_INCOMPLETE_MESSAGE, tearDownAllLocalState, clearCachedAccountData, tearDownLock } from '@/lib/teardown'
 import { checkBeforeImport, IMPORT_WARNING_COPY, INVALID_SEED_MESSAGE, type ImportWarning } from '@/lib/seed-import'
 import { toast } from '@/lib/notify'
-import { useQueryClient } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 
 export function SettingsTab() {
   // Only the fallback for a record the vault migration has not reached
@@ -35,11 +37,21 @@ export function SettingsTab() {
   const setWallets = useAppStore((s) => s.setWallets)
   const activeWalletId = useAppStore((s) => s.activeWalletId)
   const setActiveWalletId = useAppStore((s) => s.setActiveWalletId)
-  const autoLockMinutes = useAppStore((s) => s.autoLockMinutes)
-  const setAutoLockMinutes = useAppStore((s) => s.setAutoLockMinutes)
   const addressBook = useAppStore((s) => s.addressBook)
-  const vaultKey = useAppStore((s) => s.vaultKey)
-  const lock = useAppStore((s) => s.lock)
+  const openLocks = useAppStore((s) => s.openLocks)
+  const setLockMinutes = useAppStore((s) => s.setLockMinutes)
+  const closeAllLocks = useAppStore((s) => s.closeAllLocks)
+  // Settings is mounted only for an open Wallet. Its lock is the one a new
+  // Wallet is added under and the one whose auto-lock this card edits (AD-21).
+  const activeWallet = wallets.find((w) => w.id === activeWalletId) ?? null
+  const activeLockId = activeWallet?.lockId ?? null
+  const vaultKey = useWalletOpenKey(activeWalletId)
+  const lockInfoQuery = useQuery({
+    queryKey: queryKeys.lockInfo(activeLockId ?? ''),
+    queryFn: () => getLockInfo(activeLockId as string),
+    enabled: activeLockId !== null,
+  })
+  const autoLockMinutes = lockInfoQuery.data?.autoLockMinutes ?? null
   const { updateReady, applying, applyUpdate, checking, checkError, checkForUpdate, pendingRelease, blockedReason, declined, declineCurrent } =
     useAppUpdate()
   const queryClient = useQueryClient()
@@ -79,7 +91,7 @@ export function SettingsTab() {
    * add. Reached only after the pre-flight check: directly when it found
    * nothing to warn about, or from "Import anyway". */
   async function storeImported(seed: string, key: CryptoKey, net: NetworkId) {
-    const meta = await importAndStoreWallet(label || 'Wallet', seed, key, net)
+    const meta = await importAndStoreWallet(label || 'Wallet', seed, key, net, activeLockId ?? undefined)
     await refreshWallets()
     setActiveWalletId(meta.id)
     finishAdd()
@@ -99,7 +111,7 @@ export function SettingsTab() {
     if (addMode === 'generate') {
       setBusy(true)
       try {
-        const { meta } = await generateAndStoreWallet(label || 'Wallet', vaultKey, addNetwork)
+        const { meta } = await generateAndStoreWallet(label || 'Wallet', vaultKey, addNetwork, activeLockId ?? undefined)
         await refreshWallets()
         setActiveWalletId(meta.id)
         finishAdd()
@@ -165,9 +177,15 @@ export function SettingsTab() {
   }
 
   async function handleConfirmReveal(id: string) {
-    if (!vaultKey) return
+    // The key of THAT Wallet's lock: opening one lock never reveals another's Seed.
+    const lockId = wallets.find((w) => w.id === id)?.lockId
+    const openKey = lockId ? (useAppStore.getState().openLocks[lockId]?.key ?? null) : null
+    if (!openKey) {
+      toast.error('Open this wallet first: its lock is closed.')
+      return
+    }
     try {
-      const result = await revealSeed(id, { openKey: vaultKey, prompts: unavailablePrompts })
+      const result = await revealSeed(id, { openKey, prompts: unavailablePrompts })
       if (result.status !== 'ok') {
         toast.error(result.status === 'cancelled' ? 'Cancelled. The seed was not revealed.' : describeCheckFailure(result))
         return
@@ -211,6 +229,23 @@ export function SettingsTab() {
     toast.success('Wallet removed from this device.')
   }
 
+  /** Changes THIS Wallet's lock only. The policy refuses a Mainnet value under
+   * the floor, and its plain reason is shown (AD-28). */
+  async function handleAutoLock(minutes: number) {
+    if (!activeLockId) return
+    try {
+      const verdict = await setLockAutoLock(activeLockId, minutes)
+      if (!verdict.ok) {
+        toast.error(verdict.reason)
+        return
+      }
+      setLockMinutes(activeLockId, minutes)
+      await lockInfoQuery.refetch()
+    } catch (err: any) {
+      toast.error(err?.message ?? 'Could not change the auto-lock.')
+    }
+  }
+
   async function handleFullReset() {
     // `tearDownAllLocalState` owns the whole clear set (AD-16), including the
     // persisted app store — wallets, Address Book, auto-lock and declined
@@ -222,7 +257,7 @@ export function SettingsTab() {
       toast.error(RESET_INCOMPLETE_MESSAGE)
       return
     } finally {
-      lock()
+      closeAllLocks()
     }
     window.location.reload()
   }
@@ -291,13 +326,21 @@ export function SettingsTab() {
                     <StatusLegend tone="live">Active</StatusLegend>
                   )}
                 </div>
-                <AddressLink address={w.address} />
-                <p className="mt-1 text-xs text-muted-foreground">
-                  Network: {NETWORKS[w.network].label}
-                  {w.network === 'mainnet' && ' — real funds'}
-                </p>
-                {w.network === 'devnet' && <DevnetNotice network={w.network} />}
-                <WalletNodeSection wallet={w} />
+                {/* A locked Wallet is its name and nothing else (AD-26): no
+                    address, network or Node until its own lock is open. */}
+                {w.lockId in openLocks ? (
+                  <>
+                    <AddressLink address={w.address} />
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      Network: {NETWORKS[w.network].label}
+                      {w.network === 'mainnet' && ' — real funds'}
+                    </p>
+                    {w.network === 'devnet' && <DevnetNotice network={w.network} />}
+                    <WalletNodeSection wallet={w} />
+                  </>
+                ) : (
+                  <p className="mt-1 text-xs text-muted-foreground">Locked. Switch to this wallet to unlock it.</p>
+                )}
               </div>
               <div className="flex flex-wrap gap-2">
                 {w.id !== activeWalletId && (
@@ -305,17 +348,22 @@ export function SettingsTab() {
                     Use this wallet
                   </Button>
                 )}
-                {NETWORK_IDS.filter((n) => !wallets.some((o) => o.seedId === w.seedId && o.network === n)).map((n) => (
+                {w.lockId in openLocks && NETWORK_IDS.filter((n) => !wallets.some((o) => o.seedId === w.seedId && o.network === n)).map((n) => (
                   <Button key={n} variant="outline" size="sm" aria-label={`Use ${w.label} on ${NETWORKS[n].label}`} onClick={() => void handleUseOnOtherNetwork(w.id, n)}>
                     Use on {NETWORKS[n].label}
                   </Button>
                 ))}
-                <Button variant="outline" size="sm" onClick={() => setConfirmRevealFor(w.id)}>
-                  Reveal seed
-                </Button>
-                <Button variant="danger" size="sm" onClick={() => setConfirmRemove(w.id)}>
-                  Remove
-                </Button>
+                {w.lockId in openLocks && (
+                  <Button variant="outline" size="sm" onClick={() => setConfirmRevealFor(w.id)}>
+                    Reveal seed
+                  </Button>
+                )}
+                {/* Removing destroys the Seed, so it needs the Wallet's own lock open. */}
+                {w.lockId in openLocks && (
+                  <Button variant="danger" size="sm" onClick={() => setConfirmRemove(w.id)}>
+                    Remove
+                  </Button>
+                )}
               </div>
             </div>
           ))}
@@ -388,7 +436,7 @@ export function SettingsTab() {
         <CardContent className="flex flex-col gap-4">
           <div className="flex items-center justify-between">
             <Label htmlFor="autolock">Auto-lock after inactivity</Label>
-            <Select value={String(autoLockMinutes)} onValueChange={(v) => setAutoLockMinutes(Number(v))}>
+            <Select value={autoLockMinutes === null ? undefined : String(autoLockMinutes)} onValueChange={(v) => void handleAutoLock(Number(v))} disabled={autoLockMinutes === null}>
               <SelectTrigger className="w-32" id="autolock">
                 <SelectValue />
               </SelectTrigger>
@@ -403,7 +451,7 @@ export function SettingsTab() {
           <Separator />
           {/* An action, not a setting — a Switch that never changes state is a
               broken affordance for keyboard and screen-reader users (#9). */}
-          <Button variant="outline" className="w-fit" onClick={() => lock()}>
+          <Button variant="outline" className="w-fit" onClick={() => activeLockId && tearDownLock(queryClient, activeLockId)}>
             Lock now
           </Button>
           <Separator />

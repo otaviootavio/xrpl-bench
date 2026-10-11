@@ -2,15 +2,15 @@ import { decodeSeed, ECDSA, Wallet } from 'xrpl'
 import { canonicalNodeUrl, type NetworkId } from '@/lib/xrpl/networks'
 import type { Signer, SigningHandle } from '@/lib/xrpl/writes'
 import { aesDecrypt, aesEncrypt } from './aes'
-import { HKDF_INFO } from './auth'
-import { deriveAesKeyFromBits } from './derive'
+import { deriveAesKeyFromBits, HKDF_INFO } from './derive'
+import { getLockInfo, setAutoLockMinutes, type CheckResult } from './lock'
+import { checkLockRequest, type PolicyVerdict } from './policy'
 import { b64ToBuf, bufToB64 } from './encoding'
 import { attemptPin, getLockoutState, PBKDF2_ITERATIONS, recordFailure, triesRemaining } from './pin'
 import { assertPasskeyAndDeriveBits, isCancelled, isPrfUnsupported, isWebAuthnSupported, PRF_SALT } from './webauthn'
 import {
   getVaultMeta,
   LEGACY_LOCK_ID,
-  legacyOpenCheck,
   listStoredWallets,
   migrateLegacyVault as migrateLegacyVaultRecords,
   mutateStoredWallet,
@@ -28,6 +28,9 @@ import {
 export interface WalletMeta {
   id: string
   seedId: string
+  /** The lock whose Open Key opens this Wallet's Seed (AD-21). Legacy Wallets
+   * all share `legacy`. */
+  lockId: string
   label: string
   address: string
   createdAt: number
@@ -51,6 +54,7 @@ function toMetas(w: StoredWallet, fallbackNetwork?: NetworkId): WalletMeta[] {
   return viewsOf(w, fallbackNetwork).map((v) => ({
     id: v.walletId,
     seedId: w.id,
+    lockId: w.lockId ?? LEGACY_LOCK_ID,
     label: w.label,
     address: w.address,
     createdAt: w.createdAt,
@@ -90,9 +94,14 @@ function algorithmOfSeed(seed: string): 'ed25519' | 'secp256k1' {
 
 /** Generates a brand-new XRPL keypair locally (no network call) and stores
  * the seed encrypted under the given vault key — account-onboarding.md US-1. */
-export async function generateAndStoreWallet(label: string, vaultKey: CryptoKey, network: NetworkId): Promise<{ meta: WalletMeta; seed: string }> {
+export async function generateAndStoreWallet(
+  label: string,
+  vaultKey: CryptoKey,
+  network: NetworkId,
+  lockId: string = LEGACY_LOCK_ID,
+): Promise<{ meta: WalletMeta; seed: string }> {
   const wallet = Wallet.generate()
-  const meta = await storeWallet(label, wallet.seed!, vaultKey, network)
+  const meta = await storeWallet(label, wallet.seed!, vaultKey, network, lockId)
   return { meta, seed: wallet.seed! }
 }
 
@@ -145,12 +154,36 @@ export function parseSeedInput(raw: string): string | null {
 }
 
 /** Imports an existing wallet from a seed — account-onboarding.md US-2. */
-export async function importAndStoreWallet(label: string, seed: string, vaultKey: CryptoKey, network: NetworkId): Promise<WalletMeta> {
+export async function importAndStoreWallet(
+  label: string,
+  seed: string,
+  vaultKey: CryptoKey,
+  network: NetworkId,
+  lockId: string = LEGACY_LOCK_ID,
+): Promise<WalletMeta> {
   const wallet = Wallet.fromSeed(seed) // throws on malformed seed
-  return storeWallet(label, wallet.seed!, vaultKey, network)
+  return storeWallet(label, wallet.seed!, vaultKey, network, lockId)
 }
 
-async function storeWallet(label: string, seed: string, vaultKey: CryptoKey, network: NetworkId): Promise<WalletMeta> {
+/** Policy for putting a Wallet or view on `network` under an EXISTING lock
+ * (AD-28): a Mainnet one may not sit under a lock with no Open Check or an
+ * auto-lock under a minute. Throws the policy's plain reason, so nothing is
+ * written. */
+async function assertLockAllowsNetwork(lockId: string, network: NetworkId): Promise<void> {
+  const info = await getLockInfo(lockId)
+  const verdict = checkLockRequest({
+    network,
+    openCheck: info.openCheck === 'none' ? 'none' : info.openCheck === 'passkey' ? 'passkey' : 'pin',
+    autoLockMinutes: info.autoLockMinutes,
+  })
+  if (!verdict.ok) throw new Error(verdict.reason)
+}
+
+/** `vaultKey` must be the Open Key of `lockId`: a Seed written under one lock's
+ * key and labelled with another's could never be opened. Creating a Wallet under
+ * a NEW lock is the creation flow's job (story 5). */
+async function storeWallet(label: string, seed: string, vaultKey: CryptoKey, network: NetworkId, lockId: string): Promise<WalletMeta> {
+  await assertLockAllowsNetwork(lockId, network)
   const wallet = Wallet.fromSeed(seed)
   const encryptedSeed = await aesEncrypt(vaultKey, seed)
   const walletId = crypto.randomUUID()
@@ -160,11 +193,12 @@ async function storeWallet(label: string, seed: string, vaultKey: CryptoKey, net
     address: wallet.address,
     encryptedSeed: { ivB64: encryptedSeed.ivB64, ciphertextB64: encryptedSeed.ciphertextB64 },
     createdAt: Date.now(),
-    // The legacy shape (story 12.1): under the app-wide key until story 14.1.
+    // Under the Open Key of the lock it is stored with: the legacy lock's, until
+    // story 5 creates Wallets under their own.
     seedMethod: 'stored',
     algorithm: algorithmOfSeed(wallet.seed!),
-    lockId: LEGACY_LOCK_ID,
-    openCheck: await legacyOpenCheck(),
+    lockId,
+    openCheck: (await getLockInfo(lockId)).openCheck,
     signingCheck: 'standard',
     views: [{ walletId, network }],
   }
@@ -176,15 +210,7 @@ async function storeWallet(label: string, seed: string, vaultKey: CryptoKey, net
 // Signing (AD-22, AD-23, AD-25)
 // ---------------------------------------------------------------------------
 
-/** What a check yields (FR-66..68). Never carries a message holding key
- * material. `cancelled` is a dismissed prompt and never counts toward the PIN
- * lockout; `wrong-credential` always does. */
-export type CheckResult<T> =
-  | { status: 'ok'; value: T }
-  | { status: 'wrong-credential'; kind: 'pin' | 'passkey'; triesRemaining: number }
-  | { status: 'cancelled' }
-  | { status: 'unsupported' }
-  | { status: 'locked-out'; hard: boolean; lockedUntil: number }
+export type { CheckResult }
 
 /** How the keystore asks the person for a credential without importing UI
  * (parent AD-1). `pin` resolves the PIN typed, or `null` if the prompt was
@@ -506,6 +532,7 @@ export async function addNetworkView(walletId: string, network: NetworkId): Prom
   if (!record.views || record.views.length === 0) {
     throw new Error('This wallet is not migrated yet. Restart the app and try again.')
   }
+  await assertLockAllowsNetwork(record.lockId ?? LEGACY_LOCK_ID, network)
   const newWalletId = crypto.randomUUID()
   let added = false
   await mutateStoredWallet(record.id, (current) => {
@@ -542,4 +569,14 @@ export async function setWalletNode(walletId: string, node: string | undefined):
   const meta = (await listWallets()).find((w) => w.id === walletId)
   if (!meta) throw new Error('Wallet not found in local vault.')
   return meta
+}
+
+/** Sets one lock's auto-lock minutes. The policy decides against the networks of
+ * the Wallets on that lock — a Mainnet Wallet's lock may not go under one
+ * minute (FR-65). A refusal carries its plain reason and writes nothing. */
+export async function setLockAutoLock(lockId: string, minutes: number): Promise<PolicyVerdict> {
+  const networks = (await listStoredWallets())
+    .filter((w) => (w.lockId ?? LEGACY_LOCK_ID) === lockId)
+    .flatMap((w) => viewsOf(w).map((v) => v.network))
+  return setAutoLockMinutes(lockId, minutes, networks)
 }

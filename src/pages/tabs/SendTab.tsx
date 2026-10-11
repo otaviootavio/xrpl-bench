@@ -10,7 +10,7 @@ import { AmountInput, validateAmountString } from '@/components/wallet/AmountInp
 import { TxLink } from '@/components/wallet/AddressLink'
 import { TxStatusBadge } from '@/components/wallet/TxStatusBadge'
 import { QueryErrorState } from '@/components/wallet/QueryErrorState'
-import { useAppStore, useActiveWallet, useActiveNetwork, useActiveNode } from '@/store/app-store'
+import { useAppStore, useActiveWallet, useActiveNetwork, useActiveNode, useWalletOpenKey } from '@/store/app-store'
 import type { NetworkId } from '@/lib/xrpl/networks'
 import { ReadingValue } from '@/components/wallet/ReadingValue'
 import { useSpendableBalance } from '@/hooks/useSpendableBalance'
@@ -60,7 +60,8 @@ export function SendTab() {
   const network = useActiveNetwork()
   const node = useActiveNode()
   const wallet = useActiveWallet()
-  const vaultKey = useAppStore((s) => s.vaultKey)
+  // The Open Key of THIS Wallet's lock, never another's (AD-21).
+  const vaultKey = useWalletOpenKey(wallet?.id)
   const addressBook = useAppStore((s) => s.addressBook)
   const addAddressBookEntry = useAppStore((s) => s.addAddressBookEntry)
   const queryClient = useQueryClient()

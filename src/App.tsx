@@ -2,11 +2,10 @@ import { useEffect, useState } from 'react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { Onboarding } from '@/pages/Onboarding'
-import { Unlock } from '@/pages/Unlock'
 import { Main } from '@/pages/Main'
 import { appStateSettled, useAppStore } from '@/store/app-store'
 import { listWallets, migrateLegacyVault } from '@/lib/crypto/keystore'
-import { restoreSession } from '@/lib/crypto/auth'
+import { restoreOpenLocks } from '@/lib/crypto/lock'
 import { setTxInFlightReporter } from '@/lib/xrpl/writes'
 
 /**
@@ -42,42 +41,45 @@ function migrateOnce(): Promise<void> {
   return migration
 }
 
+/** Story 4 / AD-26: there is no app-wide unlock gate. The app opens to the shell;
+ * `Main` shows the active Wallet's locked view until its own lock is open. */
 function Gate() {
   const wallets = useAppStore((s) => s.wallets)
   const setWallets = useAppStore((s) => s.setWallets)
-  const activeWalletId = useAppStore((s) => s.activeWalletId)
   const setActiveWalletId = useAppStore((s) => s.setActiveWalletId)
-  const unlocked = useAppStore((s) => s.unlocked)
-  const unlock = useAppStore((s) => s.unlock)
+  const openLock = useAppStore((s) => s.openLock)
   const [ready, setReady] = useState(false)
 
   useEffect(() => {
     // Hydrates the wallet list from IndexedDB on mount — not a ledger read,
     // so it's outside the TanStack Query guardrail. zustand setters are
     // referentially stable, so listing them here is safe and complete
-    // (docs/decisions.md guardrail #2: never disable exhaustive-deps).
+    // (docs/decisions.md guardrail #2: never disable exhaustive-deps). Runs
+    // once: the selection is read from the store, not from a dependency, so
+    // switching Wallets never re-restores sessions.
     let cancelled = false
     migrateOnce().then(() => listWallets(useAppStore.getState().network)).then(async (stored) => {
       if (cancelled) return
       setWallets(stored)
-      if (!activeWalletId && stored.length > 0) setActiveWalletId(stored[0].id)
-      // Restores a still-valid unlocked session so a page refresh within
-      // the auto-lock window doesn't force re-entering the PIN/passkey —
-      // see docs/decisions.md and lib/crypto/auth.ts restoreSession().
+      const active = useAppStore.getState().activeWalletId
+      if (stored.length > 0 && !stored.some((w) => w.id === active)) setActiveWalletId(stored[0].id)
+      // Restores each lock's still-valid session so a page refresh within ITS
+      // auto-lock window doesn't force re-entering the PIN/passkey — see
+      // lib/crypto/lock.ts restoreOpenLocks(). Locks without a valid session stay closed.
       if (stored.length > 0) {
-        const restoredKey = await restoreSession()
-        if (!cancelled && restoredKey) unlock(restoredKey)
+        for (const restored of await restoreOpenLocks().catch(() => [])) {
+          if (!cancelled) openLock(restored.lockId, restored.key, restored.autoLockMinutes, restored.expiresAt)
+        }
       }
       if (!cancelled) setReady(true)
     })
     return () => {
       cancelled = true
     }
-  }, [activeWalletId, setActiveWalletId, setWallets, unlock])
+  }, [openLock, setActiveWalletId, setWallets])
 
   if (!ready) return null
   if (wallets.length === 0) return <Onboarding />
-  if (!unlocked) return <Unlock />
   return <Main />
 }
 

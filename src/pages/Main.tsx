@@ -7,7 +7,8 @@ import { ReceiveTab } from './tabs/ReceiveTab'
 import { HistoryTab } from './tabs/HistoryTab'
 import { TrustLinesTab } from './tabs/TrustLinesTab'
 import { SettingsTab } from './tabs/SettingsTab'
-import { useActiveWallet, useActiveNetwork, useActiveNode } from '@/store/app-store'
+import { Unlock } from './Unlock'
+import { useActiveWallet, useActiveNetwork, useActiveNode, useWalletIsOpen } from '@/store/app-store'
 import { useIncomingPaymentNotifications } from '@/hooks/useIncomingPaymentNotifications'
 import { useAccountLiveUpdates } from '@/hooks/useAccountLiveUpdates'
 import { useAutoLock } from '@/hooks/useAutoLock'
@@ -37,12 +38,41 @@ const PANELS = [
   { value: 'settings', label: 'Settings', heading: 'Settings', Panel: SettingsTab },
 ] as const
 
-export function Main() {
+/** The six panels and every ledger hook behind them. Mounted ONLY while the
+ * active Wallet's lock is open (AD-26): a closed one has no address in play, so
+ * nothing here can issue a request that carries it. */
+function OpenWallet({ showUpdateMarker }: { showUpdateMarker: boolean }) {
   const network = useActiveNetwork()
   const node = useActiveNode()
   const wallet = useActiveWallet()
   useIncomingPaymentNotifications(network, wallet?.address ?? null, node)
   useAccountLiveUpdates(network, wallet?.address ?? null, node)
+  return (
+    <Tabs defaultValue="balances">
+      <TabsList>
+        {PANELS.map((p) => {
+          const marked = p.value === 'settings' && showUpdateMarker
+          return (
+            <TabsTrigger key={p.value} value={p.value} aria-label={marked ? `${p.label}, update available` : undefined}>
+              {p.label}
+              {marked && <Lamp tone="caution" className="ml-1" />}
+            </TabsTrigger>
+          )
+        })}
+      </TabsList>
+      {PANELS.map(({ value, heading, Panel }) => (
+        <TabsContent key={value} value={value}>
+          <h1 className="sr-only">{heading}</h1>
+          <Panel />
+        </TabsContent>
+      ))}
+    </Tabs>
+  )
+}
+
+export function Main() {
+  const wallet = useActiveWallet()
+  const open = useWalletIsOpen(wallet?.id)
   useAutoLock()
   useClearCacheOnLock()
   // US-2's "persistent, quiet marker": a lamp on the Settings tab, so an
@@ -77,25 +107,7 @@ export function Main() {
           target. It stays out of the tab order. Nothing suppresses the ring on
           this landing target: §6.3 admits no carve-out. */}
       <main id="main-content" tabIndex={-1} className="px-4 pb-6 pt-3">
-        <Tabs defaultValue="balances">
-          <TabsList>
-            {PANELS.map((p) => {
-              const marked = p.value === 'settings' && showUpdateMarker
-              return (
-                <TabsTrigger key={p.value} value={p.value} aria-label={marked ? `${p.label}, update available` : undefined}>
-                  {p.label}
-                  {marked && <Lamp tone="caution" className="ml-1" />}
-                </TabsTrigger>
-              )
-            })}
-          </TabsList>
-          {PANELS.map(({ value, heading, Panel }) => (
-            <TabsContent key={value} value={value}>
-              <h1 className="sr-only">{heading}</h1>
-              <Panel />
-            </TabsContent>
-          ))}
-        </Tabs>
+        {wallet && (open ? <OpenWallet showUpdateMarker={showUpdateMarker} /> : <Unlock key={wallet.id} wallet={wallet} />)}
       </main>
     </ChassisShell>
   )

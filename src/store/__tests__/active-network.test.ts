@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { renderHook } from '@testing-library/react'
 
 vi.mock('idb-keyval', () => ({ get: async () => undefined, set: async () => {}, del: async () => {} }))
-vi.mock('@/lib/crypto/auth', () => ({ endSession: async () => {} }))
+vi.mock('@/lib/crypto/lock', () => ({ endLockSession: async () => {}, endAllLockSessions: async () => {}, getLockInfo: async () => ({ id: 'legacy', openCheck: 'pin', autoLockMinutes: 5, pin: true, passkey: false }) }))
 
 import { mergePersistedAppState, useAppStore, useActiveNetwork, useActiveNode } from '../app-store'
 

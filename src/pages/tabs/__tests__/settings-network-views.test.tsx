@@ -15,7 +15,8 @@ const h = vi.hoisted(() => ({
 }))
 
 vi.mock('idb-keyval', () => ({ get: async () => undefined, set: async () => {}, del: async () => {} }))
-vi.mock('@/lib/crypto/auth', () => ({ wipeVault: async () => {}, endSession: async () => {} }))
+vi.mock('@/lib/crypto/auth', () => ({ wipeVault: async () => {} }))
+vi.mock('@/lib/crypto/lock', () => ({ endLockSession: async () => {}, endAllLockSessions: async () => {}, getLockInfo: async () => ({ id: 'legacy', openCheck: 'pin', autoLockMinutes: 5, pin: true, passkey: false }) }))
 vi.mock('@/lib/crypto/keystore', () => ({
   addressFromSeed: () => '',
   generateAndStoreWallet: async () => {},
@@ -52,7 +53,7 @@ import { SettingsTab } from '../SettingsTab'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { useAppStore } from '@/store/app-store'
 
-const base = { label: 'Savings', address: 'rSharedAddress', createdAt: 1, algorithm: 'ed25519', openCheck: 'pin', signingCheck: 'standard' }
+const base = { lockId: 'legacy', label: 'Savings', address: 'rSharedAddress', createdAt: 1, algorithm: 'ed25519', openCheck: 'pin', signingCheck: 'standard' }
 const MAINNET = { ...base, id: 'w1', seedId: 's1', network: 'mainnet' }
 const TESTNET = { ...base, id: 'w2', seedId: 's1', network: 'testnet' }
 const DEVNET = { ...base, id: 'w4', seedId: 's1', network: 'devnet' }
@@ -70,7 +71,7 @@ function renderSettings() {
 }
 
 function setWallets(wallets: unknown[]) {
-  useAppStore.setState({ wallets, activeWalletId: 'w1', network: 'mainnet' } as never)
+  useAppStore.setState({ wallets, activeWalletId: 'w1', network: 'mainnet', openLocks: { legacy: { key: {} as CryptoKey, autoLockMinutes: 5 } } } as never)
 }
 
 beforeEach(() => {

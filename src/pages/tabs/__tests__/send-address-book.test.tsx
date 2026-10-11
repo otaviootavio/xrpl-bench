@@ -54,6 +54,7 @@ let activeNode: string | undefined
 vi.mock('@/store/app-store', () => ({
   useAppStore: (selector: (s: Record<string, unknown>) => unknown) =>
     selector({ network, vaultKey: {}, addressBook, addAddressBookEntry }),
+  useWalletOpenKey: () => ({}),
   useActiveNetwork: () => network,
   useActiveNode: () => activeNode,
   useActiveWallet: () => ({ id: 'w1', address: WALLET_ADDRESS, label: 'Test' }),

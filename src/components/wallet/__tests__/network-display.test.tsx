@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 
 const h = vi.hoisted(() => ({ verifyNode: vi.fn(), retireNode: vi.fn(), setWalletNode: vi.fn(), listWallets: vi.fn() }))
 vi.mock('idb-keyval', () => ({ get: async () => undefined, set: async () => {}, del: async () => {} }))
-vi.mock('@/lib/crypto/auth', () => ({ endSession: async () => {} }))
+vi.mock('@/lib/crypto/lock', () => ({ endLockSession: async () => {}, endAllLockSessions: async () => {}, getLockInfo: async () => ({ id: 'legacy', openCheck: 'pin', autoLockMinutes: 5, pin: true, passkey: false }) }))
 vi.mock('@/lib/xrpl/client', () => ({ verifyNode: h.verifyNode, retireNode: h.retireNode }))
 vi.mock('@/lib/crypto/keystore', () => ({ setWalletNode: h.setWalletNode, listWallets: h.listWallets }))
 vi.mock('@/lib/notify', () => ({ toast: { success: vi.fn(), error: vi.fn(), warning: vi.fn() } }))
@@ -22,13 +22,14 @@ afterEach(() => {
   vi.clearAllMocks()
 })
 
-const base = { seedId: 's', label: 'W', address: 'rA', createdAt: 1, algorithm: 'ed25519', openCheck: 'pin', signingCheck: 'standard' }
+const OPEN = { legacy: { key: {} as CryptoKey, autoLockMinutes: 5 } }
+const base = { seedId: 's', lockId: 'legacy', label: 'W', address: 'rA', createdAt: 1, algorithm: 'ed25519', openCheck: 'pin', signingCheck: 'standard' }
 const W = (id: string, network: string) => ({ ...base, id, network }) as never
 const WM = (id: string, network: string) => ({ ...base, id, network })
 
 describe('the header names the active Wallet\'s network in words', () => {
   it('Mainnet says "Real funds" beside the name; Testnet and Devnet do not', () => {
-    useAppStore.setState({ wallets: [W('m', 'mainnet'), W('t', 'testnet'), W('d', 'devnet')], activeWalletId: 'm' })
+    useAppStore.setState({ wallets: [W('m', 'mainnet'), W('t', 'testnet'), W('d', 'devnet')], activeWalletId: 'm', openLocks: OPEN })
     render(<AppHeader />)
     expect(screen.getByText('Mainnet')).toBeTruthy()
     expect(screen.getByText('Real funds')).toBeTruthy()
@@ -50,10 +51,39 @@ describe('the header names the active Wallet\'s network in words', () => {
   })
 
   it('the picker labels each Wallet with its network, and there is no network switch', () => {
-    useAppStore.setState({ wallets: [W('m', 'mainnet'), W('t', 'testnet')], activeWalletId: 'm' })
+    useAppStore.setState({ wallets: [W('m', 'mainnet'), W('t', 'testnet')], activeWalletId: 'm', openLocks: OPEN })
     render(<AppHeader />)
     expect(screen.queryByRole('radiogroup', { name: 'Network' })).toBeNull()
     expect(screen.getByRole('combobox', { name: 'Active wallet' }).textContent).toContain('Mainnet')
+  })
+})
+
+describe('a locked Wallet is its name and nothing else (AD-26)', () => {
+  it('the picker names every Wallet but gives a network only for an open one, and the plate is withheld', () => {
+    useAppStore.setState({
+      wallets: [{ ...WM('m', 'mainnet'), lockId: 'X', label: 'Open one' }, { ...WM('t', 'testnet'), lockId: 'Y', label: 'Locked one' }] as never,
+      activeWalletId: 't',
+      openLocks: { X: OPEN.legacy },
+    })
+    render(<AppHeader />)
+    // The active Wallet is locked: no network plate, no lock button, and its picker entry is a name.
+    expect(screen.queryByText('Testnet')).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Lock wallet' })).toBeNull()
+    expect(screen.getByRole('combobox', { name: 'Active wallet' }).textContent).toBe('Locked one')
+    fireEvent.click(screen.getByRole('combobox', { name: 'Active wallet' }))
+    expect(screen.getByRole('option', { name: 'Open one · Mainnet' })).toBeTruthy()
+    expect(screen.getByRole('option', { name: 'Locked one' })).toBeTruthy()
+  })
+
+  it('the lock button closes only the active Wallet\'s lock', () => {
+    useAppStore.setState({
+      wallets: [{ ...WM('m', 'mainnet'), lockId: 'X' }, { ...WM('t', 'testnet'), lockId: 'Y' }] as never,
+      activeWalletId: 'm',
+      openLocks: { X: OPEN.legacy, Y: OPEN.legacy },
+    })
+    render(<AppHeader />)
+    fireEvent.click(screen.getByRole('button', { name: 'Lock wallet' }))
+    expect(Object.keys(useAppStore.getState().openLocks)).toEqual(['Y'])
   })
 })
 

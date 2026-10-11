@@ -103,7 +103,8 @@ vi.mock('../webauthn', async (importOriginal) => {
 })
 
 import { putVaultMeta } from '../db'
-import { setUpVaultAuth, unlockVault } from '../auth'
+import { setUpVaultAuth } from '../auth'
+import { openLock } from '../lock'
 import {
   generateAndStoreWallet,
   openSigner,
@@ -263,14 +264,14 @@ describe('a PIN Signing Check', () => {
     for (let i = 0; i < 4; i++) {
       await openSigner(walletId, ctxWith(pinPrompt('000000')))
       h.state.stores.vault.set('vault', { ...h.state.stores.vault.get('vault'), lockedUntil: undefined })
-      await expect(unlockVault('pin', '000000')).rejects.toThrow(/Incorrect PIN/)
+      expect(await openLock('legacy', 'pin', { pin: '000000' })).toMatchObject({ status: 'wrong-credential', kind: 'pin' })
       h.state.stores.vault.set('vault', { ...h.state.stores.vault.get('vault'), lockedUntil: undefined })
     }
     expect(failedAttempts()).toBe(8)
     const prompt = pinPrompt(PIN)
     expect(await openSigner(walletId, ctxWith(prompt))).toMatchObject({ status: 'locked-out', hard: true })
     expect(prompt.calls).toEqual([]) // never asked
-    await expect(unlockVault('pin', PIN)).rejects.toThrow(/Too many failed attempts/)
+    expect(await openLock('legacy', 'pin', { pin: PIN })).toMatchObject({ status: 'locked-out', hard: true })
   })
 
   it('a backoff in force also answers locked-out without prompting', async () => {

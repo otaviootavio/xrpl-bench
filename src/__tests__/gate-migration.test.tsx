@@ -31,9 +31,8 @@ vi.mock('@/lib/crypto/keystore', () => ({
     return h.list(n)
   },
 }))
-vi.mock('@/lib/crypto/auth', () => ({ restoreSession: async () => null, endSession: async () => {} }))
+vi.mock('@/lib/crypto/lock', () => ({ restoreOpenLocks: async () => [], endLockSession: async () => {}, endAllLockSessions: async () => {} }))
 vi.mock('@/pages/Onboarding', () => ({ Onboarding: () => null }))
-vi.mock('@/pages/Unlock', () => ({ Unlock: () => null }))
 vi.mock('@/pages/Main', () => ({ Main: () => null }))
 
 async function mountApp() {

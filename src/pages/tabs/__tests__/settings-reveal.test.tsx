@@ -10,7 +10,8 @@ const h = vi.hoisted(() => ({
 }))
 
 vi.mock('idb-keyval', () => ({ get: async () => undefined, set: async () => {}, del: async () => {} }))
-vi.mock('@/lib/crypto/auth', () => ({ wipeVault: async () => {}, endSession: async () => {} }))
+vi.mock('@/lib/crypto/auth', () => ({ wipeVault: async () => {} }))
+vi.mock('@/lib/crypto/lock', () => ({ endLockSession: async () => {}, endAllLockSessions: async () => {}, getLockInfo: async () => ({ id: 'legacy', openCheck: 'pin', autoLockMinutes: 5, pin: true, passkey: false }) }))
 vi.mock('@/lib/notify', () => ({ toast: { error: (m: string) => h.toastError(m), success: () => {}, warning: () => {} } }))
 vi.mock('@/lib/crypto/keystore', () => ({
   addressFromSeed: () => '',
@@ -44,7 +45,7 @@ import { SettingsTab } from '../SettingsTab'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { useAppStore } from '@/store/app-store'
 
-const W = { id: 'w1', seedId: 's1', label: 'Savings', address: 'rAddr', createdAt: 1, network: 'mainnet', algorithm: 'ed25519', openCheck: 'pin', signingCheck: 'standard' }
+const W = { id: 'w1', seedId: 's1', lockId: 'legacy', label: 'Savings', address: 'rAddr', createdAt: 1, network: 'mainnet', algorithm: 'ed25519', openCheck: 'pin', signingCheck: 'standard' }
 
 async function openReveal() {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
@@ -62,7 +63,7 @@ async function openReveal() {
 beforeEach(() => {
   h.revealSeed.mockReset()
   h.toastError.mockReset()
-  useAppStore.setState({ wallets: [W], activeWalletId: 'w1', network: 'mainnet', vaultKey: {} as CryptoKey } as never)
+  useAppStore.setState({ wallets: [W], activeWalletId: 'w1', network: 'mainnet', openLocks: { legacy: { key: {} as CryptoKey, autoLockMinutes: 5 } } } as never)
 })
 afterEach(cleanup)
 

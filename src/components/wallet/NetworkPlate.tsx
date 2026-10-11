@@ -1,6 +1,6 @@
 import { Badge } from '@/components/ui/badge'
 import { NETWORKS } from '@/lib/xrpl/networks'
-import { useActiveNetwork, useActiveWallet } from '@/store/app-store'
+import { useActiveNetwork, useActiveWallet, useWalletIsOpen } from '@/store/app-store'
 import { cn } from '@/lib/utils'
 
 /**
@@ -9,12 +9,15 @@ import { cn } from '@/lib/utils'
  * Mainnet the funds are real, and that is said beside the name — never by
  * colour alone. `warning`, not `destructive`: Mainnet is the normal production
  * network, not a dangerous one (docs/decisions.md §6.7). With no active Wallet
- * there is no network to name, so nothing is shown.
+ * there is no network to name, and with a locked one it is withheld, so nothing
+ * is shown.
  */
 export function NetworkPlate({ className }: { className?: string }) {
   const wallet = useActiveWallet()
   const network = useActiveNetwork()
-  if (!wallet) return null
+  const open = useWalletIsOpen(wallet?.id)
+  // A locked Wallet shows no network-derived data (AD-26).
+  if (!wallet || !open) return null
   return (
     <div className={cn('inline-flex shrink-0 items-center gap-2', className)}>
       <span className="font-legend text-[0.6875rem] font-semibold uppercase tracking-[0.1em] text-foreground">

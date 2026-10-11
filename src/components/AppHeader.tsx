@@ -1,7 +1,7 @@
 import { LockIcon } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { useAppStore, useActiveWallet } from '@/store/app-store'
+import { useAppStore, useActiveWallet, useWalletIsOpen } from '@/store/app-store'
 import { NetworkPlate } from '@/components/wallet/NetworkPlate'
 import { NETWORKS } from '@/lib/xrpl/networks'
 
@@ -18,7 +18,11 @@ export function AppHeader() {
   const activeWalletId = useAppStore((s) => s.activeWalletId)
   const setActiveWalletId = useAppStore((s) => s.setActiveWalletId)
   const wallet = useActiveWallet()
-  const lock = useAppStore((s) => s.lock)
+  const openLocks = useAppStore((s) => s.openLocks)
+  const open = useWalletIsOpen(wallet?.id)
+  // Only the key and session go here; `useClearCacheOnLock` (mounted by Main)
+  // removes the Wallets' query data for any lock that closes (AD-26).
+  const closeLock = useAppStore((s) => s.closeLock)
 
   return (
     <header className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2 border-b border-border bg-background px-4 py-2.5">
@@ -39,15 +43,18 @@ export function AppHeader() {
             <SelectContent>
               {wallets.map((w) => (
                 <SelectItem key={w.id} value={w.id}>
-                  {w.label} · {NETWORKS[w.network].label}
+                  {/* A locked Wallet is its name and nothing else (AD-26). */}
+                  {w.lockId in openLocks ? `${w.label} · ${NETWORKS[w.network].label}` : w.label}
                 </SelectItem>
               ))}
             </SelectContent>
           </Select>
         )}
         <NetworkPlate />
-        {wallet && (
-          <Button variant="outline" size="icon" onClick={lock} aria-label="Lock wallet">
+        {/* Closes THIS Wallet's lock only (AD-26). A lock with no Open Check
+            has nothing to lock. */}
+        {wallet && open && wallet.openCheck !== 'none' && (
+          <Button variant="outline" size="icon" onClick={() => closeLock(wallet.lockId)} aria-label="Lock wallet">
             <LockIcon className="size-4" />
           </Button>
         )}

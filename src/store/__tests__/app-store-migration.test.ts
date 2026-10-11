@@ -18,7 +18,7 @@ vi.mock('idb-keyval', () => ({
   set: async (k: string, v: string) => void h.idb.set(k, v),
   del: async (k: string) => void h.idb.delete(k),
 }))
-vi.mock('@/lib/crypto/auth', () => ({ endSession: async () => {} }))
+vi.mock('@/lib/crypto/lock', () => ({ endLockSession: async () => {}, endAllLockSessions: async () => {}, getLockInfo: async () => ({ id: 'legacy', openCheck: 'pin', autoLockMinutes: 5, pin: true, passkey: false }) }))
 
 import { APP_STATE_STORAGE_KEY, useAppStore } from '../app-store'
 import { suppressesFirstSendWarning } from '../address-book'
@@ -29,7 +29,7 @@ const WALLETS = [{ id: 'w1', label: 'Savings', address: 'r4NagxniGTmPRr8yBRXRD6N
 /** Story 12.1: read into the per-Wallet shape — the persisted app-wide network
  * ('mainnet' in this blob) becomes the Wallet's network; nothing else changes. */
 const NORMALISED_WALLETS = [
-  { ...WALLETS[0], seedId: 'w1', network: 'mainnet', algorithm: 'unresolved', openCheck: 'pin', signingCheck: 'standard' },
+  { ...WALLETS[0], seedId: 'w1', lockId: 'legacy', network: 'mainnet', algorithm: 'unresolved', openCheck: 'pin', signingCheck: 'standard' },
 ]
 
 /** A blob as the build before this change persisted it. */

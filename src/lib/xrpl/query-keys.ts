@@ -83,6 +83,22 @@ export async function invalidateAccountScoped(
 }
 
 /**
+ * Removes every account-scoped entry for one network and one address from the
+ * cache — a lock closing (AD-26). The same group as `invalidateAccountScoped`,
+ * so a builder added to `accountScoped` joins it with no call site edited.
+ * `removeQueries` drops the data; it is not "stale", it is gone, so the first
+ * read after the lock opens again is a fresh query (parent AD-14). Never touches
+ * another wallet, another network, or the network- and device-scoped keys.
+ */
+export function removeAccountScoped(
+  client: Pick<QueryClient, 'removeQueries'>,
+  network: NetworkId,
+  address: string | null,
+): void {
+  for (const build of Object.values(accountScoped)) client.removeQueries({ queryKey: build(network, address) })
+}
+
+/**
  * Marks the destination check stale for one destination on one network — every
  * asset's entry for it — so its next read, and the submit path's post-unlock
  * probe, go back to the ledger instead of a cached answer.
@@ -154,4 +170,9 @@ export const queryKeys = {
 
   /** The local unlock-attempt lockout. Device-scoped for the same reason. */
   lockoutState: () => ['lockoutState'] as const,
+
+  /** What one lock is — its Open Check kind, whether a PIN or a passkey opens
+   * it, its auto-lock minutes. Read from the local vault, never the ledger, so
+   * it names no address and no network: device-scoped, keyed on the lock. */
+  lockInfo: (lockId: string) => ['lockInfo', lockId] as const,
 }

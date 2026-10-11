@@ -45,6 +45,7 @@ vi.mock('@/store/app-store', () => ({
   // TrustSet never reaches the invalidation.
   useAppStore: (selector: (s: { network: string; vaultKey: object }) => unknown) =>
     selector({ network: 'testnet', vaultKey: {} }),
+  useWalletOpenKey: () => ({}),
   useActiveNetwork: () => 'testnet',
   useActiveNode: () => activeNode,
   useActiveWallet: () => ({ id: 'w1', address: 'rBoGUS9uiK9m3Kk6qnGRvWWCwAeN8hF3wR', label: 'Test' }),

@@ -26,7 +26,11 @@ file before editing anything under `src/lib/crypto/`.
   wrapping the existing master key with it, not deriving a second independent
   key.
 - **Tear down account data on lock or wallet removal:** the in-memory key, the
-  persisted session, and the TanStack Query cache. A warm cache behind a lock
+  persisted session, and the TanStack Query cache. A lock is per-lock
+  (`tearDownLock`): it drops that lock's key and session and removes only its
+  Wallets' account-scoped query data, keeping an Account another open lock also
+  holds. Never read a Wallet's address, balance or network while its lock is
+  closed — mount no ledger hook for it. A warm cache behind a lock
   screen is a documented shared-device vulnerability.
 - **Register every new persistence owner in `lib/teardown.ts`**
   (`PERSISTED_ACCOUNT_DATA`). "Remove everything" calls `tearDownAllLocalState`
@@ -37,10 +41,11 @@ file before editing anything under `src/lib/crypto/`.
 - **Never** put a seed or private key in `localStorage`, `sessionStorage`,
   React state, a Zustand store, the URL, a query param, a log line, or anything
   that reaches `JSON.stringify`. Including in development builds.
-- **Never** commit the app store to a state where a wallet exists and the app
-  is unlocked before the seed-backup step has been confirmed. `App.tsx`'s Gate
-  switches to `<Main>` the instant `wallets.length > 0 && unlocked`, so an early
-  commit skips the backup screen entirely — see `Onboarding.tsx:20`.
+- **Never** commit the app store to a state where a wallet exists before the
+  seed-backup step has been confirmed. `App.tsx`'s Gate switches to `<Main>` the
+  instant `wallets.length > 0` (there is no app-wide unlock any more; each
+  Wallet's own lock gates its panels), so an early commit skips the backup
+  screen entirely — see `Onboarding.tsx:20`.
 - **Never** add a third-party script, analytics, session replay, or verbose
   error reporting that could observe an unlock or seed surface. This includes
   fonts and other subresources: the app's faces are self-hosted for this reason.

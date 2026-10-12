@@ -186,6 +186,27 @@ describe('Edit checks dialog', () => {
     expect(await screen.findByText('Open Check')).toBeTruthy()
   })
 
+  it('typing the challenged groups resolves the callback true and the edit goes on to onEdited and close', async () => {
+    let settled: boolean | null = null
+    h.editChecks.mockImplementation(async (_id: string, _req: unknown, ctx: { confirmWrittenSeed: (s: string) => Promise<boolean> }) => {
+      settled = await ctx.confirmWrittenSeed(SEED)
+      return settled ? done : { status: 'cancelled' }
+    })
+    const { onEdited, onClose } = await mount({ ...META, network: 'mainnet' })
+    await click(radio('Passkey: create a new one'))
+    await click(radio(/Passkey only: create a new one/))
+    await click(save())
+    await screen.findByText('Write down your Seed')
+    for (const input of screen.getAllByLabelText(/^Characters /) as HTMLInputElement[]) {
+      const [from, to] = (input.labels?.[0]?.textContent ?? '').replace('Characters ', '').split('–').map(Number)
+      await act(async () => void fireEvent.change(input, { target: { value: SEED.slice(from - 1, to) } }))
+    }
+    await click(screen.getByRole('button', { name: 'Check what I wrote' }))
+    await waitFor(() => expect(onEdited).toHaveBeenCalledWith(done.value))
+    expect(settled).toBe(true)
+    expect(onClose).toHaveBeenCalled()
+  })
+
   it('a failure AFTER the commit says the edit was saved, never "Nothing was changed"', async () => {
     const onEdited = vi.fn().mockRejectedValue(new Error('idb down'))
     const { onClose } = await mount(META, onEdited)

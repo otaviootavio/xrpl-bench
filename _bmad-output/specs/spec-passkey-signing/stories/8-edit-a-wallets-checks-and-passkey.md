@@ -5,7 +5,7 @@ created: '2026-10-11'
 baseline_revision: '49ed6b1d3ad4680425bb06d68798e4960b053ea5'
 status: 'done'
 review_loop_iteration: 0
-followup_review_recommended: true
+followup_review_recommended: false
 context:
   - '{project-root}/docs/agents/keys-and-secrets.md'
   - '{project-root}/docs/agents/ui-and-design-system.md'
@@ -127,6 +127,38 @@ deferred:
   - `[false]` `reject` housekeeping: spec status, empty logs, tracking tables, manual check unrecorded (blind) — filled at finalisation; the manual check is a deferred item
   - `[low]` `reject` docs rule vs `sealSeedUnderSigningCheck` (blind) — now covered by the `rev` patch
 
+### 2026-10-11 — Review pass (follow-up)
+- verdicts: 29 findings — high 0, medium 4, low 24, false 0, maybe-false 1
+- findings:
+  - `[medium]` `patch` sealed-to-Standard edit combined with an Open Check change untested; the Seed could be written under the deleted lock's key (verification-gap) — test added for PIN and passkey seals; mutating `newLock?.key ?? lockKey` to `lockKey` now fails it
+  - `[medium]` `patch` the `others` guard that keeps a shared non-legacy lock from being deleted was never exercised (verification-gap) — two-Wallets-on-one-lock test added
+  - `[medium]` `patch` the dialog's matched written-Seed path was never run (verification-gap) — test types the challenged groups and asserts `onEdited`, close and `true`
+  - `[low]` `defer` docs rule "never write ciphertext/signingCheck any other way" vs `sealSeedUnderSigningCheck` (blind, edge) — the fix edits agent-context docs
+  - `[low]` `reject` CAS weaker across an older build (blind) — `rev` is additive by design; narrow cross-version window
+  - `[low]` `reject` a conflict leaves the dialog form stale (blind) — the refusal is shown and a reopen refetches; no money or key effect
+  - `[low]` `reject` old passkey left on the authenticator unexplained (blind) — same as the logged orphan-passkey defer
+  - `[low]` `reject` radios live while saving (blind) — cosmetic; the request is already sent
+  - `[low]` `reject` cancelling the written-Seed step loses the typed PIN (blind) — retyping a PIN is the safe behavior
+  - `[low]` `reject` `setLockAutoLock` default prompts, first-Wallet routing (blind, edge x2) — carried: the only caller passes prompts
+  - `[low]` `reject` disabled save gives no feedback in the PIN-read-failed case (blind) — the failure message is shown beside it
+  - `[low]` `reject` new signing `hkdfInfo` format differs from creation (blind) — readers take `hkdfInfo` from the stored record
+  - `[low]` `reject` `resolveEdit` cast and duplicated mapping (blind) — style; no named harm
+  - `[low]` `reject` `seed = null` does not wipe a string (blind) — carried; strings cannot be zeroed
+  - `[low]` `defer` Settings test mocks the dialog and keystore (blind) — carried with the unverified end-to-end defer
+  - `[low]` `reject` lock networks from two sources (blind) — the keystore refusal is handled and shown
+  - `[low]` `reject` dialog `minutes` state compared with a refetched lock (edge) — needs a second tab changing the window mid-dialog
+  - `[low]` `reject` `handleEdited` leaves a stale store when the new session fails to start (edge) — the old session still closes; reload refreshes the list
+  - `[low]` `reject` "6 digits" error while the App PIN state loads (edge) — a momentary message
+  - `[low]` `reject` PIN-only legacy Wallet cannot move to its own PIN lock (edge) — `maybe-false`: it can move to a passkey lock; a PIN to PIN move is pointless and the spec does not require it
+  - `[low]` `reject` missing PIN returns `cancelled` (edge) — carried; the dialog always supplies it
+  - `[low]` `reject` `lockStamp` omits `prfSaltB64`, `rpId` (edge) — carried; `rev` bumps on every edit
+  - `[low]` `reject` `WrittenSeedConfirm` with a null Seed (edge) — callers always hold a Seed there
+  - `[low]` `reject` state updates after the dialog unmounts (edge) — harmless
+  - `[low]` `defer` docs claim again (edge) — same row as above
+  - `[low]` `reject` sealed-to-Standard asks two prompts (edge) — carried; documented in decisions.md
+  - `[medium]` `defer` carried: no end-to-end path from Settings through dialog and keystore to the session swap (intent) — unverified
+  - `[low]` `reject` no edit entry on a locked Wallet (intent) — descriptive only; the Open Check must be passed first
+
 ## Design Notes
 
 A new lock per Open Check edit, rather than re-wrapping, handles `none` (non-extractable Open Key), the shared legacy lock, and credential rotation with one mechanism, and re-encryption of a Standard Seed is cheap. The old lock stays valid until the single commit, so a crash mid-edit never strands the Seed. Auto-lock on a lock shared by legacy Wallets is deliberately unchanged in scope.
@@ -157,3 +189,7 @@ Status: done
 **Verification:** `bun run lint`, `bun run build`, `bun run test` (79 files, 1121 tests) and `bun run check:contrast` pass after the patches. No browser or authenticator run.
 
 **Residual risks:** see the deferred list; a sealed-to-Standard edit asks two prompts; an edit through the Settings auto-lock dropdown never asks for the written Seed.
+
+### Follow-up pass (2026-10-11)
+
+Review pass 2: patches applied 3 (medium 3, all tests only); deferred 2 (docs wording, carried end-to-end gap); the rest rejected with reasons in the log. Follow-up review recommended: false — the pass patched no high entry. Verification: `bun run lint`, `bun run build`, `bun run test` (79 files, 1125 tests) and `bun run check:contrast` pass. Residual risks as above; still no browser or authenticator run.

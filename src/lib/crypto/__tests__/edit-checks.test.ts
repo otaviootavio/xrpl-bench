@@ -703,3 +703,34 @@ describe('review fixes', () => {
     expect(ok(await revealSeed('other', { openKey: null, prompts: pinPrompt(PIN) }))).toBe(seed)
   })
 })
+
+describe('follow-up review: combined and shared-lock edits', () => {
+  it.each(['pin', 'passkey'] as const)(
+    'a %s-sealed Wallet going back to Standard while the Open Check changes is encrypted under the NEW lock',
+    async (sealedWith) => {
+      const { meta, seed } = await made({ signing: sealedWith })
+      const oldLock = meta.lockId
+      const result = ok(
+        await editChecks(meta.id, { signing: { kind: 'standard' }, openCheck: { kind: 'passkey' } }, { prompts: pinPrompt(PIN), pin: PIN }),
+      )
+      const after = recordOf(meta.id)
+      expect(after.sealedSeed).toBeUndefined()
+      expect(after.signing).toBeUndefined()
+      expect(after.signingCheck).toBe('standard')
+      expect(h.state.stores.vault.has(`lock:${oldLock}`)).toBe(false)
+      expect(await aesDecrypt(result.openKey!, after.encryptedSeed.ivB64, after.encryptedSeed.ciphertextB64)).toBe(seed)
+      expect(Wallet.fromSeed(seed).address).toBe(meta.address)
+    },
+  )
+
+  it('an Open Check edit never deletes a non-legacy lock another Wallet still uses', async () => {
+    const { meta } = await made()
+    const key = ok(await openLock(meta.lockId, 'pin', { pin: PIN })).key
+    const other = await generateAndStoreWallet('Other', key, 'testnet', meta.lockId)
+    const result = ok(await editChecks(meta.id, { openCheck: { kind: 'passkey' } }, { prompts: pinPrompt(PIN) }))
+    expect(result.previousLockRemoved).toBe(false)
+    expect(h.state.stores.vault.has(`lock:${meta.lockId}`)).toBe(true)
+    expect(recordOf(other.meta.id).lockId).toBe(meta.lockId)
+    expect((await openSigner(other.meta.id, { openKey: key, prompts: pinPrompt(null) })).status).toBe('ok')
+  })
+})

@@ -65,6 +65,18 @@ file before editing anything under `src/lib/crypto/`.
   Standard Wallet's Seed re-passes its Open Check with `openLock(..., { persist:
   false })`: a reveal never writes or extends a session. No copy may claim a key
   is unrevealable; a test scans for that wording.
+- **Change a Wallet's checks only through `keystore.editChecks`.** It resolves the
+  result with `policy.ts` and judges it with the same `checkWalletRequest` as
+  creation, then passes the current check the change affects (an Open Check or
+  auto-lock edit re-passes the lock's Open Check; a sealed Wallet's Signing Check
+  edit passes its Signing Check) before any credential is built, asks for the
+  written Seed when the result needs it, and commits the new lock record and the
+  Wallet in one transaction with a compare-and-swap on `rev` (`db.commitWalletEdit`).
+  Never write the Seed's ciphertext, a lock or `signingCheck` any other way. An Open
+  Check edit makes a new lock for this Seed record only; the legacy lock is never
+  deleted and its other Wallets are untouched. The keystore touches no session: the
+  caller swaps the locks. A component renders `describeEditOptions` and decides
+  nothing.
 - **Every rpId comes from `getRpId()`** (`webauthn.ts`), which reads the build's
   `__RP_ID__` (set per branch in `vite.config.ts`) and falls back to
   `location.hostname` only when none is set. Nothing else reads the page host. Every new

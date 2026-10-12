@@ -1,19 +1,20 @@
-import { useCallback, useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { Axis, Choice } from '@/components/wallet/check-controls'
+import { minutesLabel } from '@/lib/minutes-label'
 import { NetworkChoice } from '@/components/wallet/NetworkChoice'
 import { SeedReveal } from '@/components/wallet/SeedReveal'
-import { answersMatch, pickChallenge, type ChallengeGroup } from '@/lib/seed-confirmation'
+import { WrittenSeedConfirm } from '@/components/wallet/WrittenSeedConfirm'
 import { createDerivedWallet, createStoredWallet, describeCheckFailure, listWallets, type WalletMeta } from '@/lib/crypto/keystore'
 import { hasAppPin, startLockSession } from '@/lib/crypto/lock'
 import { triesRemaining } from '@/lib/crypto/pin'
 import {
   describeOptions,
   type NewOpenCheck,
-  type OptionState,
   type PasskeyCapability,
   type SeedMethod,
   type SigningKind,
@@ -81,68 +82,6 @@ function defaultSigning(network: NetworkId, capability: PasskeyCapability): Sign
   return capability === 'yes' ? 'passkey' : 'pin'
 }
 
-function minutesLabel(minutes: number): string {
-  return minutes < 1 ? `${minutes * 60} seconds` : `${minutes} ${minutes === 1 ? 'minute' : 'minutes'}`
-}
-
-/** One radio. An unavailable answer stays in the reading order: `aria-disabled`,
- * its reason in visible text, and selecting it does nothing. */
-function Choice({
-  name,
-  checked,
-  label,
-  state,
-  onSelect,
-  detail,
-}: {
-  name: string
-  checked: boolean
-  label: ReactNode
-  state: OptionState
-  onSelect: () => void
-  detail?: ReactNode
-}) {
-  const textId = useId()
-  const hasText = !state.available || !!state.note || !!detail
-  return (
-    <div className="flex flex-col gap-0.5">
-      <label className="flex items-start gap-2 text-sm">
-        <input
-          type="radio"
-          name={name}
-          checked={checked}
-          aria-disabled={state.available ? undefined : true}
-          aria-describedby={hasText ? textId : undefined}
-          onChange={() => {
-            if (state.available) onSelect()
-          }}
-          onClick={(event) => {
-            if (!state.available) event.preventDefault()
-          }}
-          className="mt-1"
-        />
-        <span>{label}</span>
-      </label>
-      {hasText && (
-        <div id={textId} className="ml-6">
-          {detail && <p className="text-xs text-muted-foreground">{detail}</p>}
-          {state.note && <p className="text-xs text-muted-foreground">{state.note}</p>}
-          {!state.available && state.reason && <p className="text-xs text-text-warning">{state.reason}</p>}
-        </div>
-      )}
-    </div>
-  )
-}
-
-function Axis({ legend, children }: { legend: string; children: ReactNode }) {
-  return (
-    <fieldset className="flex flex-col gap-1.5">
-      <legend className="mb-1 text-sm font-medium">{legend}</legend>
-      {children}
-    </fieldset>
-  )
-}
-
 export function CreateWalletFlow(props: CreateWalletFlowProps) {
   const [capability, setCapability] = useState<PasskeyCapability | null>(null)
 
@@ -203,11 +142,6 @@ function CreateWalletForm({ capability, onDone, onInProgressChange, defaultLabel
   // The pending written-Seed confirmation: resolved by the step's buttons, or
   // `false` if the flow is left. Answers live in uncontrolled inputs, never state.
   const confirmResolveRef = useRef<((ok: boolean) => void) | null>(null)
-  const answerRefs = useRef<Array<HTMLInputElement | null>>([])
-  const [challenge, setChallenge] = useState<ChallengeGroup[]>([])
-  const [mismatch, setMismatch] = useState(false)
-  // True once the person has confirmed: the keystore is now writing, so the step's buttons are inert.
-  const [confirmSettled, setConfirmSettled] = useState(false)
   const pendingRef = useRef<{ meta: WalletMeta; key: CryptoKey; autoLockMinutes: number } | null>(null)
   const getSeed = useCallback(() => seedRef.current, [])
 
@@ -269,15 +203,8 @@ function CreateWalletForm({ capability, onDone, onInProgressChange, defaultLabel
     return new Promise<boolean>((resolve) => {
       seedRef.current = seed
       confirmResolveRef.current = resolve
-      setChallenge(pickChallenge(seed.length))
-      setMismatch(false)
-      setConfirmSettled(false)
       setStep('confirm-seed')
     })
-  }
-
-  function clearAnswers() {
-    for (const input of answerRefs.current) if (input) input.value = ''
   }
 
   function settleConfirmation(ok: boolean) {
@@ -286,25 +213,8 @@ function CreateWalletForm({ capability, onDone, onInProgressChange, defaultLabel
     confirmResolveRef.current = null
     // The Seed leaves this component the moment the step ends: the keystore has it.
     seedRef.current = null
-    clearAnswers()
-    setChallenge([])
-    if (ok) setConfirmSettled(true)
-    resolve?.(ok)
+    resolve(ok)
     if (!ok) setStep('questions')
-  }
-
-  function checkAnswers() {
-    const seed = seedRef.current
-    if (!seed) return
-    const answers = challenge.map((_, i) => answerRefs.current[i]?.value ?? '')
-    if (!answersMatch(seed, challenge, answers)) {
-      // Unlimited tries; the wrong answers are cleared, never kept or logged.
-      clearAnswers()
-      setMismatch(true)
-      return
-    }
-    setMismatch(false)
-    settleConfirmation(true)
   }
 
   function changeNetwork(next: NetworkId) {
@@ -488,53 +398,7 @@ function CreateWalletForm({ capability, onDone, onInProgressChange, defaultLabel
   }
 
   if (step === 'confirm-seed') {
-    return (
-      <div className="flex flex-col gap-4">
-        <div>
-          <h2 className="text-sm font-medium">Write down your Seed</h2>
-          <p className="text-sm text-muted-foreground">
-            {network === 'mainnet' ? 'This is a Mainnet wallet: it holds real funds. ' : ''}
-            Your passkey is the only check on this wallet, so a written Seed is how you get your funds back if the passkey is lost. Write it on paper and keep it offline. Nothing is saved until you have typed three parts of it back.
-          </p>
-        </div>
-        <SeedReveal getSeed={getSeed} heading="Anyone with this Seed can take your funds" />
-        <div className="grid gap-2">
-          {challenge.map((part, i) => (
-            <div key={part.from} className="grid gap-1">
-              <Label htmlFor={`${group}-confirm-${i}`}>
-                Characters {part.from}–{part.to}
-              </Label>
-              <Input
-                id={`${group}-confirm-${i}`}
-                ref={(el) => {
-                  answerRefs.current[i] = el
-                }}
-                autoComplete="off"
-                autoCapitalize="off"
-                autoCorrect="off"
-                spellCheck={false}
-                maxLength={8}
-                className="font-data"
-                aria-invalid={mismatch ? true : undefined}
-              />
-            </div>
-          ))}
-        </div>
-        {mismatch && (
-          <p role="alert" className="text-sm text-text-destructive">
-            That does not match. Check what you wrote.
-          </p>
-        )}
-        <div className="flex flex-wrap gap-2">
-          <Button type="button" disabled={confirmSettled} onClick={checkAnswers}>
-            Check what I wrote
-          </Button>
-          <Button type="button" variant="outline" disabled={confirmSettled} onClick={() => settleConfirmation(false)}>
-            Cancel
-          </Button>
-        </div>
-      </div>
-    )
+    return <WrittenSeedConfirm getSeed={getSeed} network={network} onSettle={settleConfirmation} />
   }
 
   if (step === 'finish') {

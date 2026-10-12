@@ -3,8 +3,8 @@ import { canonicalNodeUrl, type NetworkId } from '@/lib/xrpl/networks'
 import type { Signer, SigningHandle } from '@/lib/xrpl/writes'
 import { aesDecrypt, aesEncrypt } from './aes'
 import { deriveAesKeyFromBits, generateOrdinal, HKDF_INFO, isOrdinal, seedSalt, walletFromSeedPrf } from './derive'
-import { createLock, deleteLock, discardUnusedAppPin, getLockInfo, hasAppPin, openLock, setAutoLockMinutes, withAppPin, type CheckResult } from './lock'
-import { checkLockRequest, checkWalletRequest, requiresWrittenSeed, type NewOpenCheck, type PasskeyCapability, type PolicyVerdict, type SigningKind } from './policy'
+import { buildLock, createLock, deleteLock, discardUnusedAppPin, getLockInfo, hasAppPin, legacyLockRecord, openLock, setAutoLockMinutes, withAppPin, type CheckResult } from './lock'
+import { checkAutoLock, checkEditAllowed, checkLockRequest, checkWalletRequest, requiresWrittenSeed, resolveEdit, type CheckEditRequest, type NewOpenCheck, type PasskeyCapability, type PasskeyChoice, type PolicyVerdict, type SigningKind } from './policy'
 import { b64ToBuf, bufToB64 } from './encoding'
 import { attemptPin, getLockoutState, PBKDF2_ITERATIONS, recordFailure, triesRemaining } from './pin'
 import {
@@ -18,8 +18,14 @@ import {
   registerPasskey,
 } from './webauthn'
 import {
+  commitWalletEdit,
+  EditConflictError,
+  getLockRecord,
   getVaultMeta,
   LEGACY_LOCK_ID,
+  lockStamp,
+  seedStamp,
+  type LockRecord,
   listStoredWallets,
   migrateLegacyVault as migrateLegacyVaultRecords,
   mutateStoredWallet,
@@ -53,6 +59,8 @@ export interface WalletMeta {
   seedMethod: SeedMethod
   openCheck: OpenCheck
   signingCheck: SigningCheck
+  /** When the Seed was written down and confirmed (FR-72). Absent: never. */
+  writtenSeedConfirmedAt?: number
 }
 
 /** Only reachable for a record the migration has not reached yet (it failed or
@@ -76,6 +84,7 @@ function toMetas(w: StoredWallet, fallbackNetwork?: NetworkId): WalletMeta[] {
     seedMethod: w.seedMethod ?? 'stored',
     openCheck: w.openCheck ?? 'pin',
     signingCheck: w.signingCheck ?? 'standard',
+    ...(w.writtenSeedConfirmedAt !== undefined ? { writtenSeedConfirmedAt: w.writtenSeedConfirmedAt } : {}),
   }))
 }
 
@@ -514,6 +523,54 @@ async function buildSeal(
   return { sealedSeed, signing: { ...seal, wrappedSigningKey } }
 }
 
+/** A Signing Check's credential built for a Seed that is about to be sealed (AD-23,
+ * AD-21): the App PIN proved, or a passkey of its own — named after the Wallet,
+ * or one the person picks from this device's (FR-70) — with its own random PRF
+ * salt and `hkdfInfo`, so no two purposes share derived key material. Shared by
+ * creation and by `editChecks`. Writes nothing but an App PIN that did not yet
+ * exist (the caller discards it on failure). */
+async function sealUnderNewCredential(
+  seed: string,
+  req: { kind: 'pin' | 'passkey'; hkdfInfo: string; label: string; pin?: string; choice?: PasskeyChoice },
+): Promise<CheckResult<{ sealedSeed: { ivB64: string; ciphertextB64: string }; signing: SigningSeal }>> {
+  if (req.kind === 'pin') {
+    if (!req.pin) return { status: 'cancelled' }
+    return withAppPin(req.pin, req.hkdfInfo, async (credentialKey) => buildSeal(seed, credentialKey, { kind: 'pin', hkdfInfo: req.hkdfInfo }))
+  }
+  if (!isWebAuthnSupported()) return { status: 'unsupported' }
+  const prfSalt = crypto.getRandomValues(new Uint8Array(32))
+  let credentialIdB64: string
+  let rpId: string | undefined
+  let bits: ArrayBuffer
+  try {
+    if (req.choice === 'existing') {
+      rpId = getRpId()
+      const found = await assertAnyPasskeyAndDeriveBits(prfSalt, rpId)
+      credentialIdB64 = found.credentialIdB64
+      bits = found.bits
+    } else {
+      const registered = await registerPasskey(`${req.label} – signing`)
+      credentialIdB64 = registered.credentialIdB64
+      rpId = registered.rpId
+      bits = await assertPasskeyAndDeriveBits(credentialIdB64, prfSalt, rpId)
+    }
+  } catch (err) {
+    if (isCancelled(err)) return { status: 'cancelled' }
+    if (isPrfUnsupported(err)) return { status: 'unsupported' }
+    throw err
+  }
+  return {
+    status: 'ok',
+    value: await buildSeal(seed, await deriveAesKeyFromBits(bits, req.hkdfInfo), {
+      kind: 'passkey',
+      hkdfInfo: req.hkdfInfo,
+      credentialIdB64,
+      prfSaltB64: bufToB64(prfSalt.buffer),
+      ...(rpId ? { rpId } : {}),
+    }),
+  }
+}
+
 /**
  * Gives a Standard Wallet a Signing Check (AD-23): its Seed is re-encrypted
  * under a random Signing Key wrapped only by the PIN or a passkey, and the
@@ -534,6 +591,7 @@ export async function sealSeedUnderSigningCheck(
   if (!stored.encryptedSeed) throw new Error('Wallet not found in local vault.')
   if (!ctx.openKey) throw new Error('Wallet is locked.')
   const before = stored.encryptedSeed
+  const revRead = stored.rev ?? 0
 
   const hkdfInfo = `${SIGN_HKDF_PREFIX}${stored.id}:v1`
   let credentialKey: CryptoKey
@@ -588,7 +646,7 @@ export async function sealSeedUnderSigningCheck(
   await mutateStoredWallet(stored.id, (current) => {
     // Another tab or flow changed the ciphertext since it was read: abort,
     // leaving the record exactly as it is.
-    if (current.signing || current.encryptedSeed?.ciphertextB64 !== before.ciphertextB64) {
+    if (current.signing || (current.rev ?? 0) !== revRead || current.encryptedSeed?.ciphertextB64 !== before.ciphertextB64) {
       throw new Error('This wallet changed while its signing check was being set. Nothing was changed.')
     }
     const { encryptedSeed: _old, ...rest } = current
@@ -598,6 +656,7 @@ export async function sealSeedUnderSigningCheck(
       sealedSeed,
       signing,
       signingCheck: kind,
+      rev: revRead + 1,
     }
   })
   void wallet
@@ -697,39 +756,14 @@ export async function createStoredWallet(
     if (confirmedAt === 'cancelled') return await abandon(hadAppPin, { status: 'cancelled' })
     let sealed: { sealedSeed: { ivB64: string; ciphertextB64: string }; signing: SigningSeal } | null = null
     if (input.signing !== 'standard') {
-      const hkdfInfo = `${SIGN_HKDF_PREFIX}${walletId}:v1`
-      if (input.signing === 'pin') {
-        const proved = await withAppPin(ctx.pin!, hkdfInfo, async (credentialKey) =>
-          buildSeal(seed, credentialKey, { kind: 'pin', hkdfInfo }),
-        )
-        if (proved.status !== 'ok') return await abandon(hadAppPin, proved)
-        sealed = proved.value
-      } else {
-        // Its own passkey, named after the Wallet, and its own PRF salt and
-        // info: no two purposes share derived key material (AD-21).
-        if (!isWebAuthnSupported()) return await abandon(hadAppPin, { status: 'unsupported' })
-        const prfSalt = crypto.getRandomValues(new Uint8Array(32))
-        let credentialIdB64: string
-        let rpId: string | undefined
-        let bits: ArrayBuffer
-        try {
-          const registered = await registerPasskey(`${input.label || 'Wallet'} – signing`)
-          credentialIdB64 = registered.credentialIdB64
-          rpId = registered.rpId
-          bits = await assertPasskeyAndDeriveBits(credentialIdB64, prfSalt, rpId)
-        } catch (err) {
-          if (isCancelled(err)) return await abandon(hadAppPin, { status: 'cancelled' })
-          if (isPrfUnsupported(err)) return await abandon(hadAppPin, { status: 'unsupported' })
-          throw err
-        }
-        sealed = await buildSeal(seed, await deriveAesKeyFromBits(bits, hkdfInfo), {
-          kind: 'passkey',
-          hkdfInfo,
-          credentialIdB64,
-          prfSaltB64: bufToB64(prfSalt.buffer),
-          ...(rpId ? { rpId } : {}),
-        })
-      }
+      const built = await sealUnderNewCredential(seed, {
+        kind: input.signing,
+        hkdfInfo: `${SIGN_HKDF_PREFIX}${walletId}:v1`,
+        label: input.label || 'Wallet',
+        pin: ctx.pin,
+      })
+      if (built.status !== 'ok') return await abandon(hadAppPin, built)
+      sealed = built.value
     }
 
     const lock = await createLock(
@@ -1073,12 +1107,280 @@ export async function setWalletNode(walletId: string, node: string | undefined):
   return meta
 }
 
-/** Sets one lock's auto-lock minutes. The policy decides against the networks of
- * the Wallets on that lock — a Mainnet Wallet's lock may not go under one
- * minute (FR-65). A refusal carries its plain reason and writes nothing. */
-export async function setLockAutoLock(lockId: string, minutes: number): Promise<PolicyVerdict> {
-  const networks = (await listStoredWallets())
-    .filter((w) => (w.lockId ?? LEGACY_LOCK_ID) === lockId)
-    .flatMap((w) => viewsOf(w).map((v) => v.network))
-  return setAutoLockMinutes(lockId, minutes, networks)
+// ---------------------------------------------------------------------------
+// Editing a Wallet's checks (AD-28, FR-73)
+// ---------------------------------------------------------------------------
+
+export interface EditChecksContext {
+  /** Asks for the CURRENT checks: the PIN of the lock or the Signing Check. */
+  prompts: Prompts
+  /** The App PIN typed for a NEW PIN check (an Open Check or a Signing Check). It
+   * is used and not kept. */
+  pin?: string
+  /** Asks the person to write the Seed down and confirm it, when the result
+   * needs that (FR-72). Without it such a result is refused. */
+  confirmWrittenSeed?: ConfirmWrittenSeed
+  /** What the device said about PRF. */
+  passkey?: PasskeyCapability
+}
+
+export type EditChecksResult =
+  | CheckResult<{
+      meta: WalletMeta
+      /** False: nothing changed, nothing was asked and nothing was written. */
+      changed: boolean
+      /** The lock the Wallet was on before. */
+      previousLockId: string
+      /** Set only when the Wallet moved to a new lock: that lock's non-extractable
+       * Open Key. The caller closes the old lock, opens this one and starts its
+       * session — nothing here touches a session. */
+      openKey?: CryptoKey
+      /** The window of the lock the Wallet is on now. */
+      autoLockMinutes: number
+      /** The previous lock was deleted, because no Seed record is left on it. */
+      previousLockRemoved: boolean
+    }>
+  | { status: 'refused'; reason: string }
+
+/** The lock's Open Key, proven again (a PIN, a passkey or nothing for `none`). */
+async function reproveOpenKey(lockId: string, prompts: Prompts): Promise<CheckResult<CryptoKey>> {
+  const passed = await repassOpenCheck(lockId, prompts)
+  if (passed.status !== 'ok') return passed
+  if (passed.value) return { status: 'ok', value: passed.value }
+  const none = await openLock(lockId, 'none', { persist: false })
+  return none.status === 'ok' ? { status: 'ok', value: none.value.key } : none
+}
+
+/**
+ * Changes a Wallet's Open Check, auto-lock, Signing Check or passkeys in one
+ * atomic step (AD-28). The address never changes. In this order, so a refusal, a
+ * cancel or a failure leaves the Wallet opening and signing exactly as before:
+ *
+ *  1. The change is resolved and the RESULTING state goes through
+ *     `checkWalletRequest` (Seed Method, Signing Check, floors against every
+ *     network on the lock, PRF, FR-72). A refusal writes nothing.
+ *  2. The current check the change affects is passed: the lock's Open Check for an
+ *     Open Check or auto-lock edit, or a Standard Wallet's move to a Signing
+ *     Check; the Signing Check for a sealed Wallet's Signing Check edit (the
+ *     decrypt is the proof). A wrong PIN counts, a cancel never does.
+ *  3. When the result needs a written Seed (FR-72) and none is confirmed, the
+ *     person confirms it now, before any credential is made.
+ *  4. The new credentials are built and the new lock record and ciphertext are
+ *     made in memory (a new lock per Open Check edit; the old lock is not touched).
+ *  5. One transaction writes the lock record and the Wallet record and removes the
+ *     old lock when nothing is left on it, compare-and-swapping on `rev`, the
+ *     ciphertext and the lock as read. A mismatch writes nothing.
+ *
+ * Seed and keys live in locals of this call. A passkey registered before a later
+ * failure may stay on the authenticator.
+ */
+export async function editChecks(walletId: string, request: CheckEditRequest, ctx: EditChecksContext): Promise<EditChecksResult> {
+  const stored = await seedRecordFor(walletId)
+  const fromLockId = stored.lockId ?? LEGACY_LOCK_ID
+  const lockRecord = await getLockRecord(fromLockId)
+  const info = await getLockInfo(fromLockId)
+  const expectSeedStamp = seedStamp(stored)
+  const expectLockStamp = lockStamp(lockRecord)
+  const isDerived = stored.seedMethod === 'passkey-derived'
+  const isSealed = !!(stored.signing || stored.sealedSeed)
+  const standardRecord = !isDerived && !isSealed
+
+  const current = {
+    seedMethod: stored.seedMethod ?? 'stored',
+    openCheck: info.openCheck,
+    signing: (isDerived ? 'passkey' : (stored.signingCheck ?? 'standard')) as SigningKind,
+    autoLockMinutes: info.autoLockMinutes,
+  }
+  const resolved = resolveEdit(current, request)
+  const meta = (await listWallets()).find((m) => m.id === walletId)
+  if (!meta) throw new Error('Wallet not found in local vault.')
+  const previousLockId = fromLockId
+  if (!resolved.changed) {
+    return { status: 'ok', value: { meta, changed: false, previousLockId, autoLockMinutes: info.autoLockMinutes, previousLockRemoved: false } }
+  }
+  const allowed = checkEditAllowed(current, resolved)
+  if (!allowed.ok) return { status: 'refused', reason: allowed.reason }
+
+  // The resulting state, judged by the one policy. Mainnet if any view of the
+  // Seed is Mainnet; the auto-lock floor reads every network on the lock the
+  // Wallet will be on (a new lock serves only this Seed).
+  const views = viewsOf(stored)
+  const network: NetworkId = views.some((v) => v.network === 'mainnet') ? 'mainnet' : views[0].network
+  const lockNetworks = resolved.openChange
+    ? views.map((v) => v.network)
+    : (await listStoredWallets()).filter((w) => (w.lockId ?? LEGACY_LOCK_ID) === fromLockId).flatMap((w) => viewsOf(w).map((v) => v.network))
+  const confirmed = stored.writtenSeedConfirmedAt !== undefined
+  let origin: string | undefined
+  try {
+    origin = getRpId()
+  } catch {
+    origin = undefined
+  }
+  const { openCheck: resultOpen, signing: resultSigning, autoLockMinutes: resultMinutes } = resolved.result
+  const checksChange = resolved.openChange || resolved.signingChange
+  // An auto-lock-only edit is judged on the floor alone (every network on the
+  // lock): FR-72 and PRF capability are about the checks, which it does not touch.
+  if (checksChange) {
+    const verdict = checkWalletRequest({
+      canConfirmWrittenSeed: !!ctx.confirmWrittenSeed,
+      writtenSeedConfirmed: confirmed,
+      network,
+      seedMethod: current.seedMethod,
+      openCheck: resultOpen,
+      autoLockMinutes: resultMinutes,
+      signing: resultSigning,
+      passkey: ctx.passkey ?? 'unknown',
+      origin,
+    })
+    if (!verdict.ok) return { status: 'refused', reason: verdict.reason }
+  }
+  if (resolved.autoLockChange || resolved.openChange) {
+    const floors = checkAutoLock(lockNetworks, resultMinutes)
+    if (!floors.ok) return { status: 'refused', reason: floors.reason }
+  }
+  const newPin = (resolved.openChange && resultOpen === 'pin') || (resolved.signingChange && resultSigning === 'pin')
+  if (newPin && !ctx.pin) return { status: 'cancelled' }
+
+  const needsConfirm = checksChange && requiresWrittenSeed(network, resultOpen, resultSigning) && !confirmed
+  const needsSeed = resolved.signingChange || needsConfirm || (resolved.openChange && standardRecord)
+  const hadAppPin = await hasAppPin()
+  let seed: string | null = null
+  let committed = false
+  try {
+    // 2. The current check the change affects.
+    let lockKey: CryptoKey | null = null
+    const needsOpenCheck = resolved.openChange || resolved.autoLockChange || standardRecord || (isSealed && resolved.signingChange && resultSigning === 'standard')
+    if (needsOpenCheck) {
+      const proved = await reproveOpenKey(fromLockId, ctx.prompts)
+      if (proved.status !== 'ok') return await abandon(hadAppPin, proved)
+      lockKey = proved.value
+    }
+    if (needsSeed) {
+      if (standardRecord) {
+        if (!stored.encryptedSeed || !lockKey) throw new Error('Wallet not found in local vault.')
+        seed = await aesDecrypt(lockKey, stored.encryptedSeed.ivB64, stored.encryptedSeed.ciphertextB64)
+      } else {
+        const opened = await openSeed(stored, { openKey: null, prompts: ctx.prompts })
+        if (opened.status !== 'ok') return await abandon(hadAppPin, opened)
+        seed = opened.value
+      }
+      // The Seed must be this Wallet's: its address is the one stored.
+      await walletFromSeed(stored, seed)
+    }
+
+    // 3. FR-72, before any credential, lock or record is made.
+    let confirmedAt: number | undefined
+    if (needsConfirm) {
+      if (!seed || !ctx.confirmWrittenSeed || !(await ctx.confirmWrittenSeed(seed))) return await abandon(hadAppPin, { status: 'cancelled' as const })
+      confirmedAt = Date.now()
+    }
+
+    // 4. New credentials and ciphertext, in memory.
+    let newLock: { record: LockRecord; key: CryptoKey } | null = null
+    if (resolved.openChange) {
+      const kind = request.openCheck!
+      const built = await buildLock(
+        {
+          network,
+          openCheck: resultOpen,
+          autoLockMinutes: resultMinutes,
+          label: `${stored.label || 'Wallet'} – open`,
+          ...(kind.kind === 'passkey' ? { passkeyChoice: kind.passkey ?? 'new' } : {}),
+        },
+        { pin: ctx.pin },
+      )
+      if (built.status !== 'ok') return await abandon(hadAppPin, built)
+      newLock = built.value
+    }
+    let newSeal: { sealedSeed: { ivB64: string; ciphertextB64: string }; signing: SigningSeal } | null = null
+    let newEncrypted: { ivB64: string; ciphertextB64: string } | null = null
+    if (resolved.signingChange) {
+      if (resultSigning === 'standard') {
+        // Back under the lock's Open Key (the new one if the lock is new).
+        const key = newLock?.key ?? lockKey
+        if (!key || !seed) throw new Error('Wallet is locked.')
+        newEncrypted = await aesEncrypt(key, seed)
+      } else {
+        const sealed = await sealUnderNewCredential(seed!, {
+          kind: resultSigning,
+          hkdfInfo: `${SIGN_HKDF_PREFIX}${stored.id}:${crypto.randomUUID()}:v1`,
+          label: stored.label || 'Wallet',
+          pin: ctx.pin,
+          choice: request.signing?.passkey,
+        })
+        if (sealed.status !== 'ok') return await abandon(hadAppPin, sealed)
+        newSeal = sealed.value
+      }
+    } else if (resolved.openChange && standardRecord) {
+      // The Seed moves to the new lock's Open Key.
+      if (!newLock || !seed) throw new Error('Wallet is locked.')
+      newEncrypted = await aesEncrypt(newLock.key, seed)
+    }
+
+    // 5. One transaction.
+    const algorithm = seed ? algorithmOfSeed(seed) : undefined
+    const putLock = newLock
+      ? newLock.record
+      : resolved.autoLockChange
+        ? { ...(lockRecord ?? legacyLockRecord(resultMinutes)), autoLockMinutes: resultMinutes }
+        : undefined
+    const { wallet: written, lockRemoved } = await commitWalletEdit({
+      seedId: stored.id,
+      expectSeedStamp,
+      expectLockId: fromLockId,
+      expectLockStamp,
+      ...(putLock ? { putLock } : {}),
+      ...(newLock ? { releaseLockId: fromLockId } : {}),
+      next: (row) => {
+        const { encryptedSeed, sealedSeed, signing, ...rest } = row
+        const forms = newEncrypted
+          ? { encryptedSeed: newEncrypted }
+          : newSeal
+            ? { sealedSeed: newSeal.sealedSeed, signing: newSeal.signing }
+            : { ...(encryptedSeed ? { encryptedSeed } : {}), ...(sealedSeed ? { sealedSeed } : {}), ...(signing ? { signing } : {}) }
+        return {
+          ...rest,
+          ...forms,
+          ...(algorithm && (!row.algorithm || row.algorithm === 'unresolved') ? { algorithm } : {}),
+          ...(newLock ? { lockId: newLock.record.id, openCheck: resultOpen } : {}),
+          ...(resolved.signingChange && !isDerived ? { signingCheck: resultSigning } : {}),
+          ...(confirmedAt !== undefined ? { writtenSeedConfirmedAt: confirmedAt } : {}),
+        }
+      },
+    })
+    // From here the edit is written: a failure no longer undoes anything, and the App
+    // PIN the new lock or seal depends on must stay.
+    committed = true
+    const after = toMetas(written).find((m) => m.id === walletId)
+    if (!after) throw new Error('Wallet not found in local vault.')
+    return {
+      status: 'ok',
+      value: { meta: after, changed: true, previousLockId, autoLockMinutes: resultMinutes, previousLockRemoved: lockRemoved, ...(newLock ? { openKey: newLock.key } : {}) },
+    }
+  } catch (err) {
+    if (!hadAppPin && !committed) await discardUnusedAppPin().catch(() => {})
+    if (err instanceof EditConflictError) return { status: 'refused', reason: err.message }
+    throw err
+  } finally {
+    seed = null
+  }
+}
+
+/** Sets one lock's auto-lock minutes through `editChecks`: the lock's Open Check is
+ * passed again first, and the policy decides against the networks of every Wallet
+ * on that lock — a Mainnet Wallet's lock may not go under one minute (FR-65). On a
+ * lock shared by legacy Wallets it applies to all of them, as before. A refusal
+ * carries its plain reason and writes nothing. */
+export async function setLockAutoLock(lockId: string, minutes: number, ctx: { prompts: Prompts } = { prompts: unavailablePrompts }): Promise<PolicyVerdict> {
+  const onLock = (await listStoredWallets()).filter((w) => (w.lockId ?? LEGACY_LOCK_ID) === lockId)
+  const first = onLock[0]
+  if (!first) {
+    // A lock with no Wallet left on it has nothing to protect and no Seed to prove.
+    return setAutoLockMinutes(lockId, minutes, [])
+  }
+  const result = await editChecks(viewsOf(first)[0].walletId, { autoLockMinutes: minutes }, ctx)
+  if (result.status === 'ok') return { ok: true }
+  if (result.status === 'refused') return { ok: false, reason: result.reason }
+  if (result.status === 'cancelled') return { ok: false, reason: 'Cancelled. The auto-lock was not changed.' }
+  return { ok: false, reason: `${describeCheckFailure(result)} The auto-lock was not changed.` }
 }

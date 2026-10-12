@@ -3,6 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Button } from '@/components/ui/button'
 import { NetworkChoice } from '@/components/wallet/NetworkChoice'
 import { CreateWalletFlow } from '@/components/wallet/CreateWalletFlow'
+import { EditChecksDialog, type EditedChecks } from '@/components/wallet/EditChecksDialog'
 import { WalletNodeSection } from '@/components/wallet/WalletNodeSection'
 import { DevnetNotice } from '@/components/wallet/DevnetNotice'
 import { StatusLegend } from '@/components/ui/lamp'
@@ -22,7 +23,7 @@ import { useAppStore, useActiveNetwork, useWalletOpenKey } from '@/store/app-sto
 import { counterpartyKey, tagNotRecorded } from '@/store/address-book'
 import { NETWORKS, NETWORK_IDS, type NetworkId } from '@/lib/xrpl/networks'
 import { addNetworkView, addressFromSeed, importAndStoreWallet, listWallets, parseSeedInput, removeWallet, revealSeed, setLockAutoLock, describeCheckFailure, type WalletMeta } from '@/lib/crypto/keystore'
-import { getLockInfo } from '@/lib/crypto/lock'
+import { getLockInfo, startLockSession } from '@/lib/crypto/lock'
 import { LEGACY_LOCK_ID } from '@/lib/crypto/db'
 import { queryKeys } from '@/lib/xrpl/query-keys'
 import { RESET_INCOMPLETE_MESSAGE, tearDownAllLocalState, clearCachedAccountData, tearDownLock } from '@/lib/teardown'
@@ -70,6 +71,7 @@ export function SettingsTab() {
   const setLockMinutes = useAppStore((s) => s.setLockMinutes)
   const closeAllLocks = useAppStore((s) => s.closeAllLocks)
   const closeLock = useAppStore((s) => s.closeLock)
+  const openLock = useAppStore((s) => s.openLock)
   // Settings is mounted only for an open Wallet. Its lock is the one a new
   // Wallet is added under and the one whose auto-lock this card edits (AD-21).
   const activeWallet = wallets.find((w) => w.id === activeWalletId) ?? null
@@ -92,6 +94,7 @@ export function SettingsTab() {
   const [confirmRemove, setConfirmRemove] = useState<string | null>(null)
   const [confirmResetAll, setConfirmResetAll] = useState(false)
   const [confirmRevealFor, setConfirmRevealFor] = useState<string | null>(null)
+  const [editChecksFor, setEditChecksFor] = useState<string | null>(null)
   const [importWarning, setImportWarning] = useState<ImportWarning | null>(null)
   const [busy, setBusy] = useState(false)
   // A new Wallet is being written or backed up inside the Add dialog.
@@ -258,7 +261,8 @@ export function SettingsTab() {
   async function handleAutoLock(minutes: number) {
     if (!activeLockId) return
     try {
-      const verdict = await setLockAutoLock(activeLockId, minutes)
+      // The lock's Open Check is passed again first (FR-73): `prompts` asks for it.
+      const verdict = await setLockAutoLock(activeLockId, minutes, { prompts })
       if (!verdict.ok) {
         toast.error(verdict.reason)
         return
@@ -267,6 +271,29 @@ export function SettingsTab() {
       await lockInfoQuery.refetch()
     } catch (err: any) {
       toast.error(err?.message ?? 'Could not change the auto-lock.')
+    }
+  }
+
+  /** An edit of a Wallet's checks was committed. When it moved to a new lock the
+   * keystore handed back that lock's Open Key and touched no session: this is
+   * where the old lock closes and the new one opens (FR-73, AD-21). The new lock
+   * opens first, so no listed Wallet is ever shown with a closed lock. */
+  async function handleEdited(edited: EditedChecks) {
+    const { meta, previousLockId } = edited
+    try {
+      if (edited.openKey) {
+        await startLockSession(meta.lockId, edited.openKey, edited.autoLockMinutes)
+        openLock(meta.lockId, edited.openKey, edited.autoLockMinutes)
+      } else if (edited.changed) {
+        setLockMinutes(meta.lockId, edited.autoLockMinutes)
+      }
+      await refreshWallets()
+      await queryClient.invalidateQueries({ queryKey: queryKeys.lockInfo(meta.lockId) })
+      if (previousLockId !== meta.lockId) queryClient.removeQueries({ queryKey: queryKeys.lockInfo(previousLockId) })
+      toast.success(edited.changed ? 'Checks updated.' : 'Nothing to change.')
+    } finally {
+      // The old lock record is already deleted: its session must close whatever failed above.
+      if (edited.previousLockRemoved) closeLock(previousLockId)
     }
   }
 
@@ -391,6 +418,11 @@ export function SettingsTab() {
                     Use on {NETWORKS[n].label}
                   </Button>
                 ))}
+                {w.lockId in openLocks && (
+                  <Button variant="outline" size="sm" onClick={() => setEditChecksFor(w.id)}>
+                    Edit checks
+                  </Button>
+                )}
                 {w.lockId in openLocks && (
                   <Button variant="outline" size="sm" onClick={() => setConfirmRevealFor(w.id)}>
                     Reveal seed
@@ -622,6 +654,12 @@ export function SettingsTab() {
           </details>
         </CardContent>
       </Card>
+
+      <EditChecksDialog
+        wallet={wallets.find((w) => w.id === editChecksFor) ?? null}
+        onClose={() => setEditChecksFor(null)}
+        onEdited={handleEdited}
+      />
 
       <Dialog open={!!confirmRevealFor} onOpenChange={(o) => !o && setConfirmRevealFor(null)}>
         <DialogContent>

@@ -1,9 +1,13 @@
 import { describe, expect, it } from 'vitest'
 import {
   AUTO_LOCK_CHOICES,
+  checkEditAllowed,
   checkSigningCheck,
   checkWalletRequest,
+  describeEditOptions,
   describeOptions,
+  olderBuildCannotOpen,
+  resolveEdit,
   NO_PRF_REASON,
   MAINNET_DERIVED_ORIGIN_REASON,
   MAINNET_DERIVED_UNKNOWN_ORIGIN_REASON,
@@ -146,5 +150,45 @@ describe('describeOptions', () => {
     const d = describeOptions({ ...context, network: 'mainnet', openCheck: 'passkey', signing: 'passkey', canConfirmWrittenSeed: true })
     expect(d.combination).toEqual({ ok: true })
     expect(d.writtenSeedRequired).toBe(true)
+  })
+})
+
+describe('editing the checks of an existing Wallet (story 8)', () => {
+  const stored = { seedMethod: 'stored' as const, openCheck: 'pin' as const, signing: 'standard' as const, autoLockMinutes: 5 }
+
+  it('resolves what the edit would leave, and no change when the answers are the same', () => {
+    expect(resolveEdit(stored, { openCheck: { kind: 'pin' }, signing: { kind: 'standard' }, autoLockMinutes: 5 }).changed).toBe(false)
+    const r = resolveEdit(stored, { openCheck: { kind: 'passkey' }, signing: { kind: 'pin' }, autoLockMinutes: 15 })
+    expect(r).toMatchObject({ openChange: true, signingChange: true, autoLockChange: true, result: { openCheck: 'passkey', signing: 'pin', autoLockMinutes: 15 } })
+  })
+
+  it('a new passkey on the same kind is a change; the legacy lock reads as the App PIN', () => {
+    expect(resolveEdit({ ...stored, openCheck: 'passkey' }, { openCheck: { kind: 'passkey', passkey: 'new' } }).openChange).toBe(true)
+    expect(resolveEdit({ ...stored, openCheck: 'passkey' }, { openCheck: { kind: 'passkey' } }).openChange).toBe(false)
+    expect(resolveEdit({ ...stored, openCheck: 'either' }, { autoLockMinutes: 15 }).result.openCheck).toBe('pin')
+    expect(resolveEdit({ ...stored, openCheck: 'either' }, { openCheck: { kind: 'pin' } }).openChange).toBe(true)
+  })
+
+  it('a Passkey-Derived Wallet\'s Signing Check is not editable; its Open Check is', () => {
+    const derived = { seedMethod: 'passkey-derived' as const, openCheck: 'pin' as const, signing: 'passkey' as const, autoLockMinutes: 5 }
+    expect(checkEditAllowed(derived, resolveEdit(derived, { signing: { kind: 'pin' } }))).toMatchObject({ ok: false })
+    expect(checkEditAllowed(derived, resolveEdit(derived, { signing: { kind: 'passkey', passkey: 'new' } }))).toMatchObject({ ok: false })
+    expect(checkEditAllowed(derived, resolveEdit(derived, { openCheck: { kind: 'none' } }))).toEqual({ ok: true })
+    const opts = describeEditOptions({ network: 'testnet', seedMethod: 'passkey-derived', openCheck: 'pin', autoLockMinutes: 5, signing: 'passkey', passkey: 'yes' })
+    expect(Object.values(opts.signing).every((o) => !o.available && !!o.reason)).toBe(true)
+  })
+
+  it('an older version cannot open a Wallet after a Signing Check is added or the legacy lock is left', () => {
+    const open = (c: Parameters<typeof resolveEdit>[0], q: Parameters<typeof resolveEdit>[1]) => resolveEdit(c, q)
+    expect(olderBuildCannotOpen({ lockIsLegacy: false, signing: 'standard' }, open(stored, { signing: { kind: 'pin' } }))).toBe(true)
+    expect(olderBuildCannotOpen({ lockIsLegacy: true, signing: 'standard' }, open({ ...stored, openCheck: 'either' }, { openCheck: { kind: 'pin' } }))).toBe(true)
+    expect(olderBuildCannotOpen({ lockIsLegacy: true, signing: 'standard' }, open({ ...stored, openCheck: 'either' }, { autoLockMinutes: 15 }))).toBe(false)
+    expect(olderBuildCannotOpen({ lockIsLegacy: false, signing: 'pin' }, open({ ...stored, signing: 'pin' }, { signing: { kind: 'passkey' } }))).toBe(false)
+  })
+
+  it('describeOptions says a confirmed Seed needs no new confirmation', () => {
+    const ctx = { network: 'mainnet' as const, seedMethod: 'stored' as const, openCheck: 'passkey' as const, autoLockMinutes: 5, signing: 'passkey' as const, passkey: 'yes' as const }
+    expect(describeOptions(ctx).writtenSeedRequired).toBe(true)
+    expect(describeOptions({ ...ctx, writtenSeedConfirmed: true }).writtenSeedRequired).toBe(false)
   })
 })

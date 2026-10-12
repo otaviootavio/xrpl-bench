@@ -77,6 +77,9 @@ export interface StoredWallet {
   /** When the person wrote the Seed down and typed back the challenged groups
    * (FR-72). Additive; absent on every record made without that step. */
   writtenSeedConfirmedAt?: number
+  /** Edit counter for the compare-and-swap of `commitWalletEdit` (AD-28, AD-18):
+   * absent is 0, +1 per edit of the checks. Additive: an older build ignores it. */
+  rev?: number
 }
 
 /** `lock:<id>` in the `vault` store. Holds the derivation inputs a lock's keys
@@ -267,6 +270,95 @@ export async function mutateStoredWallet(
   if (next) await tx.store.put(next)
   else await tx.store.delete(id)
   await done
+}
+
+/** What a lock record's wrappers and window are, as one comparable string: the
+ * read an edit was based on, checked again inside its transaction. `undefined`
+ * (the legacy lock before its record exists) has a stamp of its own. */
+export function lockStamp(record: LockRecord | undefined): string {
+  if (!record) return 'absent'
+  return JSON.stringify([
+    record.openCheck ?? null,
+    record.autoLockMinutes,
+    record.hkdfInfo,
+    record.wrappedOpenKeyForPin?.ciphertextB64 ?? null,
+    record.wrappedOpenKeyForPasskey?.ciphertextB64 ?? null,
+    record.passkeyCredentialIdB64 ?? null,
+  ])
+}
+
+/** The ciphertext and lock a Seed record was read with. */
+export function seedStamp(w: StoredWallet): string {
+  return JSON.stringify([w.rev ?? 0, w.lockId ?? LEGACY_LOCK_ID, w.encryptedSeed?.ciphertextB64 ?? null, w.sealedSeed?.ciphertextB64 ?? null])
+}
+
+/** Another tab or flow changed what an edit was based on. Nothing was written. */
+export class EditConflictError extends Error {
+  constructor() {
+    super('This wallet changed while its checks were being edited. Nothing was changed.')
+    this.name = 'EditConflictError'
+  }
+}
+
+export interface WalletEditCommit {
+  /** The Seed record being edited. */
+  seedId: string
+  /** `seedStamp` of the record as read; a mismatch aborts. */
+  expectSeedStamp: string
+  /** The lock the record was on, and its `lockStamp` as read. */
+  expectLockId: string
+  expectLockStamp: string
+  /** The record to write. Built from the record as it is INSIDE the transaction,
+   * so a concurrent change to another field (a new view) is not lost. */
+  next: (current: StoredWallet) => StoredWallet
+  /** A lock record to write: a new lock, or the existing one with a new window. */
+  putLock?: LockRecord
+  /** The lock the record leaves. Deleted in the same transaction when no record
+   * is left on it; the legacy lock never is. */
+  releaseLockId?: string
+}
+
+/**
+ * AD-28: the new lock record, the Wallet record and the removal of the old lock
+ * in ONE multi-store transaction, with a compare-and-swap on the record's `rev`,
+ * lock and ciphertext and on the old lock's stamp. Any mismatch throws
+ * `EditConflictError`; any failure aborts the transaction: the old state is
+ * exactly as it was and still opens.
+ */
+export async function commitWalletEdit(input: WalletEditCommit): Promise<{ wallet: StoredWallet; lockRemoved: boolean }> {
+  const db = await getDb()
+  const tx = db.transaction(['wallets', 'vault'], 'readwrite')
+  const done = tx.done
+  done.catch(() => {})
+  try {
+    const wallets = tx.objectStore('wallets')
+    const vault = tx.objectStore('vault')
+    const current = await wallets.get(input.seedId)
+    if (!current || seedStamp(current) !== input.expectSeedStamp) throw new EditConflictError()
+    const oldLock = (await vault.get(lockKey(input.expectLockId))) as LockRecord | undefined
+    if (lockStamp(oldLock) !== input.expectLockStamp) throw new EditConflictError()
+    const next = { ...input.next(current), rev: (current.rev ?? 0) + 1 }
+    await wallets.put(next)
+    if (input.putLock) await vault.put(input.putLock)
+    const released = input.releaseLockId
+    let lockRemoved = false
+    if (released && released !== LEGACY_LOCK_ID) {
+      const others = (await wallets.getAll()).some((w) => w.id !== next.id && (w.lockId ?? LEGACY_LOCK_ID) === released)
+      if (!others) {
+        await vault.delete(lockKey(released))
+        lockRemoved = true
+      }
+    }
+    await done
+    return { wallet: next, lockRemoved }
+  } catch (err) {
+    try {
+      tx.abort()
+    } catch {
+      // already finished or aborted
+    }
+    throw err
+  }
 }
 
 export interface LegacyMigrationInput {

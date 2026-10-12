@@ -1475,3 +1475,25 @@ Seed re-passes its Open Check without writing a session (`openLock` with
 `persist: false`); a sealed Wallet asks its Signing Check, a Passkey-Derived one
 its passkey, and the confirm dialog names which. A copy-guard test bans wording
 that calls a key unrevealable: the Seed is revealable behind its checks.
+
+**Editing a Wallet's checks (story 8, 2026-10-11).** `keystore.editChecks` is the
+one edit (FR-73, AD-28); `sealSeedUnderSigningCheck` stays only as the legacy
+passkey-only write and nothing new calls it. `policy.ts` resolves the result of a
+request (`resolveEdit`), judges it with the same `checkWalletRequest` creation uses,
+and renders the dialog's answers (`describeEditOptions`, `olderBuildCannotOpen`); a
+Passkey-Derived Wallet's Signing Check, and every Wallet's Seed Method and
+algorithm, are not editable. The order is fixed: policy, then the current check the
+change affects (the lock's Open Check for an Open Check or auto-lock edit and for a
+Standard Wallet; the Signing Check for a sealed Wallet's own edit — and, because a
+Standard re-encryption needs the lock's real Open Key, a sealed-to-Standard edit
+re-passes the Open Check as well, rather than trusting the session's key), then the
+written Seed when the result needs it, then the new credentials, then ONE
+transaction (`db.commitWalletEdit`) over `wallets` and `vault` with a
+compare-and-swap on the record's additive `rev`, lock and ciphertext and on the old
+lock's stamp. An Open Check edit makes a new lock (`lock.buildLock`, the creation
+path minus the write) and moves only this Seed record to it; the old lock goes when
+no record is left, the legacy lock never does, and its other Wallets are untouched.
+The keystore writes no session: the caller closes the old lock and opens the new
+one. An auto-lock edit is `setLockAutoLock`, which now routes here and so passes the
+Open Check too. A passkey registered before a later failure may stay on the
+authenticator.

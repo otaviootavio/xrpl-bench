@@ -1,5 +1,5 @@
 import type { NetworkId } from '@/lib/xrpl/networks'
-import type { SeedMethod } from './db'
+import type { OpenCheck, SeedMethod } from './db'
 
 export type { SeedMethod }
 
@@ -176,6 +176,12 @@ export interface OptionsContext {
   origin?: string
   /** See `WalletRequest.canConfirmWrittenSeed`. */
   canConfirmWrittenSeed?: boolean
+  /** The Wallet's Seed was already written down and confirmed (an edit of an
+   * existing Wallet): `writtenSeedRequired` is then false. */
+  writtenSeedConfirmed?: boolean
+  /** The networks of every Wallet on the lock the auto-lock answers apply to, when
+   * that is more than `network` (a lock shared by legacy Wallets). */
+  lockNetworks?: readonly NetworkId[]
 }
 
 export interface DescribedOptions {
@@ -232,13 +238,97 @@ export function describeOptions(ctx: OptionsContext): DescribedOptions {
     passkey: signingFor('passkey'),
     pin: signingFor('pin'),
   }
-  const autoLock = AUTO_LOCK_CHOICES.map((minutes) => ({ minutes, ...fromVerdict(checkAutoLock([ctx.network], minutes)) }))
+  const autoLock = AUTO_LOCK_CHOICES.map((minutes) => ({ minutes, ...fromVerdict(checkAutoLock(ctx.lockNetworks ?? [ctx.network], minutes)) }))
   return {
     seedMethod,
     openCheck,
     autoLock,
     signing,
     combination: checkWalletRequest(ctx),
-    writtenSeedRequired: requiresWrittenSeed(ctx.network, ctx.openCheck, ctx.signing),
+    writtenSeedRequired: !ctx.writtenSeedConfirmed && requiresWrittenSeed(ctx.network, ctx.openCheck, ctx.signing),
   }
+}
+
+// ---------------------------------------------------------------------------
+// Editing the checks of an existing Wallet (story 8, FR-73): the same rules, one
+// more question — what the state becomes. `keystore.editChecks` and the edit
+// dialog both read it here, so neither holds a second copy.
+// ---------------------------------------------------------------------------
+
+/** FR-67: a Passkey-Derived Wallet's Signing Check is its passkey and is not
+ * editable (nor is any Wallet's Seed Method or signature type). */
+export const DERIVED_SIGNING_NOT_EDITABLE_REASON =
+  "A Passkey-Derived wallet's Signing Check is its passkey, and it cannot be changed. You can still change its Open Check and auto-lock."
+
+export type PasskeyChoice = 'new' | 'existing'
+
+/** What a Wallet has now. `either` is the legacy lock's (a PIN or a passkey). */
+export interface CurrentChecks {
+  seedMethod: SeedMethod
+  openCheck: OpenCheck
+  signing: SigningKind
+  autoLockMinutes: number
+}
+
+/** What the person asked to change. An absent axis stays. A `passkey` choice on
+ * the kind a Wallet already has means "a new passkey of the same kind"; on a
+ * different kind it says which passkey the new check uses (default: a new one). */
+export interface CheckEditRequest {
+  openCheck?: { kind: NewOpenCheck; passkey?: PasskeyChoice }
+  autoLockMinutes?: number
+  signing?: { kind: SigningKind; passkey?: PasskeyChoice }
+}
+
+export interface ResolvedEdit {
+  openChange: boolean
+  signingChange: boolean
+  autoLockChange: boolean
+  /** True when any axis changes: nothing is asked and nothing written otherwise. */
+  changed: boolean
+  /** The state the edit would leave, which is what the policy judges. `either`
+   * is not a passkey-only check, so it reads as the App PIN. */
+  result: { openCheck: NewOpenCheck; signing: SigningKind; autoLockMinutes: number }
+}
+
+export function resolveEdit(current: CurrentChecks, request: CheckEditRequest): ResolvedEdit {
+  const open = request.openCheck
+  const openChange = !!open && (open.kind !== current.openCheck || (open.kind === 'passkey' && open.passkey !== undefined))
+  const sign = request.signing
+  const signingChange = !!sign && (sign.kind !== current.signing || (sign.kind === 'passkey' && sign.passkey !== undefined))
+  const autoLockChange = request.autoLockMinutes !== undefined && request.autoLockMinutes !== current.autoLockMinutes
+  return {
+    openChange,
+    signingChange,
+    autoLockChange,
+    changed: openChange || signingChange || autoLockChange,
+    result: {
+      openCheck: openChange && open ? open.kind : current.openCheck === 'either' ? 'pin' : current.openCheck,
+      signing: signingChange && sign ? sign.kind : current.signing,
+      autoLockMinutes: autoLockChange && request.autoLockMinutes !== undefined ? request.autoLockMinutes : current.autoLockMinutes,
+    },
+  }
+}
+
+/** The Signing Check of a Passkey-Derived Wallet cannot be edited at all. */
+export function checkEditAllowed(current: CurrentChecks, resolved: ResolvedEdit): PolicyVerdict {
+  if (current.seedMethod === 'passkey-derived' && resolved.signingChange) return { ok: false, reason: DERIVED_SIGNING_NOT_EDITABLE_REASON }
+  return { ok: true }
+}
+
+/** After an edit of this kind an older version of the app can no longer open the
+ * Wallet: adding a Signing Check, or leaving the legacy lock (AD-23, AD-27). */
+export function olderBuildCannotOpen(
+  current: { lockIsLegacy: boolean; signing: SigningKind },
+  resolved: Pick<ResolvedEdit, 'openChange' | 'result'>,
+): boolean {
+  return (current.signing === 'standard' && resolved.result.signing !== 'standard') || (current.lockIsLegacy && resolved.openChange)
+}
+
+/** `describeOptions` for an edit. The Wallet's Signing Check answers are all
+ * unavailable, with the reason, when it is Passkey-Derived. */
+export function describeEditOptions(ctx: OptionsContext): DescribedOptions {
+  const described = describeOptions(ctx)
+  if (ctx.seedMethod !== 'passkey-derived') return described
+  const blocked: OptionState = { available: false, reason: DERIVED_SIGNING_NOT_EDITABLE_REASON }
+  return { ...described, signing: { standard: blocked, passkey: blocked, pin: blocked } }
 }

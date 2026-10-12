@@ -4,7 +4,7 @@ import { deriveAesKeyFromBits, HKDF_INFO } from './derive'
 import { b64ToBuf, bufToB64 } from './encoding'
 import { attemptPin, derivePinKeyBits, generateSalt, getLockoutState, PBKDF2_ITERATIONS, recordFailure, resetFailures, triesRemaining } from './pin'
 import { checkAutoLock, checkLockRequest, type NewOpenCheck, type PolicyVerdict } from './policy'
-import { assertPasskeyAndDeriveBits, isCancelled, isPrfUnsupported, isWebAuthnSupported, PRF_SALT, registerPasskey } from './webauthn'
+import { assertAnyPasskeyAndDeriveBits, assertPasskeyAndDeriveBits, getRpId, isCancelled, isPrfUnsupported, isWebAuthnSupported, PRF_SALT, registerPasskey } from './webauthn'
 import {
   clearAllLockSessions,
   clearLockSession,
@@ -268,7 +268,15 @@ export interface CreateLockInput {
    * gets its own random PRF salt and `hkdfInfo`: no two purposes share derived
    * key material (AD-21). */
   reuseCredential?: { credentialIdB64: string; rpId: string }
+  /** `existing`: the person picks one of this device's passkeys for the rpId
+   * instead of registering a new one (FR-70). Ignored with `reuseCredential`. */
+  passkeyChoice?: 'new' | 'existing'
 }
+
+/** A lock that is built but not yet written: its record and its Open Key. An edit
+ * commits the record with the Wallet in one transaction (AD-28). */
+export type BuiltLock = { record: LockRecord; key: CryptoKey }
+export type BuildLockResult = CheckResult<BuiltLock> | { status: 'refused'; reason: string }
 
 export type CreateLockResult = CheckResult<{ id: string; key: CryptoKey }> | { status: 'refused'; reason: string }
 
@@ -355,6 +363,20 @@ export async function discardUnusedAppPin(): Promise<void> {
  * PIN yet, `ctx.pin` becomes it.
  */
 export async function createLock(input: CreateLockInput, ctx: { pin?: string } = {}): Promise<CreateLockResult> {
+  const built = await buildLock(input, ctx)
+  if (built.status !== 'ok') return built
+  await putLockRecord(built.value.record)
+  return { status: 'ok', value: { id: built.value.record.id, key: built.value.key } }
+}
+
+/**
+ * Everything `createLock` does except writing the record: the policy, the
+ * credential (PIN proved or passkey registered/asserted) and the wrapped Open Key.
+ * Nothing is persisted here except an App PIN that did not exist yet (the caller
+ * discards it on failure). Used by `keystore.editChecks`, which commits the record
+ * with the Wallet in one transaction.
+ */
+export async function buildLock(input: CreateLockInput, ctx: { pin?: string } = {}): Promise<BuildLockResult> {
   const verdict = checkLockRequest(input)
   if (!verdict.ok) return { status: 'refused', reason: verdict.reason }
 
@@ -372,8 +394,7 @@ export async function createLock(input: CreateLockInput, ctx: { pin?: string } =
 
   if (input.openCheck === 'none') {
     const openKey = await crypto.subtle.generateKey({ name: 'AES-GCM', length: 256 }, false, ['encrypt', 'decrypt'])
-    await putLockRecord({ ...base, openKey })
-    return { status: 'ok', value: { id, key: openKey } }
+    return { status: 'ok', value: { record: { ...base, openKey }, key: openKey } }
   }
 
   const extractable = await crypto.subtle.generateKey({ name: 'AES-GCM', length: 256 }, true, ['encrypt', 'decrypt'])
@@ -383,8 +404,7 @@ export async function createLock(input: CreateLockInput, ctx: { pin?: string } =
     if (!ctx.pin) return { status: 'cancelled' }
     const wrapped = await withAppPin(ctx.pin, hkdfInfo, (methodKey) => wrapOpenKey(extractable, methodKey))
     if (wrapped.status !== 'ok') return wrapped
-    await putLockRecord({ ...base, wrappedOpenKeyForPin: wrapped.value })
-    return { status: 'ok', value: { id, key: sealed } }
+    return { status: 'ok', value: { record: { ...base, wrappedOpenKeyForPin: wrapped.value }, key: sealed } }
   }
 
   // Passkey: its own credential and its own PRF salt, both stored.
@@ -397,22 +417,33 @@ export async function createLock(input: CreateLockInput, ctx: { pin?: string } =
     if (input.reuseCredential) {
       credentialIdB64 = input.reuseCredential.credentialIdB64
       rpId = input.reuseCredential.rpId
+      bits = await assertPasskeyAndDeriveBits(credentialIdB64, prfSalt, rpId)
+    } else if (input.passkeyChoice === 'existing') {
+      rpId = getRpId()
+      const found = await assertAnyPasskeyAndDeriveBits(prfSalt, rpId)
+      credentialIdB64 = found.credentialIdB64
+      bits = found.bits
     } else {
       const registered = await registerPasskey(input.label ?? 'XRPL Bench wallet')
       credentialIdB64 = registered.credentialIdB64
       rpId = registered.rpId
+      // An authenticator may skip PRF evaluation at registration, so the
+      // assertion that follows is the normal path, not a retry (AD-24).
+      bits = await assertPasskeyAndDeriveBits(credentialIdB64, prfSalt, rpId)
     }
-    // An authenticator may skip PRF evaluation at registration, so the
-    // assertion that follows is the normal path, not a retry (AD-24).
-    bits = await assertPasskeyAndDeriveBits(credentialIdB64, prfSalt, rpId)
   } catch (err) {
     if (isCancelled(err)) return { status: 'cancelled' }
     if (isPrfUnsupported(err)) return { status: 'unsupported' }
     throw err
   }
   const wrappedOpenKeyForPasskey = await wrapOpenKey(extractable, await deriveAesKeyFromBits(bits, hkdfInfo))
-  await putLockRecord({ ...base, prfSaltB64: bufToB64(prfSalt.buffer), passkeyCredentialIdB64: credentialIdB64, ...(rpId ? { rpId } : {}), wrappedOpenKeyForPasskey })
-  return { status: 'ok', value: { id, key: sealed } }
+  return {
+    status: 'ok',
+    value: {
+      record: { ...base, prfSaltB64: bufToB64(prfSalt.buffer), passkeyCredentialIdB64: credentialIdB64, ...(rpId ? { rpId } : {}), wrappedOpenKeyForPasskey },
+      key: sealed,
+    },
+  }
 }
 
 // ---------------------------------------------------------------------------

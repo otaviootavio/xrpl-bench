@@ -47,6 +47,11 @@ export interface WalletView {
   walletId: string
   network: NetworkId
   node?: string
+  /** The Account this view operates when it is not the Seed's own address: the
+   * key is that Account's Regular Key (AD-18, AD-29). Absent: the record's
+   * `address`. A claim only; whether the key still controls the Account is
+   * always read from the ledger, never from this field. */
+  accountAddress?: string
 }
 
 /** A Seed record. `id` is the Seed id and, for the first view, also its

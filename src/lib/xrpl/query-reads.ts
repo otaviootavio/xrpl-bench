@@ -34,6 +34,26 @@ export function fetchAccountStateOnce(
 }
 
 /**
+ * A read that is never served from the cache: for a guard on a money-moving or
+ * key-changing action (AD-29), where a 15-second-old answer is not good enough.
+ * The same cache entry and key as `useAccountState`, refreshed by the result.
+ * Rejects when the read errors; the caller claims nothing then.
+ */
+export function fetchAccountStateFresh(
+  queryClient: QueryClient,
+  network: NetworkId,
+  address: string,
+  node?: string,
+): Promise<AccountState> {
+  return queryClient.fetchQuery({
+    queryKey: queryKeys.accountState(network, address),
+    queryFn: () => fetchAccountState(network, address, node),
+    staleTime: 0,
+    networkMode: 'always',
+  })
+}
+
+/**
  * How long a successful destination check stays permission to send.
  *
  * Named here rather than written as a bare `staleTime`, because the two

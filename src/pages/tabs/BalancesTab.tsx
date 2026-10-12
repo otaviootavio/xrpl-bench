@@ -3,6 +3,7 @@ import { Button } from '@/components/ui/button'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Skeleton } from '@/components/ui/skeleton'
 import { StatusLegend } from '@/components/ui/lamp'
+import { ControlledNote } from '@/components/wallet/ControlledNote'
 import { AddressDisplay } from '@/components/wallet/AddressDisplay'
 import { Readout, type ScaleMark } from '@/components/wallet/Readout'
 import { QueryErrorState } from '@/components/wallet/QueryErrorState'
@@ -209,7 +210,10 @@ export function BalancesTab() {
           answers "which account" and the reading answers "what do I hold" —
           and the second question is the one this screen exists for. */}
       <div className="grid gap-3 sm:grid-cols-2 sm:items-start">
-        <AddressDisplay address={wallet.address} />
+        <div className="flex flex-col gap-2">
+          <AddressDisplay address={wallet.address} />
+          <ControlledNote wallet={wallet} />
+        </div>
 
         <Card>
           <CardHeader className="sm:flex-row sm:items-baseline sm:justify-between">

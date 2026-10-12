@@ -29,7 +29,7 @@ const WALLETS = [{ id: 'w1', label: 'Savings', address: 'r4NagxniGTmPRr8yBRXRD6N
 /** Story 12.1: read into the per-Wallet shape — the persisted app-wide network
  * ('mainnet' in this blob) becomes the Wallet's network; nothing else changes. */
 const NORMALISED_WALLETS = [
-  { ...WALLETS[0], seedId: 'w1', lockId: 'legacy', network: 'mainnet', algorithm: 'unresolved', seedMethod: 'stored', openCheck: 'pin', signingCheck: 'standard' },
+  { ...WALLETS[0], seedId: 'w1', keyAddress: WALLETS[0].address, lockId: 'legacy', network: 'mainnet', algorithm: 'unresolved', seedMethod: 'stored', openCheck: 'pin', signingCheck: 'standard' },
 ]
 
 /** A blob as the build before this change persisted it. */

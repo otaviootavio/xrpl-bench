@@ -7,6 +7,7 @@ import {
   setTxInFlightReporter,
   submitAndClassify,
   submitIssuedPayment,
+  submitSetRegularKey,
   submitTrustSet,
   submitXrpPayment,
   FeeAboveCapError,
@@ -850,5 +851,21 @@ describe('the Signing Check runs inside the choke point (AD-22)', () => {
     expect(client.submitted).toEqual([])
     expect(state.disposed).toBe(1)
     expect(log.filter((e) => e.startsWith('in-flight'))).toEqual(['in-flight:true', 'in-flight:false'])
+  })
+})
+
+describe('a Regular Key change signs SetRegularKey for the handle’s Account', () => {
+  it('signs the Account and the new Regular Key through the choke point', async () => {
+    const client = installFakeClient()
+
+    const outcome = await submitSetRegularKey('testnet', wallet, { regularKey: 'rPT1Sjq2YGrBMTttX4GZHjKu9dyfzbpAYe' })
+
+    expect(outcome.status).toBe('validated')
+    expect(log[0]).toBe('in-flight:true')
+    expect(log.at(-1)).toBe('in-flight:false')
+    const signed = decode(client.submitted[0])
+    expect(signed.TransactionType).toBe('SetRegularKey')
+    expect(signed.Account).toBe(wallet.address)
+    expect(signed.RegularKey).toBe('rPT1Sjq2YGrBMTttX4GZHjKu9dyfzbpAYe')
   })
 })

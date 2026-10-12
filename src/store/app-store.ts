@@ -135,6 +135,8 @@ function normaliseWallets(persisted: unknown, persistedNetwork: unknown, fallbac
     .map((w) => ({
       ...(w as unknown as WalletMeta),
       seedId: typeof w.seedId === 'string' ? w.seedId : (w.id as string),
+      // Persisted before a Wallet could operate another Account: the key's address is the Account.
+      keyAddress: typeof w.keyAddress === 'string' ? w.keyAddress : (w.address as string),
       // A Wallet persisted before per-Wallet locks belongs to the one legacy lock.
       lockId: typeof w.lockId === 'string' ? w.lockId : LEGACY_LOCK_ID,
       network: isNetworkId(w.network) ? w.network : network,

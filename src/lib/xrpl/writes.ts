@@ -1,4 +1,4 @@
-import { type Payment, type SubmittableTransaction, type TrustSet, TrustSetFlags } from 'xrpl'
+import { type Payment, type SetRegularKey, type SubmittableTransaction, type TrustSet, TrustSetFlags } from 'xrpl'
 import { getXrplClient, holdXrplClient } from './client'
 import type { NetworkId } from './networks'
 import { MAX_FEE_DROPS, feeWithinCap, formatXrp, isCanonicalPositiveDrops } from './money'
@@ -288,6 +288,22 @@ export async function submitTrustSet(
     // rippling is for issuers. Without NoRipple a holder's balance can shift
     // as a side effect of unrelated payments between other parties.
     Flags: TrustSetFlags.tfSetNoRipple,
+  }
+  return submitAndClassify(network, signing, tx, node)
+}
+
+/** Sets the Account's single Regular Key (AD-29). `Account` is the Account the
+ * handle signs for; the choke point is unchanged. */
+export async function submitSetRegularKey(
+  network: NetworkId,
+  signing: SigningHandle,
+  params: { regularKey: string },
+  node?: string,
+): Promise<SubmitOutcome> {
+  const tx: SetRegularKey = {
+    TransactionType: 'SetRegularKey',
+    Account: signing.address,
+    RegularKey: params.regularKey,
   }
   return submitAndClassify(network, signing, tx, node)
 }

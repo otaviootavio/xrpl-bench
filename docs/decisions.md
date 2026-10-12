@@ -1497,3 +1497,18 @@ The keystore writes no session: the caller closes the old lock and opens the new
 one. An auto-lock edit is `setLockAutoLock`, which now routes here and so passes the
 Open Check too. A passkey registered before a later failure may stay on the
 authenticator.
+
+### 15.1 Controlling Wallet and Regular Key (story 9; AD-18, AD-29)
+
+A Wallet's view may carry `accountAddress`: the Account its key operates as a Regular
+Key. `WalletMeta.address` is that Account (else the Seed's own address) and is the only
+ledger identity every read, query key, send, receive and teardown uses;
+`WalletMeta.keyAddress` is the Seed's address, used only for the wrong-credential
+compare and to choose how to sign. A Signer for a view whose Account differs is built
+with `masterAddress`; `signingHandleFor(...).address` is the Account. Whether a key
+controls an Account is read from the ledger (`lib/control.ts` `controlStatus`) and never
+stored: the view is only a claim added by `confirmControl`, after a validated
+`SetRegularKey` and a fresh read that shows the key; any failed or unconfirmed read adds
+nothing, and "check again" runs only that read and claim. The action takes its
+guard from `fetchAccountStateFresh` (staleTime 0, same key), not the 15-second
+cache. Duplicate `(network, account, key)` views are refused. No IndexedDB version bump.

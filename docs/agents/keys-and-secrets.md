@@ -77,6 +77,12 @@ file before editing anything under `src/lib/crypto/`.
   deleted and its other Wallets are untouched. The keystore touches no session: the
   caller swaps the locks. A component renders `describeEditOptions` and decides
   nothing.
+- **A controlled view signs as its Account, and control is read, never stored.**
+  `WalletMeta.address` is the Account every read uses; `keyAddress` is the Seed's own
+  and the only address the wrong-credential compare uses. Add a controlled view only
+  through `lib/control.ts` (`confirmControl`), after a validated `SetRegularKey` and a
+  fresh `account_info` that shows the key. Never a local "controlled" flag.
+  `docs/decisions.md` §15.1.
 - **Every rpId comes from `getRpId()`** (`webauthn.ts`), which reads the build's
   `__RP_ID__` (set per branch in `vite.config.ts`) and falls back to
   `location.hostname` only when none is set. Nothing else reads the page host. Every new

@@ -48,7 +48,13 @@ export interface WalletMeta {
    * all share `legacy`. */
   lockId: string
   label: string
+  /** The Account this Wallet reads and signs for: the ONLY ledger identity every
+   * read, query key, send, receive and teardown uses (AD-18). It is `keyAddress`
+   * unless the Wallet operates another Account as its Regular Key. */
   address: string
+  /** The address the Seed itself derives: used only to detect a wrong credential
+   * and to choose how to sign (AD-18). */
+  keyAddress: string
   createdAt: number
   network: NetworkId
   /** A custom Node's `wss://` URL, proven for `network` when it was saved.
@@ -76,7 +82,8 @@ function toMetas(w: StoredWallet, fallbackNetwork?: NetworkId): WalletMeta[] {
     seedId: w.id,
     lockId: w.lockId ?? LEGACY_LOCK_ID,
     label: w.label,
-    address: w.address,
+    address: v.accountAddress ?? w.address,
+    keyAddress: w.address,
     createdAt: w.createdAt,
     network: v.network,
     ...(v.node ? { node: v.node } : {}),
@@ -90,6 +97,12 @@ function toMetas(w: StoredWallet, fallbackNetwork?: NetworkId): WalletMeta[] {
 
 function findSeedRecord(all: StoredWallet[], walletId: string): StoredWallet | undefined {
   return all.find((w) => viewsOf(w).some((v) => v.walletId === walletId))
+}
+
+/** One Wallet is identified by `(network, Account, key)`; a second view with the
+ * same triple, on any Seed record, is refused (AD-18). */
+function hasView(all: StoredWallet[], network: NetworkId, account: string, keyAddress: string): boolean {
+  return all.some((w) => w.address === keyAddress && viewsOf(w).some((v) => v.network === network && (v.accountAddress ?? w.address) === account))
 }
 
 export async function listWallets(fallbackNetwork: NetworkId = 'testnet'): Promise<WalletMeta[]> {
@@ -207,6 +220,9 @@ async function assertLockAllowsNetwork(lockId: string, network: NetworkId): Prom
 async function storeWallet(label: string, seed: string, vaultKey: CryptoKey, network: NetworkId, lockId: string): Promise<WalletMeta> {
   await assertLockAllowsNetwork(lockId, network)
   const wallet = Wallet.fromSeed(seed)
+  if (hasView(await listStoredWallets(), network, wallet.address, wallet.address)) {
+    throw new Error('This wallet is already on this device for that network.')
+  }
   const encryptedSeed = await aesEncrypt(vaultKey, seed)
   const walletId = crypto.randomUUID()
   const stored: StoredWallet = {
@@ -385,29 +401,45 @@ async function openSeed(stored: StoredWallet, ctx: SigningContext): Promise<Chec
 /** An `unresolved` algorithm is derived here, from the Seed, and stored only if
  * the address it gives equals the stored address — otherwise this throws and
  * stores nothing (fails closed, AD-18). */
-async function walletFromSeed(stored: StoredWallet, seed: string): Promise<Wallet> {
-  if (stored.algorithm && stored.algorithm !== 'unresolved') return Wallet.fromSeed(seed)
-  const algorithm = algorithmOfSeed(seed)
-  const wallet = Wallet.fromSeed(seed, { algorithm: algorithm === 'ed25519' ? ECDSA.ed25519 : ECDSA.secp256k1 })
-  if (wallet.address !== stored.address) {
-    throw new Error('This seed does not match the address stored for this wallet.')
+async function walletFromSeed(stored: StoredWallet, seed: string, account?: string): Promise<Wallet> {
+  let algorithm: SeedAlgorithm
+  if (stored.algorithm && stored.algorithm !== 'unresolved') {
+    algorithm = stored.algorithm
+  } else {
+    algorithm = algorithmOfSeed(seed)
+    const probe = Wallet.fromSeed(seed, { algorithm: algorithm === 'ed25519' ? ECDSA.ed25519 : ECDSA.secp256k1 })
+    if (probe.address !== stored.address) {
+      throw new Error('This seed does not match the address stored for this wallet.')
+    }
+    try {
+      await mutateStoredWallet(stored.id, (current) =>
+        current.algorithm && current.algorithm !== 'unresolved' ? current : { ...current, algorithm },
+      )
+    } catch {
+      // Best-effort: the decrypt and the address check have already succeeded,
+      // so a failed write (quota, abort) must not block signing or reveal. The
+      // algorithm is simply resolved again next time.
+    }
   }
-  try {
-    await mutateStoredWallet(stored.id, (current) =>
-      current.algorithm && current.algorithm !== 'unresolved' ? current : { ...current, algorithm },
-    )
-  } catch {
-    // Best-effort: the decrypt and the address check have already succeeded,
-    // so a failed write (quota, abort) must not block signing or reveal. The
-    // algorithm is simply resolved again next time.
+  // A view that operates another Account signs as that Account's Regular Key:
+  // the Signer carries `masterAddress`, the key address stays the credential
+  // check (AD-18).
+  if (account && account !== stored.address) {
+    return Wallet.fromSeed(seed, { algorithm: algorithm === 'ed25519' ? ECDSA.ed25519 : ECDSA.secp256k1, masterAddress: account })
   }
-  return wallet
+  return Wallet.fromSeed(seed)
 }
 
 async function seedRecordFor(walletId: string): Promise<StoredWallet> {
   const stored = findSeedRecord(await listStoredWallets(), walletId)
   if (!stored) throw new Error('Wallet not found in local vault.')
   return stored
+}
+
+/** The Account a Wallet's view operates: the view's `accountAddress`, else the
+ * Seed record's own address (AD-18). */
+function accountOf(stored: StoredWallet, walletId: string): string {
+  return viewsOf(stored).find((v) => v.walletId === walletId)?.accountAddress ?? stored.address
 }
 
 /**
@@ -425,7 +457,7 @@ export async function openSigner(walletId: string, ctx: SigningContext): Promise
     const opened = await openSeed(stored, ctx)
     if (opened.status !== 'ok') return opened
     seed = opened.value
-    wallet = await walletFromSeed(stored, seed)
+    wallet = await walletFromSeed(stored, seed, accountOf(stored, walletId))
     let held: Wallet | null = wallet
     const signer: Signer = {
       sign(tx) {
@@ -453,7 +485,7 @@ export async function openSigner(walletId: string, ctx: SigningContext): Promise
 export async function signingHandleFor(walletId: string, ctx: SigningContext): Promise<SigningHandle> {
   const stored = await seedRecordFor(walletId)
   return {
-    address: stored.address,
+    address: accountOf(stored, walletId),
     async open() {
       const result = await openSigner(walletId, ctx)
       if (result.status !== 'ok') throw new SigningCheckError(result)
@@ -1079,6 +1111,42 @@ export async function addNetworkView(walletId: string, network: NetworkId): Prom
   })
   if (!added) throw new Error('This wallet is already set up on that network.')
   const meta = (await listWallets(network)).find((w) => w.id === newWalletId)
+  if (!meta) throw new Error('Wallet not found in local vault.')
+  return meta
+}
+
+/** Records that a Seed's key operates `accountAddress` as that Account's Regular
+ * Key: a second view over the SAME Seed record, with the Account on the view and
+ * nothing else changed (AD-18). Call only after a validated `SetRegularKey` and a
+ * fresh read that shows this key (AD-29). A view with the same
+ * `(network, accountAddress, keyAddress)` is refused and nothing is written. */
+export async function addControlledView(
+  seedWalletId: string,
+  view: { network: NetworkId; node?: string; accountAddress: string },
+): Promise<WalletMeta> {
+  const all = await listStoredWallets()
+  const record = findSeedRecord(all, seedWalletId)
+  if (!record) throw new Error('Wallet not found in local vault.')
+  if (!record.views || record.views.length === 0) {
+    throw new Error('This wallet is not migrated yet. Restart the app and try again.')
+  }
+  if (hasView(all, view.network, view.accountAddress, record.address)) {
+    throw new Error('This wallet already operates that account.')
+  }
+  const node = view.node ? canonicalNodeUrl(view.node) : null
+  const newWalletId = crypto.randomUUID()
+  let added = false
+  await mutateStoredWallet(record.id, (current) => {
+    const views = viewsOf(current)
+    if (views.some((v) => v.network === view.network && (v.accountAddress ?? current.address) === view.accountAddress)) return current
+    added = true
+    return {
+      ...current,
+      views: [...views, { walletId: newWalletId, network: view.network, ...(node ? { node } : {}), accountAddress: view.accountAddress }],
+    }
+  })
+  if (!added) throw new Error('This wallet already operates that account.')
+  const meta = (await listWallets(view.network)).find((w) => w.id === newWalletId)
   if (!meta) throw new Error('Wallet not found in local vault.')
   return meta
 }

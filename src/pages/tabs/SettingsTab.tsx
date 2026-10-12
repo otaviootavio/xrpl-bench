@@ -4,6 +4,9 @@ import { Button } from '@/components/ui/button'
 import { NetworkChoice } from '@/components/wallet/NetworkChoice'
 import { CreateWalletFlow } from '@/components/wallet/CreateWalletFlow'
 import { EditChecksDialog, type EditedChecks } from '@/components/wallet/EditChecksDialog'
+import { ControlWalletDialog } from '@/components/wallet/ControlWalletDialog'
+import { ControlledNote } from '@/components/wallet/ControlledNote'
+import { holdsMasterKey } from '@/lib/control'
 import { WalletNodeSection } from '@/components/wallet/WalletNodeSection'
 import { DevnetNotice } from '@/components/wallet/DevnetNotice'
 import { StatusLegend } from '@/components/ui/lamp'
@@ -95,6 +98,7 @@ export function SettingsTab() {
   const [confirmResetAll, setConfirmResetAll] = useState(false)
   const [confirmRevealFor, setConfirmRevealFor] = useState<string | null>(null)
   const [editChecksFor, setEditChecksFor] = useState<string | null>(null)
+  const [controlFor, setControlFor] = useState<string | null>(null)
   const [importWarning, setImportWarning] = useState<ImportWarning | null>(null)
   const [busy, setBusy] = useState(false)
   // A new Wallet is being written or backed up inside the Add dialog.
@@ -401,6 +405,7 @@ export function SettingsTab() {
                       {w.network === 'mainnet' && ' — real funds'}
                     </p>
                     {w.network === 'devnet' && <DevnetNotice network={w.network} />}
+                    <ControlledNote wallet={w} />
                     <WalletNodeSection wallet={w} />
                   </>
                 ) : (
@@ -421,6 +426,11 @@ export function SettingsTab() {
                 {w.lockId in openLocks && (
                   <Button variant="outline" size="sm" onClick={() => setEditChecksFor(w.id)}>
                     Edit checks
+                  </Button>
+                )}
+                {w.lockId in openLocks && holdsMasterKey(w) && (
+                  <Button variant="outline" size="sm" onClick={() => setControlFor(w.id)}>
+                    Let another wallet sign
                   </Button>
                 )}
                 {w.lockId in openLocks && (
@@ -654,6 +664,16 @@ export function SettingsTab() {
           </details>
         </CardContent>
       </Card>
+
+      <ControlWalletDialog
+        controller={wallets.find((w) => w.id === controlFor) ?? null}
+        wallets={wallets}
+        onClose={() => setControlFor(null)}
+        onControlled={async () => {
+          await refreshWallets()
+          toast.success('The other wallet now operates this account.')
+        }}
+      />
 
       <EditChecksDialog
         wallet={wallets.find((w) => w.id === editChecksFor) ?? null}

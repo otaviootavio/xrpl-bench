@@ -87,6 +87,12 @@ file before editing anything under `src/lib/crypto/`.
   only from a view that holds it (with a Regular Key read as set), on only from the
   view that signs as the Regular Key, only through `lib/master-key.ts` after a confirm
   that states the consequence. Never a local "master key off" flag. `docs/decisions.md` §15.2.
+- **Two-device signing goes through `lib/qr-codec.ts` and `lib/two-device.ts`.** One
+  codec defines both payloads; the online device builds with `LastLedgerSequence` =
+  validated + 75 and runs `verifySigned` before `submitSignedBlob`, and the offline device
+  judges the payload with no network and signs once through `signPrepared`. A payload or a
+  signed blob lives in component state only while its dialog is open, never in a store,
+  storage or the URL, and an expired blob is never resubmitted. `docs/decisions.md` §15.3.
 - **Every rpId comes from `getRpId()`** (`webauthn.ts`), which reads the build's
   `__RP_ID__` (set per branch in `vite.config.ts`) and falls back to
   `location.hostname` only when none is set. Nothing else reads the page host. Every new

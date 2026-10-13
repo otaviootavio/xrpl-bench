@@ -1531,3 +1531,27 @@ status unknown. Outcome wording is `describeFailure` in `lib/control.ts`. The co
 dialog in `MasterKeyControl.tsx` states the exact consequence and names the Regular Key.
 Not verified against a real ledger: a Testnet disable and re-enable remains to be done.
 
+
+### 15.3 Two-device signing by QR (story 11; AD-30, FR-78)
+
+`lib/qr-codec.ts` is the only definition of either payload: `xrplbench:1:u:<base64url
+JSON {v, network_id, tx}>` and `xrplbench:1:s:<base64url JSON {v, tx_blob}>`. It is a
+`lib` leaf, `decode*` never throws, and a payload over one QR (2331 bytes, error
+correction M, the level `QrCode` draws at) is refused at encode and decode. The online
+side (`lib/two-device.ts` `buildUnsigned`) judges its guards on `fetchAccountStateFresh`
+(and the reserve, destination and fee reads for a Payment) before building; any errored
+read blocks. `writes.ts` `prepareUnsigned` autofills, caps the fee, then sets
+`LastLedgerSequence` to the validated ledger plus `TWO_DEVICE_LEDGER_WINDOW` (75)
+explicitly, and the expiry is worded as a window on both devices before the Signing Check.
+The offline side (`reviewUnsigned`, `signUnsigned`) makes no network call and is stricter
+than the contract's list: it also refuses any field outside the three kinds' fields, a
+non-zero `Flags`, and an `AccountSet` that is not exactly `asfDisableMaster`, so it never
+signs something it did not show. The return trip is `verifySigned` (blob deep-equals what
+was sent, key is the Account's master key while it is on, or its Regular Key, from a fresh
+read) and then `submitSignedBlob`, which hands the received blob to `submitAndClassify`
+through a Signer that returns it: the choke point is unchanged. A validated ledger past
+`LastLedgerSequence`, or `tefMAX_LEDGER` (as a result or a thrown error), reports `expired`;
+the blob is never resubmitted. Scanning is `BarcodeDetector` over `getUserMedia` where the
+browser has both; otherwise, and always, the dialog takes the payload as pasted text. No new
+dependency; a scanner library (jsQR) would need an owner decision. Not verified: a real
+camera scan, or a Testnet round trip between two browser profiles.

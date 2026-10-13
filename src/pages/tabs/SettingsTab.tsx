@@ -6,6 +6,7 @@ import { CreateWalletFlow } from '@/components/wallet/CreateWalletFlow'
 import { EditChecksDialog, type EditedChecks } from '@/components/wallet/EditChecksDialog'
 import { ControlWalletDialog } from '@/components/wallet/ControlWalletDialog'
 import { ControlledNote } from '@/components/wallet/ControlledNote'
+import { TwoDeviceSign } from '@/components/wallet/TwoDeviceSign'
 import { MasterKeyControl } from '@/components/wallet/MasterKeyControl'
 import { holdsMasterKey } from '@/lib/control'
 import { WalletNodeSection } from '@/components/wallet/WalletNodeSection'
@@ -408,6 +409,7 @@ export function SettingsTab() {
                     {w.network === 'devnet' && <DevnetNotice network={w.network} />}
                     <ControlledNote wallet={w} />
                     <MasterKeyControl wallet={w} />
+                    <TwoDeviceSign wallet={w} />
                     <WalletNodeSection wallet={w} />
                   </>
                 ) : (

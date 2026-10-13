@@ -114,6 +114,31 @@ describe('TwoDeviceSign, online side', () => {
   })
 })
 
+describe('TwoDeviceSign, busy lock', () => {
+  it('keeps the dialog open while a return is being submitted, submits once, and closes after', async () => {
+    h.buildUnsigned.mockResolvedValue({ status: 'built', text: 'xrplbench:1:u:AAA', tx: {}, lastLedgerSequence: 1075 })
+    let finish: (v: unknown) => void = () => {}
+    h.submitReturned.mockReturnValue(new Promise((res) => (finish = res)))
+    mount()
+    await click(btn('Sign with two devices'))
+    await click(btn(/This device is online/))
+    fireEvent.change(screen.getByLabelText('Destination'), { target: { value: 'rX' } })
+    fireEvent.change(screen.getByLabelText('Amount (XRP)'), { target: { value: '1' } })
+    await click(btn('Build the transaction'))
+    fireEvent.change(screen.getByLabelText(/Or paste the text of the signed transaction/), { target: { value: 'xrplbench:1:s:AAAA' } })
+    await click(btn('Use the pasted text'))
+    await click(btn('Use the pasted text'))
+    expect(h.submitReturned).toHaveBeenCalledTimes(1)
+    await click(screen.getAllByRole('button', { name: 'Close' })[0])
+    fireEvent.keyDown(document.activeElement ?? document.body, { key: 'Escape' })
+    expect(screen.getByText(/Checking and sending/)).toBeTruthy()
+    await act(async () => finish({ status: 'expired', reason: 'This transaction expired before it validated.' }))
+    await waitFor(() => expect(screen.getByText(/expired before it validated/)).toBeTruthy())
+    await click(screen.getAllByRole('button', { name: 'Close' })[0])
+    expect(screen.queryByText(/expired before it validated/)).toBeNull()
+  })
+})
+
 describe('TwoDeviceSign, online side: requests and results', () => {
   const open = async () => {
     mount()

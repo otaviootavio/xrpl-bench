@@ -368,6 +368,10 @@ export async function verifySigned(
   if (!isMaster && !isRegular) {
     return { status: 'refused', reason: 'The key that signed is not this account’s master key or Regular Key. Nothing was submitted.' }
   }
+  // The build-time guard is judged again on this fresh read: if the Regular Key went away while the code was out, turning the master key off would leave nothing able to sign.
+  if (returned.TransactionType === 'AccountSet' && returned.SetFlag === AccountSetAsfFlags.asfDisableMaster && !state.regularKey) {
+    return { status: 'refused', reason: 'This account no longer has a Regular Key, so turning the master key off would leave nothing able to sign. Nothing was submitted.' }
+  }
   return { status: 'ok', txBlob: tx_blob }
 }
 

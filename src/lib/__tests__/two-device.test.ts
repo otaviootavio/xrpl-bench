@@ -354,6 +354,14 @@ describe('hardening', () => {
     expect(submitted).toEqual([])
   })
 
+  it('refuses a master-key-off blob when the Regular Key went away since the build', async () => {
+    const r = await built({ kind: 'master-key', enable: false })
+    const text = await signed(r)
+    h.accounts = { [master.address]: acct() }
+    expect(await submitReturned(onlineMeta as any, r.tx, text, { queryClient: qc() })).toMatchObject({ status: 'refused', reason: expect.stringContaining('no longer has a Regular Key') })
+    expect(submitted).toEqual([])
+  })
+
   it('refuses inherited type names without throwing', () => {
     for (const TransactionType of ['constructor', '__proto__', 'toString', 7]) {
       const e = encodeUnsigned({ network: 'testnet', tx: { TransactionType, Account: master.address, Sequence: 1, Fee: '12', LastLedgerSequence: 9 } })

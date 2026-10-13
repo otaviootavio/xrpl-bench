@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
@@ -149,6 +149,7 @@ function OnlinePanel({ wallet, onBusy }: { wallet: WalletMeta; onBusy: (busy: bo
   const [regularKey, setRegularKey] = useState('')
   const [enable, setEnable] = useState(false)
   const [busy, setBusy] = useState(false)
+  const inFlight = useRef(false)
   const [message, setMessage] = useState<string | null>(null)
   const [built, setBuilt] = useState<Extract<BuildResult, { status: 'built' }> | null>(null)
   const [result, setResult] = useState<ReturnedResult | null>(null)
@@ -193,12 +194,15 @@ function OnlinePanel({ wallet, onBusy }: { wallet: WalletMeta; onBusy: (busy: bo
   }
 
   async function returned(text: string) {
-    if (busy || !built) return
+    // The ref closes the gap before `busy` re-renders: two scan hits must not submit twice.
+    if (inFlight.current || busy || !built) return
+    inFlight.current = true
     setBusy(true)
     onBusy(true)
     try {
       setResult(await submitReturned(wallet, built.tx, text, { queryClient }))
     } finally {
+      inFlight.current = false
       setBusy(false)
       onBusy(false)
     }

@@ -5,7 +5,7 @@ created: '2026-10-13'
 status: 'done'
 baseline_revision: 'f72285163efcc2d65c4d601a0dd70a2f6c2340a1'
 review_loop_iteration: 0
-followup_review_recommended: true
+followup_review_recommended: false
 context:
   - '{project-root}/docs/agents/keys-and-secrets.md'
   - '{project-root}/docs/agents/ledger-io.md'
@@ -119,6 +119,27 @@ deferred:
   - `[false]` `reject` scope E: extra kinds beyond Payment (intent) — the spec's boundaries list all three
   - `[low]` `reject` online side shows no built summary, Sequence race wording, a11y names/roles, paste box cleared, QrCode with no props, dead regex branch, no network-call assertion, fixed paste id (blind, edge, gap) — cosmetic or narrow, no named harm worth added surface
 
+### 2026-10-13 — Review pass (follow-up)
+- verdicts: 35 findings — high 0, medium 2, low 20, false 1, maybe-false 0, carried 12 (carried rows are counted in their verdict)
+- findings:
+  - `[medium]` `patch` guards not re-applied at submit: master-key off signed, Regular Key removed in the window, leaves no usable key (blind) — `verifySigned` refuses an AccountSet SetFlag asfDisableMaster when the fresh read has no Regular Key; test added
+  - `[low]` `patch` returned() could submit twice before `busy` re-renders, and silently drops a payload while busy (edge, gap, blind) — `inFlight` ref guard; test pins single submit
+  - `[medium]` `patch` Close/Escape while busy not pinned by any test (gap) — busy-lock test added (Close and Escape leave the outcome visible, Close works after)
+  - `[low]` `reject` carried: camera scan and Testnet round trip unverified (intent, gap) — see `deferred`
+  - `[low]` `reject` carried: Settings lock gating untested; no offline network-call assertion; Sequence race wording; a11y names/roles; fixed paste id (intent, gap, blind) — logged in the first pass
+  - `[low]` `reject` component test stubs the flow functions; hand-off argument not asserted (intent, gap) — the lib tests exercise the real flow with real signatures; wiring is one call
+  - `[low]` `reject` offline signs any LastLedgerSequence (blind, edge) — the offline device has no ledger to bound it against, the figure is shown before the Signing Check, and the blob dies when its Sequence is used
+  - `[low]` `reject` `>` vs `>=` at validated == LastLedgerSequence (gap, edge) — the next ledger is past the window and `tefMAX_LEDGER` maps to expired, so the outcome is the same
+  - `[low]` `reject` pre-send failure worded "may have been sent" (edge) — conservative wording, a rebuild costs nothing; the first pass already split out the fee-cap refusal
+  - `[low]` `reject` Copy button puts payloads on the clipboard (blind) — both payloads are public (unsigned or signed transactions); the rule guards Seed, key and PIN
+  - `[low]` `reject` dense QR shrinks on a narrow screen (blind, edge) — size scales with payload since the first pass and the paste fallback exists; no named failure shown
+  - `[low]` `reject` master-key warning asymmetric and passive online (blind) — the build is blocked without a Regular Key and the offline confirm states the consequence
+  - `[low]` `reject` Spec Change Log empty, front-matter status contradictions, `oversized` warning (blind) — fix is to edit this spec
+  - `[low]` `reject` vacuous "too large" test (blind) — the `tooLarge` mock test covers the build path; no harm from the duplicate
+  - `[low]` `reject` tefMAX_LEDGER matched by error text (blind) — fallback path; the result path uses `resultCode`
+  - `[low]` `reject` scanner silent on a non-XRPL Bench QR; JSON.stringify throw; unhandled rejection from build/returned (edge) — tx fields are strings and numbers; the dialog's `finally` resets busy; only an IndexedDB failure reaches it
+  - `[false]` `reject` the scanner/paste textarea "cleared" loses input (edge, blind) — the paste is cleared only after a payload is handed on, and busy now only occurs while a submit runs
+
 ## Design Notes
 
 - **Scanning without a dependency.** The repo has `qrcode` (render) and no scanner. `BarcodeDetector` covers Chromium; a paste field covers the rest and still goes through `decode`. A scanner library (jsQR) is a possible later addition and needs an owner decision; it is not required for correctness.
@@ -139,7 +160,6 @@ Status: done
 
 - Implemented: one codec (`qr-codec`), online build with `LastLedgerSequence` = validated + 75, offline review and sign, verified return and submit through `submitAndClassify`, expiry reported as expired, UI in Settings with camera scan (where available) and paste fallback.
 - Files: `src/lib/qr-codec.ts`, `src/lib/two-device.ts`, `src/lib/xrpl/writes.ts`, `src/components/wallet/{QrCode,QrScanner,TwoDeviceSign}.tsx`, `SettingsTab.tsx`, tests, `docs/decisions.md` §15.3, `docs/agents/keys-and-secrets.md`.
-- Review: 10 patch groups applied (9 medium); 2 deferred; 2 false; low items rejected with reasons above.
-- Follow-up review recommended: true. Nine mediums were patched, and the camera path and a live Testnet round trip are unverified.
-- Verification: `bun run lint`, `build`, `test` (1246 passed), `check:contrast` all pass.
-- Residual risk: real-device scanning and two-profile Testnet round trip not run.
+- Follow-up pass: 3 patches (1 medium: master-key-off re-guarded at verify; 1 medium: busy-lock test; 1 low: in-flight ref), every other finding rejected with a recorded reason or carried.
+- Follow-up review recommended: false. This pass patched no high and the work has converged. Unverified: the camera path and a live Testnet round trip, as already deferred.
+- Verification: `bun run lint`, `build`, `test`, `check:contrast` all pass.

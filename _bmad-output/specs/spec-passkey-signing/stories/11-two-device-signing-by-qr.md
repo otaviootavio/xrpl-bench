@@ -14,9 +14,9 @@ context:
 warnings: ['oversized']
 deferred:
   - summary: >-
-      No real camera scan and no Testnet two-profile round trip (including a deliberate expiry) has been run; the QrScanner camera path is untested.
+      The QrScanner camera path (BarcodeDetector over getUserMedia) has not been run; the Testnet round trip was run through the paste path.
     evidence: |-
-      Unit tests reach the scan path only through paste. A real round trip would settle it.
+      Headless Chromium on Linux has no BarcodeDetector, so the browser pass used the paste fallback. A real camera scan needs a device that has one.
     location: >-
       src/components/wallet/QrScanner.tsx
     severity: medium (unverified)
@@ -163,3 +163,12 @@ Status: done
 - Follow-up pass: 3 patches (1 medium: master-key-off re-guarded at verify; 1 medium: busy-lock test; 1 low: in-flight ref), every other finding rejected with a recorded reason or carried.
 - Follow-up review recommended: false. This pass patched no high and the work has converged. Unverified: the camera path and a live Testnet round trip, as already deferred.
 - Verification: `bun run lint`, `build`, `test`, `check:contrast` all pass.
+
+### Testnet browser pass (2026-10-13, after `df0f613`)
+
+Driven by Playwright Chromium 1.49 against `bun run dev`, two separate browser contexts (online and offline) each with its own vault and a CDP virtual authenticator, one throwaway Testnet seed imported on both and funded from the in-app faucet. The payloads moved between the two as pasted text. Desktop width 1000 px, one theme; no 320/390 px or dark-theme pass was made for this check.
+
+- **Round trip, met.** Build a 1 XRP Payment online; the offline device showed the decoded fields and the expiry words, signed on Confirm; the signed text went back; the online dialog reported "Validated. The ledger applied this transaction."
+- **Expiry, met.** Built and signed, then waited until the validated ledger passed `LastLedgerSequence` (21505674); returning the signed text reported "This transaction expired before it validated…", not failed, and nothing was submitted. The expired screen was opened and checked.
+- **Defect found and fixed.** The first real round trip was refused as "not the one that was sent". The SDK's `autofill` returns `NetworkID: undefined` as a key; `deepEqual` counted it, the JSON payload dropped it. Every real return would have been refused, and no test saw it because the fake `autofill` did not add the key. `deepEqual` now ignores undefined-valued keys and the fake adds `NetworkID: undefined`; 14 round-trip tests fail without the fix.
+- **Not run:** camera scan (headless Chromium has no `BarcodeDetector`), a second theme, 320 and 390 px, and the master-key and Regular Key kinds on the live ledger.

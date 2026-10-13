@@ -84,7 +84,7 @@ function installClient() {
   const client = {
     isConnected: () => true,
     connect: async () => {},
-    autofill: async (tx: any) => ({ Sequence: 7, LastLedgerSequence: validated + 20, ...tx, ...(tx.Fee ? {} : { Fee: autofillFee }), Flags: tx.Flags ?? 0 }),
+    autofill: async (tx: any) => ({ Sequence: 7, LastLedgerSequence: validated + 20, ...tx, ...(tx.Fee ? {} : { Fee: autofillFee }), Flags: tx.Flags ?? 0, NetworkID: tx.NetworkID }),
     request: async () => {
       if (h.ledgerFails) throw new Error('ledger down')
       return { result: { ledger_index: validated } }

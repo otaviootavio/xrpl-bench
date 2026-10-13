@@ -302,10 +302,12 @@ function deepEqual(a: unknown, b: unknown): boolean {
   if (a === b) return true
   if (typeof a !== 'object' || typeof b !== 'object' || a === null || b === null) return false
   if (Array.isArray(a) !== Array.isArray(b)) return false
-  const ka = Object.keys(a)
-  const kb = Object.keys(b)
+  // A key holding `undefined` is no field: xrpl.js autofill leaves `NetworkID: undefined`, which JSON and the binary codec both drop.
+  const defined = (o: object) => Object.keys(o).filter((k) => (o as Record<string, unknown>)[k] !== undefined)
+  const ka = defined(a)
+  const kb = defined(b)
   if (ka.length !== kb.length) return false
-  return ka.every((k) => k in b && deepEqual((a as Record<string, unknown>)[k], (b as Record<string, unknown>)[k]))
+  return ka.every((k) => kb.includes(k) && deepEqual((a as Record<string, unknown>)[k], (b as Record<string, unknown>)[k]))
 }
 
 function withoutSignature(tx: Record<string, unknown>): Record<string, unknown> {

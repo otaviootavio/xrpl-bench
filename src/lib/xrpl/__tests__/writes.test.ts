@@ -7,6 +7,7 @@ import {
   setTxInFlightReporter,
   submitAndClassify,
   submitIssuedPayment,
+  submitMasterKeyFlag,
   submitSetRegularKey,
   submitTrustSet,
   submitXrpPayment,
@@ -867,5 +868,23 @@ describe('a Regular Key change signs SetRegularKey for the handle’s Account', 
     expect(signed.TransactionType).toBe('SetRegularKey')
     expect(signed.Account).toBe(wallet.address)
     expect(signed.RegularKey).toBe('rPT1Sjq2YGrBMTttX4GZHjKu9dyfzbpAYe')
+  })
+})
+
+describe('a master-key change signs AccountSet asfDisableMaster for the handle’s Account', () => {
+  it.each([
+    ['off', false, 'SetFlag', 'ClearFlag'],
+    ['on', true, 'ClearFlag', 'SetFlag'],
+  ])('turning it %s sets %s and not %s', async (_n, enable, present, absent) => {
+    const client = installFakeClient()
+    const outcome = await submitMasterKeyFlag('testnet', wallet, { enable })
+    expect(outcome.status).toBe('validated')
+    const signed = decode(client.submitted[0]) as Record<string, unknown>
+    expect(signed.TransactionType).toBe('AccountSet')
+    expect(signed.Account).toBe(wallet.address)
+    expect(signed[present]).toBe(4)
+    expect(signed[absent]).toBeUndefined()
+    expect(log[0]).toBe('in-flight:true')
+    expect(log.at(-1)).toBe('in-flight:false')
   })
 })

@@ -86,7 +86,7 @@ export type ControlResult =
 
 const UNCONFIRMED = 'The change was submitted, but the wallet could not confirm it from the ledger. Check again.'
 
-function describeFailure(outcome: Exclude<SubmitOutcome, { status: 'validated' }>): string {
+export function describeFailure(outcome: Exclude<SubmitOutcome, { status: 'validated' }>): string {
   switch (outcome.status) {
     case 'expired':
       return 'The change expired before it validated. It was not applied; you can try again.'

@@ -106,6 +106,15 @@ describe('Settings with two locks', () => {
     expect(screen.getByRole('button', { name: 'Use this wallet' })).toBeTruthy()
   })
 
+  it('mounts the master-key control only for a Wallet whose lock is open', () => {
+    renderSettings()
+    expect(screen.getAllByTestId('master-key-control')).toHaveLength(1)
+    cleanup()
+    useAppStore.setState({ openLocks: {} } as never)
+    renderSettings()
+    expect(screen.queryByTestId('master-key-control')).toBeNull()
+  })
+
   it('"Lock now" closes only the active Wallet\'s lock', () => {
     useAppStore.setState({ openLocks: { X: OPEN, Y: OPEN } } as never)
     renderSettings()

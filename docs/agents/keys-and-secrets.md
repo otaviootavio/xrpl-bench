@@ -83,6 +83,10 @@ file before editing anything under `src/lib/crypto/`.
   through `lib/control.ts` (`confirmControl`), after a validated `SetRegularKey` and a
   fresh `account_info` that shows the key. Never a local "controlled" flag.
   `docs/decisions.md` §15.1.
+- **The master key's state is read, and its role is the Wallet's view.** Turn it off
+  only from a view that holds it (with a Regular Key read as set), on only from the
+  view that signs as the Regular Key, only through `lib/master-key.ts` after a confirm
+  that states the consequence. Never a local "master key off" flag. `docs/decisions.md` §15.2.
 - **Every rpId comes from `getRpId()`** (`webauthn.ts`), which reads the build's
   `__RP_ID__` (set per branch in `vite.config.ts`) and falls back to
   `location.hostname` only when none is set. Nothing else reads the page host. Every new

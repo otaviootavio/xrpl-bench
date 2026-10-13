@@ -1,4 +1,4 @@
-import { type Payment, type SetRegularKey, type SubmittableTransaction, type TrustSet, TrustSetFlags } from 'xrpl'
+import { type AccountSet, AccountSetAsfFlags, type Payment, type SetRegularKey, type SubmittableTransaction, type TrustSet, TrustSetFlags } from 'xrpl'
 import { getXrplClient, holdXrplClient } from './client'
 import type { NetworkId } from './networks'
 import { MAX_FEE_DROPS, feeWithinCap, formatXrp, isCanonicalPositiveDrops } from './money'
@@ -304,6 +304,24 @@ export async function submitSetRegularKey(
     TransactionType: 'SetRegularKey',
     Account: signing.address,
     RegularKey: params.regularKey,
+  }
+  return submitAndClassify(network, signing, tx, node)
+}
+
+/** Turns the Account's master key off (`SetFlag`) or on (`ClearFlag`), `asfDisableMaster`
+ * (AD-29). `Account` is the Account the handle signs for; the choke point is unchanged. */
+export async function submitMasterKeyFlag(
+  network: NetworkId,
+  signing: SigningHandle,
+  params: { enable: boolean },
+  node?: string,
+): Promise<SubmitOutcome> {
+  const tx: AccountSet = {
+    TransactionType: 'AccountSet',
+    Account: signing.address,
+    ...(params.enable
+      ? { ClearFlag: AccountSetAsfFlags.asfDisableMaster }
+      : { SetFlag: AccountSetAsfFlags.asfDisableMaster }),
   }
   return submitAndClassify(network, signing, tx, node)
 }

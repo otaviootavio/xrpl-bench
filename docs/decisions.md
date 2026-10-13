@@ -1512,3 +1512,22 @@ stored: the view is only a claim added by `confirmControl`, after a validated
 nothing, and "check again" runs only that read and claim. The action takes its
 guard from `fetchAccountStateFresh` (staleTime 0, same key), not the 15-second
 cache. Duplicate `(network, account, key)` views are refused. No IndexedDB version bump.
+
+### 15.2 Account Master Key off and on (story 10; AD-29, FR-77)
+
+`lib/master-key.ts` owns the rule: `masterKeyStatus` is `on`, `off` or `unknown` (an
+errored or loading read, or an Account not on the ledger), read from `account_info`
+and never stored. `masterKeyAction` decides what a Wallet is offered and why not, from
+its view: a view whose key is its Account holds the master key and may turn it **off**
+(only with a Regular Key set and the master key on); a view that operates another
+Account signs as the Regular Key and may turn it **on** (`ClearFlag`, only while it is
+off). Any other case is `aria-disabled` with the reason in visible words; nothing is
+hidden. `setMasterKey(walletId, enable, ctx)` refuses without `confirmed: true`, takes
+its guard from `fetchAccountStateFresh`, signs through `signingHandleFor`, submits
+`submitMasterKeyFlag` (`AccountSet`, `SetFlag` or `ClearFlag` `asfDisableMaster`) via
+`submitAndClassify`, then invalidates the Account and re-reads: the state reported is
+the re-read's, and a failed re-read reports "submitted, could not confirm" with the
+status unknown. Outcome wording is `describeFailure` in `lib/control.ts`. The confirm
+dialog in `MasterKeyControl.tsx` states the exact consequence and names the Regular Key.
+Not verified against a real ledger: a Testnet disable and re-enable remains to be done.
+

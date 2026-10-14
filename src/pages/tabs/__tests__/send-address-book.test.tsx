@@ -42,6 +42,11 @@ vi.mock('@/lib/crypto/keystore', () => ({
   signingHandleFor: (...args: unknown[]) => signingHandleFor(...args),
   unavailablePrompts: { pin: async () => null },
 }))
+const fetchAccountState = vi.fn()
+vi.mock('@/lib/xrpl/reads', () => ({
+  fetchAccountState: (...a: unknown[]) => fetchAccountState(...a),
+  fetchAccountLines: vi.fn(async () => []),
+}))
 vi.mock('@/lib/xrpl/writes', () => ({
   submitXrpPayment: (...args: unknown[]) => submitXrpPayment(...args),
   submitIssuedPayment: vi.fn(),
@@ -288,7 +293,12 @@ describe('SendTab — the active Wallet\'s Node', () => {
     await confirm()
     expect(submitXrpPayment.mock.calls[0][3]).toBe('wss://node.example.com')
     expect(useDestinationInfo).toHaveBeenCalledWith('testnet', EXCHANGE, 'XRP', 'wss://node.example.com')
+    // The re-check that authorises the payment asks the same Node: run the
+    // options `fetchQuery` was handed and see which Node its read names.
     expect(fetchQuery).toHaveBeenCalled()
+    fetchAccountState.mockResolvedValue({ exists: true, requireDestTag: false })
+    await fetchQuery.mock.calls[0][0].queryFn()
+    expect(fetchAccountState).toHaveBeenCalledWith('testnet', EXCHANGE, 'wss://node.example.com')
   })
 })
 

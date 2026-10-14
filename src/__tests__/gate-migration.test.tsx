@@ -73,12 +73,22 @@ describe('Gate — legacy vault migration at app start', () => {
 
   it('does not hang when the persisted store cannot be read', async () => {
     // zustand fires onFinishHydration only on success; a failed read must
-    // still let migration and the Wallet list run, on the store's defaults.
+    // still let the Wallet list run, but NOT the migration: it would write the
+    // store's default network into every legacy Wallet for good.
     h.getImpl = async () => {
       throw new Error('storage unavailable')
     }
     await mountApp()
     await waitFor(() => expect(h.list).toHaveBeenCalled())
-    expect(h.migrate).toHaveBeenCalledWith({ network: 'testnet', autoLockMinutes: 5 })
+    expect(h.migrate).not.toHaveBeenCalled()
+  })
+
+  it('logs a failed migration and still lists the Wallets', async () => {
+    const log = vi.spyOn(console, 'error').mockImplementation(() => {})
+    h.migrate.mockRejectedValue(new Error('vault write failed'))
+    await mountApp()
+    await waitFor(() => expect(h.list).toHaveBeenCalled())
+    expect(log).toHaveBeenCalled()
+    log.mockRestore()
   })
 })

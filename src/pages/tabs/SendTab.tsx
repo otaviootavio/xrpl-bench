@@ -10,6 +10,7 @@ import { AmountInput, validateAmountString } from '@/components/wallet/AmountInp
 import { TxLink } from '@/components/wallet/AddressLink'
 import { TxStatusBadge } from '@/components/wallet/TxStatusBadge'
 import { QueryErrorState } from '@/components/wallet/QueryErrorState'
+import { DevnetNotice } from '@/components/wallet/DevnetNotice'
 import { useAppStore, useActiveWallet, useActiveNetwork, useActiveNode, useWalletOpenKey } from '@/store/app-store'
 import type { NetworkId } from '@/lib/xrpl/networks'
 import { ReadingValue } from '@/components/wallet/ReadingValue'
@@ -492,6 +493,7 @@ export function SendTab() {
           <CardDescription>Send XRP or a token you hold.</CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-4">
+          <DevnetNotice network={network} />
           <div className="grid gap-1.5">
             <Label htmlFor="dest">Destination address</Label>
             <Input

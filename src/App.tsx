@@ -4,7 +4,7 @@ import { TooltipProvider } from '@/components/ui/tooltip'
 import { PinPromptProvider } from '@/components/wallet/PinPromptDialog'
 import { Onboarding } from '@/pages/Onboarding'
 import { Main } from '@/pages/Main'
-import { appStateSettled, useAppStore } from '@/store/app-store'
+import { appStateHydrationFailed, appStateSettled, useAppStore } from '@/store/app-store'
 import { listWallets, migrateLegacyVault } from '@/lib/crypto/keystore'
 import { restoreOpenLocks } from '@/lib/crypto/lock'
 import { setTxInFlightReporter } from '@/lib/xrpl/writes'
@@ -34,11 +34,19 @@ let migration: Promise<void> | null = null
 function migrateOnce(): Promise<void> {
   migration ??= appStateSettled()
     .then(() => {
+      // A failed read leaves the store on its defaults, and the relabel writes
+      // `network` into the vault for good: skip it, so every Wallet stays on its
+      // legacy shape and the next app start tries again.
+      if (appStateHydrationFailed()) return undefined
       const { network, autoLockMinutes } = useAppStore.getState()
       return migrateLegacyVault({ network, autoLockMinutes })
     })
     .then(() => undefined)
-    .catch(() => undefined)
+    .catch((err: unknown) => {
+      // Not cached: a later call retries.
+      console.error('Legacy vault migration failed; Wallets stay on their legacy shape.', err)
+      migration = null
+    })
   return migration
 }
 

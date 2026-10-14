@@ -64,6 +64,7 @@ vi.mock('@/components/wallet/AddressLink', () => ({
  * `SendTab` is not remounted by either switch in the app, and is not here. */
 let network = 'testnet'
 let walletAddress = 'r4NagxniGTmPRr8yBRXRD6NNpZP7FfP4KR'
+let activeNode: string | undefined
 
 vi.mock('@/store/app-store', () => ({
   useAppStore: (selector: (s: Record<string, unknown>) => unknown) =>
@@ -72,7 +73,7 @@ vi.mock('@/store/app-store', () => ({
     selector({ network, vaultKey: {}, addressBook: [], addAddressBookEntry: vi.fn() }),
   useWalletOpenKey: () => ({}),
   useActiveNetwork: () => network,
-  useActiveNode: () => undefined,
+  useActiveNode: () => activeNode,
   useActiveWallet: () => ({ id: 'w1', address: walletAddress, label: 'Test' }),
 }))
 
@@ -195,6 +196,7 @@ function settleClock() {
 beforeEach(() => {
   network = 'testnet'
   walletAddress = WALLET_ADDRESS
+  activeNode = undefined
   vi.useFakeTimers()
   vi.setSystemTime(NOW)
   useDestinationInfo.mockReturnValue(query())
@@ -1340,6 +1342,18 @@ describe('a failed fee read does not block a token send', () => {
       expect.objectContaining({ feeDrops: '10' }),
       undefined,
     )
+  })
+
+  it('submits a token send through the active Wallet\'s Node', async () => {
+    // The XRP branch is covered in send-address-book; a token branch that
+    // dropped `node` would sign through the built-in Nodes while XRP did not.
+    activeNode = 'wss://node.example.com'
+    renderTokenForm()
+    fireEvent.click(reviewButton())
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Confirm and send' }))
+    })
+    expect(submitIssuedPayment.mock.calls[0][3]).toBe('wss://node.example.com')
   })
 
   it('refuses on the form when the fee read is above the cap, naming the cap', () => {

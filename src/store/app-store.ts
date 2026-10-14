@@ -189,6 +189,7 @@ export function mergePersistedAppState<S extends PersistedAppState>(persisted: u
 }
 
 let hydrationSettled = false
+let hydrationFailed = false
 const hydrationWaiters: Array<() => void> = []
 function settleHydration() {
   hydrationSettled = true
@@ -199,6 +200,13 @@ function settleHydration() {
  * zustand's `onFinishHydration` fires only on success, so waiting on it alone
  * hangs forever behind a storage error; on failure the store keeps its
  * defaults and callers proceed with those. */
+/** True when the persisted slice could not be read: the store then holds its
+ * defaults, not what the user last chose, so nothing may be derived from it and
+ * written back (the legacy-vault relabel in particular). */
+export function appStateHydrationFailed(): boolean {
+  return hydrationFailed
+}
+
 export function appStateSettled(): Promise<void> {
   return hydrationSettled ? Promise.resolve() : new Promise((resolve) => void hydrationWaiters.push(resolve))
 }
@@ -265,7 +273,10 @@ export const useAppStore = create<AppState>()(
       // place to clear and nothing app-related is left behind in localStorage.
       storage: createJSONStorage(() => indexedDbStorage),
       merge: mergePersistedAppState,
-      onRehydrateStorage: () => () => settleHydration(),
+      onRehydrateStorage: () => (_state, error) => {
+        if (error) hydrationFailed = true
+        settleHydration()
+      },
       // Only ever persist non-secret UI/selection state. `openLocks` (the Open
       // Keys) is deliberately excluded here.
       partialize: (s): PersistedAppState => ({

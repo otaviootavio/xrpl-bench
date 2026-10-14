@@ -393,6 +393,12 @@ describe('a Node is a field of one Wallet view (story 2)', () => {
     expect(h.state.stores.wallets.get('w1').views.find((v: { walletId: string }) => v.walletId === added.id)).not.toHaveProperty('node')
   })
 
+  it('refuses to set a node on a record the migration has not reached, persisting no view', async () => {
+    await seedLegacy(Wallet.generate())
+    await expect(setWalletNode('w1', 'wss://node.example.com')).rejects.toThrow(/not migrated yet/)
+    expect(h.state.stores.wallets.get('w1').views).toBeUndefined()
+  })
+
   it('canonicalises a node, and throws on one that could carry a secret or is not wss', async () => {
     await seedLegacy(Wallet.generate())
     await migrateLegacyVault(INPUT)

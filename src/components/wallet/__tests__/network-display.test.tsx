@@ -41,6 +41,11 @@ describe('the header names the active Wallet\'s network in words', () => {
     act(() => { useAppStore.setState({ activeWalletId: 'd' }) })
     expect(screen.getByText('Devnet')).toBeTruthy()
     expect(screen.queryByText('Real funds')).toBeNull()
+    // Devnet can be reset: said in words beside the name, and only there.
+    expect(screen.getByText('Not stable')).toBeTruthy()
+
+    act(() => { useAppStore.setState({ activeWalletId: 't' }) })
+    expect(screen.queryByText('Not stable')).toBeNull()
   })
 
   it('renders no network at all when there is no active Wallet', () => {
@@ -159,6 +164,18 @@ describe('Settings Node section', () => {
     await waitFor(() => expect(h.setWalletNode).toHaveBeenCalledWith('t', undefined))
     await waitFor(() => expect(h.retireNode).toHaveBeenCalledWith('testnet', 'wss://old.example.com'))
     expect(h.verifyNode).not.toHaveBeenCalled()
+  })
+
+  it('a refresh that fails after the Node was stored does not say "Not saved"', async () => {
+    h.verifyNode.mockResolvedValue(undefined)
+    h.setWalletNode.mockResolvedValue({})
+    h.listWallets.mockRejectedValue(new Error('idb down'))
+    renderSection(WM('t', 'testnet'))
+    fireEvent.change(screen.getByLabelText(/Custom Node/), { target: { value: 'wss://new.example.com' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Test and save' }))
+    await waitFor(() => expect(h.listWallets).toHaveBeenCalled())
+    expect(h.setWalletNode).toHaveBeenCalledOnce()
+    expect(screen.queryByRole('alert')).toBeNull()
   })
 
   it('a failed save keeps the old Node: nothing stored, nothing retired', async () => {

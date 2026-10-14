@@ -6,9 +6,9 @@ import { cn } from '@/lib/utils'
 /**
  * The active Wallet's network, in words (AD-19). Read-only: the network is a
  * property of the Wallet, set when it is created, not an app-wide switch. On
- * Mainnet the funds are real, and that is said beside the name — never by
- * colour alone. `warning`, not `destructive`: Mainnet is the normal production
- * network, not a dangerous one (docs/decisions.md §6.7). With no active Wallet
+ * Mainnet the funds are real, and on Devnet the ledger can be reset; both are
+ * said beside the name — never by colour alone. `warning`, not `destructive`:
+ * Mainnet is the normal production network, not a dangerous one (docs/decisions.md §6.7). With no active Wallet
  * there is no network to name, and with a locked one it is withheld, so nothing
  * is shown.
  */
@@ -25,6 +25,9 @@ export function NetworkPlate({ className }: { className?: string }) {
         {NETWORKS[network].label}
       </span>
       {network === 'mainnet' && <Badge variant="warning">Real funds</Badge>}
+      {/* Devnet can be reset (FR-61): said in words beside the name, as Mainnet's
+          real funds are. The full notice is on Balances, Send and Settings. */}
+      {network === 'devnet' && <Badge variant="warning">Not stable</Badge>}
     </div>
   )
 }

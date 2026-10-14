@@ -1162,6 +1162,9 @@ export async function setWalletNode(walletId: string, node: string | undefined):
   }
   const record = findSeedRecord(await listStoredWallets(), walletId)
   if (!record) throw new Error('Wallet not found in local vault.')
+  if (!record.views || record.views.length === 0) {
+    throw new Error('This wallet is not migrated yet. Restart the app and try again.')
+  }
   await mutateStoredWallet(record.id, (current) => ({
     ...current,
     views: viewsOf(current).map((v) => {

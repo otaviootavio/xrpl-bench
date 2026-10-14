@@ -305,3 +305,18 @@ Item 8 shipped as a refactor that preserves behaviour (`spec-sendtab-split.md`).
 - source_spec: `_bmad-output/implementation-artifacts/spec-epic-6-retro-11-reset-unregisters-service-worker.md`
   summary: Nothing keeps `navigator.serviceWorker.getRegistrations()`/`unregister()` inside `lib/teardown.ts` `clearShell`. No lint rule or scan does it, and `docs/agents/keys-and-secrets.md` has no explicit **Never** for it.
   evidence: Raised by review pass 2. Today the protection is the negative assertions in the lock, removal and teardown tests, which a new caller elsewhere (a "repair offline" button, a debug path) would not trip. The fix edits agent-context docs, or adds a scan like the AD-16 persistence scan that item 13 is already moving.
+
+## Deferred from: code review of spec-passkey-signing, stories 1–2 (2026-10-13)
+
+- source_spec: `_bmad-output/specs/spec-passkey-signing/SPEC.md`
+  summary: A pooled custom-Node client that xrpl.js reconnects by itself after a drop is reused without `assertServesNetwork` running again (`src/lib/xrpl/client.ts`, `getXrplClient` / `connectCustomNode`).
+  evidence: Unverified, medium if true (a Node repointed mid-session is trusted until the pool entry is replaced). Settle it by checking whether a dropped xrpl.js `Client` reconnects to the same URL and reports `isConnected()` true without passing through `connectCustomNode`; if so, retire the slot on `disconnected`.
+- source_spec: `_bmad-output/specs/spec-passkey-signing/stories/1-per-wallet-locks-in-the-vault-with-migration-of-existing-wallets.md`, `.../2-network-and-node-per-wallet-including-devnet.md`
+  summary: Neither story had its browser pass, including whether `{label} · {Network}` clips in the 160px header picker.
+  evidence: Recorded as not done in both stories' Verification sections. Needs a real browser on the header, the Settings Node section, the Onboarding network choice and a Devnet Wallet.
+- source_spec: `_bmad-output/specs/spec-passkey-signing/stories/4-per-wallet-open-check-auto-lock-and-locked-wallet-view.md`
+  summary: A Wallet's stored `openCheck` is snapshotted at creation or migration and may go stale when a passkey is registered or removed (`storeWallet`, `migrateLegacyVault`).
+  evidence: Unverified. Raised against the stories 1–2 diff; settle it in the stories 3–4 review by checking every path that registers or removes a passkey on a lock.
+- source_spec: `_bmad-output/specs/spec-passkey-signing/stories/3-structural-signing-check-and-one-use-signer.md`
+  summary: `revealSeed` goes through `unlockWalletForSigning`, which throws when an unresolved algorithm derives an address different from the stored one, so the user cannot reveal that Seed.
+  evidence: Unverified; low to medium. Settle it by checking whether that state is reachable with a real Wallet and whether Seed reveal should fall back to the decrypted Seed when only the address check fails.

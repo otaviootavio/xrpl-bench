@@ -9,6 +9,7 @@ const useSpendableBalance = vi.fn()
 /** Named, so a test can see what the faucet discards and for whom. */
 const invalidateQueries = vi.fn()
 const requestFaucetFunds = vi.fn()
+let network: 'mainnet' | 'testnet' | 'devnet' = 'testnet'
 
 vi.mock('@/hooks/useAccountState', () => ({ useAccountState: () => useAccountState() }))
 vi.mock('@/hooks/useTrustLines', () => ({ useTrustLines: () => useTrustLines() }))
@@ -20,8 +21,8 @@ vi.mock('@/lib/xrpl/faucet', () => ({
 }))
 vi.mock('@/components/wallet/AddressDisplay', () => ({ AddressDisplay: () => <div /> }))
 vi.mock('@/store/app-store', () => ({
-  useAppStore: (selector: (s: { network: string }) => unknown) => selector({ network: 'testnet' }),
-  useActiveNetwork: () => 'testnet',
+  useAppStore: (selector: (s: { network: string }) => unknown) => selector({ network }),
+  useActiveNetwork: () => network,
   useActiveNode: () => undefined,
   useActiveWallet: () => ({ id: 'w1', address: 'rBoGUS9uiK9m3Kk6qnGRvWWCwAeN8hF3wR', label: 'Test' }),
 }))
@@ -62,6 +63,7 @@ const spendableOk = () =>
 const reservesOk = () => query({ data: { baseReserveDrops: '1000000', ownerReserveDrops: '200000' } })
 
 beforeEach(() => {
+  network = 'testnet'
   useAccountState.mockReturnValue(accountOk())
   useTrustLines.mockReturnValue(ok())
   useServerReserves.mockReturnValue(reservesOk())
@@ -88,6 +90,29 @@ describe('BalancesTab — the faucet discards the whole account group', () => {
     ]) {
       expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: key })
     }
+  })
+})
+
+/** Faucet gating follows the network's own faucet, not a hardcoded Testnet. */
+describe('BalancesTab — the faucet follows the network', () => {
+  it('offers none on Mainnet and says why', () => {
+    network = 'mainnet'
+    useAccountState.mockReturnValue(query({ data: { exists: false, balanceDrops: '0', ownerCount: 0 } }))
+    render(<BalancesTab />)
+
+    expect(screen.queryByRole('button', { name: /^Fund with/ })).toBeNull()
+    expect(screen.getByText(/there is no faucet on Mainnet/)).toBeTruthy()
+  })
+
+  it('offers the Devnet faucet on Devnet, and asks it for Devnet', async () => {
+    network = 'devnet'
+    requestFaucetFunds.mockResolvedValue({ amountXrp: '100' })
+    render(<BalancesTab />)
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Fund with Devnet XRP' }))
+    })
+
+    expect(requestFaucetFunds).toHaveBeenCalledWith('devnet', WALLET_ADDRESS)
   })
 })
 

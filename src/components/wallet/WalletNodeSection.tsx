@@ -42,13 +42,20 @@ export function WalletNodeSection({ wallet }: { wallet: WalletMeta }) {
     try {
       await verifyNode(wallet.network, url)
       await setWalletNode(wallet.id, url)
-      await refreshAfterChange()
-      setDraft('')
-      toast.success('Node saved for this wallet.')
     } catch (err: unknown) {
       // Nothing was stored: the reason is shown, and the Wallet keeps the Node
       // it had.
       setReason(err instanceof Error ? err.message : 'This Node could not be checked.')
+      setBusy(false)
+      return
+    }
+    // From here the Node IS stored: a failed refresh must not say it was not.
+    setDraft('')
+    try {
+      await refreshAfterChange()
+      toast.success('Node saved for this wallet.')
+    } catch {
+      toast.error('Node saved, but the screen could not refresh. Reload the app to see it.')
     } finally {
       setBusy(false)
     }
@@ -58,11 +65,17 @@ export function WalletNodeSection({ wallet }: { wallet: WalletMeta }) {
     setBusy(true)
     try {
       await setWalletNode(wallet.id, undefined)
-      await refreshAfterChange()
-      setReason(null)
-      toast.success('This wallet now uses the built-in Nodes.')
     } catch (err: unknown) {
       toast.error(err instanceof Error ? err.message : 'Could not change the Node.')
+      setBusy(false)
+      return
+    }
+    setReason(null)
+    try {
+      await refreshAfterChange()
+      toast.success('This wallet now uses the built-in Nodes.')
+    } catch {
+      toast.error('Node changed, but the screen could not refresh. Reload the app to see it.')
     } finally {
       setBusy(false)
     }

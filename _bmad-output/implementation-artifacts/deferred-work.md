@@ -320,3 +320,24 @@ Item 8 shipped as a refactor that preserves behaviour (`spec-sendtab-split.md`).
 - source_spec: `_bmad-output/specs/spec-passkey-signing/stories/3-structural-signing-check-and-one-use-signer.md`
   summary: `revealSeed` goes through `unlockWalletForSigning`, which throws when an unresolved algorithm derives an address different from the stored one, so the user cannot reveal that Seed.
   evidence: Unverified; low to medium. Settle it by checking whether that state is reachable with a real Wallet and whether Seed reveal should fall back to the decrypted Seed when only the address check fails.
+
+## Deferred from: code review of spec-passkey-signing, stories 3–4 (2026-10-13)
+
+- source_spec: `_bmad-output/specs/spec-passkey-signing/SPEC.md`
+  summary: `Gate` (`src/App.tsx`) has no `catch` on `listWallets` or `restoreOpenLocks`: a vault read error leaves `ready` false and the app blank, with no message and no retry.
+  evidence: Verified by reading. The error screen is a product call (what to show, and it must not fall through to Onboarding with Wallets hidden). The pattern is not new in these stories.
+- source_spec: `_bmad-output/specs/spec-passkey-signing/stories/4-per-wallet-open-check-auto-lock-and-locked-wallet-view.md`
+  summary: `closeLock` / `closeAllLocks` fire `endLockSession` without awaiting and swallow its rejection, so a failed clear leaves a persisted session that a reload restores.
+  evidence: `src/store/app-store.ts` `closeLock`. Unverified whether the failure is reachable; settle it by making the clear fail in a test and reloading.
+- source_spec: `_bmad-output/specs/spec-passkey-signing/stories/4-per-wallet-open-check-auto-lock-and-locked-wallet-view.md`
+  summary: Auto-lock can fire while a signing prompt or `submitAndClassify` is in flight; `txInFlight` exists and the lock path ignores it.
+  evidence: Unverified, medium if true (the post-submit invalidation and the outcome target removed state). Needs a decision: defer the lock until the write settles, or show the outcome after it.
+- source_spec: `_bmad-output/specs/spec-passkey-signing/stories/4-per-wallet-open-check-auto-lock-and-locked-wallet-view.md`
+  summary: `withAppPin` writes the App PIN's salt and verifier to the vault meta and the lock record in two separate writes, so a failure between them leaves an App PIN with no lock.
+  evidence: `src/lib/crypto/lock.ts` `withAppPin` / `createLock`. Low to medium. A later `createLock` would then verify against a PIN the user never confirmed.
+- source_spec: `_bmad-output/specs/spec-passkey-signing/stories/3-structural-signing-check-and-one-use-signer.md`
+  summary: `sealSeedUnderSigningCheck`'s passkey branch reads the credential from the vault meta (the legacy passkey), not from the Wallet's own lock record.
+  evidence: No non-test caller yet. Belongs to stories 5 and 8, which build the creation and edit flows that call it.
+- source_spec: `_bmad-output/specs/spec-passkey-signing/stories/4-per-wallet-open-check-auto-lock-and-locked-wallet-view.md`
+  summary: `getLockInfo` for a non-legacy record with no `openCheck` field defaults to `'pin'` even when only a passkey wrapper exists.
+  evidence: Unverified; settle it by checking whether any writer can produce such a record.

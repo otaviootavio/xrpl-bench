@@ -80,6 +80,17 @@ describe('a locked Wallet is its name and nothing else (AD-26)', () => {
     expect(screen.getByRole('option', { name: 'Locked one' })).toBeTruthy()
   })
 
+  it('a lock with no Open Check has no lock button: it would reopen itself at once', () => {
+    useAppStore.setState({
+      wallets: [{ ...WM('t', 'testnet'), lockId: 'X', openCheck: 'none' }] as never,
+      activeWalletId: 't',
+      openLocks: { X: OPEN.legacy },
+    })
+    render(<AppHeader />)
+    expect(screen.getByText('Testnet')).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'Lock wallet' })).toBeNull()
+  })
+
   it('the lock button closes only the active Wallet\'s lock', () => {
     useAppStore.setState({
       wallets: [{ ...WM('m', 'mainnet'), lockId: 'X' }, { ...WM('t', 'testnet'), lockId: 'Y' }] as never,

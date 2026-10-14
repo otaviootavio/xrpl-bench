@@ -123,6 +123,19 @@ beforeEach(() => {
   w.registers = 0
 })
 
+describe('setLockAutoLock on a record the migration has not reached', () => {
+  it('refuses, so the Mainnet floor cannot be skipped by reading it as Testnet', async () => {
+    await setUpVaultAuth('tester', PIN)
+    const key = await crypto.subtle.generateKey({ name: 'AES-GCM', length: 256 }, true, ['encrypt', 'decrypt'])
+    const created = await generateAndStoreWallet('W', key, 'mainnet')
+    const record = h.state.stores.wallets.get(created.meta.id)
+    const { views: _views, ...legacy } = record
+    h.state.stores.wallets.set(created.meta.id, legacy)
+
+    expect(await setLockAutoLock('legacy', 0.5)).toMatchObject({ ok: false, reason: expect.stringMatching(/not migrated yet/) })
+  })
+})
+
 describe('policy at createLock (AD-28, FR-65)', () => {
   it('refuses a Mainnet lock with no Open Check, with a plain reason, and writes nothing', async () => {
     const result = await createLock({ network: 'mainnet', openCheck: 'none', autoLockMinutes: 5 })

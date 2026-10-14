@@ -80,6 +80,14 @@ describe('the locked-Wallet view', () => {
     expect(useAppStore.getState().openLocks).toEqual({})
   })
 
+  it('announces a failed lock read as an alert, and the wait as a status', async () => {
+    h.getInfoFails = true
+    renderUnlock()
+    expect(screen.getByRole('status').textContent).toContain('Checking')
+    expect((await screen.findByRole('alert')).textContent).toContain('could not be read')
+    h.getInfoFails = false
+  })
+
   it('a passkey-only lock shows the passkey button and no PIN field; a cancelled prompt leaves it closed', async () => {
     h.info = { id: 'L1', openCheck: 'passkey', autoLockMinutes: 5, pin: false, passkey: true }
     h.openLock.mockResolvedValue({ status: 'cancelled' })

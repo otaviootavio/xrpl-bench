@@ -281,7 +281,7 @@ export type BuildLockResult = CheckResult<BuiltLock> | { status: 'refused'; reas
 export type CreateLockResult = CheckResult<{ id: string; key: CryptoKey }> | { status: 'refused'; reason: string }
 
 /** Proves a typed PIN is the App PIN: its known ciphertext decrypts under it. */
-async function provesAppPin(bits: ArrayBuffer, meta: Awaited<ReturnType<typeof getVaultMeta>>): Promise<void> {
+export async function provesAppPin(bits: ArrayBuffer, meta: Awaited<ReturnType<typeof getVaultMeta>>): Promise<void> {
   if (meta.wrappedMasterKeyForPin) {
     await aesDecrypt(await deriveAesKeyFromBits(bits, HKDF_INFO), meta.wrappedMasterKeyForPin.ivB64, meta.wrappedMasterKeyForPin.ciphertextB64)
     return

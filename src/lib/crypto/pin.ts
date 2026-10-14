@@ -84,24 +84,55 @@ export type PinAttempt<T> =
  * The one way a PIN is tried. Refuses while a hard lock or a backoff is in
  * force; otherwise derives the PIN's key bits and hands them to `proof`, which
  * must PROVE them by decrypting known ciphertext and throw if it cannot
- * (deriving always succeeds, even for a wrong PIN). A throw counts one failure
+ * (deriving always succeeds, even for a wrong PIN). A throw keeps one failure
  * and a return resets the count — both through the shared transactional counter.
+ *
+ * The attempt is CHARGED before it is tried, in the same transaction that checks
+ * the lock: guesses started together (a double click, a script in the page) each
+ * take a number, so the 8-try limit and the backoff hold however many run at
+ * once. A check followed by a later increment would let all of them through.
  */
 export async function attemptPin<T>(pin: string, proof: (bits: ArrayBuffer) => Promise<T>): Promise<PinAttempt<T>> {
-  const lockout = await getLockoutState()
-  if (lockout.hardLocked || lockout.locked) {
-    return { status: 'locked-out', hard: lockout.hardLocked, lockedUntil: lockout.lockedUntil }
+  const first = await getVaultMeta()
+  if (!first.pinSaltB64) throw new Error('No PIN has been set up for this device.')
+
+  let refusal: { hard: boolean; lockedUntil: number } | null = null
+  const charged = await mutateVaultMeta((meta) => {
+    const hard = meta.failedAttempts >= MAX_ATTEMPTS_BEFORE_HARD_LOCK
+    const lockedUntil = meta.lockedUntil ?? 0
+    if (hard || lockedUntil > Date.now()) {
+      refusal = { hard, lockedUntil }
+      return meta
+    }
+    const failedAttempts = meta.failedAttempts + 1
+    const backoffMs = backoffFor(failedAttempts)
+    return { ...meta, failedAttempts, lockedUntil: backoffMs > 0 ? Date.now() + backoffMs : undefined }
+  })
+  if (refusal) return { status: 'locked-out', ...(refusal as { hard: boolean; lockedUntil: number }) }
+
+  let bits: ArrayBuffer
+  try {
+    // Deriving fails only for a reason that is not the typed PIN: not a guess.
+    bits = await derivePinKeyBits(pin, first.pinSaltB64)
+  } catch (err) {
+    await refundAttempt()
+    throw err
   }
-  const meta = await getVaultMeta()
-  if (!meta.pinSaltB64) throw new Error('No PIN has been set up for this device.')
-  const bits = await derivePinKeyBits(pin, meta.pinSaltB64)
   let value: T
   try {
     value = await proof(bits)
   } catch {
-    await recordFailure()
-    return { status: 'wrong-credential', triesRemaining: await triesRemaining() }
+    return { status: 'wrong-credential', triesRemaining: Math.max(0, MAX_ATTEMPTS_BEFORE_HARD_LOCK - charged.failedAttempts) }
   }
   await resetFailures()
   return { status: 'ok', value }
+}
+
+/** Gives back the one attempt `attemptPin` charged, for a failure that was not a guess. */
+async function refundAttempt(): Promise<void> {
+  await mutateVaultMeta((meta) => {
+    const failedAttempts = Math.max(0, meta.failedAttempts - 1)
+    const backoffMs = backoffFor(failedAttempts)
+    return { ...meta, failedAttempts, lockedUntil: backoffMs > 0 ? Date.now() + backoffMs : undefined }
+  })
 }

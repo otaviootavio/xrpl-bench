@@ -98,4 +98,18 @@ describe('a locked app issues no ledger request', () => {
     await waitFor(() => expect(screen.getByText('locked:Alpha')).toBeTruthy())
     expect(Object.keys(useAppStore.getState().openLocks)).toEqual(['Y'])
   })
+
+  it('keeps a persisted active Wallet that is not the first one', async () => {
+    useAppStore.setState({ activeWalletId: 'w2' })
+    render(<App />)
+    await waitFor(() => expect(screen.getByText('locked:Beta')).toBeTruthy())
+    expect(useAppStore.getState().activeWalletId).toBe('w2')
+  })
+
+  it('falls back to the first Wallet when the persisted active id no longer exists', async () => {
+    useAppStore.setState({ activeWalletId: 'gone' })
+    render(<App />)
+    await waitFor(() => expect(screen.getByText('locked:Alpha')).toBeTruthy())
+    expect(useAppStore.getState().activeWalletId).toBe('w1')
+  })
 })

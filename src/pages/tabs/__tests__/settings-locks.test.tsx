@@ -12,6 +12,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 const h = vi.hoisted(() => ({
   minutes: { X: 5, Y: 5 } as Record<string, number>,
   setLockAutoLock: vi.fn(),
+  revealSeed: vi.fn(),
   toastError: vi.fn(),
   listed: [] as unknown[],
 }))
@@ -29,7 +30,7 @@ vi.mock('@/lib/crypto/keystore', () => ({
   importAndStoreWallet: async () => {},
   listWallets: async () => h.listed,
   removeWallet: async () => {},
-  revealSeed: async () => ({ status: 'cancelled' }),
+  revealSeed: (...a: unknown[]) => h.revealSeed(...a),
   addNetworkView: async () => ({}),
   unavailablePrompts: { pin: async () => null },
   describeCheckFailure: () => 'x',
@@ -89,6 +90,7 @@ beforeEach(() => {
   h.minutes = { X: 5, Y: 5 }
   h.setLockAutoLock.mockReset().mockResolvedValue({ ok: true })
   h.toastError.mockReset()
+  h.revealSeed.mockReset().mockResolvedValue({ status: 'cancelled' })
   h.listed = []
   useAppStore.setState({ wallets: [A, B], activeWalletId: 'a', openLocks: { X: OPEN } } as never)
 })
@@ -120,6 +122,29 @@ describe('Settings with two locks', () => {
     renderSettings()
     fireEvent.click(screen.getByRole('button', { name: 'Lock now' }))
     expect(Object.keys(useAppStore.getState().openLocks)).toEqual(['Y'])
+  })
+})
+
+describe('Settings Reveal', () => {
+  it('uses the key of THAT Wallet\'s lock, not the active Wallet\'s', async () => {
+    const keyX = { id: 'x' } as unknown as CryptoKey
+    const keyY = { id: 'y' } as unknown as CryptoKey
+    useAppStore.setState({ openLocks: { X: { key: keyX, autoLockMinutes: 5 }, Y: { key: keyY, autoLockMinutes: 5 } } } as never)
+    renderSettings()
+    // Beta is the second row; Alpha (active) is the first.
+    fireEvent.click(screen.getAllByRole('button', { name: 'Reveal seed' })[1])
+    fireEvent.click(await screen.findByRole('button', { name: 'Show my seed' }))
+    await waitFor(() => expect(h.revealSeed).toHaveBeenCalled())
+    expect(h.revealSeed.mock.calls[0][0]).toBe('b')
+    expect(h.revealSeed.mock.calls[0][1].openKey).toBe(keyY)
+  })
+})
+
+describe('Settings "Lock now" for a lock with no Open Check', () => {
+  it('is not offered: the lock would reopen itself at once', () => {
+    useAppStore.setState({ wallets: [{ ...A, openCheck: 'none' }, B] } as never)
+    renderSettings()
+    expect(screen.queryByRole('button', { name: 'Lock now' })).toBeNull()
   })
 })
 

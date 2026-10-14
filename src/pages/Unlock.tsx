@@ -139,7 +139,7 @@ export function Unlock({ wallet }: { wallet: WalletMeta }) {
         </CardHeader>
         <CardContent className="flex flex-col gap-3">
           {pinAvailable && hardLocked && (
-            <p className="text-sm text-text-destructive">
+            <p role="alert" className="text-sm text-text-destructive">
               Too many failed PIN attempts: PIN entry is turned off on this device.{' '}
               {passkeyAvailable
                 ? 'Your passkey still opens this wallet. Nothing has been erased.'
@@ -147,22 +147,22 @@ export function Unlock({ wallet }: { wallet: WalletMeta }) {
             </p>
           )}
           {pinAvailable && !hardLocked && backedOff && (
-            <p className="text-sm text-text-destructive">Too many failed attempts. Try again in {Math.ceil(remainingMs / 1000)}s.</p>
+            <p role="alert" className="text-sm text-text-destructive">Too many failed attempts. Try again in {Math.ceil(remainingMs / 1000)}s.</p>
           )}
 
           {/* A failed read is never shown as an empty form: say so and offer a retry. */}
           {!info && infoQuery.isError && (
             <div className="flex flex-col gap-2">
-              <p className="text-sm text-text-destructive">This wallet&apos;s lock could not be read. Nothing was changed.</p>
+              <p role="alert" className="text-sm text-text-destructive">This wallet&apos;s lock could not be read. Nothing was changed.</p>
               <Button variant="outline" onClick={retry}>
                 Retry
               </Button>
             </div>
           )}
-          {!info && !infoQuery.isError && <p className="text-sm text-muted-foreground">Checking this wallet&apos;s lock…</p>}
+          {!info && !infoQuery.isError && <p role="status" className="text-sm text-muted-foreground">Checking this wallet&apos;s lock…</p>}
           {openError && (
             <div className="flex flex-col gap-2">
-              <p className="text-sm text-text-destructive">{openError}</p>
+              <p role="alert" className="text-sm text-text-destructive">{openError}</p>
               <Button variant="outline" onClick={retry}>
                 Retry
               </Button>

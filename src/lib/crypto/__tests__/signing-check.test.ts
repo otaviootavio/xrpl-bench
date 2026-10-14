@@ -115,7 +115,9 @@ import {
   unavailablePrompts,
   type Prompts,
 } from '../keystore'
-import { aesDecrypt } from '../aes'
+import { aesDecrypt, aesEncrypt } from '../aes'
+import { deriveAesKeyFromBits } from '../derive'
+import { derivePinKeyBits } from '../pin'
 
 const PIN = '123456'
 const pinPrompt = (pin: string | null): Prompts & { calls: { triesRemaining: number }[] } => {
@@ -185,6 +187,18 @@ describe('sealing a Seed under a PIN Signing Check', () => {
     expect(rec.address).toBe(address)
     expect(JSON.stringify(rec)).not.toContain(seed)
     expect(rec.signing.hkdfInfo).toContain(walletId)
+  })
+
+  it('proves the App PIN from its verifier when there is no legacy wrapper (a PIN made by a non-legacy lock)', async () => {
+    const meta = h.state.stores.vault.get('vault')
+    const bits = await derivePinKeyBits(PIN, meta.pinSaltB64)
+    const verifier = await aesEncrypt(await deriveAesKeyFromBits(bits, 'xrpl-bench:pin-verifier:v1'), 'xrpl-bench:app-pin')
+    const { wrappedMasterKeyForPin: _legacy, ...rest } = meta
+    await putVaultMeta({ ...rest, pinVerifier: { ...verifier, hkdfInfo: 'xrpl-bench:pin-verifier:v1' } })
+
+    expect((await sealSeedUnderSigningCheck(walletId, 'pin', ctxWith(pinPrompt('000000')))).status).toBe('wrong-credential')
+    expect((await sealSeedUnderSigningCheck(walletId, 'pin', ctxWith(pinPrompt(PIN)))).status).toBe('ok')
+    expect(h.state.stores.wallets.get(walletId).signing.kind).toBe('pin')
   })
 
   it('a failed write leaves the old record untouched', async () => {

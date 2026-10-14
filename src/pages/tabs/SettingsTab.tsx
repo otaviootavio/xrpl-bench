@@ -534,11 +534,17 @@ export function SettingsTab() {
           </div>
           <Separator />
           {/* An action, not a setting — a Switch that never changes state is a
-              broken affordance for keyboard and screen-reader users (#9). */}
-          <Button variant="outline" className="w-fit" onClick={() => activeLockId && tearDownLock(queryClient, activeLockId)}>
-            Lock now
-          </Button>
-          <Separator />
+              broken affordance for keyboard and screen-reader users (#9). A lock
+              with no Open Check opens itself again at once, so closing it does
+              nothing: no button, as the header has none (AD-26). */}
+          {activeWallet?.openCheck !== 'none' && (
+            <>
+              <Button variant="outline" className="w-fit" onClick={() => activeLockId && tearDownLock(queryClient, activeLockId)}>
+                Lock now
+              </Button>
+              <Separator />
+            </>
+          )}
           <Button variant="danger" className="w-fit" onClick={() => setConfirmResetAll(true)}>
             Remove all wallets from this device
           </Button>

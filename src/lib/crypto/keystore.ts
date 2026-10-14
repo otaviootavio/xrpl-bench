@@ -3,7 +3,7 @@ import { canonicalNodeUrl, type NetworkId } from '@/lib/xrpl/networks'
 import type { Signer, SigningHandle } from '@/lib/xrpl/writes'
 import { aesDecrypt, aesEncrypt } from './aes'
 import { deriveAesKeyFromBits, generateOrdinal, HKDF_INFO, isOrdinal, seedSalt, walletFromSeedPrf } from './derive'
-import { buildLock, createLock, deleteLock, discardUnusedAppPin, getLockInfo, hasAppPin, legacyLockRecord, openLock, setAutoLockMinutes, withAppPin, type CheckResult } from './lock'
+import { buildLock, createLock, deleteLock, discardUnusedAppPin, getLockInfo, hasAppPin, legacyLockRecord, openLock, provesAppPin, setAutoLockMinutes, withAppPin, type CheckResult } from './lock'
 import { checkAutoLock, checkEditAllowed, checkLockRequest, checkWalletRequest, requiresWrittenSeed, resolveEdit, type CheckEditRequest, type NewOpenCheck, type PasskeyCapability, type PasskeyChoice, type PolicyVerdict, type SigningKind } from './policy'
 import { b64ToBuf, bufToB64 } from './encoding'
 import { attemptPin, getLockoutState, PBKDF2_ITERATIONS, recordFailure, triesRemaining } from './pin'
@@ -639,11 +639,11 @@ export async function sealSeedUnderSigningCheck(
     const pin = await ctx.prompts.pin({ triesRemaining: await triesRemaining() })
     if (pin === null) return { status: 'cancelled' }
     const meta = await getVaultMeta()
-    const appWrapper = meta.wrappedMasterKeyForPin
-    if (!appWrapper) throw new Error('No PIN has been set up for this device.')
+    if (!meta.wrappedMasterKeyForPin && !meta.pinVerifier) throw new Error('No PIN has been set up for this device.')
     const attempt = await attemptPin(pin, async (bits) => {
-      // Proof the PIN is the App PIN: its wrapper decrypts under it.
-      await aesDecrypt(await deriveAesKeyFromBits(bits, HKDF_INFO), appWrapper.ivB64, appWrapper.ciphertextB64)
+      // Proof the PIN is the App PIN, by the one rule every PIN use shares: its
+      // legacy wrapper or its verifier decrypts under it.
+      await provesAppPin(bits, meta)
       return deriveAesKeyFromBits(bits, hkdfInfo)
     })
     if (attempt.status === 'locked-out') return attempt
@@ -1445,6 +1445,10 @@ export async function editChecks(walletId: string, request: CheckEditRequest, ct
 export async function setLockAutoLock(lockId: string, minutes: number, ctx: { prompts: Prompts } = { prompts: unavailablePrompts }): Promise<PolicyVerdict> {
   const onLock = (await listStoredWallets()).filter((w) => (w.lockId ?? LEGACY_LOCK_ID) === lockId)
   const first = onLock[0]
+  // An unmigrated record would be read as Testnet and skip the Mainnet floor.
+  if (first && (!first.views || first.views.length === 0)) {
+    return { ok: false, reason: 'This wallet is not migrated yet. Restart the app and try again.' }
+  }
   if (!first) {
     // A lock with no Wallet left on it has nothing to protect and no Seed to prove.
     return setAutoLockMinutes(lockId, minutes, [])

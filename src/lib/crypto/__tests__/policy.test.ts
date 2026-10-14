@@ -14,6 +14,7 @@ import {
   PRF_CHECKED_LATER_NOTE,
   requiresWrittenSeed,
   WRITTEN_SEED_REASON,
+  WRITTEN_SEED_DERIVED_REASON,
   type OptionsContext,
   type WalletRequest,
 } from '../policy'
@@ -53,6 +54,11 @@ describe('the written-Seed rule (FR-72)', () => {
     expect(checkWalletRequest(passkeyOnly)).toEqual({ ok: false, reason: WRITTEN_SEED_REASON })
     expect(checkWalletRequest({ ...passkeyOnly, canConfirmWrittenSeed: true })).toEqual({ ok: true })
     expect(checkWalletRequest({ ...passkeyOnly, writtenSeedConfirmed: true })).toEqual({ ok: true })
+  })
+  it('tells a Passkey-Derived wallet the one way out: the App PIN as its Open Check', () => {
+    const derived = { ...request, seedMethod: 'passkey-derived' as const, network: 'mainnet' as const, openCheck: 'passkey' as const, signing: 'passkey' as const, passkey: 'yes' as const, origin: 'wallet.example.org' }
+    expect(checkWalletRequest(derived)).toEqual({ ok: false, reason: WRITTEN_SEED_DERIVED_REASON })
+    expect(WRITTEN_SEED_DERIVED_REASON).toMatch(/Open Check/)
   })
   it('never claims the confirmation is unavailable "in this version"', () => {
     expect(WRITTEN_SEED_REASON).not.toMatch(/yet|version/)

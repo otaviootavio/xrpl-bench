@@ -116,6 +116,10 @@ export const NO_PRF_REASON = 'This device or browser cannot use a passkey to pro
 export const PRF_CHECKED_LATER_NOTE = 'Checked when the passkey is created.'
 export const WRITTEN_SEED_REASON =
   'A Mainnet wallet whose only check is a passkey needs a written, confirmed Seed, so it can be recovered if the passkey is lost. This screen cannot ask for that confirmation: use the App PIN for one of the two checks.'
+/** A Passkey-Derived Seed always signs with its passkey, so the only check left to
+ * change is the Open Check. */
+export const WRITTEN_SEED_DERIVED_REASON =
+  'A Mainnet wallet whose only check is a passkey needs a written, confirmed Seed, so it can be recovered if the passkey is lost. This screen cannot ask for that confirmation: a Passkey-Derived wallet always signs with its passkey, so use the App PIN as its Open Check.'
 
 /** The auto-lock choices the creation flow offers, in minutes. */
 export const AUTO_LOCK_CHOICES = [0.5, 1, 5, 15, 30] as const
@@ -152,7 +156,7 @@ export function checkWalletRequest(req: WalletRequest): PolicyVerdict {
   if (!lock.ok) return lock
   if (usesPasskey(req.openCheck, req.signing) && req.passkey === 'no') return { ok: false, reason: NO_PRF_REASON }
   if (requiresWrittenSeed(req.network, req.openCheck, req.signing) && !req.writtenSeedConfirmed && !req.canConfirmWrittenSeed) {
-    return { ok: false, reason: WRITTEN_SEED_REASON }
+    return { ok: false, reason: req.seedMethod === 'passkey-derived' ? WRITTEN_SEED_DERIVED_REASON : WRITTEN_SEED_REASON }
   }
   return { ok: true }
 }

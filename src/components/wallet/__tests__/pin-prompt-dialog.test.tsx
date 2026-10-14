@@ -72,6 +72,37 @@ describe('PinPromptProvider', () => {
     expect(await answer).toBeNull()
   })
 
+  it('a second request dismisses the first as cancelled and the second still gets the typed PIN', async () => {
+    mount()
+    let first: Promise<string | null> | undefined
+    let second: Promise<string | null> | undefined
+    act(() => {
+      first = prompts.pin({ triesRemaining: 8 })
+    })
+    await screen.findByLabelText('App PIN')
+    act(() => {
+      second = prompts.pin({ triesRemaining: 7 })
+    })
+    expect(await first).toBeNull()
+    expect(await screen.findByText('7 tries remaining.')).toBeTruthy()
+    fireEvent.change(screen.getByLabelText('App PIN'), { target: { value: '654321' } })
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Continue' }))
+    })
+    expect(await second).toBe('654321')
+  })
+
+  it('unmounting the provider mid-prompt resolves it null, so no caller waits for ever', async () => {
+    const view = mount()
+    let answer: Promise<string | null> | undefined
+    act(() => {
+      answer = prompts.pin({ triesRemaining: 8 })
+    })
+    await screen.findByLabelText('App PIN')
+    view.unmount()
+    expect(await answer).toBeNull()
+  })
+
   it('an empty submit asks nothing of the keystore', async () => {
     mount()
     let settled = false

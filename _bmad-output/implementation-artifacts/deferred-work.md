@@ -341,3 +341,21 @@ Item 8 shipped as a refactor that preserves behaviour (`spec-sendtab-split.md`).
 - source_spec: `_bmad-output/specs/spec-passkey-signing/stories/4-per-wallet-open-check-auto-lock-and-locked-wallet-view.md`
   summary: `getLockInfo` for a non-legacy record with no `openCheck` field defaults to `'pin'` even when only a passkey wrapper exists.
   evidence: Unverified; settle it by checking whether any writer can produce such a record.
+
+## Deferred from: code review of spec-passkey-signing, stories 5–6 (2026-10-14)
+
+- source_spec: `_bmad-output/specs/spec-passkey-signing/stories/5-creation-flow-for-stored-seed-wallets-with-check-policy.md`
+  summary: A Wallet created in `CreateWalletFlow` is written to IndexedDB (with its lock and any new App PIN verifier) before the backup step; only the store waits. Closing the tab there leaves a persisted Wallet whose Seed or ordinal was never shown, and a crash between `createLock` and `putStoredWallet` leaves an orphan lock record.
+  evidence: Raised by three layers; already carried as a deferred item in stories 5 and 6. Needs a product call: write only after the backup, or mark a Wallet "backup not confirmed" and prompt on the next start (the latter also covers orphan locks).
+- source_spec: `_bmad-output/specs/spec-passkey-signing/stories/6-passkey-derived-seed-with-passkey-rule-and-kind-statement.md`
+  summary: The Mainnet origin rule for Passkey-Derived Seeds is a denylist (`isTemporaryOrigin`: hosts ending `.b-cdn.net`). `getRpId` falls back to `location.hostname` when `__RP_ID__` is empty, so `localhost` or a stage host passes and the funds are bound to that rpId.
+  evidence: Verified by reading `policy.ts` and `webauthn.ts`. An allowlist of the production rpId is blocked on the production-domain decision (`docs/decisions.md` §8.11).
+- source_spec: `_bmad-output/specs/spec-passkey-signing/stories/6-passkey-derived-seed-with-passkey-rule-and-kind-statement.md`
+  summary: `restorePasskeyWallet` has no screen, and when no App PIN exists it takes one typed PIN with no confirmation; the PIN dialog says "Enter your App PIN" even when a PIN is being created.
+  evidence: Story 6 excludes the restore screen. Fix both with that screen.
+- source_spec: `_bmad-output/specs/spec-passkey-signing/stories/5-creation-flow-for-stored-seed-wallets-with-check-policy.md`
+  summary: The retry in `withAppPin` for two flows creating the first App PIN at once has no test.
+  evidence: Needs a concurrency harness over the IndexedDB mock; the case is two tabs creating together.
+- source_spec: `_bmad-output/specs/spec-passkey-signing/stories/6-passkey-derived-seed-with-passkey-rule-and-kind-statement.md`
+  summary: The fail-closed guard in `openDerivedSeed` (missing `derived`, a stored form of the Seed present, or an unresolved algorithm) has no test.
+  evidence: Needs a hand-built record; the guard is defensive.

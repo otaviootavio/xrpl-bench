@@ -184,3 +184,17 @@ describe('app store — a version-0 Address Book survives the shape change', () 
     expect(useAppStore.getState().addressBook).toEqual([{ address: EXCHANGE }, { address: EXCHANGE, destinationTag: '12345' }])
   })
 })
+
+describe('app store — a Passkey-Derived Wallet keeps its Seed Method across a reload', () => {
+  it('rehydrates seedMethod "passkey-derived" as it was persisted, and reads anything else as stored', async () => {
+    const derived = { id: 'd1', label: 'Derived', address: OTHER, seedMethod: 'passkey-derived' }
+    const odd = { id: 'o1', label: 'Odd', address: EXCHANGE, seedMethod: 'something-else' }
+    h.idb.set(
+      APP_STATE_STORAGE_KEY,
+      JSON.stringify({ state: { network: 'testnet', wallets: [derived, odd], activeWalletId: 'd1', addressBook: [], autoLockMinutes: 5, declinedUpdateVersions: [] }, version: 0 }),
+    )
+    await useAppStore.persist.rehydrate()
+    const bySeed = Object.fromEntries(useAppStore.getState().wallets.map((w) => [w.id, w.seedMethod]))
+    expect(bySeed).toEqual({ d1: 'passkey-derived', o1: 'stored' })
+  })
+})

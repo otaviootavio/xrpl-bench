@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react'
+import { useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
@@ -81,6 +81,17 @@ export function PinPromptProvider({ children }: { children: ReactNode }) {
           setRequest({ triesRemaining: info.triesRemaining })
         }),
     }),
+    [],
+  )
+
+  // The host screen going away mid-prompt must not leave its caller waiting for
+  // ever with its busy state set: an unmounted prompt is a cancelled one.
+  useEffect(
+    () => () => {
+      const resolve = resolver.current
+      resolver.current = null
+      resolve?.(null)
+    },
     [],
   )
 

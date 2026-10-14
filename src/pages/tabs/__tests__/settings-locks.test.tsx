@@ -125,6 +125,41 @@ describe('Settings with two locks', () => {
   })
 })
 
+describe('Settings Remove closes the lock of a Wallet that was its last', () => {
+  async function remove(walletLabelIndex: number) {
+    fireEvent.click(screen.getAllByRole('button', { name: 'Remove' })[walletLabelIndex])
+    fireEvent.click(await screen.findByRole('button', { name: 'Remove wallet' }))
+  }
+
+  it('closes that lock when no Wallet is left on it, and leaves the other lock open', async () => {
+    useAppStore.setState({ openLocks: { X: OPEN, Y: OPEN } } as never)
+    h.listed = [B] // Alpha (lock X) is gone from the vault
+    renderSettings()
+    await remove(0)
+    await waitFor(() => expect(Object.keys(useAppStore.getState().openLocks)).toEqual(['Y']))
+  })
+
+  it('keeps the lock open while another Wallet still uses it', async () => {
+    const A2 = { ...A, id: 'a2', seedId: 'a2', label: 'Alpha two', address: 'rAlpha2' }
+    useAppStore.setState({ wallets: [A, A2], openLocks: { X: OPEN } } as never)
+    h.listed = [A2] // Alpha removed; Alpha two still on lock X
+    renderSettings()
+    await remove(0)
+    await waitFor(() => expect(useAppStore.getState().wallets.map((w) => w.id)).toEqual(['a2']))
+    expect(Object.keys(useAppStore.getState().openLocks)).toEqual(['X'])
+  })
+
+  it('never closes the legacy lock', async () => {
+    const L = { ...A, lockId: 'legacy' }
+    useAppStore.setState({ wallets: [L], openLocks: { legacy: OPEN } } as never)
+    h.listed = []
+    renderSettings()
+    await remove(0)
+    await waitFor(() => expect(useAppStore.getState().wallets).toEqual([]))
+    expect(Object.keys(useAppStore.getState().openLocks)).toEqual(['legacy'])
+  })
+})
+
 describe('Settings Reveal', () => {
   it('uses the key of THAT Wallet\'s lock, not the active Wallet\'s', async () => {
     const keyX = { id: 'x' } as unknown as CryptoKey

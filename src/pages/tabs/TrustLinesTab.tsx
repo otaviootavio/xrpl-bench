@@ -47,6 +47,8 @@ export function TrustLinesTab() {
   async function submit(currencyArg: string, issuerArg: string, limitArg: string) {
     if (!wallet || !vaultKey) return
     setBusy(true)
+    // A new attempt: what the last one reported is not current.
+    toast.resolve('trustline')
     try {
       const signing = await signingHandleFor(wallet.id, { openKey: vaultKey, prompts })
       const result = await submitTrustSet(network, signing, { currency: currencyArg, issuer: issuerArg, limit: limitArg }, node)
@@ -56,15 +58,15 @@ export function TrustLinesTab() {
         setEditing(null)
         setConfirmClose(null)
       } else if (result.status === 'expired') {
-        toast.warning('This transaction expired before validating. It was not applied — you can retry.')
+        toast.warning('This transaction expired before validating. It was not applied — you can retry.', { action: 'trustline' })
       } else if (result.status === 'claimed') {
-        toast.error(`${describeResultCode(result.resultCode)} The network fee was still charged.`)
+        toast.error(`${describeResultCode(result.resultCode)} The network fee was still charged.`, { action: 'trustline' })
       } else {
-        toast.error(describeResultCode(result.resultCode))
+        toast.error(describeResultCode(result.resultCode), { action: 'trustline' })
       }
       await invalidateAccountScoped(queryClient, network, wallet.address)
     } catch (err: any) {
-      toast.error(err?.message ?? 'Failed to update trust line.')
+      toast.error(err?.message ?? 'Failed to update trust line.', { action: 'trustline' })
     } finally {
       setBusy(false)
     }

@@ -21,7 +21,7 @@ const h = vi.hoisted(() => ({
 vi.mock('idb-keyval', () => ({ get: async () => undefined, set: async () => {}, del: async () => {} }))
 vi.mock('@/lib/crypto/auth', () => ({ wipeVault: async () => {} }))
 vi.mock('@/lib/crypto/lock', () => ({ endLockSession: async () => {}, endAllLockSessions: async () => {}, getLockInfo: async () => ({ id: 'lock-1', openCheck: 'pin', autoLockMinutes: 5, pin: true, passkey: false }) }))
-vi.mock('@/lib/notify', () => ({ toast: { error: (m: string) => h.toastError(m), success: () => {}, warning: () => {} } }))
+vi.mock('@/lib/notify', () => ({ toast: { error: (m: string) => h.toastError(m), success: () => {}, warning: () => {}, resolve: () => {} } }))
 vi.mock('@/lib/crypto/keystore', () => ({
   addressFromSeed: () => '',
   importAndStoreWallet: async () => {},

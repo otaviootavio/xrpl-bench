@@ -327,6 +327,8 @@ export function SendTab() {
     setBusy(true)
     setOutcome(null)
     setPreflightReport(null)
+    // A new attempt: what the last one reported (a refusal, an expiry) is not current.
+    toast.resolve('send')
     try {
       const base = await signingHandleFor(wallet.id, { openKey: vaultKey, prompts })
 
@@ -446,12 +448,12 @@ export function SendTab() {
         // name for it, and a truncated address is not one.
         if (!isKnownDestination) addAddressBookEntry(counterparty)
       } else if (result.status === 'expired') {
-        toast.warning('This transaction expired before validating. It was not applied — you can retry.')
+        toast.warning('This transaction expired before validating. It was not applied — you can retry.', { action: 'send' })
       } else if (result.status === 'claimed') {
         // tec*: in a validated ledger, did not go through, fee WAS taken.
-        toast.error(`${describeResultCode(result.resultCode)} The network fee was still charged.`)
+        toast.error(`${describeResultCode(result.resultCode)} The network fee was still charged.`, { action: 'send' })
       } else {
-        toast.error(describeResultCode(result.resultCode))
+        toast.error(describeResultCode(result.resultCode), { action: 'send' })
       }
       await Promise.all([
         invalidateAccountScoped(queryClient, network, wallet.address),
@@ -471,7 +473,7 @@ export function SendTab() {
         setConfirmingFor(null)
         return
       }
-      toast.error(err?.message ?? 'Send failed.')
+      toast.error(err?.message ?? 'Send failed.', { action: 'send' })
       // The intent to confirm goes too, deliberately rather than as a side
       // effect of whether the probe happened to bump `dataUpdatedAt`. A throw
       // here means the unlock or the submit call itself failed; the toast says

@@ -70,6 +70,8 @@ export function Unlock({ wallet }: { wallet: WalletMeta }) {
 
   async function handleOpen(method: OpenMethod) {
     setBusy(true)
+    // A new attempt: what the last one said (a wrong PIN, a cancelled prompt) is not current.
+    toast.resolve('unlock')
     try {
       const result = await openWithCheck(lockId, method, { pin: method === 'pin' ? pin : undefined })
       if (result.status === 'ok') {
@@ -83,10 +85,11 @@ export function Unlock({ wallet }: { wallet: WalletMeta }) {
           : result.status === 'unsupported'
             ? 'This device or browser cannot open the wallet that way.'
             : describeCheckFailure(result).replace(' Nothing was signed.', ''),
+        { action: 'unlock' },
       )
       await refreshLockout()
     } catch (err: any) {
-      toast.error(err?.message ?? 'Unlock failed.')
+      toast.error(err?.message ?? 'Unlock failed.', { action: 'unlock' })
       await refreshLockout()
     } finally {
       setBusy(false)

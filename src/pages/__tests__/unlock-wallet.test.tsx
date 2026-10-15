@@ -12,6 +12,7 @@ const h = vi.hoisted(() => ({
   openLock: vi.fn(),
   lockout: { hardLocked: false, lockedUntil: 0 },
   toastError: vi.fn(),
+  toastResolve: vi.fn(),
   getInfoFails: false,
 }))
 vi.mock('idb-keyval', () => ({ get: async () => undefined, set: async () => {}, del: async () => {} }))
@@ -30,7 +31,7 @@ vi.mock('@/lib/crypto/keystore', () => ({
     r.status === 'wrong-credential' ? `Incorrect PIN. ${r.triesRemaining} tries remaining. Nothing was signed.` : 'locked',
 }))
 vi.mock('@/lib/xrpl/client', () => ({ disconnectAllClients: async () => {} }))
-vi.mock('@/lib/notify', () => ({ toast: { error: (m: string) => h.toastError(m), success: vi.fn() } }))
+vi.mock('@/lib/notify', () => ({ toast: { error: (m: string) => h.toastError(m), success: vi.fn(), resolve: (a: string) => h.toastResolve(a) } }))
 vi.mock('@/lib/build-info', () => ({
   BUILD: { version: '0.0.0', commitSha: 'unknown-dev', builtAt: '' },
   shortSha: 'unknown',
@@ -56,6 +57,7 @@ beforeEach(() => {
   h.info = { id: 'L1', openCheck: 'pin', autoLockMinutes: 7, pin: true, passkey: false }
   h.openLock.mockReset()
   h.toastError.mockReset()
+  h.toastResolve.mockReset()
   h.lockout = { hardLocked: false, lockedUntil: 0 }
   useAppStore.setState({ openLocks: {} })
 })
@@ -86,6 +88,21 @@ describe('the locked-Wallet view', () => {
     expect(screen.getByRole('status').textContent).toContain('Checking')
     expect((await screen.findByRole('alert')).textContent).toContain('could not be read')
     h.getInfoFails = false
+  })
+
+  it('a new attempt takes back what the last one said, before it reports its own', async () => {
+    h.openLock.mockResolvedValueOnce({ status: 'wrong-credential', kind: 'pin', triesRemaining: 6 })
+    h.openLock.mockResolvedValueOnce({ status: 'ok', value: { key: KEY, autoLockMinutes: 7 } })
+    renderUnlock()
+    fireEvent.change(await screen.findByLabelText('PIN'), { target: { value: '000000' } })
+    fireEvent.click(screen.getByRole('button', { name: /unlock with pin/i }))
+    await waitFor(() => expect(h.toastError).toHaveBeenCalledTimes(1))
+    expect(h.toastResolve).toHaveBeenCalledWith('unlock')
+    fireEvent.change(screen.getByLabelText('PIN'), { target: { value: '123456' } })
+    fireEvent.click(screen.getByRole('button', { name: /unlock with pin/i }))
+    await waitFor(() => expect(useAppStore.getState().openLocks.L1).toBeTruthy())
+    // The second attempt cleared the first one's notice before it succeeded.
+    expect(h.toastResolve).toHaveBeenCalledTimes(2)
   })
 
   it('a passkey-only lock shows the passkey button and no PIN field; a cancelled prompt leaves it closed', async () => {

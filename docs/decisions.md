@@ -326,6 +326,17 @@ having no auto-dismiss timer scheduled for them at all
 (`src/lib/notify.tsx`), rather than by any provider-level "don't auto-dismiss"
 flag — there is nothing to disable.
 
+**Taken back when no longer true (browser pass, 2026-10-15).** The rule above is
+unchanged: no error or warning expires on a timer. But a persistent notice stayed
+over the next screen and the next Wallet, and sat beside the green "validated"
+of a send that then worked. A notice now carries the Wallet that was active when
+it was raised and, where it reports on a user action, that action. A new attempt
+of the action calls `toast.resolve(action)` (unlock, send, trust line), and
+changing the active Wallet calls `toast.scopeToWallet` (wired in `App.tsx`),
+which takes back notices about another Wallet and keeps those about the app.
+Errors still persist until the thing they said stops being true or the user
+dismisses them.
+
 ### 6.6 Truncated values are reachable without a pointer
 
 **Decision.** `AddressLink` / `TxLink` expose the full address or hash through

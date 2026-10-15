@@ -7,6 +7,7 @@ import { Main } from '@/pages/Main'
 import { appStateHydrationFailed, appStateSettled, useAppStore } from '@/store/app-store'
 import { listWallets, migrateLegacyVault } from '@/lib/crypto/keystore'
 import { restoreOpenLocks } from '@/lib/crypto/lock'
+import { notify, setNoticeWalletReader } from '@/lib/notify'
 import { setTxInFlightReporter } from '@/lib/xrpl/writes'
 
 /**
@@ -20,6 +21,13 @@ import { setTxInFlightReporter } from '@/lib/xrpl/writes'
  * mid-transaction) depends on this line being in place.
  */
 setTxInFlightReporter((inFlight) => useAppStore.getState().setTxInFlight(inFlight))
+
+// A notice belongs to the Wallet that was active when it was raised, and goes when
+// another becomes active: an error about Wallet A must not sit over Wallet B.
+setNoticeWalletReader(() => useAppStore.getState().activeWalletId)
+useAppStore.subscribe((state, previous) => {
+  if (state.activeWalletId !== previous.activeWalletId) notify.scopeToWallet(state.activeWalletId)
+})
 
 const queryClient = new QueryClient({
   defaultOptions: {

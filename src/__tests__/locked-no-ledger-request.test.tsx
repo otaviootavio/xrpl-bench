@@ -45,6 +45,8 @@ vi.mock('@/lib/crypto/keystore', () => ({
 
 import App from '../App'
 import { useAppStore } from '@/store/app-store'
+import { useNoticeStore } from '@/store/notice-store'
+import { toast } from '@/lib/notify'
 
 beforeEach(() => {
   h.restored = []
@@ -111,5 +113,17 @@ describe('a locked app issues no ledger request', () => {
     render(<App />)
     await waitFor(() => expect(screen.getByText('locked:Alpha')).toBeTruthy())
     expect(useAppStore.getState().activeWalletId).toBe('w1')
+  })
+
+  it('an error about the active Wallet goes when another Wallet becomes active', async () => {
+    useNoticeStore.setState({ notices: [] })
+    render(<App />)
+    await waitFor(() => expect(screen.getByText('locked:Alpha')).toBeTruthy())
+    toast.error('Incorrect PIN. 7 tries remaining.', { action: 'unlock' })
+    expect(useNoticeStore.getState().notices).toHaveLength(1)
+
+    useAppStore.getState().setActiveWalletId('w2')
+    await waitFor(() => expect(screen.getByText('locked:Beta')).toBeTruthy())
+    expect(useNoticeStore.getState().notices).toHaveLength(0)
   })
 })

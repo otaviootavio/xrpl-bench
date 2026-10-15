@@ -187,6 +187,20 @@ export async function setRegularKey(controllerId: string, targetId: string, ctx:
         ? { status: 'cancelled', reason: err.message }
         : { status: 'check-failed', reason: err.message }
     }
+    // The transaction may have been sent before the throw: only a read that still
+    // shows the old Regular Key proves it was not.
+    let after: AccountState | null = null
+    try {
+      await invalidateAccountScoped(ctx.queryClient, controller.network, controller.address)
+      after = await fetchAccountStateFresh(ctx.queryClient, controller.network, controller.address, controller.node)
+    } catch {
+      after = null
+    }
+    if (!after) return { status: 'unconfirmed', reason: UNCONFIRMED }
+    if (after.regularKey !== state.regularKey) {
+      const claimed = await confirmControl(controllerId, targetId, ctx)
+      return claimed.status === 'controlled' ? { ...claimed, sent: true } : claimed
+    }
     return { status: 'refused', reason: err instanceof Error ? err.message : 'Could not set the Regular Key.' }
   }
   if (outcome.status !== 'validated') return { status: 'not-validated', outcome, reason: describeFailure(outcome) }

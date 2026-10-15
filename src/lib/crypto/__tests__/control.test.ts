@@ -113,6 +113,8 @@ const ledger = vi.hoisted(() => ({
   outcome: { status: 'validated', hash: 'H', resultCode: 'tesSUCCESS' } as any,
   /** What a validated SetRegularKey does to the ledger. */
   applyOnValidated: true,
+  /** The submit throws after (`sent`) or instead of (`unsent`) reaching the ledger. */
+  throwOn: null as null | 'sent' | 'unsent',
   submits: [] as { address: string; regularKey: string }[],
   reads: 0,
 }))
@@ -136,7 +138,12 @@ vi.mock('@/lib/xrpl/writes', async (importOriginal) => {
       const signer = await signing.open()
       signer.dispose()
       if (ledger.failReadsAfterSubmit) ledger.failReads = true
+      if (ledger.throwOn === 'unsent') throw new Error('socket closed')
       ledger.submits.push({ address: signing.address, regularKey: params.regularKey })
+      if (ledger.throwOn === 'sent') {
+        ledger.state.regularKey = params.regularKey
+        throw new Error('socket closed')
+      }
       if (ledger.outcome.status === 'validated' && ledger.applyOnValidated) ledger.state.regularKey = params.regularKey
       return ledger.outcome
     },
@@ -184,6 +191,7 @@ beforeEach(async () => {
   ledger.failReadsAfterSubmit = false
   ledger.outcome = { status: 'validated', hash: 'H', resultCode: 'tesSUCCESS' }
   ledger.applyOnValidated = true
+  ledger.throwOn = null
   ledger.submits = []
   ledger.reads = 0
   queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
@@ -298,6 +306,28 @@ describe('setRegularKey', () => {
     expect((await confirmControl(controller.id, target.id, { queryClient })).status).toBe('controlled')
     expect(viewsOfTarget()).toHaveLength(2)
     expect(ledger.submits).toHaveLength(1)
+  })
+
+  it('a submit that throws AFTER reaching the ledger is claimed, never reported as "refused"', async () => {
+    ledger.throwOn = 'sent'
+    const result = await setRegularKey(controller.id, target.id, ctx())
+    expect(result.status).toBe('controlled')
+    expect(viewsOfTarget()).toHaveLength(2)
+  })
+
+  it('a submit that throws BEFORE reaching the ledger is refused with the reason, and adds no view', async () => {
+    ledger.throwOn = 'unsent'
+    const result = await setRegularKey(controller.id, target.id, ctx())
+    expect(result).toEqual({ status: 'refused', reason: 'socket closed' })
+    expect(viewsOfTarget()).toHaveLength(1)
+  })
+
+  it('a submit that throws and a re-read that fails is unconfirmed: it may have been sent', async () => {
+    ledger.throwOn = 'sent'
+    ledger.failReadsAfterSubmit = true
+    const result = await setRegularKey(controller.id, target.id, ctx())
+    expect(result.status).toBe('unconfirmed')
+    expect(viewsOfTarget()).toHaveLength(1)
   })
 
   it('adds no view when the re-read does not show the key', async () => {

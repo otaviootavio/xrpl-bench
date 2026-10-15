@@ -67,6 +67,10 @@ export function MasterKeyControl({ wallet }: { wallet: WalletMeta }) {
       const r = await setMasterKey(wallet.id, !turningOff, { queryClient, openKey: openKey ?? undefined, prompts, confirmed: true })
       setResult(r)
       setConfirming(false)
+    } catch (err: unknown) {
+      // Thrown before anything was sent (setMasterKey reports a send it is unsure of itself).
+      setResult({ status: 'refused', reason: err instanceof Error ? err.message : 'Could not change the master key.' })
+      setConfirming(false)
     } finally {
       setBusy(false)
     }

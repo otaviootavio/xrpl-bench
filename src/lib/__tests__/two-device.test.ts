@@ -362,6 +362,31 @@ describe('hardening', () => {
     expect(submitted).toEqual([])
   })
 
+  it('the offline side refuses a payment to its own account, as the online side does', () => {
+    const e = encodeUnsigned({ network: 'testnet', tx: { TransactionType: 'Payment', Account: master.address, Destination: master.address, Amount: '1000000', Sequence: 1, Fee: '12', LastLedgerSequence: 9 } })
+    expect(reviewUnsigned((e as any).text, offlineMeta as any)).toMatchObject({ status: 'refused', reason: expect.stringContaining('this account itself') })
+  })
+
+  it('the offline side will not turn the master key off from a Regular Key wallet, nor on from the master', () => {
+    const off = encodeUnsigned({ network: 'testnet', tx: { TransactionType: 'AccountSet', Account: master.address, SetFlag: 4, Sequence: 1, Fee: '12', LastLedgerSequence: 9 } })
+    const on = encodeUnsigned({ network: 'testnet', tx: { TransactionType: 'AccountSet', Account: master.address, ClearFlag: 4, Sequence: 1, Fee: '12', LastLedgerSequence: 9 } })
+    const regularKeyWallet = { ...offlineMeta, keyAddress: other.address }
+    expect(reviewUnsigned((off as any).text, regularKeyWallet as any)).toMatchObject({ status: 'refused', reason: expect.stringContaining('Only the master key') })
+    expect(reviewUnsigned((off as any).text, offlineMeta as any).status).toBe('ok')
+    expect(reviewUnsigned((on as any).text, offlineMeta as any)).toMatchObject({ status: 'refused', reason: expect.stringContaining('cannot turn itself back on') })
+    expect(reviewUnsigned((on as any).text, regularKeyWallet as any).status).toBe('ok')
+  })
+
+  it('refuses a master-key-off blob signed by the Regular Key, and submits nothing', async () => {
+    const r = await built({ kind: 'master-key', enable: false })
+    const text = await signed(r, other)
+    expect(await submitReturned(onlineMeta as any, r.tx, text, { queryClient: qc() })).toMatchObject({
+      status: 'refused',
+      reason: expect.stringContaining('must be signed by the master key'),
+    })
+    expect(submitted).toEqual([])
+  })
+
   it('refuses inherited type names without throwing', () => {
     for (const TransactionType of ['constructor', '__proto__', 'toString', 7]) {
       const e = encodeUnsigned({ network: 'testnet', tx: { TransactionType, Account: master.address, Sequence: 1, Fee: '12', LastLedgerSequence: 9 } })
@@ -414,6 +439,8 @@ describe('hardening', () => {
   it('round-trips turning the master key on (ClearFlag) signed by the Regular Key', async () => {
     h.accounts = { [master.address]: acct({ regularKey: other.address, disableMasterKey: true }) }
     h.signAs = other
+    // The offline wallet signs as the Regular Key: its own key is not the Account.
+    h.wallets = [onlineMeta, { ...offlineMeta, keyAddress: other.address }]
     const r = await built({ kind: 'master-key', enable: true })
     expect((r.tx as any).ClearFlag).toBe(4)
     const s = await signUnsigned('off', r.text, { prompts: { pin: async () => null } })

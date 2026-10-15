@@ -98,7 +98,14 @@ function ControlWalletBody({
 
   async function finish(r: ControlResult) {
     setResult(r)
-    if (r.status === 'controlled') await onControlled(r.meta)
+    if (r.status !== 'controlled') return
+    try {
+      await onControlled(r.meta)
+    } catch {
+      // The key IS set on the ledger and the view is written: only this screen's list
+      // could not refresh. "Check again" runs the read and the claim, nothing is sent.
+      setResult({ status: 'unconfirmed', reason: 'It is done on the ledger, but this screen could not refresh. Check again.' })
+    }
   }
 
   async function handleSet() {

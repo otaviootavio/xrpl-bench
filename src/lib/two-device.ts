@@ -1,6 +1,6 @@
 import type { QueryClient } from '@tanstack/react-query'
 import { AccountSetAsfFlags, decode, deriveAddress, isValidClassicAddress, verifySignature, type SubmittableTransaction } from 'xrpl'
-import { describeFailure, setRegularKeyBlockedReason } from '@/lib/control'
+import { describeFailure, holdsMasterKey, setRegularKeyBlockedReason } from '@/lib/control'
 import { listWallets, SigningCheckError, signingHandleFor, type Prompts, type WalletMeta } from '@/lib/crypto/keystore'
 import { decodeSigned, decodeUnsigned, encodeSigned, encodeUnsigned } from '@/lib/qr-codec'
 import { fetchAccountStateFresh, fetchDestinationInfoOnce } from '@/lib/xrpl/query-reads'
@@ -198,7 +198,7 @@ const isUint32 = (v: unknown): v is number => typeof v === 'number' && Number.is
  * LastLedgerSequence, a Fee over the cap or non-canonical, a field this wallet
  * does not sign, or any signature already present.
  */
-export function reviewUnsigned(text: string, wallet: Pick<WalletMeta, 'address' | 'network'>): ReviewResult {
+export function reviewUnsigned(text: string, wallet: Pick<WalletMeta, 'address' | 'keyAddress' | 'network'>): ReviewResult {
   const decoded = decodeUnsigned(text)
   if (!decoded.ok) return refuse(decoded.reason)
   const { network, tx } = decoded.value
@@ -234,6 +234,7 @@ export function reviewUnsigned(text: string, wallet: Pick<WalletMeta, 'address' 
     if (typeof tx.Amount !== 'string') return refuse('This payment is not in XRP, which this wallet does not sign offline.')
     if (!isCanonicalPositiveDrops(tx.Amount)) return refuse('This payment’s amount is not a valid XRP amount.')
     if (typeof tx.Destination !== 'string' || !isValidClassicAddress(tx.Destination)) return refuse('This payment’s destination is not a valid address.')
+    if (tx.Destination === wallet.address) return refuse('This payment’s destination is this account itself.')
     if (tx.DestinationTag !== undefined && !isUint32(tx.DestinationTag)) return refuse('This payment’s destination tag is not valid.')
     return {
       status: 'ok',
@@ -254,10 +255,15 @@ export function reviewUnsigned(text: string, wallet: Pick<WalletMeta, 'address' 
   // AccountSet: exactly the master-key flag, set or cleared, and nothing else.
   const set = tx.SetFlag
   const clear = tx.ClearFlag
+  // Only the master key can turn itself off; only a Regular Key can turn it back on
+  // (the master key is then disabled). The ledger would refuse the other way round,
+  // after the round trip, and charge the fee for the first.
   if (set === AccountSetAsfFlags.asfDisableMaster && clear === undefined) {
+    if (!holdsMasterKey(wallet)) return refuse('Only the master key can turn the master key off, and this wallet signs as a Regular Key.')
     return { status: 'ok', review: { ...base, kind: 'master-key-off', title: 'Turn the master key off' } }
   }
   if (clear === AccountSetAsfFlags.asfDisableMaster && set === undefined) {
+    if (holdsMasterKey(wallet)) return refuse('The master key cannot turn itself back on, and this wallet signs with it. Use the wallet that signs as the Regular Key.')
     return { status: 'ok', review: { ...base, kind: 'master-key-on', title: 'Turn the master key on' } }
   }
   return refuse('This account setting is not one this wallet signs offline.')
@@ -369,6 +375,10 @@ export async function verifySigned(
   const isRegular = state.regularKey !== undefined && signer === state.regularKey
   if (!isMaster && !isRegular) {
     return { status: 'refused', reason: 'The key that signed is not this account’s master key or Regular Key. Nothing was submitted.' }
+  }
+  // The ledger takes the flag change from the master key only: a Regular Key's signature would be refused after the send.
+  if (returned.TransactionType === 'AccountSet' && returned.SetFlag === AccountSetAsfFlags.asfDisableMaster && !isMaster) {
+    return { status: 'refused', reason: 'Turning the master key off must be signed by the master key, and this was signed by the Regular Key. Nothing was submitted.' }
   }
   // The build-time guard is judged again on this fresh read: if the Regular Key went away while the code was out, turning the master key off would leave nothing able to sign.
   if (returned.TransactionType === 'AccountSet' && returned.SetFlag === AccountSetAsfFlags.asfDisableMaster && !state.regularKey) {

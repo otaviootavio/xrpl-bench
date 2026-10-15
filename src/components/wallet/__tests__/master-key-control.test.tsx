@@ -106,6 +106,15 @@ describe('MasterKeyControl', () => {
     expect(await screen.findByText(/shows the master key as off/)).toBeTruthy()
   })
 
+  it('shows the reason and closes the confirm when the flow throws before anything is sent', async () => {
+    h.setMasterKey.mockRejectedValue(new Error('The vault could not be read.'))
+    mount(MASTER)
+    await click(action('Turn master key off'))
+    await click(screen.getAllByRole('button', { name: 'Turn master key off' }).at(-1)!)
+    expect(await screen.findByText(/The vault could not be read\./)).toBeTruthy()
+    expect(screen.getAllByRole('button', { name: 'Turn master key off' })).toHaveLength(1)
+  })
+
   it('turns it on from the Regular Key wallet, and says the Regular Key signs', async () => {
     h.account = { isError: false, data: state({ regularKey: 'rKey', disableMasterKey: true }) }
     h.setMasterKey.mockResolvedValue({ status: 'unconfirmed', reason: 'Submitted, could not confirm.' })

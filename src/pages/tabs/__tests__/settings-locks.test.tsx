@@ -160,6 +160,39 @@ describe('Settings Remove closes the lock of a Wallet that was its last', () => 
   })
 })
 
+describe('Settings mounts the control and two-device entries only for an open lock (AD-26)', () => {
+  const holder = { ...A, keyAddress: A.address }
+  const closedHolder = { ...B, keyAddress: B.address }
+  const controlled = { ...A, id: 'c', seedId: 'c', label: 'Phone', address: 'rAcct', keyAddress: 'rKeyC' }
+
+  it('a closed Wallet gets neither the two-device entry nor "Let another wallet sign"', () => {
+    useAppStore.setState({ wallets: [holder, closedHolder], openLocks: { X: OPEN } } as never)
+    renderSettings()
+    expect(screen.getAllByTestId('two-device-sign')).toHaveLength(1)
+    expect(screen.getAllByRole('button', { name: 'Let another wallet sign' })).toHaveLength(1)
+    cleanup()
+    useAppStore.setState({ openLocks: {} } as never)
+    renderSettings()
+    expect(screen.queryByTestId('two-device-sign')).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Let another wallet sign' })).toBeNull()
+  })
+
+  it('a Wallet that operates another Account shows the controlled note and cannot hand out control', () => {
+    useAppStore.setState({ wallets: [holder, controlled], openLocks: { X: OPEN } } as never)
+    renderSettings()
+    expect(screen.getAllByTestId('controlled-note')).toHaveLength(1)
+    // Only the master-key holder offers it; the Regular-Key view does not.
+    expect(screen.getAllByRole('button', { name: 'Let another wallet sign' })).toHaveLength(1)
+  })
+
+  it('a closed controlled Wallet shows no note: its key address stays hidden', () => {
+    useAppStore.setState({ wallets: [holder, { ...controlled, lockId: 'Y' }], openLocks: { X: OPEN } } as never)
+    renderSettings()
+    expect(screen.queryByTestId('controlled-note')).toBeNull()
+    expect(document.body.textContent).not.toContain('rKeyC')
+  })
+})
+
 describe('Settings Reveal', () => {
   it('uses the key of THAT Wallet\'s lock, not the active Wallet\'s', async () => {
     const keyX = { id: 'x' } as unknown as CryptoKey

@@ -374,3 +374,18 @@ Item 8 shipped as a refactor that preserves behaviour (`spec-sendtab-split.md`).
 - source_spec: `_bmad-output/specs/spec-passkey-signing/stories/8-edit-a-wallets-checks-and-passkey.md`
   summary: After a failed `editChecks`, `discardUnusedAppPin` can delete an App PIN another tab has just created and not yet used.
   evidence: Same race as `withAppPin` (stories 5–6 deferred list); settle both together with a concurrency harness.
+
+## Deferred from: code review of spec-passkey-signing, stories 9–11 (2026-10-14)
+
+- source_spec: `_bmad-output/specs/spec-passkey-signing/stories/10-turn-the-account-master-key-off-and-on-from-settings.md`
+  summary: Turning the master key off with a Regular Key that no Wallet on this device can sign as locks the Account for good. `masterKeyAction` and `twoDeviceBlockedReason` only require that a Regular Key is set; the confirm text warns but nothing prevents it.
+  evidence: High impact, already recorded as deferred in story 10. Needs a product call: require a local Wallet that signs as that exact Regular Key (single-device path), and decide what the two-device path may assume, since the signer is not on this device.
+- source_spec: `_bmad-output/specs/spec-passkey-signing/stories/11-two-device-signing-by-qr.md`
+  summary: The offline review of a `SetRegularKey` shows a bare address: no "this key can send the account's funds" sentence, and no mention of an existing Regular Key that will stop working. Only `master-key-off` has a consequence line.
+  evidence: Story 11 does not require it, but `ControlWalletDialog` says it on the single-device path and the offline device is where the owner can cross-check least.
+- source_spec: `_bmad-output/specs/spec-passkey-signing/stories/11-two-device-signing-by-qr.md`
+  summary: The offline device needs `BarcodeDetector` to scan, which Safari and Firefox lack; the paste fallback is a long base64 JSON string.
+  evidence: Decide between a bundled QR decoder (e.g. jsQR) and stating the supported browsers.
+- source_spec: `_bmad-output/specs/spec-passkey-signing/stories/9-controlling-wallet-regular-key-and-extra-passkey-key.md`
+  summary: `storeWallet` checks the `(network, account, key)` duplicate before its write, not inside it, so two concurrent imports can both pass. `addControlledView` already repeats the check inside `mutateStoredWallet`.
+  evidence: Same narrow race as the other deferred concurrency items; settle them together.

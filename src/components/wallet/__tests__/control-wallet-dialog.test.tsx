@@ -119,6 +119,22 @@ describe('Control dialog', () => {
   })
 })
 
+describe('Control dialog: the list cannot refresh after a validated change', () => {
+  it('says it is done on the ledger and offers Check again, with no unhandled rejection', async () => {
+    h.setRegularKey.mockResolvedValue({ status: 'controlled', meta: TARGET, sent: true })
+    h.confirmControl.mockResolvedValue({ status: 'controlled', meta: TARGET, sent: false })
+    const { onControlled } = mount()
+    onControlled.mockRejectedValueOnce(new Error('idb down'))
+    fireEvent.change(screen.getByLabelText('Wallet that will sign'), { target: { value: 't' } })
+    await click(setButton())
+    expect(await screen.findByText(/done on the ledger, but this screen could not refresh/)).toBeTruthy()
+    // Check again claims once more and, this time, the refresh works.
+    await click(await screen.findByRole('button', { name: 'Check again' }))
+    await waitFor(() => expect(onControlled).toHaveBeenCalledTimes(2))
+    expect(h.setRegularKey).toHaveBeenCalledTimes(1)
+  })
+})
+
 describe('ControlledNote', () => {
   const controlled = { ...TARGET, address: 'rAcct' } as never
   const mountNote = (w: unknown) => render(<ControlledNote wallet={w as never} />)

@@ -10,6 +10,7 @@ const useSpendableBalance = vi.fn()
 const invalidateQueries = vi.fn()
 const requestFaucetFunds = vi.fn()
 let network: 'mainnet' | 'testnet' | 'devnet' = 'testnet'
+let keyAddress: string | undefined
 
 vi.mock('@/hooks/useAccountState', () => ({ useAccountState: () => useAccountState() }))
 vi.mock('@/hooks/useTrustLines', () => ({ useTrustLines: () => useTrustLines() }))
@@ -24,7 +25,7 @@ vi.mock('@/store/app-store', () => ({
   useAppStore: (selector: (s: { network: string }) => unknown) => selector({ network }),
   useActiveNetwork: () => network,
   useActiveNode: () => undefined,
-  useActiveWallet: () => ({ id: 'w1', address: 'rBoGUS9uiK9m3Kk6qnGRvWWCwAeN8hF3wR', label: 'Test' }),
+  useActiveWallet: () => ({ id: 'w1', address: 'rBoGUS9uiK9m3Kk6qnGRvWWCwAeN8hF3wR', label: 'Test', ...(keyAddress ? { keyAddress } : {}) }),
 }))
 
 import { BalancesTab } from '../BalancesTab'
@@ -64,6 +65,7 @@ const reservesOk = () => query({ data: { baseReserveDrops: '1000000', ownerReser
 
 beforeEach(() => {
   network = 'testnet'
+  keyAddress = undefined
   useAccountState.mockReturnValue(accountOk())
   useTrustLines.mockReturnValue(ok())
   useServerReserves.mockReturnValue(reservesOk())
@@ -90,6 +92,18 @@ describe('BalancesTab — the faucet discards the whole account group', () => {
     ]) {
       expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: key })
     }
+  })
+})
+
+describe('BalancesTab — a Wallet that operates another Account says so', () => {
+  it('shows the controlled note when its own key is not the Account, and none for its own Account', () => {
+    keyAddress = WALLET_ADDRESS
+    render(<BalancesTab />)
+    expect(screen.queryByTestId('controlled-note')).toBeNull()
+    cleanup()
+    keyAddress = 'rKeyThatIsNotTheAccount'
+    render(<BalancesTab />)
+    expect(screen.getByTestId('controlled-note').textContent).toContain('operates another account')
   })
 })
 

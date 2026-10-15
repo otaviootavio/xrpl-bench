@@ -37,3 +37,9 @@
 ## Not run
 
 Camera scan (no `BarcodeDetector` headless); Mainnet "Real funds" plate and the `b-cdn.net` rule; any Mainnet Wallet; rollback to the previous build; the tampered-return, wrong-network and wrong-Account QR cases; the Devnet explorer links.
+
+## Re-runs after the fixes (2026-10-14/15)
+
+**Build `73941df`** (one focused round, 1280 px light, Testnet, virtual authenticator): defects 1, 4 and 5 **met** (a replaced Regular Key is selectable again and setting it validates; "Done. B now operates this account."; the new remove-view text); the **new guard** (turning the master key off needs a wallet here that signs as the Regular Key) **met** in Settings and in the two-device build, with and without the controlled view on the device. **Defect 2 not met**: the send from the Account with its master key off was still submitted and ended as "expired". Cause found: `SendTab` rebuilt the signing handle as `{ address, open }` and dropped `signsAsMaster`, so the choke point's check never ran; the unit test of the choke point passed the flag directly and could not see it.
+
+**Build `e3d07f4`** (fix: the handle is spread, with a test that it reaches the choke point): defect 2 **met**. A send from A with the master key off was refused by a toast ("The master key of this account is turned off, and this wallet signs with the master key, so it cannot send. Use the wallet that signs as the account's Regular Key. Nothing was signed or submitted, and no fee was spent.") before any prompt, with 0 `submit` frames and the balance unchanged; adding a trust line from A was refused the same way with no `submit`; the controlled view of A sent 1 XRP and it validated; turning the master key back on from that view cleared the flag on the ledger and A then sent 1 XRP and it validated. Not run in either re-run: other widths, dark mode, Mainnet, passkey-gated signing, the full QR round trip.

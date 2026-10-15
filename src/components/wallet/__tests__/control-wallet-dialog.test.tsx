@@ -119,6 +119,16 @@ describe('Control dialog', () => {
   })
 })
 
+describe('Control dialog: the result names the Wallet that now operates the Account', () => {
+  it('says "Phone now operates this account" even though Phone has left the eligible list by then', async () => {
+    h.setRegularKey.mockResolvedValue({ status: 'controlled', meta: TARGET, sent: true })
+    mount()
+    fireEvent.change(screen.getByLabelText('Wallet that will sign'), { target: { value: 't' } })
+    await click(setButton())
+    expect(await screen.findByText(/Done\. Phone now operates this account\./)).toBeTruthy()
+  })
+})
+
 describe('Control dialog: the list cannot refresh after a validated change', () => {
   it('says it is done on the ledger and offers Check again, with no unhandled rejection', async () => {
     h.setRegularKey.mockResolvedValue({ status: 'controlled', meta: TARGET, sent: true })

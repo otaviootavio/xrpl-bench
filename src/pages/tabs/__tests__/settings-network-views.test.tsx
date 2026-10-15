@@ -109,7 +109,7 @@ describe('Settings — use on another network', () => {
     setWallets([MAINNET, TESTNET, OTHER])
     renderSettings()
     fireEvent.click(screen.getAllByRole('button', { name: 'Remove' })[0])
-    expect(screen.getByText(/removes this wallet from this network only/i)).toBeTruthy()
+    expect(screen.getByText(/removes only this one wallet/i)).toBeTruthy()
     cleanup()
 
     setWallets([MAINNET, TESTNET, OTHER])

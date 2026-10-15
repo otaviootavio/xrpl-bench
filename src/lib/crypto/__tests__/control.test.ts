@@ -358,14 +358,33 @@ describe('setRegularKey', () => {
     await setRegularKey(controller.id, target.id, ctx())
     const claimed = (await listWallets()).find((m) => m.seedId === target.seedId && m.address === controller.address)!
     expect((await setRegularKey(claimed.id, controller.id, ctx())).status).toBe('refused')
-    expect(eligibleTargets(controller, await listWallets()).map((m) => m.id)).toEqual([])
+    // The Seed stays offered: the ledger, not an old view, says whether its key is the Regular Key.
+    expect(eligibleTargets(controller, await listWallets()).map((m) => m.id)).toEqual([target.id])
   })
 
-  it('refuses a duplicate (network, account, key) and writes nothing', async () => {
+  it('a key that was replaced and is set again is claimed through its old view, with no second view', async () => {
+    const third = (await generateAndStoreWallet('Third', key, 'testnet')).meta
+    await setRegularKey(controller.id, target.id, ctx())
+    expect(viewsOfTarget()).toHaveLength(2)
+    // Replace it with the third key: the target's view of the Account is now stale.
+    expect((await setRegularKey(controller.id, third.id, ctx({ confirmReplace: async () => true }))).status).toBe('controlled')
+    expect(controlStatus({ ...ledger.state, address: controller.address } as any, target.keyAddress)).toBe('not-controlled')
+    expect(eligibleTargets(controller, await listWallets()).map((m) => m.seedId)).toContain(target.seedId)
+
+    // And back: sent, validated, claimed, still one view of the Account for that Seed.
+    const back = await setRegularKey(controller.id, target.id, ctx({ confirmReplace: async () => true }))
+    expect(back).toMatchObject({ status: 'controlled', sent: true })
+    expect(viewsOfTarget()).toHaveLength(2)
+    expect(ledger.state.regularKey).toBe(target.keyAddress)
+  })
+
+  it('when the key is already the Regular Key it sends nothing and writes no second view', async () => {
     await setRegularKey(controller.id, target.id, ctx())
     const before = structuredClone(h.state.stores.wallets.get(target.seedId))
+    const submits = ledger.submits.length
     const again = await setRegularKey(controller.id, target.id, ctx())
-    expect(again.status).toBe('refused')
+    expect(again).toMatchObject({ status: 'controlled', sent: false })
+    expect(ledger.submits).toHaveLength(submits)
     expect(h.state.stores.wallets.get(target.seedId)).toEqual(before)
   })
 
@@ -399,6 +418,10 @@ describe('a controlled Wallet signs (AD-18)', () => {
     const claimed = (await listWallets()).find((m) => m.seedId === target.seedId && m.address === controller.address)!
     const handle = await signingHandleFor(claimed.id, ctx())
     expect(handle.address).toBe(controller.address)
+    // The controlled view signs as the Regular Key; the controller and the target's own view sign as their master key.
+    expect(handle.signsAsMaster).toBe(false)
+    expect((await signingHandleFor(controller.id, ctx())).signsAsMaster).toBe(true)
+    expect((await signingHandleFor(target.id, ctx())).signsAsMaster).toBe(true)
     const result = await openSigner(claimed.id, ctx())
     if (result.status !== 'ok') throw new Error('expected ok')
     const tx = { TransactionType: 'Payment', Account: controller.address, Destination: target.keyAddress, Amount: '1', Fee: '12', Sequence: 1 } as any

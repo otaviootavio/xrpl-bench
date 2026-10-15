@@ -750,7 +750,7 @@ export function SettingsTab() {
             <DialogTitle>Remove this wallet?</DialogTitle>
             <DialogDescription>
               {confirmRemove && wallets.filter((o) => o.seedId === wallets.find((x) => x.id === confirmRemove)?.seedId).length > 1
-                ? 'This removes this wallet from this network only. The encrypted seed stays, because the same wallet is still set up on another network. '
+                ? 'This removes only this one wallet. The encrypted seed stays, because the same key is still set up as another wallet on this device. '
                 : 'This app will no longer hold the encrypted seed for this wallet. '}
               Make sure you have your own backup — this cannot be
               undone from within the app.

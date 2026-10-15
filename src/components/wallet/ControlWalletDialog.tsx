@@ -230,7 +230,7 @@ function ControlWalletBody({
           )}
           {result?.status === 'controlled' && (
             <p className="text-sm" role="status">
-              {result.sent ? 'Done.' : 'Already set.'} {target?.label} now operates this account.
+              {result.sent ? 'Done.' : 'Already set.'} {result.meta.label} now operates this account.
             </p>
           )}
 

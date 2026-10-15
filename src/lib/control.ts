@@ -49,7 +49,9 @@ export function setRegularKeyBlockedReason(
 }
 
 /** The wallets a Controlling Wallet may hand control to: another Seed, the same
- * network, a different key, and not already operating this Account. */
+ * network, a different key. A Seed that already has a view of this Account stays
+ * on the list: whether its key is the Regular Key NOW is the ledger's to say, and
+ * a view left over from a replaced key must not hide that Seed for good. */
 export function eligibleTargets(controller: WalletMeta, wallets: readonly WalletMeta[]): WalletMeta[] {
   const seen = new Set<string>()
   return wallets.filter(
@@ -57,7 +59,6 @@ export function eligibleTargets(controller: WalletMeta, wallets: readonly Wallet
       w.seedId !== controller.seedId &&
       w.network === controller.network &&
       w.keyAddress !== controller.address &&
-      !wallets.some((o) => o.seedId === w.seedId && o.network === w.network && o.address === controller.address) &&
       // One row per Seed: its own view and any controlled views share one key.
       (seen.has(w.seedId) ? false : (seen.add(w.seedId), true)),
   )
@@ -154,9 +155,6 @@ export async function setRegularKey(controllerId: string, targetId: string, ctx:
   }
   if (target.network !== controller.network) {
     return { status: 'refused', reason: 'Both wallets must be on the same network.' }
-  }
-  if (metas.some((w) => w.seedId === target.seedId && w.network === controller.network && w.address === controller.address)) {
-    return { status: 'refused', reason: 'That wallet already operates this account.' }
   }
 
   let state: AccountState

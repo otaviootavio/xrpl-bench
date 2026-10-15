@@ -484,8 +484,11 @@ export async function openSigner(walletId: string, ctx: SigningContext): Promise
  * result but ok. */
 export async function signingHandleFor(walletId: string, ctx: SigningContext): Promise<SigningHandle> {
   const stored = await seedRecordFor(walletId)
+  const address = accountOf(stored, walletId)
   return {
-    address: accountOf(stored, walletId),
+    address,
+    // The key is the Account's own (master) key unless this is a controlled view.
+    signsAsMaster: address === stored.address,
     async open() {
       const result = await openSigner(walletId, ctx)
       if (result.status !== 'ok') throw new SigningCheckError(result)

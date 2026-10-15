@@ -3,6 +3,7 @@ import { getXrplClient, holdXrplClient } from './client'
 import type { NetworkId } from './networks'
 import { MAX_FEE_DROPS, feeWithinCap, formatXrp, isCanonicalPositiveDrops } from './money'
 import { isRecord } from './narrow'
+import { fetchAccountState } from './reads'
 
 /**
  * Reports whether a transaction is currently in flight.
@@ -71,6 +72,21 @@ export class FeeAboveCapError extends Error {
 }
 
 /**
+ * Refused before anything is signed: this wallet signs with its Account's MASTER
+ * key and the ledger shows that key turned off. Every transaction would be
+ * rejected, and it would only surface as "expired" (the network answers
+ * `tefMASTER_DISABLED` and the wait runs on to the end of the window).
+ */
+export class MasterKeyOffError extends Error {
+  constructor() {
+    super(
+      'The master key of this account is turned off, and this wallet signs with the master key, so it cannot send. Use the wallet that signs as the account’s Regular Key. Nothing was signed or submitted, and no fee was spent.',
+    )
+    this.name = 'MasterKeyOffError'
+  }
+}
+
+/**
  * A one-use signing capability (AD-22). Structural, so `xrpl` never imports
  * `crypto`: `lib/crypto/keystore` builds one that satisfies it. It holds the
  * Seed only in a closure, valid for one `sign`, and `dispose` clears it whether
@@ -90,6 +106,9 @@ export interface Signer {
  */
 export interface SigningHandle {
   address: string
+  /** True when the key that signs IS the Account's master key (its own address),
+   * so the ledger refuses it once the master key is off. Absent: not known. */
+  signsAsMaster?: boolean
   open(): Promise<Signer>
 }
 
@@ -153,6 +172,9 @@ export async function submitAndClassify(
     const prepared = await client.autofill(tx)
     // Thrown inside the `try`, so the in-flight depth is still lowered.
     if (!feeWithinCap(prepared.Fee)) throw new FeeAboveCapError(prepared.Fee)
+    // Before the Signing Check, so no PIN or passkey prompt is wasted on a send the
+    // ledger can only refuse. A failed read does not relax it.
+    if (signing.signsAsMaster) await assertMasterKeyOn(network, signing.address, node)
     // The Signing Check runs HERE, after the fee was shown and capped and
     // before the window is fixed. It may take as long as the user does.
     const signer = await signing.open()
@@ -206,6 +228,16 @@ export async function submitAndClassify(
       if (inFlightDepth === 0) reportTxInFlight(false)
     }
   }
+}
+
+async function assertMasterKeyOn(network: NetworkId, account: string, node?: string): Promise<void> {
+  let state
+  try {
+    state = await fetchAccountState(network, account, node)
+  } catch (err) {
+    throw new Error('The account could not be read to confirm its master key is on, so nothing was signed. Try again.', { cause: err })
+  }
+  if (state.exists && state.disableMasterKey) throw new MasterKeyOffError()
 }
 
 async function isExpiry(err: unknown, network: NetworkId, lastLedgerSequence?: number, node?: string): Promise<boolean> {

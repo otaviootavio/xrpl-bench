@@ -172,6 +172,9 @@ function EditChecksBody({
   const [minutes, setMinutes] = useState(lock.autoLockMinutes)
   const [step, setStep] = useState<'form' | 'confirm-seed'>('form')
   const [busy, setBusy] = useState(false)
+  // The edit is written but the caller could not finish: the form still holds the
+  // pre-edit values, so a second Save would send a stale request. Only Close is left.
+  const [committed, setCommitted] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [appPin, setAppPin] = useState<{ exists: boolean; tries: number } | null>(null)
   const [pinReadFailed, setPinReadFailed] = useState(false)
@@ -286,7 +289,7 @@ function EditChecksBody({
   }
 
   async function save() {
-    if (busy || !resolved.changed || !verdict.ok) return
+    if (busy || committed || !resolved.changed || !verdict.ok) return
     setError(null)
     if (needsPin && pinReadFailed) {
       setError('Could not read the App PIN state. Retry before saving.')
@@ -322,6 +325,7 @@ function EditChecksBody({
           } catch {
             // The edit IS written: say so, never "Nothing was changed".
             setError('Saved, but the wallet could not be reopened. Unlock it again.')
+            setCommitted(true)
             return
           }
           onClose()
@@ -526,7 +530,7 @@ function EditChecksBody({
         <div className="flex flex-wrap gap-2">
           <Button
             type="button"
-            aria-disabled={!resolved.changed || !verdict.ok || (needsPin && pinReadFailed) ? true : undefined}
+            aria-disabled={committed || !resolved.changed || !verdict.ok || (needsPin && pinReadFailed) ? true : undefined}
             aria-describedby={resolved.changed && !verdict.ok ? `${group}-blocked` : undefined}
             disabled={busy}
             onClick={() => void save()}

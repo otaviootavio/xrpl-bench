@@ -560,6 +560,23 @@ describe('revealing on a legacy lock (FR-69)', () => {
     expect(failedAttempts()).toBe(3)
   })
 
+  it("'either': a passkey that gives no PRF here falls back to the PIN, so a backup is never blocked", async () => {
+    const { meta, seed, key } = await legacyWallet(true)
+    w.mode = 'no-prf'
+    const prompt = countingPin(PIN)
+    expect(await revealSeed(meta.id, { openKey: key, prompts: prompt })).toEqual({ status: 'ok', value: seed })
+    expect(prompt.calls).toBe(1)
+  })
+
+  it("'either': a cancelled passkey prompt stops there: no PIN is asked and nothing counts", async () => {
+    const { meta, key } = await legacyWallet(true)
+    w.mode = 'cancel'
+    const prompt = countingPin(PIN)
+    expect((await revealSeed(meta.id, { openKey: key, prompts: prompt })).status).toBe('cancelled')
+    expect(prompt.calls).toBe(0)
+    expect(failedAttempts()).toBe(0)
+  })
+
   it("'either': falls back to the PIN when WebAuthn is not supported", async () => {
     const { meta, seed, key } = await legacyWallet(true)
     w.supported = false

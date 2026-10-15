@@ -521,7 +521,7 @@ export async function revealSeed(walletId: string, ctx: SigningContext): Promise
 /** Passes a lock's Open Check again, for a reveal, and returns its Open Key
  * (`null` for Open Check `none`, which needs nothing). PIN lock: the PIN; passkey
  * lock: the passkey; the legacy `either` lock: the passkey when this device can
- * use one, else the PIN. A wrong PIN counts and a cancelled prompt never does
+ * use one, else the PIN (also when the passkey turns out unusable here). A wrong PIN counts and a cancelled prompt never does
  * (AD-25). Nothing is persisted. */
 async function repassOpenCheck(lockId: string, prompts: Prompts): Promise<CheckResult<CryptoKey | null>> {
   const info = await getLockInfo(lockId)
@@ -529,7 +529,10 @@ async function repassOpenCheck(lockId: string, prompts: Prompts): Promise<CheckR
   const usePasskey = info.openCheck === 'passkey' || (info.openCheck === 'either' && info.passkey && isWebAuthnSupported())
   if (usePasskey) {
     const opened = await openLock(lockId, 'passkey', { persist: false })
-    return opened.status === 'ok' ? { status: 'ok', value: opened.value.key } : opened
+    if (opened.status === 'ok') return { status: 'ok', value: opened.value.key }
+    // The `either` lock has a PIN too: a passkey this device cannot use must not
+    // block a reveal (and so a backup). A cancelled prompt is not that: it stops here.
+    if (!(info.openCheck === 'either' && opened.status === 'unsupported')) return opened
   }
   const lockout = await getLockoutState()
   if (lockout.hardLocked || lockout.locked) {

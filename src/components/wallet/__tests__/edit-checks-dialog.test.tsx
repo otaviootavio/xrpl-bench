@@ -217,6 +217,50 @@ describe('Edit checks dialog', () => {
     expect(onClose).not.toHaveBeenCalled()
   })
 
+  it('after a committed edit the caller could not finish, a second Save sends nothing stale', async () => {
+    const onEdited = vi.fn().mockRejectedValue(new Error('idb down'))
+    await mount(META, onEdited)
+    await click(radio(/Passkey only: create a new one/))
+    await click(save())
+    await screen.findByText('Saved, but the wallet could not be reopened. Unlock it again.')
+    expect(save().getAttribute('aria-disabled')).toBe('true')
+    await click(save())
+    expect(h.editChecks).toHaveBeenCalledOnce()
+  })
+
+  it('Escape does not close the dialog while the edit is being written', async () => {
+    let release: (v: unknown) => void = () => {}
+    h.editChecks.mockImplementation(() => new Promise((resolve) => (release = resolve)))
+    const { onClose } = await mount()
+    await click(radio(/Passkey only: create a new one/))
+    await click(save())
+    await screen.findByRole('button', { name: 'Saving…' })
+
+    await act(async () => void fireEvent.keyDown(screen.getByRole('dialog'), { key: 'Escape' }))
+    expect(onClose).not.toHaveBeenCalled()
+    expect(screen.getByRole('dialog')).toBeTruthy()
+
+    await act(async () => release(done))
+  })
+
+  it('Escape does not close the dialog while it waits on the written Seed', async () => {
+    let finished: (() => void) | undefined
+    h.editChecks.mockImplementation(async (_id: unknown, _req: unknown, ctx: { confirmWrittenSeed: (seed: string) => Promise<boolean> }) => {
+      await ctx.confirmWrittenSeed(SEED)
+      await new Promise<void>((r) => (finished = r))
+      return done
+    })
+    const { onClose } = await mount({ ...META, network: 'mainnet' })
+    await click(radio('Passkey: create a new one'))
+    await click(radio(/Passkey only: create a new one/))
+    await click(save())
+    await screen.findByText('Write down your Seed')
+
+    await act(async () => void fireEvent.keyDown(screen.getByRole('dialog'), { key: 'Escape' }))
+    expect(onClose).not.toHaveBeenCalled()
+    await act(async () => finished?.())
+  })
+
   it('offers a sub-minute auto-lock as unavailable when another Wallet on the shared lock is on Mainnet', async () => {
     h.lock = { id: 'legacy', openCheck: 'either', autoLockMinutes: 5, pin: true, passkey: true }
     const legacy = { ...META, lockId: 'legacy', openCheck: 'either' }

@@ -664,6 +664,42 @@ describe('Written-Seed confirmation (story 7)', () => {
     expect(await screen.findByText('048213')).toBeTruthy()
   })
 
+  it('a write that fails AFTER the confirmation returns to the questions with the reason, not a dead Seed screen', async () => {
+    h.capability = 'yes'
+    h.createStoredWallet.mockImplementation(async (_i: unknown, ctx: { confirmWrittenSeed: (seed: string) => Promise<boolean> }) => {
+      await ctx.confirmWrittenSeed(SEED)
+      return { status: 'cancelled' } // e.g. the passkey prompt for the new Signing Check is dismissed
+    })
+    await mount()
+    await click(radioNamed(/^Mainnet/))
+    await click(createButton())
+    await screen.findByText('Write down your Seed')
+    for (const g of groups()) type(g.el, SEED.slice(g.from - 1, g.to))
+    await click(screen.getByRole('button', { name: 'Check what I wrote' }))
+
+    expect(await screen.findByText('Cancelled. Nothing was created.')).toBeTruthy()
+    expect(screen.queryByText('Write down your Seed')).toBeNull()
+    expect(screen.getByText('Seed Method')).toBeTruthy()
+    expect(h.startLockSession).not.toHaveBeenCalled()
+  })
+
+  it('a thrown write after the confirmation also returns to the questions', async () => {
+    h.capability = 'yes'
+    h.createStoredWallet.mockImplementation(async (_i: unknown, ctx: { confirmWrittenSeed: (seed: string) => Promise<boolean> }) => {
+      await ctx.confirmWrittenSeed(SEED)
+      throw new Error('vault write failed')
+    })
+    await mount()
+    await click(radioNamed(/^Mainnet/))
+    await click(createButton())
+    await screen.findByText('Write down your Seed')
+    for (const g of groups()) type(g.el, SEED.slice(g.from - 1, g.to))
+    await click(screen.getByRole('button', { name: 'Check what I wrote' }))
+
+    expect(await screen.findByText('vault write failed')).toBeTruthy()
+    expect(screen.getByText('Seed Method')).toBeTruthy()
+  })
+
   it('Check and Cancel are inert once the confirmation is settled, while the keystore writes', async () => {
     h.capability = 'yes'
     let release: () => void = () => {}

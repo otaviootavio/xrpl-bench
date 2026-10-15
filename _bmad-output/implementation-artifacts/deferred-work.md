@@ -359,3 +359,18 @@ Item 8 shipped as a refactor that preserves behaviour (`spec-sendtab-split.md`).
 - source_spec: `_bmad-output/specs/spec-passkey-signing/stories/6-passkey-derived-seed-with-passkey-rule-and-kind-statement.md`
   summary: The fail-closed guard in `openDerivedSeed` (missing `derived`, a stored form of the Seed present, or an unresolved algorithm) has no test.
   evidence: Needs a hand-built record; the guard is defensive.
+
+## Deferred from: code review of spec-passkey-signing, stories 7–8 (2026-10-14)
+
+- source_spec: `_bmad-output/specs/spec-passkey-signing/stories/3-structural-signing-check-and-one-use-signer.md`
+  summary: `sealSeedUnderSigningCheck`'s `rev` compare-and-swap and `rev + 1` have no test, and the function has no non-test caller.
+  evidence: A concurrent `editChecks` that changes only `lockId` or `openCheck` would no longer abort the seal if the check were removed. Add a test when the function gains a caller, or delete it.
+- source_spec: `_bmad-output/specs/spec-passkey-signing/stories/7-written-seed-confirmation-and-seed-reveal-behind-the-signing-check.md`
+  summary: `revealCheckSentence` in `SettingsTab.tsx` re-derives the keystore's reveal check-selection rule (they already differ: the keystore also tests `!stored.signing && !stored.sealedSeed`), against the "screens only render" rule.
+  evidence: Expose the reveal check kind from the keystore or `policy.ts` and have the component only word it. Medium refactor, no failure demonstrated.
+- source_spec: `_bmad-output/specs/spec-passkey-signing/stories/8-edit-a-wallets-checks-and-passkey.md`
+  summary: `editChecks` reads the lock twice outside a transaction (`getLockRecord` for the stamp, `getLockInfo` for the policy decision), and `lockStamp` omits the `none` lock's key, the PRF salt and the `rpId`.
+  evidence: Unverified, low to medium. Another tab changing the lock between the reads would pass the compare-and-swap with decisions made on old info. Derive both from one read.
+- source_spec: `_bmad-output/specs/spec-passkey-signing/stories/8-edit-a-wallets-checks-and-passkey.md`
+  summary: After a failed `editChecks`, `discardUnusedAppPin` can delete an App PIN another tab has just created and not yet used.
+  evidence: Same race as `withAppPin` (stories 5–6 deferred list); settle both together with a concurrency harness.

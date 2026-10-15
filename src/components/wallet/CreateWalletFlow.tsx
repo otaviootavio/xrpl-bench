@@ -369,7 +369,13 @@ function CreateWalletForm({ capability, onDone, onInProgressChange, defaultLabel
     } finally {
       clearPinFields()
       setBusy(false)
-      if (!created) onInProgressChange?.(false)
+      if (!created) {
+        onInProgressChange?.(false)
+        // A written-Seed step the person passed leaves the screen on the Seed, with
+        // its buttons inert and no place for the error: back to the questions, where
+        // the reason shows and they can try again.
+        setStep('questions')
+      }
       void refreshAppPin().catch(() => {})
     }
   }

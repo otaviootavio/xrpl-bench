@@ -44,7 +44,7 @@ function revealCheckSentence(wallet: WalletMeta | undefined): string {
   if (wallet.seedMethod === 'passkey-derived') return 'After you confirm, your passkey will be asked.'
   // The legacy lock's real check is read from the lock at reveal time, not from this meta.
   const standard = !wallet.signingCheck || wallet.signingCheck === 'standard'
-  if (wallet.lockId === 'legacy' && standard) {
+  if (wallet.lockId === LEGACY_LOCK_ID && standard) {
     return "After you confirm, your passkey or App PIN will be asked, whichever this wallet's lock uses."
   }
   if (wallet.signingCheck === 'pin') return 'After you confirm, your App PIN will be asked.'

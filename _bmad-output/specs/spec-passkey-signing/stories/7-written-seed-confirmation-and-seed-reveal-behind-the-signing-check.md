@@ -166,3 +166,5 @@ Status: done
 **Verification:** `bun run lint`, `bun run build`, `bun run test` (76 files, 1056 tests) and `bun run check:contrast` pass after the patches. No browser or authenticator run.
 
 **Residual risks:** see the deferred list; a derived Mainnet cancel can leave an unused passkey; restore has no screen.
+
+**Browser pass (2026-10-14, `775ade7`):** run; result and defects in `../browser-pass-2026-10-14.md`.

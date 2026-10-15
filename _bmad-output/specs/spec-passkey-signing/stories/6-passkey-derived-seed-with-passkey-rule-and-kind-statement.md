@@ -240,3 +240,5 @@ Status: done
 **Verification:** `bun run lint`, `bun run build`, `bun run test` (74 files, 1008 tests) and `bun run check:contrast` pass. No browser or authenticator run.
 
 **Residual risks:** as before, the deferred list; the passkey, PRF and BE path has met only fakes.
+
+**Browser pass (2026-10-14, `775ade7`):** run; result and defects in `../browser-pass-2026-10-14.md`.

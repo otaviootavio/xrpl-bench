@@ -139,3 +139,5 @@ Status: done
 **Verification:** `bun run lint`, `bun run build`, `bun run test` (58 files, 771 tests), `bun run check:contrast` all pass. Every I/O matrix row has a passing test.
 
 **Residual risks:** a `devnet` Wallet is unsupported by a story-1 build on rollback; built-in Nodes are not proven at connect; cached ledger-wide data is shared by two same-network Wallets with different Nodes (AD-19).
+
+**Browser pass (2026-10-14, `775ade7`):** run; result and defects in `../browser-pass-2026-10-14.md`.

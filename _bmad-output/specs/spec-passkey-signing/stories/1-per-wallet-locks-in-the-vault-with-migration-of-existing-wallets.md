@@ -131,3 +131,5 @@ Status: done
 **Verification:** `bun run lint`, `bun run build`, `bun run test` (52 files, 704 tests) and `bun run check:contrast` all pass. All 8 I/O matrix rows have a passing test. The browser pass of Settings on a vault created by the previous build was NOT done.
 
 **Residual risks:** real-IndexedDB atomicity and a real rollback to the previous build are untested; "ships only on user acceptance" rests on the service worker's waiting behaviour and has no test.
+
+**Browser pass (2026-10-14, `775ade7`):** run; result and defects in `../browser-pass-2026-10-14.md`.

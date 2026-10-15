@@ -149,3 +149,5 @@ Status: done
 **Verification:** `bun run lint`, `bun run build`, `bun run test` (64 files, 862 tests), `bun run check:contrast` all pass. Every I/O row has a passing test. The manual browser check was not done.
 
 **Residual risks:** in the shipped app every Wallet still shares the legacy lock until story 5 creates locks; a hard lock blocks PIN only, so a legacy lock with a passkey opens by passkey while hard-locked.
+
+**Browser pass (2026-10-14, `775ade7`):** run; result and defects in `../browser-pass-2026-10-14.md`.

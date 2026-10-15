@@ -172,3 +172,5 @@ Driven by Playwright Chromium 1.49 against `bun run dev`, two separate browser c
 - **Expiry, met.** Built and signed, then waited until the validated ledger passed `LastLedgerSequence` (21505674); returning the signed text reported "This transaction expired before it validated…", not failed, and nothing was submitted. The expired screen was opened and checked.
 - **Defect found and fixed.** The first real round trip was refused as "not the one that was sent". The SDK's `autofill` returns `NetworkID: undefined` as a key; `deepEqual` counted it, the JSON payload dropped it. Every real return would have been refused, and no test saw it because the fake `autofill` did not add the key. `deepEqual` now ignores undefined-valued keys and the fake adds `NetworkID: undefined`; 14 round-trip tests fail without the fix.
 - **Not run:** camera scan (headless Chromium has no `BarcodeDetector`), a second theme, 320 and 390 px, and the master-key and Regular Key kinds on the live ledger.
+
+**Browser pass (2026-10-14, `775ade7`):** run; result and defects in `../browser-pass-2026-10-14.md`.

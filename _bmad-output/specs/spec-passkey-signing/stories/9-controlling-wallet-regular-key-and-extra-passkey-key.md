@@ -159,3 +159,5 @@ Status: done
 **Verification:** `bun run lint`, `bun run build`, `bun run test` (81 files, 1157 tests) and `bun run check:contrast` pass after the patches. No browser or ledger run.
 
 **Residual risks:** see the deferred list; the replace confirm can go stale during a long Signing Check; a revoked view still offers signing and the ledger refuses it.
+
+**Browser pass (2026-10-14, `775ade7`):** run; result and defects in `../browser-pass-2026-10-14.md`.

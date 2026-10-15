@@ -193,3 +193,5 @@ Status: done
 ### Follow-up pass (2026-10-11)
 
 Review pass 2: patches applied 3 (medium 3, all tests only); deferred 2 (docs wording, carried end-to-end gap); the rest rejected with reasons in the log. Follow-up review recommended: false — the pass patched no high entry. Verification: `bun run lint`, `bun run build`, `bun run test` (79 files, 1125 tests) and `bun run check:contrast` pass. Residual risks as above; still no browser or authenticator run.
+
+**Browser pass (2026-10-14, `775ade7`):** run; result and defects in `../browser-pass-2026-10-14.md`.

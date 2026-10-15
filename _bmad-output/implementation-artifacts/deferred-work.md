@@ -389,3 +389,9 @@ Item 8 shipped as a refactor that preserves behaviour (`spec-sendtab-split.md`).
 - source_spec: `_bmad-output/specs/spec-passkey-signing/stories/9-controlling-wallet-regular-key-and-extra-passkey-key.md`
   summary: `storeWallet` checks the `(network, account, key)` duplicate before its write, not inside it, so two concurrent imports can both pass. `addControlledView` already repeats the check inside `mutateStoredWallet`.
   evidence: Same narrow race as the other deferred concurrency items; settle them together.
+
+## Deferred from: browser passes of spec-passkey-signing (2026-10-14)
+
+- source_spec: `_bmad-output/specs/spec-passkey-signing/browser-pass-2026-10-14.md`
+  summary: Ten defects found in the browser passes; 1, 2, 4 and 5 were fixed in `74ab34d`, the rest are open: (1) a former Regular Key cannot be set again because its stale view hides it from `eligibleTargets`; (2) a send from an Account with the master key off ends as "expired" with no cause named; (3) toasts never expire; (4) the control result drops the Wallet's name; (5) wrong "another network" copy on removing a controlled view; (6) the picker cannot tell a Wallet from its controlled view; (7) the picker trigger clips the network suffix; (8) 320 px Settings overflow; (9) per-row Settings buttons share one accessible name; (10) controlled/uncontrolled Select warning.
+  evidence: Defects 1 and 4 confirmed by reading `src/lib/control.ts` and `ControlWalletDialog.tsx`; 2 is inferred (the node's result code was not read). Details and screenshots' names are in the record.

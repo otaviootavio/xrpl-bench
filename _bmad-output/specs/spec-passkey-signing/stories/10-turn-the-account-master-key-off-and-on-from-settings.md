@@ -135,3 +135,5 @@ Status: done
 **Verification:** `bun run lint`, `bun run build`, `bun run test` (83 files, 1184 tests), `bun run check:contrast` pass. No browser or ledger run.
 
 **Residual risks:** see deferred: a Regular Key unusable on this device can lock funds out after turn-off.
+
+**Browser pass (2026-10-14, `775ade7`):** run; result and defects in `../browser-pass-2026-10-14.md`.

@@ -1,6 +1,7 @@
 import type { QueryClient } from '@tanstack/react-query'
 import { AccountSetAsfFlags, decode, deriveAddress, isValidClassicAddress, verifySignature, type SubmittableTransaction } from 'xrpl'
 import { describeFailure, holdsMasterKey, setRegularKeyBlockedReason } from '@/lib/control'
+import { NO_REGULAR_KEY_WALLET_REASON, holdsRegularKeyHere } from '@/lib/master-key'
 import { listWallets, SigningCheckError, signingHandleFor, type Prompts, type WalletMeta } from '@/lib/crypto/keystore'
 import { decodeSigned, decodeUnsigned, encodeSigned, encodeUnsigned } from '@/lib/qr-codec'
 import { fetchAccountStateFresh, fetchDestinationInfoOnce } from '@/lib/xrpl/query-reads'
@@ -47,7 +48,9 @@ export function twoDeviceBlockedReason(
   kind: TwoDeviceKind,
   accountState: AccountState | null | undefined,
   readFailed: boolean,
-  masterKeyEnable?: boolean,
+  masterKeyEnable: boolean | undefined,
+  /** The Account's Wallet and every Wallet on this device: turning the master key off needs one that signs as the Regular Key. */
+  here: { wallet: Pick<WalletMeta, 'address' | 'network'>; wallets: readonly Pick<WalletMeta, 'address' | 'keyAddress' | 'network'>[] },
 ): string | null {
   if (kind === 'regular-key') return setRegularKeyBlockedReason(accountState, readFailed)
   if (readFailed) return 'The ledger could not be read, so nothing can be built. Try again.'
@@ -59,6 +62,7 @@ export function twoDeviceBlockedReason(
     }
     if (accountState.disableMasterKey) return 'The master key is already off.'
     if (!accountState.regularKey) return 'This account has no Regular Key yet, so turning the master key off would leave nothing able to sign.'
+    if (!holdsRegularKeyHere(here.wallets, here.wallet, accountState.regularKey)) return NO_REGULAR_KEY_WALLET_REASON
   }
   return null
 }
@@ -75,7 +79,8 @@ const readFail = (what: string) => ({ status: 'refused', reason: `The ledger cou
  * `prepareUnsigned` builds, and the codec carries it.
  */
 export async function buildUnsigned(walletId: string, request: TwoDeviceRequest, ctx: { queryClient: QueryClient }): Promise<BuildResult> {
-  const wallet = (await listWallets()).find((w) => w.id === walletId)
+  const all = await listWallets()
+  const wallet = all.find((w) => w.id === walletId)
   if (!wallet) return { status: 'refused', reason: 'That wallet is no longer on this device.' }
   const { network, node, address } = wallet
 
@@ -85,7 +90,7 @@ export async function buildUnsigned(walletId: string, request: TwoDeviceRequest,
   } catch {
     return readFail('the account')
   }
-  const blocked = twoDeviceBlockedReason(request.kind, state, false, request.kind === 'master-key' ? request.enable : undefined)
+  const blocked = twoDeviceBlockedReason(request.kind, state, false, request.kind === 'master-key' ? request.enable : undefined, { wallet, wallets: all })
   if (blocked) return { status: 'refused', reason: `${blocked} Nothing was built.` }
 
   let tx: SubmittableTransaction

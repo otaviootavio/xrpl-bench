@@ -74,6 +74,8 @@ const acct = (extra: Record<string, unknown> = {}) => ({
 })
 const onlineMeta = { id: 'on', network: 'testnet', address: master.address, keyAddress: master.address, label: 'On' }
 const offlineMeta = { id: 'off', network: 'testnet', address: master.address, keyAddress: master.address, label: 'Off' }
+/** A controlled view of the Account on this device whose key is the Regular Key: the wallet that could turn the master key back on. */
+const regularKeyMeta = { id: 'rk', network: 'testnet', address: master.address, keyAddress: other.address, label: 'RK' }
 
 let validated = 1000
 let submitted: string[] = []
@@ -107,7 +109,7 @@ async function built(req: any = paymentReq) {
 }
 
 beforeEach(() => {
-  h.wallets = [onlineMeta, offlineMeta]
+  h.wallets = [onlineMeta, offlineMeta, regularKeyMeta]
   h.accounts = { [master.address]: acct({ regularKey: other.address }), [DEST]: { ...acct(), address: DEST } }
   h.failAccountRead = false
   h.signAs = master
@@ -172,9 +174,25 @@ describe('buildUnsigned', () => {
   })
 
   it('exposes the same guard to the UI: an errored read blocks with a reason', () => {
-    expect(twoDeviceBlockedReason('payment', null, true)).toMatch(/could not be read/)
-    expect(twoDeviceBlockedReason('payment', undefined, false)).toMatch(/Reading/)
-    expect(twoDeviceBlockedReason('master-key', acct() as any, false, true)).toMatch(/already on/)
+    const here = { wallet: onlineMeta, wallets: [onlineMeta] } as any
+    expect(twoDeviceBlockedReason('payment', null, true, undefined, here)).toMatch(/could not be read/)
+    expect(twoDeviceBlockedReason('payment', undefined, false, undefined, here)).toMatch(/Reading/)
+    expect(twoDeviceBlockedReason('master-key', acct() as any, false, true, here)).toMatch(/already on/)
+  })
+
+  it('will not build a master-key-off for a Regular Key nothing on this device signs as (it could lock the account for good)', async () => {
+    h.accounts = { [master.address]: acct({ regularKey: other.address }) }
+    h.wallets = [onlineMeta, offlineMeta] // no wallet here signs as `other`
+    expect(await buildUnsigned('on', { kind: 'master-key', enable: false }, { queryClient: qc() })).toMatchObject({
+      status: 'refused',
+      reason: expect.stringContaining('No wallet on this device signs as this account’s Regular Key'),
+    })
+    // With a controlled view of the Account whose key IS the Regular Key, it builds.
+    h.wallets = [onlineMeta, offlineMeta, { id: 'rk', network: 'testnet', address: master.address, keyAddress: other.address, label: 'RK' }]
+    expect((await buildUnsigned('on', { kind: 'master-key', enable: false }, { queryClient: qc() })).status).toBe('built')
+    // A controlled view with some OTHER key does not count.
+    h.wallets = [onlineMeta, { id: 'rk', network: 'testnet', address: master.address, keyAddress: DEST, label: 'RK' }]
+    expect((await buildUnsigned('on', { kind: 'master-key', enable: false }, { queryClient: qc() })).status).toBe('refused')
   })
 })
 

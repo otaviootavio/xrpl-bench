@@ -8,7 +8,7 @@ import { usePrompts } from '@/hooks/usePrompts'
 import type { WalletMeta } from '@/lib/crypto/keystore'
 import { masterKeyAction, masterKeyStatus, setMasterKey, type MasterKeyResult, type MasterKeyStatus } from '@/lib/master-key'
 import { NETWORKS } from '@/lib/xrpl/networks'
-import { useWalletOpenKey } from '@/store/app-store'
+import { useAppStore, useWalletOpenKey } from '@/store/app-store'
 
 const WORDS: Record<MasterKeyStatus, { tone: 'live' | 'caution' | 'neutral'; text: string }> = {
   on: { tone: 'live', text: 'Master key: on. The ledger shows it can sign for this account' },
@@ -27,6 +27,7 @@ export function MasterKeyControl({ wallet }: { wallet: WalletMeta }) {
   const prompts = usePrompts()
   const openKey = useWalletOpenKey(wallet.id)
   const account = useAccountState(wallet.network, wallet.address, wallet.node)
+  const wallets = useAppStore((s) => s.wallets)
   const [confirming, setConfirming] = useState(false)
   const [busy, setBusy] = useState(false)
   const [result, setResult] = useState<MasterKeyResult | null>(null)
@@ -36,7 +37,7 @@ export function MasterKeyControl({ wallet }: { wallet: WalletMeta }) {
   // A submission whose re-read failed leaves the status unknown, whatever is cached.
   const unconfirmed = result?.status === 'unconfirmed'
   const status = unconfirmed ? 'unknown' : masterKeyStatus(state)
-  const { action, reason } = masterKeyAction(wallet, unconfirmed ? null : state, readFailed || unconfirmed)
+  const { action, reason } = masterKeyAction(wallet, unconfirmed ? null : state, readFailed || unconfirmed, wallets)
   const turningOff = action === 'off'
   const words = WORDS[status]
   const regularKey = state?.exists ? state.regularKey : undefined

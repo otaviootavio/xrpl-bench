@@ -12,6 +12,7 @@ const h = vi.hoisted(() => ({
   submitReturned: vi.fn(),
 }))
 
+vi.mock('idb-keyval', () => ({ get: async () => undefined, set: async () => {}, del: async () => {} }))
 vi.mock('@/hooks/useAccountState', () => ({ useAccountState: () => h.account }))
 vi.mock('@/hooks/usePrompts', () => ({ usePrompts: () => ({ pin: async () => null }) }))
 vi.mock('@/components/wallet/QrCode', () => ({ QrCode: ({ text }: { text: string }) => <div data-testid="qr">{text}</div> }))
@@ -30,6 +31,7 @@ vi.mock('@/lib/two-device', async (importOriginal) => {
 })
 
 import { TwoDeviceSign } from '../TwoDeviceSign'
+import { useAppStore } from '@/store/app-store'
 
 const WALLET = {
   id: 'w', seedId: 's', lockId: 'l', label: 'Vault', address: 'rG31cLyErnqeVj2eomEjBZtq7PYaupGYzL', keyAddress: 'rG31cLyErnqeVj2eomEjBZtq7PYaupGYzL',
@@ -157,7 +159,19 @@ describe('TwoDeviceSign, online side: requests and results', () => {
     expect(h.buildUnsigned).toHaveBeenCalledWith('w', { kind: 'regular-key', regularKey: 'rKey' }, expect.anything())
   })
 
+  it('will not offer the master key off while no wallet here signs as the Regular Key, and says why', async () => {
+    useAppStore.setState({ wallets: [WALLET] } as never)
+    h.account = { isError: false, data: state({ regularKey: 'rK', disableMasterKey: false }) }
+    await open()
+    await click(btn('Master key'))
+    expect(btn('Build the transaction').getAttribute('aria-disabled')).toBe('true')
+    expect(screen.getAllByText(/No wallet on this device signs as this account’s Regular Key/).length).toBeGreaterThan(0)
+    await click(btn('Build the transaction'))
+    expect(h.buildUnsigned).not.toHaveBeenCalled()
+  })
+
   it('builds the master key off and on requests', async () => {
+    useAppStore.setState({ wallets: [WALLET, { ...(WALLET as object), id: 'rk', keyAddress: 'rK' }] } as never)
     h.buildUnsigned.mockResolvedValue(builtOk)
     h.account = { isError: false, data: state({ regularKey: 'rK', disableMasterKey: false }) }
     await open()

@@ -10,6 +10,7 @@ const h = vi.hoisted(() => ({
   refetch: vi.fn(),
 }))
 
+vi.mock('idb-keyval', () => ({ get: async () => undefined, set: async () => {}, del: async () => {} }))
 vi.mock('@/hooks/useAccountState', () => ({ useAccountState: () => h.account }))
 vi.mock('@/hooks/usePrompts', () => ({ usePrompts: () => ({ pin: async () => null }) }))
 vi.mock('@/store/app-store', async (importOriginal) => {
@@ -22,6 +23,7 @@ vi.mock('@/lib/master-key', async (importOriginal) => {
 })
 
 import { MasterKeyControl } from '../MasterKeyControl'
+import { useAppStore } from '@/store/app-store'
 
 const base = { seedId: 's', lockId: 'l', createdAt: 1, network: 'testnet', algorithm: 'ed25519', seedMethod: 'stored', openCheck: 'pin', signingCheck: 'standard' } as const
 const MASTER = { ...base, id: 'm', label: 'Vault', address: 'rAcct', keyAddress: 'rAcct' } as never
@@ -41,6 +43,8 @@ const mount = (w: unknown) =>
 const action = (name: RegExp | string) => screen.getByRole('button', { name })
 
 beforeEach(() => {
+  // The wallet that signs as the Regular Key `rKey` is on this device, as turning off requires.
+  useAppStore.setState({ wallets: [MASTER, REGULAR, MAINNET_MASTER, { ...(REGULAR as object), id: 'rm', network: 'mainnet' }] } as never)
   h.account = { isError: false, data: state({ regularKey: 'rKey' }), refetch: h.refetch } as never
   h.setMasterKey.mockReset()
   h.refetch.mockReset()
@@ -48,6 +52,13 @@ beforeEach(() => {
 afterEach(cleanup)
 
 describe('MasterKeyControl', () => {
+  it('is aria-disabled with the reason when no wallet here signs as the Regular Key', () => {
+    useAppStore.setState({ wallets: [MASTER] } as never)
+    mount(MASTER)
+    expect(action('Turn master key off').getAttribute('aria-disabled')).toBe('true')
+    expect(screen.getByText(/No wallet on this device signs as this account’s Regular Key/)).toBeTruthy()
+  })
+
   it('says unknown, aria-disabled with the reason as text, on an errored read; a click signs nothing', async () => {
     h.account = { isError: true, data: state({ regularKey: 'rKey' }) }
     mount(MASTER)

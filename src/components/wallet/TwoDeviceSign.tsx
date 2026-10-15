@@ -24,7 +24,7 @@ import {
 } from '@/lib/two-device'
 import { xrpToDropsString } from '@/lib/xrpl/money'
 import { NETWORKS } from '@/lib/xrpl/networks'
-import { useWalletOpenKey } from '@/store/app-store'
+import { useAppStore, useWalletOpenKey } from '@/store/app-store'
 
 type Role = 'online' | 'offline'
 
@@ -154,7 +154,8 @@ function OnlinePanel({ wallet, onBusy }: { wallet: WalletMeta; onBusy: (busy: bo
   const [built, setBuilt] = useState<Extract<BuildResult, { status: 'built' }> | null>(null)
   const [result, setResult] = useState<ReturnedResult | null>(null)
 
-  const blocked = twoDeviceBlockedReason(kind, account.isError ? null : account.data, account.isError, enable)
+  const wallets = useAppStore((s) => s.wallets)
+  const blocked = twoDeviceBlockedReason(kind, account.isError ? null : account.data, account.isError, enable, { wallet, wallets })
   const mainnet = wallet.network === 'mainnet'
 
   function request(): TwoDeviceRequest | string {

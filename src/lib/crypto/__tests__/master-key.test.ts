@@ -150,6 +150,7 @@ import { setUpVaultAuth } from '../auth'
 import {
   addControlledView,
   generateAndStoreWallet,
+  removeWallet,
   sealSeedUnderSigningCheck,
   unavailablePrompts,
   type Prompts,
@@ -157,7 +158,7 @@ import {
 } from '../keystore'
 const pinPrompt = (pin: string | null): Prompts => ({ pin: async () => pin })
 const failedAttempts = () => h.state.stores.vault.get('vault')?.failedAttempts ?? 0
-import { masterKeyAction, masterKeyStatus, setMasterKey } from '../../master-key'
+import { NO_REGULAR_KEY_WALLET_REASON, masterKeyAction, masterKeyStatus, setMasterKey } from '../../master-key'
 
 const PIN = '123456'
 let key: CryptoKey
@@ -198,21 +199,34 @@ describe('masterKeyStatus and masterKeyAction (AD-29)', () => {
   })
 
   it('offers turn-off to the master wallet only with a Regular Key set and the master key on', () => {
-    const m = { address: 'rA', keyAddress: 'rA' }
-    expect(masterKeyAction(m, { ...base, regularKey: 'rK' }, false)).toEqual({ action: 'off', reason: null })
-    expect(masterKeyAction(m, base, false).reason).toMatch(/no Regular Key/)
-    expect(masterKeyAction(m, { ...base, regularKey: 'rK', disableMasterKey: true }, false).reason).toMatch(/already off/)
-    expect(masterKeyAction(m, undefined, true).reason).toMatch(/could not be read/)
-    expect(masterKeyAction(m, { ...base, exists: false }, false).reason).toMatch(/not on the ledger/)
-    expect(masterKeyAction(m, undefined, false).reason).toMatch(/Reading/)
+    const m = { address: 'rA', keyAddress: 'rA', network: 'testnet' } as const
+    const rk = { address: 'rA', keyAddress: 'rK', network: 'testnet' } as const
+    const here = [m, rk]
+    expect(masterKeyAction(m, { ...base, regularKey: 'rK' }, false, here)).toEqual({ action: 'off', reason: null })
+    expect(masterKeyAction(m, base, false, here).reason).toMatch(/no Regular Key/)
+    expect(masterKeyAction(m, { ...base, regularKey: 'rK', disableMasterKey: true }, false, here).reason).toMatch(/already off/)
+    expect(masterKeyAction(m, undefined, true, here).reason).toMatch(/could not be read/)
+    expect(masterKeyAction(m, { ...base, exists: false }, false, here).reason).toMatch(/not on the ledger/)
+    expect(masterKeyAction(m, undefined, false, here).reason).toMatch(/Reading/)
+  })
+
+  it('will not offer turn-off unless a wallet on this device signs as that Regular Key', () => {
+    const m = { address: 'rA', keyAddress: 'rA', network: 'testnet' } as const
+    const state = { ...base, regularKey: 'rK' }
+    expect(masterKeyAction(m, state, false, [m]).reason).toBe(NO_REGULAR_KEY_WALLET_REASON)
+    // A view of another Account, another network, or another key does not count.
+    expect(masterKeyAction(m, state, false, [m, { address: 'rB', keyAddress: 'rK', network: 'testnet' }]).reason).toBe(NO_REGULAR_KEY_WALLET_REASON)
+    expect(masterKeyAction(m, state, false, [m, { address: 'rA', keyAddress: 'rK', network: 'mainnet' }]).reason).toBe(NO_REGULAR_KEY_WALLET_REASON)
+    expect(masterKeyAction(m, state, false, [m, { address: 'rA', keyAddress: 'rOther', network: 'testnet' }]).reason).toBe(NO_REGULAR_KEY_WALLET_REASON)
+    expect(masterKeyAction(m, state, false, [m, { address: 'rA', keyAddress: 'rK', network: 'testnet' }]).reason).toBeNull()
   })
 
   it('offers turn-on only to the Regular Key wallet, and only with the master key off', () => {
-    const r = { address: 'rA', keyAddress: 'rK' }
-    expect(masterKeyAction(r, { ...base, regularKey: 'rK', disableMasterKey: true }, false)).toEqual({ action: 'on', reason: null })
-    expect(masterKeyAction(r, { ...base, regularKey: 'rK' }, false).reason).toMatch(/already on/)
-    expect(masterKeyAction(r, { ...base, regularKey: 'rOther', disableMasterKey: true }, false).reason).toMatch(/not this account’s Regular Key/)
-    expect(masterKeyAction(r, { ...base, disableMasterKey: true }, false).reason).toMatch(/not this account’s Regular Key/)
+    const r = { address: 'rA', keyAddress: 'rK', network: 'testnet' } as const
+    expect(masterKeyAction(r, { ...base, regularKey: 'rK', disableMasterKey: true }, false, [r])).toEqual({ action: 'on', reason: null })
+    expect(masterKeyAction(r, { ...base, regularKey: 'rK' }, false, [r]).reason).toMatch(/already on/)
+    expect(masterKeyAction(r, { ...base, regularKey: 'rOther', disableMasterKey: true }, false, [r]).reason).toMatch(/not this account’s Regular Key/)
+    expect(masterKeyAction(r, { ...base, disableMasterKey: true }, false, [r]).reason).toMatch(/not this account’s Regular Key/)
   })
 })
 
@@ -221,6 +235,20 @@ describe('setMasterKey', () => {
     const r = await setMasterKey(master.id, false, ctx())
     expect(r).toEqual({ status: 'validated', state: 'off' })
     expect(ledger.submits).toEqual([{ address: master.address, enable: false }])
+  })
+
+  it('refuses to turn it off when no wallet on this device signs as the Regular Key, and signs and sends nothing', async () => {
+    await removeWallet(regular.id) // the controlled view is gone; the ledger still shows its key as the Regular Key
+    const r = await setMasterKey(master.id, false, ctx())
+    expect(r).toMatchObject({ status: 'refused', reason: expect.stringContaining('No wallet on this device signs as this account’s Regular Key') })
+    expect(ledger.submits).toEqual([])
+  })
+
+  it('refuses it too when the Regular Key is one this device holds no wallet for', async () => {
+    ledger.state.regularKey = 'rSomeoneElsesKey'
+    const r = await setMasterKey(master.id, false, ctx())
+    expect(r).toMatchObject({ status: 'refused', reason: expect.stringContaining('No wallet on this device signs as') })
+    expect(ledger.submits).toEqual([])
   })
 
   it('turns it on from the Regular Key wallet, signing as the Account', async () => {

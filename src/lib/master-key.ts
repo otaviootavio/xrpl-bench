@@ -25,6 +25,21 @@ export function masterKeyStatus(accountState: AccountState | null | undefined): 
   return accountState.disableMasterKey ? 'off' : 'on'
 }
 
+/** True when a Wallet on this device signs as `regularKey` for this Account: a
+ * controlled view of it (its key is the Regular Key, not the Account's own). Only
+ * such a Wallet can turn the master key back on, so turning it off needs one
+ * (a Regular Key nothing here can sign as would lock the Account for good). */
+export function holdsRegularKeyHere(
+  wallets: readonly Pick<WalletMeta, 'address' | 'keyAddress' | 'network'>[],
+  account: { address: string; network: WalletMeta['network'] },
+  regularKey: string,
+): boolean {
+  return wallets.some((w) => w.network === account.network && w.address === account.address && w.keyAddress === regularKey && !holdsMasterKey(w))
+}
+
+export const NO_REGULAR_KEY_WALLET_REASON =
+  'No wallet on this device signs as this account’s Regular Key, so nothing here could turn the master key back on, and the account could be locked for good. Let another wallet sign first (it becomes the Regular Key), then come back.'
+
 export interface MasterKeyAction {
   /** What this Wallet's role could do: `off` from the master key, `on` from the Regular Key. */
   action: 'off' | 'on'
@@ -34,9 +49,11 @@ export interface MasterKeyAction {
 
 /** The one place that judges the offer. An errored or loading read blocks it. */
 export function masterKeyAction(
-  wallet: Pick<WalletMeta, 'address' | 'keyAddress'>,
+  wallet: Pick<WalletMeta, 'address' | 'keyAddress' | 'network'>,
   accountState: AccountState | null | undefined,
   readFailed: boolean,
+  /** Every Wallet on this device: turning the master key off needs one that signs as the Regular Key. */
+  wallets: readonly Pick<WalletMeta, 'address' | 'keyAddress' | 'network'>[],
 ): MasterKeyAction {
   const action = holdsMasterKey(wallet) ? 'off' : 'on'
   if (readFailed) return { action, reason: 'The ledger could not be read, so the wallet cannot tell whether the master key is on. Try again.' }
@@ -49,6 +66,7 @@ export function masterKeyAction(
     if (!accountState.regularKey) {
       return { action, reason: 'This account has no Regular Key yet. Set one first, or turning the master key off would leave nothing able to sign.' }
     }
+    if (!holdsRegularKeyHere(wallets, wallet, accountState.regularKey)) return { action, reason: NO_REGULAR_KEY_WALLET_REASON }
     return { action, reason: null }
   }
   if (controlStatus(accountState, wallet.keyAddress) !== 'controlled') {
@@ -96,7 +114,8 @@ async function reread(ctx: SetMasterKeyContext, wallet: WalletMeta): Promise<Acc
  * that Wallet's Signing Check. The guard is judged again on a fresh read. */
 export async function setMasterKey(walletId: string, enable: boolean, ctx: SetMasterKeyContext): Promise<MasterKeyResult> {
   if (ctx.confirmed !== true) return { status: 'refused', reason: 'The change was not confirmed. Nothing was signed.' }
-  const wallet = (await listWallets()).find((w) => w.id === walletId)
+  const all = await listWallets()
+  const wallet = all.find((w) => w.id === walletId)
   if (!wallet) return { status: 'refused', reason: 'That wallet is no longer on this device.' }
   // Turn off needs the master key; turn on needs a view that does not hold it.
   if (holdsMasterKey(wallet) === enable) {
@@ -114,7 +133,7 @@ export async function setMasterKey(walletId: string, enable: boolean, ctx: SetMa
   } catch {
     return { status: 'refused', reason: 'The ledger could not be read, so nothing was signed. Try again.' }
   }
-  const { reason } = masterKeyAction(wallet, state, false)
+  const { reason } = masterKeyAction(wallet, state, false, all)
   if (reason) return { status: 'refused', reason: `${reason} Nothing was signed.` }
 
   let outcome: SubmitOutcome

@@ -25,7 +25,7 @@
 
 1. **A former Regular Key cannot be set again** (medium-high). After replacing B with C, B's stale view of the Account stays ("Not controlled"), and `eligibleTargets` / the guard in `setRegularKey` (`src/lib/control.ts`) exclude any Seed that already has a view of the Account, whatever the ledger says. Workaround: remove the stale view in Settings. Confirmed by reading the code.
 2. **Send from an Account whose master key is off ends as "expired before validating"** (medium). No warning on Send; the cause is never named and retry cannot work. The node's result code was not read, so "master key disabled" is inferred. Fixed by a choke-point guard that reads the flag before the Signing Check.
-3. **Toasts never expire and outlive their Wallet** (medium-low): "Cancelled. The wallet stays locked.", "Incorrect PIN…" and "expired" stay for the whole session.
+3. **Toasts never expire and outlive their Wallet** (medium-low; fixed in `2cc5012` with unit tests, not re-run in a browser: a new attempt of unlock/send/trust line takes back its own notices, and switching Wallet takes back another Wallet's): "Cancelled. The wallet stays locked.", "Incorrect PIN…" and "expired" stay for the whole session.
 4. **Control result loses the Wallet's name** (low): "Done.  now operates this account." The label comes from `target`, which has left the eligible list by then (`ControlWalletDialog.tsx:233`). Confirmed by reading the code.
 5. **Wrong copy when removing a controlled view** (low): it says the Seed stays because the Wallet is set up "on another network"; the other view is the same network, a different Account.
 6. **The Wallet picker cannot tell apart** a Wallet and its controlled view, nor two locked Wallets with the same name (low).

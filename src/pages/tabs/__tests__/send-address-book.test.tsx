@@ -74,6 +74,7 @@ const WALLET_ADDRESS = 'r4NagxniGTmPRr8yBRXRD6NNpZP7FfP4KR'
 const signed = vi.fn()
 const fakeHandle = () => ({
   address: WALLET_ADDRESS,
+  signsAsMaster: true,
   open: async () => ({ sign: (tx: unknown) => (signed(tx), { tx_blob: '00', hash: 'AA' }), dispose: () => {} }),
 })
 /** A submit that, like the choke point, opens the Signer before reporting `outcome`. */
@@ -283,6 +284,14 @@ describe('SendTab — the warning is decided on the network too', () => {
 
     expect(submitXrpPayment).toHaveBeenCalledWith('mainnet', expect.anything(), expect.objectContaining({ destinationTag: 3 }), undefined)
     expect(addAddressBookEntry.mock.calls[0][0]).toMatchObject({ network: 'mainnet', address: EXCHANGE, destinationTag: '3' })
+  })
+})
+
+describe('SendTab — the signing handle', () => {
+  it('reaches the choke point with what it says about itself, so a master-key send from an Account whose master key is off is refused there', async () => {
+    review('3')
+    await confirm()
+    expect(submitXrpPayment.mock.calls[0][1]).toMatchObject({ address: WALLET_ADDRESS, signsAsMaster: true })
   })
 })
 

@@ -389,8 +389,10 @@ export function SendTab() {
       // inside `open`, which the choke point calls after autofill; the
       // destination re-check follows it and before anything is signed. A
       // refusal disposes the Signer and aborts with a sentinel.
+      // Spread, not rebuilt: what the handle says about itself (`signsAsMaster`, which
+      // the choke point reads to refuse a send the ledger can only reject) must reach it.
       const signing: SigningHandle = {
-        address: base.address,
+        ...base,
         async open() {
           const signer = await base.open()
           try {

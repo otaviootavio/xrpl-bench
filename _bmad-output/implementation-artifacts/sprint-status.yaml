@@ -29,7 +29,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 # - Retrospective appends its action items to action_items; the status view surfaces open ones
 generated: 09-15-2026 21:01
-last_updated: '10-04-2026 14:18'
+last_updated: '10-17-2026 18:00'
 project: xrpl-wallet
 project_key: NOKEY
 tracking_system: file-system
@@ -100,6 +100,32 @@ development_status:
   11-1-the-warning-comes-before-the-write-on-both-import-paths: done
   11-2-a-pasted-seed-is-not-rejected-for-its-whitespace: done
   epic-11-retrospective: done
+
+  epic-12: done
+  12-1-existing-wallets-move-to-per-wallet-locks-without-changing: done
+  12-2-each-wallet-has-its-own-network-and-node-including-devnet: done
+  epic-12-retrospective: optional
+
+  epic-13: done
+  13-1-a-wallet-s-signing-check-is-structural-and-signing-goes-thro: done
+  13-2-each-wallet-has-its-own-open-check-and-auto-lock: done
+  epic-13-retrospective: optional
+
+  epic-14: done
+  14-1-create-a-stored-seed-wallet-one-question-at-a-time-under-one: done
+  14-2-a-passkey-derived-seed-with-the-passkey-rule-and-what-kind-o: done
+  14-3-a-confirmed-written-seed-and-revealing-a-seed-behind-the-sig: done
+  epic-14-retrospective: optional
+
+  epic-15: done
+  15-1-edit-a-wallet-s-checks-and-passkey: done
+  15-2-control-a-wallet-from-another-wallet-and-add-a-passkey-as-an: done
+  15-3-turn-the-account-master-key-off-and-on-from-settings: done
+  epic-15-retrospective: done
+
+  epic-16: done
+  16-1-build-a-transaction-online-and-sign-it-offline-by-qr: done
+  epic-16-retrospective: done
 action_items:
   - id: "epic-5-retro-item-1-make-send-s-token-path-fail-closed-on-a"
     epic: 5
@@ -246,8 +272,8 @@ action_items:
     action: "Add a rule to the unattended loop: a finding a build or review marks
       high-severity *and* money-moving blocks the resolver's merge of the *next* epic
       until a story or PR for it exists and Otavio has seen it. Record it in docs/agents/.
-      ONE RULE WITH epic-9-retro-item-30: decide and write both triggers together as
-      a single hold rule for money-moving findings."
+      ONE RULE WITH epic-9-retro-item-30: decide and write both triggers together
+      as a single hold rule for money-moving findings."
     owner: "Otavio (process)"
     status: open
     ref: "_bmad-output/implementation-artifacts/epic-7-retro-2026-10-04.md"
@@ -355,8 +381,9 @@ action_items:
     action: "In the unattended build loop, do not squash-merge a PR whose reviewer
       raised a \"for Otavio\" decision that weakens a money-moving guard or warning.
       Hold it, or label it and block promotion until Otavio decides. Regenerate the
-      PR body's decision list from the spec whenever a review fix adds a decision. ONE RULE WITH epic-7-retro-item-18 (second
-      trigger of the same hold rule); decide them together."
+      PR body's decision list from the spec whenever a review fix adds a decision.
+      ONE RULE WITH epic-7-retro-item-18 (second trigger of the same hold rule); decide
+      them together."
     owner: "Otavio (process)"
     status: open
     ref: "_bmad-output/implementation-artifacts/epic-9-retro-2026-10-04.md"
@@ -382,8 +409,8 @@ action_items:
   - id: "epic-10-retro-item-33-a-resolver-re-runs-all-four-gates-on-the"
     epic: 10
     action: "A resolver re-runs all four gates on the tree it is about to merge (rebased
-      onto current dev), not the tree the PR was last rebased onto. ONE RULE WITH epic-6-retro-item-14
-      (the browser half); decide them together."
+      onto current dev), not the tree the PR was last rebased onto. ONE RULE WITH
+      epic-6-retro-item-14 (the browser half); decide them together."
     owner: "Otavio (process)"
     status: open
     ref: "_bmad-output/implementation-artifacts/epic-10-retro-2026-10-04.md"
@@ -420,3 +447,92 @@ action_items:
     owner: "Otavio"
     status: open
     ref: "_bmad-output/implementation-artifacts/epic-11-retro-2026-10-04.md"
+  - id: "epic-16-retro-item-38-add-the-consequence-line-to-the-offline"
+    epic: 16
+    action: "Add the consequence line to the offline confirm for SetRegularKey (this
+      key can send the account funds; name an existing Regular Key that will stop
+      working), matching ControlWalletDialog."
+    owner: "Otavio (dev loop)"
+    status: open
+    ref: "_bmad-output/implementation-artifacts/epic-16-retro-2026-10-17.md"
+  - id: "epic-16-retro-item-39-run-the-qr-camera-scan-once-on-a-device"
+    epic: 16
+    action: "Run the QR camera scan once on a device with BarcodeDetector, and the
+      tampered-return, wrong-network and wrong-Account returns once in a browser;
+      record both in the browser-pass record."
+    owner: "Otavio"
+    status: open
+    ref: "_bmad-output/implementation-artifacts/epic-16-retro-2026-10-17.md"
+  - id: "epic-16-retro-item-40-decide-bundle-a-qr-decoder-jsqr-so-safar"
+    epic: 16
+    action: "Decide: bundle a QR decoder (jsQR) so Safari and Firefox can scan, or
+      state the supported browsers."
+    owner: "Otavio (product)"
+    status: open
+    ref: "_bmad-output/implementation-artifacts/epic-16-retro-2026-10-17.md"
+  - id: "epic-16-retro-item-41-reconcile-the-record-remove-the-testnet"
+    epic: 16
+    action: "Reconcile the record: remove the Testnet half of the Not verified line
+      at docs/decisions.md:1567-1568 and the resolved Settings-gating entry in story
+      11 front matter deferred list."
+    owner: "Otavio"
+    status: open
+    ref: "_bmad-output/implementation-artifacts/epic-16-retro-2026-10-17.md"
+  - id: "epic-16-retro-item-42-one-shared-test-double-for-autofill-retu"
+    epic: 16
+    action: "One shared test double for autofill returning the SDK real field shape
+      (including NetworkID: undefined), used where tests fake autofill."
+    owner: "Otavio (dev loop)"
+    status: open
+    ref: "_bmad-output/implementation-artifacts/epic-16-retro-2026-10-17.md"
+  - id: "epic-16-retro-item-43-definition-of-done-for-a-story-crossing"
+    epic: 16
+    action: "Definition of done: for a story crossing an SDK or wire boundary, run
+      a live-ledger pass before the review passes; fold into epic-6-retro-item-14."
+    owner: "Otavio (process)"
+    status: open
+    ref: "_bmad-output/implementation-artifacts/epic-16-retro-2026-10-17.md"
+  - id: "epic-15-retro-item-44-update-the-record-remove-the-master-key"
+    epic: 15
+    action: "Update the record: remove the master-key lockout entry at deferred-work.md:381-383
+      (fixed in 73941df) and the Not verified against a real ledger line at docs/decisions.md:1543."
+    owner: "Otavio"
+    status: open
+    ref: "_bmad-output/implementation-artifacts/epic-15-retro-2026-10-17.md"
+  - id: "epic-15-retro-item-45-fix-browser-defects-8-and-9-the-320-px-o"
+    epic: 15
+    action: "Fix browser defects 8 and 9: the 320 px overflow of the Remove all wallets
+      button (also closes epic-6-retro-item-15) and per-row accessible names for the
+      Reveal seed buttons; re-check Settings at 320 px and 200% zoom."
+    owner: "Otavio (dev loop)"
+    status: open
+    ref: "_bmad-output/implementation-artifacts/epic-15-retro-2026-10-17.md"
+  - id: "epic-15-retro-item-46-add-a-fake-indexeddb-test-of-two-interle"
+    epic: 15
+    action: "Add a fake-indexeddb test of two interleaved editChecks commits against
+      the compare-and-swap on rev."
+    owner: "Otavio (dev loop)"
+    status: open
+    ref: "_bmad-output/implementation-artifacts/epic-15-retro-2026-10-17.md"
+  - id: "epic-15-retro-item-47-hold-status-done-for-a-story-whose-epic"
+    epic: 15
+    action: "Hold status done for a story whose epic text says verified before it
+      is marked done until its verification section names the run; fold into epic-6-retro-item-14."
+    owner: "Otavio (process)"
+    status: open
+    ref: "_bmad-output/implementation-artifacts/epic-15-retro-2026-10-17.md"
+  - id: "epic-15-retro-item-48-treat-a-finding-on-an-action-the-epic-ca"
+    epic: 15
+    action: "Treat a finding on an action the epic calls irreversible as high by definition,
+      and apply epic-7-retro-item-18 and epic-9-retro-item-30 as one hold rule before
+      the next epic."
+    owner: "Otavio (process)"
+    status: open
+    ref: "_bmad-output/implementation-artifacts/epic-15-retro-2026-10-17.md"
+  - id: "epic-15-retro-item-49-test-a-write-path-guard-from-every-calle"
+    epic: 15
+    action: "Test a write-path guard from every caller that builds the signing handle,
+      or build the handle in one place."
+    owner: "Otavio (dev loop)"
+    status: open
+    ref: "_bmad-output/implementation-artifacts/epic-15-retro-2026-10-17.md"

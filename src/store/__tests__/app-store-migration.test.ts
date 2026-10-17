@@ -18,7 +18,7 @@ vi.mock('idb-keyval', () => ({
   set: async (k: string, v: string) => void h.idb.set(k, v),
   del: async (k: string) => void h.idb.delete(k),
 }))
-vi.mock('@/lib/crypto/auth', () => ({ endSession: async () => {} }))
+vi.mock('@/lib/crypto/lock', () => ({ endLockSession: async () => {}, endAllLockSessions: async () => {}, getLockInfo: async () => ({ id: 'legacy', openCheck: 'pin', autoLockMinutes: 5, pin: true, passkey: false }) }))
 
 import { APP_STATE_STORAGE_KEY, useAppStore } from '../app-store'
 import { suppressesFirstSendWarning } from '../address-book'
@@ -26,6 +26,11 @@ import { suppressesFirstSendWarning } from '../address-book'
 const EXCHANGE = 'rHb9CJAWyB4rj91VRWn96DkukG4bwdtyTh'
 const OTHER = 'rPT1Sjq2YGrBMTttX4GZHjKu9dyfzbpAYe'
 const WALLETS = [{ id: 'w1', label: 'Savings', address: 'r4NagxniGTmPRr8yBRXRD6NNpZP7FfP4KR' }]
+/** Story 12.1: read into the per-Wallet shape — the persisted app-wide network
+ * ('mainnet' in this blob) becomes the Wallet's network; nothing else changes. */
+const NORMALISED_WALLETS = [
+  { ...WALLETS[0], seedId: 'w1', keyAddress: WALLETS[0].address, lockId: 'legacy', network: 'mainnet', algorithm: 'unresolved', seedMethod: 'stored', openCheck: 'pin', signingCheck: 'standard' },
+]
 
 /** A blob as the build before this change persisted it. */
 function legacyBlob(addressBook: unknown) {
@@ -68,7 +73,7 @@ describe('app store — a version-0 Address Book survives the shape change', () 
     await useAppStore.persist.rehydrate()
 
     const s = useAppStore.getState()
-    expect(s.wallets).toEqual(WALLETS)
+    expect(s.wallets).toEqual(NORMALISED_WALLETS)
     expect(s.activeWalletId).toBe('w1')
     expect(s.network).toBe('mainnet')
     expect(s.autoLockMinutes).toBe(15)
@@ -89,7 +94,7 @@ describe('app store — a version-0 Address Book survives the shape change', () 
     const stored = JSON.parse(h.idb.get(APP_STATE_STORAGE_KEY)!)
     expect(stored.version).toBe(0)
     expect(stored.state.addressBook).toEqual([{ address: EXCHANGE }, { address: EXCHANGE, destinationTag: '9' }])
-    expect(stored.state.wallets).toEqual(WALLETS)
+    expect(stored.state.wallets).toEqual(NORMALISED_WALLETS)
   })
 
   it('reads what this build wrote back unchanged — the migration is idempotent', async () => {
@@ -117,7 +122,7 @@ describe('app store — a version-0 Address Book survives the shape change', () 
 
     const s = useAppStore.getState()
     expect(s.addressBook).toEqual([])
-    expect(s.wallets).toEqual(WALLETS)
+    expect(s.wallets).toEqual(NORMALISED_WALLETS)
   })
 
   it('reads back a book with networks unchanged, and keeps writing version 0', async () => {
@@ -141,7 +146,7 @@ describe('app store — a version-0 Address Book survives the shape change', () 
   })
 
   it('keeps an entry whose network this build does not know, as not recorded', async () => {
-    h.idb.set(APP_STATE_STORAGE_KEY, legacyBlob([{ address: EXCHANGE, network: 'devnet', destinationTag: '4' }]))
+    h.idb.set(APP_STATE_STORAGE_KEY, legacyBlob([{ address: EXCHANGE, network: 'signet', destinationTag: '4' }]))
     await useAppStore.persist.rehydrate()
 
     expect(useAppStore.getState().addressBook).toEqual([{ address: EXCHANGE, destinationTag: '4' }])
@@ -177,5 +182,19 @@ describe('app store — a version-0 Address Book survives the shape change', () 
     useAppStore.getState().addAddressBookEntry({ address: EXCHANGE, destinationTag: '12345' })
 
     expect(useAppStore.getState().addressBook).toEqual([{ address: EXCHANGE }, { address: EXCHANGE, destinationTag: '12345' }])
+  })
+})
+
+describe('app store — a Passkey-Derived Wallet keeps its Seed Method across a reload', () => {
+  it('rehydrates seedMethod "passkey-derived" as it was persisted, and reads anything else as stored', async () => {
+    const derived = { id: 'd1', label: 'Derived', address: OTHER, seedMethod: 'passkey-derived' }
+    const odd = { id: 'o1', label: 'Odd', address: EXCHANGE, seedMethod: 'something-else' }
+    h.idb.set(
+      APP_STATE_STORAGE_KEY,
+      JSON.stringify({ state: { network: 'testnet', wallets: [derived, odd], activeWalletId: 'd1', addressBook: [], autoLockMinutes: 5, declinedUpdateVersions: [] }, version: 0 }),
+    )
+    await useAppStore.persist.rehydrate()
+    const bySeed = Object.fromEntries(useAppStore.getState().wallets.map((w) => [w.id, w.seedMethod]))
+    expect(bySeed).toEqual({ d1: 'passkey-derived', o1: 'stored' })
   })
 })

@@ -3,13 +3,14 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { AddressDisplay } from '@/components/wallet/AddressDisplay'
 import { QrCode } from '@/components/wallet/QrCode'
 import { QueryErrorState } from '@/components/wallet/QueryErrorState'
-import { useAppStore, useActiveWallet } from '@/store/app-store'
+import { useActiveWallet, useActiveNetwork, useActiveNode } from '@/store/app-store'
 import { useAccountState } from '@/hooks/useAccountState'
 
 export function ReceiveTab() {
-  const network = useAppStore((s) => s.network)
+  const network = useActiveNetwork()
+  const node = useActiveNode()
   const wallet = useActiveWallet()
-  const accountState = useAccountState(network, wallet?.address ?? null)
+  const accountState = useAccountState(network, wallet?.address ?? null, node)
 
   if (!wallet) return <p className="text-muted-foreground">No active wallet.</p>
 

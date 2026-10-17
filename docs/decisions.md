@@ -26,14 +26,14 @@ These close out the open questions raised in the earlier gap analysis, so they d
 | Address book | **Yes, shipped (Epic 9).** Local-only, no on-chain component. Every validated send records the counterparty it paid (network, address, tag) automatically; the app writes no labels and has no add/edit/delete controls. Settings lists every network's entries. Pre-existing entries are kept and shown with their network and (if tagless) tag as "Not recorded". The persisted version stays 0 so an older build still reads the slice instead of discarding it; a rollback can only drop the recorded network, which turns entries back into unrecorded ones (more warnings, never fewer). |
 | Auto-lock timeout | Default **5 minutes** of inactivity; user-configurable to 1/5/15/30 min. Immediate lock on app backgrounding on mobile; on desktop a **30-second grace window** applies instead (see §5, 2026-09-01). |
 | Failed unlock attempts | Exponential backoff starting at the 3rd failed passkey/PIN attempt; after 8 consecutive failures, the wallet requires full re-import via seed (no silent unlimited retry). |
-| Non-biometric fallback for unlock | **Mandatory**, not optional: an app-level password/PIN is set during onboarding alongside the passkey, for environments with no platform authenticator. Passkey is preferred; PIN is the guaranteed fallback. |
+| Non-biometric fallback for unlock | **Mandatory**, not optional: an app-level password/PIN is set during onboarding alongside the passkey, for environments with no platform authenticator. Passkey is preferred; PIN is the guaranteed fallback. *Planned to be superseded — see §15.* |
 | Disabled master key on import | Wallet checks `account_flags`/`lsfDisableMasterKey` immediately after import; if set, it warns before completing import that this seed may not be able to sign transactions. |
 | Trust line limit editing | **In scope**, add as a new story in `tokens-and-trustlines.md` (a second `TrustSet` on an existing line, not just create/remove). |
 | Frozen trust lines | Wallet shows a "frozen by issuer" badge on affected trust lines/balances and disables sending that asset. |
 | Stuck/expired transactions | Wallet tracks `LastLedgerSequence`; once the ledger closes past it without validation, the transaction is marked "expired, not applied" and the user can retry with a fresh transaction (new sequence) — never blind-resubmit the same signed blob. |
 | Background payment notifications | **Deferred** — Web Push requires a server to hold subscriptions and send, which §1's no-backend architecture rules out. In-app notification only for now; see §5 (2026-09-01). |
 | Fiat-equivalent balance display | **Explicitly deferred**, not silently missing — no price-oracle dependency in v1. |
-| Custom/failover RPC endpoints | v1 ships one hardcoded public endpoint per network plus one hardcoded backup for failover; no user-editable custom endpoint yet. *(Implemented 2026-09-01 in `lib/xrpl/networks.ts` / `client.ts`.)* |
+| Custom/failover RPC endpoints | v1 ships one hardcoded public endpoint per network plus one hardcoded backup for failover; no user-editable custom endpoint yet. *(Implemented 2026-09-01 in `lib/xrpl/networks.ts` / `client.ts`.)* *Planned to change — see §15.* |
 
 ---
 
@@ -325,6 +325,17 @@ changed a second time. Errors and warnings never expiring is enforced by
 having no auto-dismiss timer scheduled for them at all
 (`src/lib/notify.tsx`), rather than by any provider-level "don't auto-dismiss"
 flag — there is nothing to disable.
+
+**Taken back when no longer true (browser pass, 2026-10-15).** The rule above is
+unchanged: no error or warning expires on a timer. But a persistent notice stayed
+over the next screen and the next Wallet, and sat beside the green "validated"
+of a send that then worked. A notice now carries the Wallet that was active when
+it was raised and, where it reports on a user action, that action. A new attempt
+of the action calls `toast.resolve(action)` (unlock, send, trust line), and
+changing the active Wallet calls `toast.scopeToWallet` (wired in `App.tsx`),
+which takes back notices about another Wallet and keeps those about the app.
+Errors still persist until the thing they said stops being true or the user
+dismisses them.
 
 ### 6.6 Truncated values are reachable without a pointer
 
@@ -829,6 +840,14 @@ onboarding (`account-onboarding.md` US-6) is what makes it recoverable at all.
 repository is not an invitation; publishing a URL and asking people to fund it
 is. Treat "attach the final production hostname" as a prerequisite of that step,
 not a later improvement.
+
+**Passkey-Derived Seeds raise the stakes of this origin.** A Passkey-Derived
+Seed Wallet is bound to the rpId it was made under (AD-24): a domain change makes
+its passkey unreachable, not only its stored data. So `policy.ts` refuses a
+Passkey-Derived Seed on Mainnet while the build's rpId ends `.b-cdn.net`
+(Testnet and Devnet are unaffected), and the creation flow states the domain
+dependency before the Wallet is made. The rpId is set per branch in
+`vite.config.ts` (`__RP_ID__`); Related Origin Requests are not used.
 
 **Also:** never install the staging site as a PWA and never put Mainnet funds in
 it. It is a public, unauthenticated URL with its own origin and its own separate
@@ -1417,3 +1436,133 @@ their fee exceeds the 0.01 XRP cap. The confirmation is recorded in the
 Intent of
 `_bmad-output/implementation-artifacts/spec-epic-6-retro-11-reset-unregisters-service-worker.md`,
 and in Decisions 3 and 10 of `spec-fee-cap-and-shown-fee.md`.
+
+---
+
+## 15. Planned: per-Wallet key setup and signing checks — decided, not built
+
+Decided 2026-10-09 and 2026-10-10 by Otavio, from the forged idea in
+`_bmad-output/forge/passkey-gated-signing/forged-idea.md`. Specified in the PRD
+(`_bmad-output/planning-artifacts/prds/prd-xrpl-wallet-2026-09-12/prd.md`
+§4.14, FR-60 to FR-78), which is authoritative for the requirements; this entry
+records only what it changes here. **Nothing below ships yet.** Until it does,
+§2 describes the app as built.
+
+**What it will supersede.**
+
+- **§2's mandatory PIN fallback.** Each Wallet chooses its own Open Check and
+  Signing Check. A Mainnet Wallet whose only check is a passkey needs a
+  confirmed written Seed instead of a PIN (FR-65, FR-72). The App PIN exists
+  only once some Wallet chooses it (FR-68).
+- **§2's fixed endpoints.** Each Wallet has a Network and a Node, chosen from a
+  built-in list or added after a connection test (FR-61). Devnet joins Mainnet
+  and Testnet.
+- **The deferral of regular keys** in `PRODUCT.md` and
+  `docs/user-stories/INDEX.md`. Setting a Regular Key, adding a passkey as an
+  extra key, and turning off the Account Master Key from Settings are planned
+  (FR-75 to FR-77). Multi-signing stays deferred.
+
+**What it keeps.** An unlock — and now a Signing Check — is proven by
+decrypting known ciphertext, never by deriving a key (FR-8, FR-67). A Signing
+Check runs on every signature, through the one write choke point (§14).
+
+**Decided 2026-10-10 (PRD §10 questions 7 to 9).** A Passkey-Derived Seed
+Wallet signs by passkey only, because storing its Seed between signatures would
+make it a Stored Seed Wallet. The hard lock blocks the App PIN for every Wallet
+that uses it, since the failure count is shared; Wallets checked only by
+passkey keep working, and recovery stays re-import from Seed. No App PIN exists
+until a Wallet chooses one.
+
+
+**Written-Seed confirmation and reveal (story 7, 2026-10-11).** FR-72's rule is
+built in `policy.ts` (`canConfirmWrittenSeed`, `writtenSeedRequired`): a Mainnet
+Wallet whose only check is a passkey is created only when the caller supplies a
+`confirmWrittenSeed` callback, which shows the Seed and asks for three random
+4-character groups of it (`src/lib/seed-confirmation.ts`). It runs after the
+Seed exists and before any credential, lock or Wallet is written; a refusal
+writes nothing, and the record notes `writtenSeedConfirmedAt`. A direct keystore
+call with no callback, and restore, stay refused. Revealing a Standard Wallet's
+Seed re-passes its Open Check without writing a session (`openLock` with
+`persist: false`); a sealed Wallet asks its Signing Check, a Passkey-Derived one
+its passkey, and the confirm dialog names which. A copy-guard test bans wording
+that calls a key unrevealable: the Seed is revealable behind its checks.
+
+**Editing a Wallet's checks (story 8, 2026-10-11).** `keystore.editChecks` is the
+one edit (FR-73, AD-28); `sealSeedUnderSigningCheck` stays only as the legacy
+passkey-only write and nothing new calls it. `policy.ts` resolves the result of a
+request (`resolveEdit`), judges it with the same `checkWalletRequest` creation uses,
+and renders the dialog's answers (`describeEditOptions`, `olderBuildCannotOpen`); a
+Passkey-Derived Wallet's Signing Check, and every Wallet's Seed Method and
+algorithm, are not editable. The order is fixed: policy, then the current check the
+change affects (the lock's Open Check for an Open Check or auto-lock edit and for a
+Standard Wallet; the Signing Check for a sealed Wallet's own edit — and, because a
+Standard re-encryption needs the lock's real Open Key, a sealed-to-Standard edit
+re-passes the Open Check as well, rather than trusting the session's key), then the
+written Seed when the result needs it, then the new credentials, then ONE
+transaction (`db.commitWalletEdit`) over `wallets` and `vault` with a
+compare-and-swap on the record's additive `rev`, lock and ciphertext and on the old
+lock's stamp. An Open Check edit makes a new lock (`lock.buildLock`, the creation
+path minus the write) and moves only this Seed record to it; the old lock goes when
+no record is left, the legacy lock never does, and its other Wallets are untouched.
+The keystore writes no session: the caller closes the old lock and opens the new
+one. An auto-lock edit is `setLockAutoLock`, which now routes here and so passes the
+Open Check too. A passkey registered before a later failure may stay on the
+authenticator.
+
+### 15.1 Controlling Wallet and Regular Key (story 9; AD-18, AD-29)
+
+A Wallet's view may carry `accountAddress`: the Account its key operates as a Regular
+Key. `WalletMeta.address` is that Account (else the Seed's own address) and is the only
+ledger identity every read, query key, send, receive and teardown uses;
+`WalletMeta.keyAddress` is the Seed's address, used only for the wrong-credential
+compare and to choose how to sign. A Signer for a view whose Account differs is built
+with `masterAddress`; `signingHandleFor(...).address` is the Account. Whether a key
+controls an Account is read from the ledger (`lib/control.ts` `controlStatus`) and never
+stored: the view is only a claim added by `confirmControl`, after a validated
+`SetRegularKey` and a fresh read that shows the key; any failed or unconfirmed read adds
+nothing, and "check again" runs only that read and claim. The action takes its
+guard from `fetchAccountStateFresh` (staleTime 0, same key), not the 15-second
+cache. Duplicate `(network, account, key)` views are refused. No IndexedDB version bump.
+
+### 15.2 Account Master Key off and on (story 10; AD-29, FR-77)
+
+`lib/master-key.ts` owns the rule: `masterKeyStatus` is `on`, `off` or `unknown` (an
+errored or loading read, or an Account not on the ledger), read from `account_info`
+and never stored. `masterKeyAction` decides what a Wallet is offered and why not, from
+its view: a view whose key is its Account holds the master key and may turn it **off**
+(only with a Regular Key set and the master key on); a view that operates another
+Account signs as the Regular Key and may turn it **on** (`ClearFlag`, only while it is
+off). Any other case is `aria-disabled` with the reason in visible words; nothing is
+hidden. `setMasterKey(walletId, enable, ctx)` refuses without `confirmed: true`, takes
+its guard from `fetchAccountStateFresh`, signs through `signingHandleFor`, submits
+`submitMasterKeyFlag` (`AccountSet`, `SetFlag` or `ClearFlag` `asfDisableMaster`) via
+`submitAndClassify`, then invalidates the Account and re-reads: the state reported is
+the re-read's, and a failed re-read reports "submitted, could not confirm" with the
+status unknown. Outcome wording is `describeFailure` in `lib/control.ts`. The confirm
+dialog in `MasterKeyControl.tsx` states the exact consequence and names the Regular Key.
+Not verified against a real ledger: a Testnet disable and re-enable remains to be done.
+
+
+### 15.3 Two-device signing by QR (story 11; AD-30, FR-78)
+
+`lib/qr-codec.ts` is the only definition of either payload: `xrplbench:1:u:<base64url
+JSON {v, network_id, tx}>` and `xrplbench:1:s:<base64url JSON {v, tx_blob}>`. It is a
+`lib` leaf, `decode*` never throws, and a payload over one QR (2331 bytes, error
+correction M, the level `QrCode` draws at) is refused at encode and decode. The online
+side (`lib/two-device.ts` `buildUnsigned`) judges its guards on `fetchAccountStateFresh`
+(and the reserve, destination and fee reads for a Payment) before building; any errored
+read blocks. `writes.ts` `prepareUnsigned` autofills, caps the fee, then sets
+`LastLedgerSequence` to the validated ledger plus `TWO_DEVICE_LEDGER_WINDOW` (75)
+explicitly, and the expiry is worded as a window on both devices before the Signing Check.
+The offline side (`reviewUnsigned`, `signUnsigned`) makes no network call and is stricter
+than the contract's list: it also refuses any field outside the three kinds' fields, a
+non-zero `Flags`, and an `AccountSet` that is not exactly `asfDisableMaster`, so it never
+signs something it did not show. The return trip is `verifySigned` (blob deep-equals what
+was sent, key is the Account's master key while it is on, or its Regular Key, from a fresh
+read) and then `submitSignedBlob`, which hands the received blob to `submitAndClassify`
+through a Signer that returns it: the choke point is unchanged. A validated ledger past
+`LastLedgerSequence`, or `tefMAX_LEDGER` (as a result or a thrown error), reports `expired`;
+the blob is never resubmitted. Scanning is `BarcodeDetector` over `getUserMedia` where the
+browser has both; otherwise, and always, the dialog takes the payload as pasted text. No new
+dependency; a scanner library (jsQR) would need an owner decision. Not verified: a real
+camera scan, or a Testnet round trip between two browser profiles.

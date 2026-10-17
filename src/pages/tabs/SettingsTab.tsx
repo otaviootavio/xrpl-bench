@@ -1,7 +1,16 @@
 import { useCallback, useRef, useState } from 'react'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { NetworkSelector } from '@/components/wallet/NetworkSelector'
+import { NetworkChoice } from '@/components/wallet/NetworkChoice'
+import { CreateWalletFlow } from '@/components/wallet/CreateWalletFlow'
+import { EditChecksDialog, type EditedChecks } from '@/components/wallet/EditChecksDialog'
+import { ControlWalletDialog } from '@/components/wallet/ControlWalletDialog'
+import { ControlledNote } from '@/components/wallet/ControlledNote'
+import { TwoDeviceSign } from '@/components/wallet/TwoDeviceSign'
+import { MasterKeyControl } from '@/components/wallet/MasterKeyControl'
+import { holdsMasterKey } from '@/lib/control'
+import { WalletNodeSection } from '@/components/wallet/WalletNodeSection'
+import { DevnetNotice } from '@/components/wallet/DevnetNotice'
 import { StatusLegend } from '@/components/ui/lamp'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { ExternalLinkIcon } from 'lucide-react'
@@ -14,26 +23,72 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogT
 import { Separator } from '@/components/ui/separator'
 import { SeedReveal } from '@/components/wallet/SeedReveal'
 import { AddressLink } from '@/components/wallet/AddressLink'
-import { useAppStore } from '@/store/app-store'
+import { usePrompts } from '@/hooks/usePrompts'
+import { useAppStore, useActiveNetwork, useWalletOpenKey } from '@/store/app-store'
 import { counterpartyKey, tagNotRecorded } from '@/store/address-book'
-import { NETWORKS } from '@/lib/xrpl/networks'
-import { addressFromSeed, generateAndStoreWallet, importAndStoreWallet, listWallets, parseSeedInput, removeWallet, revealSeed } from '@/lib/crypto/keystore'
-import { RESET_INCOMPLETE_MESSAGE, tearDownAllLocalState, clearCachedAccountData } from '@/lib/teardown'
+import { NETWORKS, NETWORK_IDS, type NetworkId } from '@/lib/xrpl/networks'
+import { addNetworkView, addressFromSeed, importAndStoreWallet, listWallets, parseSeedInput, removeWallet, revealSeed, setLockAutoLock, describeCheckFailure, type WalletMeta } from '@/lib/crypto/keystore'
+import { getLockInfo, startLockSession } from '@/lib/crypto/lock'
+import { LEGACY_LOCK_ID } from '@/lib/crypto/db'
+import { queryKeys } from '@/lib/xrpl/query-keys'
+import { RESET_INCOMPLETE_MESSAGE, tearDownAllLocalState, clearCachedAccountData, tearDownLock } from '@/lib/teardown'
 import { checkBeforeImport, IMPORT_WARNING_COPY, INVALID_SEED_MESSAGE, type ImportWarning } from '@/lib/seed-import'
 import { toast } from '@/lib/notify'
-import { useQueryClient } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
+
+/** Which check the reveal will ask next, in plain words (FR-69). Mirrors
+ * `keystore.revealSeed`: a sealed Wallet its Signing Check, a Passkey-Derived one
+ * its passkey, a Standard one its Open Check (none: nothing more). */
+function revealCheckSentence(wallet: WalletMeta | undefined): string {
+  if (!wallet) return ''
+  if (wallet.seedMethod === 'passkey-derived') return 'After you confirm, your passkey will be asked.'
+  // The legacy lock's real check is read from the lock at reveal time, not from this meta.
+  const standard = !wallet.signingCheck || wallet.signingCheck === 'standard'
+  if (wallet.lockId === LEGACY_LOCK_ID && standard) {
+    return "After you confirm, your passkey or App PIN will be asked, whichever this wallet's lock uses."
+  }
+  if (wallet.signingCheck === 'pin') return 'After you confirm, your App PIN will be asked.'
+  if (wallet.signingCheck === 'passkey') return 'After you confirm, your passkey will be asked.'
+  switch (wallet.openCheck) {
+    case 'pin':
+      return 'After you confirm, your App PIN will be asked.'
+    case 'passkey':
+      return 'After you confirm, your passkey will be asked.'
+    case 'either':
+      return 'After you confirm, your passkey will be asked, or your App PIN if this device cannot use one.'
+    default:
+      return 'This wallet has no further check: confirming here shows the seed.'
+  }
+}
 
 export function SettingsTab() {
-  const network = useAppStore((s) => s.network)
+  // Only the fallback for a record the vault migration has not reached
+  // (`listWallets`); every ledger read takes its network from its own Wallet.
+  const activeNetwork = useActiveNetwork()
+  // The network a Wallet added here will live on — fixed at creation (AD-19).
+  const [addNetwork, setAddNetwork] = useState<NetworkId>('testnet')
   const wallets = useAppStore((s) => s.wallets)
   const setWallets = useAppStore((s) => s.setWallets)
   const activeWalletId = useAppStore((s) => s.activeWalletId)
   const setActiveWalletId = useAppStore((s) => s.setActiveWalletId)
-  const autoLockMinutes = useAppStore((s) => s.autoLockMinutes)
-  const setAutoLockMinutes = useAppStore((s) => s.setAutoLockMinutes)
   const addressBook = useAppStore((s) => s.addressBook)
-  const vaultKey = useAppStore((s) => s.vaultKey)
-  const lock = useAppStore((s) => s.lock)
+  const openLocks = useAppStore((s) => s.openLocks)
+  const setLockMinutes = useAppStore((s) => s.setLockMinutes)
+  const closeAllLocks = useAppStore((s) => s.closeAllLocks)
+  const closeLock = useAppStore((s) => s.closeLock)
+  const openLock = useAppStore((s) => s.openLock)
+  // Settings is mounted only for an open Wallet. Its lock is the one a new
+  // Wallet is added under and the one whose auto-lock this card edits (AD-21).
+  const activeWallet = wallets.find((w) => w.id === activeWalletId) ?? null
+  const activeLockId = activeWallet?.lockId ?? null
+  const vaultKey = useWalletOpenKey(activeWalletId)
+  const prompts = usePrompts()
+  const lockInfoQuery = useQuery({
+    queryKey: queryKeys.lockInfo(activeLockId ?? ''),
+    queryFn: () => getLockInfo(activeLockId as string),
+    enabled: activeLockId !== null,
+  })
+  const autoLockMinutes = lockInfoQuery.data?.autoLockMinutes ?? null
   const { updateReady, applying, applyUpdate, checking, checkError, checkForUpdate, pendingRelease, blockedReason, declined, declineCurrent } =
     useAppUpdate()
   const queryClient = useQueryClient()
@@ -44,8 +99,12 @@ export function SettingsTab() {
   const [confirmRemove, setConfirmRemove] = useState<string | null>(null)
   const [confirmResetAll, setConfirmResetAll] = useState(false)
   const [confirmRevealFor, setConfirmRevealFor] = useState<string | null>(null)
+  const [editChecksFor, setEditChecksFor] = useState<string | null>(null)
+  const [controlFor, setControlFor] = useState<string | null>(null)
   const [importWarning, setImportWarning] = useState<ImportWarning | null>(null)
   const [busy, setBusy] = useState(false)
+  // A new Wallet is being written or backed up inside the Add dialog.
+  const [creating, setCreating] = useState(false)
 
   // Guardrail #3: a decrypted seed must NEVER enter React state (state is
   // serializable and reachable from devtools). It lives in a ref for exactly
@@ -60,17 +119,22 @@ export function SettingsTab() {
   // the input inside it — closes when the warning opens, so the value has to
   // be held somewhere that outlives the input: a ref, never state.
   const pendingImportSeedRef = useRef<string | null>(null)
+  // The network the pre-check ran against: the store uses this one, never the
+  // current radio, so check and write cannot disagree.
+  const pendingImportNetworkRef = useRef<NetworkId>('testnet')
   const getRevealedSeed = useCallback(() => revealedSeedRef.current, [])
 
   async function refreshWallets() {
-    setWallets(await listWallets())
+    const fresh = await listWallets(activeNetwork)
+    setWallets(fresh)
+    return fresh
   }
 
   /** The vault write for an import, and everything that follows a completed
    * add. Reached only after the pre-flight check: directly when it found
    * nothing to warn about, or from "Import anyway". */
-  async function storeImported(seed: string, key: CryptoKey) {
-    const meta = await importAndStoreWallet(label || 'Wallet', seed, key)
+  async function storeImported(seed: string, key: CryptoKey, net: NetworkId) {
+    const meta = await importAndStoreWallet(label || 'Wallet', seed, key, net, activeLockId ?? undefined)
     await refreshWallets()
     setActiveWalletId(meta.id)
     finishAdd()
@@ -80,26 +144,15 @@ export function SettingsTab() {
     pendingImportSeedRef.current = null
     toast.success('Wallet added.')
     setAddOpen(false)
+    setAddNetwork('testnet')
     setLabel('')
     if (seedInputRef.current) seedInputRef.current.value = ''
   }
 
   async function handleAddWallet() {
     if (!vaultKey || busy) return
-    if (addMode === 'generate') {
-      setBusy(true)
-      try {
-        const { meta } = await generateAndStoreWallet(label || 'Wallet', vaultKey)
-        await refreshWallets()
-        setActiveWalletId(meta.id)
-        finishAdd()
-      } catch (err: any) {
-        toast.error(err?.message ?? 'Could not add wallet.')
-      } finally {
-        setBusy(false)
-      }
-      return
-    }
+    // Generate is `CreateWalletFlow`'s: it makes the Wallet its own lock.
+    if (addMode === 'generate') return
 
     // Import. The same operation as Onboarding's (lib/seed-import.ts): parse,
     // check, and only then write — docs/decisions.md §2 states the
@@ -111,16 +164,18 @@ export function SettingsTab() {
       toast.error(INVALID_SEED_MESSAGE)
       return
     }
+    const net = addNetwork
     setBusy(true)
     try {
-      const warning = await checkBeforeImport(queryClient, network, addressFromSeed(seed))
+      const warning = await checkBeforeImport(queryClient, net, addressFromSeed(seed))
       if (warning) {
         pendingImportSeedRef.current = seed
+        pendingImportNetworkRef.current = net
         setAddOpen(false)
         setImportWarning(warning)
         return
       }
-      await storeImported(seed, vaultKey)
+      await storeImported(seed, vaultKey, net)
     } catch (err: any) {
       toast.error(err?.message ?? 'Could not add wallet.')
     } finally {
@@ -134,7 +189,7 @@ export function SettingsTab() {
     if (!vaultKey || !seed || busy) return
     setBusy(true)
     try {
-      await storeImported(seed, vaultKey)
+      await storeImported(seed, vaultKey, pendingImportNetworkRef.current)
       setImportWarning(null)
     } catch (err: any) {
       toast.error(err?.message ?? 'Could not add wallet.')
@@ -149,12 +204,24 @@ export function SettingsTab() {
     pendingImportSeedRef.current = null
     setImportWarning(null)
     setLabel('')
+    setAddNetwork('testnet')
   }
 
   async function handleConfirmReveal(id: string) {
-    if (!vaultKey) return
+    // The key of THAT Wallet's lock: opening one lock never reveals another's Seed.
+    const lockId = wallets.find((w) => w.id === id)?.lockId
+    const openKey = lockId ? (useAppStore.getState().openLocks[lockId]?.key ?? null) : null
+    if (!openKey) {
+      toast.error('Open this wallet first: its lock is closed.')
+      return
+    }
     try {
-      revealedSeedRef.current = await revealSeed(id, vaultKey)
+      const result = await revealSeed(id, { openKey, prompts })
+      if (result.status !== 'ok') {
+        toast.error(result.status === 'cancelled' ? 'Cancelled. The seed was not revealed.' : describeCheckFailure(result))
+        return
+      }
+      revealedSeedRef.current = result.value
       setSeedVisibleFor(id)
       setConfirmRevealFor(null)
     } catch (err: any) {
@@ -167,18 +234,73 @@ export function SettingsTab() {
     setSeedVisibleFor(null)
   }
 
-  async function handleRemove(id: string) {
-    await removeWallet(id)
-    await refreshWallets()
-    if (activeWalletId === id) {
-      const remaining = await listWallets()
-      setActiveWalletId(remaining[0]?.id ?? null)
+  /** "Use on another network": a second Wallet over the same Seed record, so a
+   * funded address is never lost from view. Nothing new is encrypted. */
+  async function handleUseOnOtherNetwork(walletId: string, target: NetworkId) {
+    try {
+      await addNetworkView(walletId, target)
+      await refreshWallets()
+      toast.success(`Wallet added on ${NETWORKS[target].label}.`)
+    } catch (err: any) {
+      toast.error(err?.message ?? 'Could not add the wallet on that network.')
     }
+  }
+
+  async function handleRemove(id: string) {
+    const removedLockId = wallets.find((w) => w.id === id)?.lockId
+    await removeWallet(id)
+    const remaining = await refreshWallets()
+    // `removeWallet` deleted a created lock with its last Wallet: close it here too.
+    if (removedLockId && removedLockId !== LEGACY_LOCK_ID && !remaining.some((w) => w.lockId === removedLockId)) {
+      closeLock(removedLockId)
+    }
+    if (activeWalletId === id) setActiveWalletId(remaining[0]?.id ?? null)
     // AD-16: the removed wallet's balances/history leave the query cache. The
     // shell (service-worker precache) stays — it never held account data.
     clearCachedAccountData(queryClient)
     setConfirmRemove(null)
     toast.success('Wallet removed from this device.')
+  }
+
+  /** Changes THIS Wallet's lock only. The policy refuses a Mainnet value under
+   * the floor, and its plain reason is shown (AD-28). */
+  async function handleAutoLock(minutes: number) {
+    if (!activeLockId) return
+    try {
+      // The lock's Open Check is passed again first (FR-73): `prompts` asks for it.
+      const verdict = await setLockAutoLock(activeLockId, minutes, { prompts })
+      if (!verdict.ok) {
+        toast.error(verdict.reason)
+        return
+      }
+      setLockMinutes(activeLockId, minutes)
+      await lockInfoQuery.refetch()
+    } catch (err: any) {
+      toast.error(err?.message ?? 'Could not change the auto-lock.')
+    }
+  }
+
+  /** An edit of a Wallet's checks was committed. When it moved to a new lock the
+   * keystore handed back that lock's Open Key and touched no session: this is
+   * where the old lock closes and the new one opens (FR-73, AD-21). The new lock
+   * opens first, so no listed Wallet is ever shown with a closed lock. */
+  async function handleEdited(edited: EditedChecks) {
+    const { meta, previousLockId } = edited
+    try {
+      if (edited.openKey) {
+        await startLockSession(meta.lockId, edited.openKey, edited.autoLockMinutes)
+        openLock(meta.lockId, edited.openKey, edited.autoLockMinutes)
+      } else if (edited.changed) {
+        setLockMinutes(meta.lockId, edited.autoLockMinutes)
+      }
+      await refreshWallets()
+      await queryClient.invalidateQueries({ queryKey: queryKeys.lockInfo(meta.lockId) })
+      if (previousLockId !== meta.lockId) queryClient.removeQueries({ queryKey: queryKeys.lockInfo(previousLockId) })
+      toast.success(edited.changed ? 'Checks updated.' : 'Nothing to change.')
+    } finally {
+      // The old lock record is already deleted: its session must close whatever failed above.
+      if (edited.previousLockRemoved) closeLock(previousLockId)
+    }
   }
 
   async function handleFullReset() {
@@ -192,23 +314,13 @@ export function SettingsTab() {
       toast.error(RESET_INCOMPLETE_MESSAGE)
       return
     } finally {
-      lock()
+      closeAllLocks()
     }
     window.location.reload()
   }
 
   return (
     <div className="flex flex-col gap-4">
-      <Card>
-        <CardHeader>
-          <CardTitle>Network</CardTitle>
-          <CardDescription>Mainnet uses real funds. Testnet is for trying the wallet safely.</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <NetworkSelector />
-        </CardContent>
-      </Card>
-
       <Card>
         <CardHeader className="sm:flex-row sm:items-baseline sm:justify-between">
           <div>
@@ -217,7 +329,11 @@ export function SettingsTab() {
           </div>
           {/* Not closable while a check or a write is running: closing reads as
               "stop", and the write would still land behind it. */}
-          <Dialog open={addOpen} onOpenChange={(o) => !busy && setAddOpen(o)}>
+          <Dialog open={addOpen} onOpenChange={(o) => {
+              if (busy || creating) return
+              setAddOpen(o)
+              if (!o) setAddNetwork('testnet')
+            }}>
             <DialogTrigger asChild>
               <Button>Add wallet</Button>
             </DialogTrigger>
@@ -227,32 +343,47 @@ export function SettingsTab() {
                 <DialogDescription>Generate a new wallet or import one with a seed.</DialogDescription>
               </DialogHeader>
               <div className="grid gap-3">
-                <div className="grid gap-1.5">
-                  <Label htmlFor="wlabel">Label</Label>
-                  <Input id="wlabel" value={label} onChange={(e) => setLabel(e.target.value)} placeholder="Savings" disabled={busy} />
-                </div>
-                {/* Frozen with the dialog while a check or a write runs: switching
-                    to Generate mid-import would show one path while the other lands. */}
                 <div className="flex gap-2">
-                  <Button variant={addMode === 'generate' ? 'default' : 'outline'} onClick={() => setAddMode('generate')} type="button" disabled={busy}>
+                  <Button variant={addMode === 'generate' ? 'default' : 'outline'} onClick={() => setAddMode('generate')} type="button" disabled={busy || creating}>
                     Generate
                   </Button>
-                  <Button variant={addMode === 'import' ? 'default' : 'outline'} onClick={() => setAddMode('import')} type="button" disabled={busy}>
+                  <Button variant={addMode === 'import' ? 'default' : 'outline'} onClick={() => setAddMode('import')} type="button" disabled={busy || creating}>
                     Import
                   </Button>
                 </div>
-                {addMode === 'import' && (
-                  <div className="grid gap-1.5">
-                    <Label htmlFor="wseed">Seed</Label>
-                    <Input id="wseed" type="password" autoComplete="off" spellCheck={false} ref={seedInputRef} />
-                  </div>
+                {addMode === 'generate' ? (
+                  // Network, Node, Seed Method, signature type, Open Check, Signing Check:
+                  // the flow asks each, and commits itself after the seed backup.
+                  <CreateWalletFlow
+                    defaultLabel=""
+                    onInProgressChange={setCreating}
+                    onDone={() => {
+                      toast.success('Wallet added.')
+                      setAddOpen(false)
+                    }}
+                  />
+                ) : (
+                  <>
+                    <div className="grid gap-1.5">
+                      <Label htmlFor="wlabel">Label</Label>
+                      <Input id="wlabel" value={label} onChange={(e) => setLabel(e.target.value)} placeholder="Savings" disabled={busy} />
+                    </div>
+                    {/* Frozen with the dialog while a check or a write runs. */}
+                    <NetworkChoice value={addNetwork} onChange={setAddNetwork} disabled={busy} />
+                    <div className="grid gap-1.5">
+                      <Label htmlFor="wseed">Seed</Label>
+                      <Input id="wseed" type="password" autoComplete="off" spellCheck={false} ref={seedInputRef} />
+                    </div>
+                  </>
                 )}
               </div>
-              <DialogFooter>
-                <Button onClick={handleAddWallet} disabled={busy}>
-                  {busy ? (addMode === 'import' ? 'Checking…' : 'Adding…') : 'Add'}
-                </Button>
-              </DialogFooter>
+              {addMode === 'import' && (
+                <DialogFooter>
+                  <Button onClick={handleAddWallet} disabled={busy}>
+                    {busy ? 'Checking…' : 'Add'}
+                  </Button>
+                </DialogFooter>
+              )}
             </DialogContent>
           </Dialog>
         </CardHeader>
@@ -266,7 +397,24 @@ export function SettingsTab() {
                     <StatusLegend tone="live">Active</StatusLegend>
                   )}
                 </div>
-                <AddressLink address={w.address} />
+                {/* A locked Wallet is its name and nothing else (AD-26): no
+                    address, network or Node until its own lock is open. */}
+                {w.lockId in openLocks ? (
+                  <>
+                    <AddressLink address={w.address} />
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      Network: {NETWORKS[w.network].label}
+                      {w.network === 'mainnet' && ' — real funds'}
+                    </p>
+                    {w.network === 'devnet' && <DevnetNotice network={w.network} />}
+                    <ControlledNote wallet={w} />
+                    <MasterKeyControl wallet={w} />
+                    <TwoDeviceSign wallet={w} />
+                    <WalletNodeSection wallet={w} />
+                  </>
+                ) : (
+                  <p className="mt-1 text-xs text-muted-foreground">Locked. Switch to this wallet to unlock it.</p>
+                )}
               </div>
               <div className="flex flex-wrap gap-2">
                 {w.id !== activeWalletId && (
@@ -274,12 +422,32 @@ export function SettingsTab() {
                     Use this wallet
                   </Button>
                 )}
-                <Button variant="outline" size="sm" onClick={() => setConfirmRevealFor(w.id)}>
-                  Reveal seed
-                </Button>
-                <Button variant="danger" size="sm" onClick={() => setConfirmRemove(w.id)}>
-                  Remove
-                </Button>
+                {w.lockId in openLocks && NETWORK_IDS.filter((n) => !wallets.some((o) => o.seedId === w.seedId && o.network === n)).map((n) => (
+                  <Button key={n} variant="outline" size="sm" aria-label={`Use ${w.label} on ${NETWORKS[n].label}`} onClick={() => void handleUseOnOtherNetwork(w.id, n)}>
+                    Use on {NETWORKS[n].label}
+                  </Button>
+                ))}
+                {w.lockId in openLocks && (
+                  <Button variant="outline" size="sm" onClick={() => setEditChecksFor(w.id)}>
+                    Edit checks
+                  </Button>
+                )}
+                {w.lockId in openLocks && holdsMasterKey(w) && (
+                  <Button variant="outline" size="sm" onClick={() => setControlFor(w.id)}>
+                    Let another wallet sign
+                  </Button>
+                )}
+                {w.lockId in openLocks && (
+                  <Button variant="outline" size="sm" onClick={() => setConfirmRevealFor(w.id)}>
+                    Reveal seed
+                  </Button>
+                )}
+                {/* Removing destroys the Seed, so it needs the Wallet's own lock open. */}
+                {w.lockId in openLocks && (
+                  <Button variant="danger" size="sm" onClick={() => setConfirmRemove(w.id)}>
+                    Remove
+                  </Button>
+                )}
               </div>
             </div>
           ))}
@@ -352,7 +520,7 @@ export function SettingsTab() {
         <CardContent className="flex flex-col gap-4">
           <div className="flex items-center justify-between">
             <Label htmlFor="autolock">Auto-lock after inactivity</Label>
-            <Select value={String(autoLockMinutes)} onValueChange={(v) => setAutoLockMinutes(Number(v))}>
+            <Select value={autoLockMinutes === null ? undefined : String(autoLockMinutes)} onValueChange={(v) => void handleAutoLock(Number(v))} disabled={autoLockMinutes === null}>
               <SelectTrigger className="w-32" id="autolock">
                 <SelectValue />
               </SelectTrigger>
@@ -366,11 +534,17 @@ export function SettingsTab() {
           </div>
           <Separator />
           {/* An action, not a setting — a Switch that never changes state is a
-              broken affordance for keyboard and screen-reader users (#9). */}
-          <Button variant="outline" className="w-fit" onClick={() => lock()}>
-            Lock now
-          </Button>
-          <Separator />
+              broken affordance for keyboard and screen-reader users (#9). A lock
+              with no Open Check opens itself again at once, so closing it does
+              nothing: no button, as the header has none (AD-26). */}
+          {activeWallet?.openCheck !== 'none' && (
+            <>
+              <Button variant="outline" className="w-fit" onClick={() => activeLockId && tearDownLock(queryClient, activeLockId)}>
+                Lock now
+              </Button>
+              <Separator />
+            </>
+          )}
           <Button variant="danger" className="w-fit" onClick={() => setConfirmResetAll(true)}>
             Remove all wallets from this device
           </Button>
@@ -501,13 +675,30 @@ export function SettingsTab() {
         </CardContent>
       </Card>
 
+      <ControlWalletDialog
+        controller={wallets.find((w) => w.id === controlFor) ?? null}
+        wallets={wallets}
+        onClose={() => setControlFor(null)}
+        onControlled={async () => {
+          await refreshWallets()
+          toast.success('The other wallet now operates this account.')
+        }}
+      />
+
+      <EditChecksDialog
+        wallet={wallets.find((w) => w.id === editChecksFor) ?? null}
+        onClose={() => setEditChecksFor(null)}
+        onEdited={handleEdited}
+      />
+
       <Dialog open={!!confirmRevealFor} onOpenChange={(o) => !o && setConfirmRevealFor(null)}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Reveal this wallet's seed?</DialogTitle>
             <DialogDescription>
               Your seed grants full control of this wallet's funds to anyone who sees it. Make sure nobody can see your screen and
-              that you are not being recorded before continuing.
+              that you are not being recorded before continuing.{' '}
+              {revealCheckSentence(wallets.find((w) => w.id === confirmRevealFor))}
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
@@ -558,7 +749,10 @@ export function SettingsTab() {
           <DialogHeader>
             <DialogTitle>Remove this wallet?</DialogTitle>
             <DialogDescription>
-              This app will no longer hold the encrypted seed for this wallet. Make sure you have your own backup — this cannot be
+              {confirmRemove && wallets.filter((o) => o.seedId === wallets.find((x) => x.id === confirmRemove)?.seedId).length > 1
+                ? 'This removes only this one wallet. The encrypted seed stays, because the same key is still set up as another wallet on this device. '
+                : 'This app will no longer hold the encrypted seed for this wallet. '}
+              Make sure you have your own backup — this cannot be
               undone from within the app.
             </DialogDescription>
           </DialogHeader>

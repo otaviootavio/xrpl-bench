@@ -17,6 +17,7 @@ import { accountExplorerUrl, type NetworkId } from '@/lib/xrpl/networks'
 let network: NetworkId = 'mainnet'
 vi.mock('@/store/app-store', () => ({
   useAppStore: (selector: (s: { network: NetworkId }) => unknown) => selector({ network }),
+  useActiveNetwork: () => network,
 }))
 
 afterEach(cleanup)

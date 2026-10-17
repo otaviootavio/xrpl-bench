@@ -1,8 +1,8 @@
 ---
 title: XRPL Bench
-status: final
+status: draft
 created: 2026-09-12
-updated: 2026-09-15
+updated: 2026-10-09
 ---
 
 # PRD: XRPL Bench
@@ -59,6 +59,15 @@ normally argue for a two-page PRD. It is longer than that because the stakes are
 set by the money, not by the audience: real Mainnet funds make the cost of a
 defect asymmetric and permanent, so the functional surface is enumerated rather
 than summarised.
+
+**As built, and one planned feature.** FR-1 through FR-59 record v1 as shipped.
+§4.14 (FR-60 onward, added 2026-10-09) is **planned and not built**, from the
+forged idea in `_bmad-output/forge/passkey-gated-signing/forged-idea.md`. Where
+it changes a shipped FR, that FR is left describing what ships today and carries
+a one-line *Planned change* note pointing at the FR that will supersede or extend
+it. A shipped FR is rewritten only when §4.14 ships, never before. §4.14 has no
+epic file yet, so until one exists **§4.14 is the functional contract for it** —
+the §0 tie-break has nothing to defer to.
 
 ## 1. Vision
 
@@ -124,9 +133,16 @@ restated only to the depth an FR needs; the full set lives in
   transaction.
 - **Active Wallet** — the one Wallet, of possibly several, that every read and
   every write applies to. Exactly one at a time.
+- **Account Master Key** — an XRPL Account's own master key pair, the one its
+  address is derived from. Distinct from the app's **Master Key** below. Where a
+  §4.14 FR asks "Will this wallet be controlled by a master key?", it means the
+  Account Master Key, held by a **Controlling Wallet**.
 - **Active Network** — Mainnet or Testnet. Each holds independent ledger state for
   the same address. Testnet is the first-run default and the only one with a
-  Faucet.
+  Faucet. *Planned (FR-61): Devnet joins as a third Network, with its own Faucet.*
+- **App PIN** — the one PIN the app holds per device. In v1 it is the mandatory
+  Unlock Method fallback (FR-7). Under §4.14 it is the only PIN: a PIN Open Check
+  and a PIN Signing Check are both the App PIN (FR-68).
 - **Annunciator** — the docked notice area that reports events without covering
   the panel. Present on every screen.
 - **Base Reserve** — XRP locked and non-spendable for as long as the Account
@@ -140,24 +156,49 @@ restated only to the depth an FR needs; the full set lives in
   Unlock Method, and unwrapped (never re-derived-and-trusted) on every unlock.
   **This is the app's key-wrapping key and has nothing to do with an XRPL
   account's master key pair.** Where an FR means the latter it says so and names
-  the flag (see FR-2, `lsfDisableMasterKey`).
+  the flag (see FR-2, `lsfDisableMasterKey`) or says Account Master Key.
+  *Planned (FR-67): the one app-wide Master Key gives way to a lock per Wallet;
+  a Wallet with a Signing Check is never decryptable by the session key.*
+- **Controlling Wallet** — a Wallet that holds the Account Master Key of an
+  Account another Wallet operates through a Regular Key (FR-75). It can be on
+  this device or on an offline device that signs by QR.
+- **Node** — one RPC endpoint on one Network. *Planned (FR-61): chosen per
+  Wallet, from a built-in list or added by the user.*
+- **Open Check** — *planned (FR-65).* The per-Wallet check that must pass before
+  that Wallet's address and balances are shown: App PIN or passkey, or none
+  where the Network allows it.
 - **Owner Reserve** — XRP locked per owned object the Account holds (0.2 XRP each
   at time of writing). Every owned object costs one — a Trust Line is the kind
   this wallet creates, but not the only kind that counts. The figure that drives
   Spendable Balance is the Account's `OwnerCount`, never a count of the Trust
   Lines this app happens to display.
+- **Passkey-Derived Seed** — *planned (FR-63).* Seed Method (1): the Seed is
+  computed from the passkey's PRF output whenever it is needed and is never
+  stored. The same passkey on a new device yields the same Wallet.
+- **Regular Key** — an XRPL key pair an Account authorises, through
+  `SetRegularKey`, to sign in place of its Account Master Key.
 - **Release Manifest** — the static, same-origin document that names the current
   published build so a running instance can learn a newer one exists.
 - **Seed** — the secret from which a Wallet's keypair is derived, and the only
   thing that can recover it. It is the material FR-1 through FR-3 handle, the
   thing the Vault encrypts, and what recovery after a hard lock requires. A Seed is never in application state, never serialized, and never
   transmitted (NFR-2).
+- **Seed Method** — *planned (FR-62).* How a Wallet's Seed exists: as a
+  Passkey-Derived Seed (1) or a Stored Seed (2). Chosen at creation and never
+  changed afterwards.
+- **Signing Check** — *planned (FR-66).* The per-Wallet check required for every
+  signature: **Standard** (none), **passkey only**, or **App PIN only**. There is
+  never a fallback from one to the other.
 - **Spendable Balance** — XRP balance − Base Reserve − (Owner Reserve × owned
   objects). The number the user acts on.
+- **Stored Seed** — *planned (FR-62).* Seed Method (2): a new random Seed,
+  stored encrypted on this device. A new device needs the written Seed. Every
+  Wallet that exists today is a Stored Seed Wallet (FR-74).
 - **Trust Line** — the accounting relationship between holder and issuer in which
   a token balance lives. A token cannot be held or received without one.
-- **Unlock Method** — passkey/platform authenticator, or the mandatory app PIN
-  fallback. Each wraps the same Master Key.
+- **Unlock Method** — passkey/platform authenticator, or the mandatory App PIN
+  fallback. Each wraps the same Master Key. *Planned: replaced by each Wallet's
+  own Open Check (FR-65).*
 - **Vault** — the encrypted at-rest store of Seed material, on-device only.
 - **Wallet** — one independent keypair and address held by the app.
 
@@ -168,6 +209,8 @@ Address Book (§4.11), which ships but which that index does not list. FRs are
 numbered globally and are stable; feature grouping may be reorganised without
 renumbering, and new requirements append rather than renumber — which is why
 FR-57, FR-58 and FR-59 sit inside §4.6 and §4.4 rather than at the end.
+
+A fourteenth, §4.14, is **planned and not built** (§0).
 
 ### 4.1 Account Onboarding
 *Detail: `docs/user-stories/account-onboarding.md`*
@@ -181,6 +224,9 @@ a balance.
 The user can generate a new keypair and address on-device.
 - The Seed is generated locally; it is never transmitted and never logged.
 - The Seed is at rest only in the Vault, encrypted.
+- *Planned change (FR-60, FR-63): creation becomes a question per axis, and a
+  Passkey-Derived Seed is never at rest anywhere. Import (FR-2) stays a separate
+  flow.*
 
 #### FR-2: Import an existing Wallet from a Seed
 The user can import a Wallet by entering a Seed.
@@ -194,6 +240,8 @@ The user can import a Wallet by entering a Seed.
 #### FR-3: Guided Seed backup
 The user is walked through recording the Seed before the Wallet is usable.
 - Revealing the Seed requires an explicit confirm step stating the consequence.
+- *Planned change (FR-69): revealing the Seed also requires that Wallet's
+  Signing Check. FR-72 adds a word check for Mainnet passkey-only Wallets.*
 
 #### FR-4: Activation status and reserve requirement
 The app distinguishes an address with no Account from an Account with a zero
@@ -211,12 +259,20 @@ attempt unwraps it. Deriving a key from a wrong PIN or a wrong passkey assertion
 always succeeds, so derivation is not authentication — the check is whether the
 resulting key decrypts known ciphertext.
 
+*Planned (§4.14): the one Master Key gives way to a lock per Wallet: an Open
+Check and, optionally, a Signing Check. FR-8's principle carries over unchanged:
+every check is proven by decryption.*
+
 #### FR-6: Unlock by passkey
 The user can unlock with a platform authenticator where one exists.
 
 #### FR-7: Mandatory PIN fallback
 An app PIN is set during onboarding alongside the passkey and is never optional.
 - A device with no platform authenticator can still reach every function.
+- *Planned change: superseded by FR-65 and FR-72. Each Wallet's checks are its
+  own choice. A Mainnet Wallet whose only check is a passkey needs a confirmed
+  written Seed instead of a PIN. This reverses `docs/decisions.md` §2's
+  fallback row; see §15 there.*
 
 #### FR-8: Unlock is proven by decryption
 No Unlock Method is trusted because it produced a key.
@@ -246,10 +302,16 @@ consecutive failures the Wallet requires full re-import from Seed.
   anything. Recovery is re-import from Seed, which is a separate and explicitly
   confirmed action. Whether the user should be warned as the count approaches
   eight is unresolved and tracked in §10.
+- *Planned change (FR-68): wrong App PINs at a Signing Check share this count
+  and its hard lock, and the prompt states the tries left. The hard lock blocks
+  the App PIN for every Wallet that uses it; Wallets checked only by passkey
+  keep working.*
 
 #### FR-10: Auto-lock on inactivity
 The app locks after inactivity — default 5 minutes, user-configurable to
 1/5/15/30.
+- *Planned change (FR-65): auto-lock is set per Wallet. On Mainnet it is
+  required and never below 1 minute.*
 
 #### FR-11: Auto-lock on backgrounding
 The app locks immediately on backgrounding on coarse-pointer devices, and after a
@@ -287,6 +349,9 @@ Every read and every write applies to the Active Wallet.
 #### FR-15: Per-Wallet key isolation
 Each Wallet has independent key material; re-authentication is required only
 when signing needs that Wallet's key.
+- *As built, signing never re-authenticates: the unlocked session key decrypts
+  any Seed. Planned change (FR-66, FR-67): a Wallet with a Signing Check
+  re-authenticates on every signature, and the session key cannot open its Seed.*
 
 ### 4.4 Sending Payments
 *Detail: `docs/user-stories/sending-payments.md`*
@@ -451,6 +516,8 @@ tag where one was present. Amounts follow FR-57.
 
 #### FR-38: Switch Active Network
 The user can switch between Mainnet and Testnet.
+- *Planned change (FR-61): Devnet becomes a third Network, and each Wallet is
+  created on one Network and one Node.*
 - Switching never leaves data from the previous Network on screen.
 
 #### FR-39: Mainnet is unmistakable
@@ -463,10 +530,13 @@ On Testnet the user can fund the Active Wallet's address from the Faucet.
   adopt key material handed to it by a network service.
 - No equivalent is offered on Mainnet, and the absence is explained rather than
   silent.
+- *Planned change (FR-61): Devnet gets the same Faucet behaviour.*
 
 #### FR-41: One endpoint plus one failover per Network
 Each Network has a hardcoded primary and a hardcoded backup endpoint, with
 failover between them. Endpoints are not user-editable in v1 (§6.2).
+- *Planned change (FR-61): the user picks a Node from a built-in list per
+  Network, or adds one after a connection test. This closes §10 question 6.*
 
 ### 4.10 Block Explorer Cross-Check
 *Detail: `docs/user-stories/block-explorer-links.md`*
@@ -478,6 +548,7 @@ Network-appropriate official explorer.
   exists.
 - Mainnet links resolve to livenet, Testnet links to testnet. A link never points
   at the wrong Network's explorer.
+- *Planned change (FR-61): Devnet links resolve to the Devnet explorer.*
 
 #### FR-43: Indexing lag is stated
 Copy accompanying explorer links acknowledges that the explorer may lag the
@@ -561,6 +632,249 @@ list.
 When notices exceed the reserved area, overflow is summarised by severity and
 count rather than growing the area.
 
+### 4.14 Per-Wallet Key Setup and Signing Checks — **Planned, not built**
+*Source: `_bmad-output/forge/passkey-gated-signing/forged-idea.md` (hardened
+2026-10-09). No epic file exists yet; until one does, this section is the
+functional contract (§0). Mechanism and rejected alternatives: `addendum.md` §8.*
+
+**Description:** Each Wallet is set up one decision at a time and carries its own
+checks: one to open it, and optionally one on every signature. The threat this
+targets is **someone holding a phone that is already unlocked.** It helps
+somewhat against malicious code running in the page. It adds little against
+stolen device storage, which is already encrypted. A Signing Check is only real
+if the unlocked session cannot open that Wallet's Seed without it. A prompt that
+leaves the Seed openable is for show only, and is not built.
+
+#### FR-60: Wallet creation asks one question per axis
+Creating a Wallet asks, in this order:
+1. Network, then Node (FR-61).
+2. Seed Method (FR-62).
+3. Signature type (FR-64).
+4. Open Check and auto-lock (FR-65).
+5. Signing Check (FR-66).
+
+- Import from Seed (FR-2) is not part of this flow.
+- Whether this Wallet will be controlled by an Account Master Key is not a
+  creation question. It is a later, separate step (FR-75).
+- Every question has a pre-selected answer: `[ASSUMPTION]` Testnet; the first
+  Node listed; Stored Seed; Ed25519; Open Check = passkey where PRF is available,
+  otherwise App PIN, with auto-lock at 5 minutes; Signing Check = Standard on
+  Testnet and Devnet, and on Mainnet passkey where PRF is available, otherwise
+  App PIN.
+- An answer the device cannot support, such as anything needing a passkey with
+  PRF on a device without it, is shown `aria-disabled` with the reason in
+  visible text (§9.1). It is never hidden.
+
+#### FR-61: Network and Node per Wallet
+The user picks Mainnet, Testnet, or Devnet, then a Node: one from a built-in list
+for that Network, or a custom one added after a connection test.
+- The connection test passes only if the Node answers **and** reports the
+  Network the user picked. A Testnet Node offered as a Mainnet Node fails the
+  test rather than being trusted. Each Network reports a distinct network id,
+  verified live 2026-10-09 (`addendum.md` §8).
+- Devnet gets the Faucet (FR-40) and explorer links (FR-42) the way Testnet does.
+  Devnet's Node, Faucet, and explorer were verified live on 2026-10-09
+  (`addendum.md` §8). `docs/user-stories/INDEX.md` § Quick Reference covers only
+  Mainnet and Testnet and needs the Devnet row before FR-61 is built.
+- Devnet exists to preview upcoming amendments and is not a stable ledger. The
+  app says so where Devnet is chosen. `[ASSUMPTION]` Devnet can be reset, which
+  removes its Accounts, so a Devnet Wallet's address may need refunding from the
+  Faucet.
+- The built-in list, decided 2026-10-11: Mainnet `wss://xrplcluster.com` with
+  backup `wss://s1.ripple.com`; Testnet `wss://s.altnet.rippletest.net:51233`
+  with backup `wss://testnet.xrpl-labs.com`; Devnet
+  `wss://s.devnet.rippletest.net:51233`, no backup. Verify each live before this
+  is built. FR-41's failover holds within the
+  built-in list. A custom Node has no implied failover.
+- Mainnet stays unmistakable (FR-39) wherever a Wallet's Network is shown.
+
+#### FR-62: Two Seed Methods, in plain words
+The user picks how the secret key works. Both answers are valid, and each
+explains itself:
+- **(1) Passkey-Derived Seed:** "Your passkey creates the seed. Same passkey on a
+  new phone = same wallet."
+- **(2) Stored Seed:** "A new random seed, locked on this phone. A new phone
+  needs your written seed."
+- The Seed Method cannot be changed after creation. Changing it means a new
+  Wallet and moving the funds, and the app says so where checks are edited
+  (FR-73).
+
+#### FR-63: Passkey-Derived Seed
+A Passkey-Derived Seed is computed from the passkey's PRF output each time it is
+needed, and is never stored, in any form, anywhere.
+- It is offered only where the device and passkey provider support PRF.
+- Before creation the app states, in plain words, that the Seed depends on this
+  app's domain: if the domain ever changes, the passkey can no longer produce
+  it. Only a written Seed (FR-69) or a Controlling Wallet (FR-75) recovers the
+  funds. §9.3 already treats the domain as permanent; this makes it a hard
+  requirement.
+- A Mainnet Passkey-Derived Seed is not offered while production runs on a
+  `*.b-cdn.net` origin (`docs/decisions.md` §8.11). It is `aria-disabled` with
+  that reason until production is on a permanent custom domain the owner
+  controls. Testnet and Devnet may use it. Related Origin Requests are not relied
+  on. *Decided 2026-10-11.*
+- A Passkey-Derived Seed Wallet's Signing Check is always that passkey.
+  Standard and App PIN are not offered for it, because without the passkey there
+  is no Seed to sign with. See the combination table under FR-67. *Decided
+  2026-10-10 (§10 question 7).*
+
+#### FR-64: Signature type
+The user picks Ed25519 or secp256k1. Both are valid XRPL key types, and the
+choice is fixed for the life of the Wallet.
+
+#### FR-65: Open Check, per Wallet
+Each Wallet has its own Open Check (App PIN or passkey) and its own auto-lock.
+- **Mainnet:** an Open Check is required, and auto-lock cannot be set below
+  1 minute.
+- **Testnet and Devnet:** the Open Check is optional.
+- The app itself opens without a check. Every Wallet's name is visible. The
+  address and balances of a Wallet whose Open Check has not passed are not
+  shown, and no ledger read is issued for it.
+- When a Wallet auto-locks, FR-12's teardown applies to that Wallet.
+- An app-wide Open Check is not offered. It would make "no check on Testnet"
+  meaningless on any device that also holds a Mainnet Wallet.
+
+#### FR-66: Signing Check, per Wallet
+Each Wallet has exactly one Signing Check: **Standard** (none), **passkey only**,
+or **App PIN only**.
+- There is no fallback between passkey and App PIN. A Wallet set to passkey only
+  cannot be signed with the App PIN, and the reverse also holds.
+- The check runs on **every** signature from that Wallet. `[ASSUMPTION]` That
+  includes every transaction type the app signs (payments, Trust Line changes,
+  `SetRegularKey`), not only payments.
+- The check comes after the confirm step (FR-20). The confirm step's
+  consequence statement is never replaced by the check prompt.
+
+#### FR-67: A Signing Check is real, not a prompt
+The Seed of a Wallet with a Signing Check cannot be opened by the unlocked
+session's key. Only that Wallet's Signing Check opens it.
+- Verifiable property: with the app unlocked and the Wallet's Open Check passed,
+  no code path can produce that Wallet's Seed without the Signing Check
+  succeeding.
+- The Seed exists in plaintext only for the duration of one signature, then is
+  cleared (NFR-2).
+- A Signing Check is proven by decryption, never by a key being derived (FR-8).
+- Allowed combinations:
+
+| Seed Method | Signing Check: Standard | Passkey only | App PIN only |
+|---|---|---|---|
+| Stored Seed | yes | yes | yes |
+| Passkey-Derived Seed | no | yes | no |
+
+#### FR-68: The signing PIN is the App PIN
+A PIN Signing Check is the App PIN. There is no separate signing PIN.
+- Wrong App PINs at a Signing Check count toward the same failure count and hard
+  lock as the Open Check (FR-9).
+- A cancelled or dismissed passkey prompt never counts (FR-9).
+- The prompt states, in plain words, how many tries remain before the hard lock.
+  This answers §10 question 2 for the signing prompt.
+- The hard lock blocks the App PIN for **every** Wallet that uses it, at both
+  its Open Check and its Signing Check, because the count is shared. A Wallet
+  whose checks are all passkeys keeps working. Recovery for a PIN-using Wallet
+  is re-import from Seed, as in FR-9. `[ASSUMPTION]` For a Passkey-Derived Seed
+  Wallet whose Open Check is the App PIN, the passkey producing its Seed counts
+  as that re-import. *Decided 2026-10-10 (§10 question 8).*
+- The App PIN is set the first time any Wallet chooses a PIN check. A device
+  where no Wallet uses a PIN has no App PIN. Existing Wallets keep the PIN they
+  have (FR-74). *Decided 2026-10-10 (§10 question 9).*
+
+#### FR-69: Revealing the Seed passes the Signing Check
+Revealing a Wallet's Seed requires that Wallet's Signing Check, in addition to
+FR-3's confirm step.
+- A Passkey-Derived Seed can always be revealed this way, so a written backup is
+  always possible. The app never claims the key "cannot be exported".
+- `[ASSUMPTION]` For a Standard Wallet, revealing requires passing its Open Check
+  again. A Wallet with neither check (Testnet or Devnet only) needs only FR-3's
+  confirm step.
+
+#### FR-70: One passkey rule everywhere
+Wherever a Wallet uses a passkey (to open it, to sign, or to create its Seed),
+the user chooses "use an existing passkey or create a new one".
+- A new passkey is named after the Wallet, e.g. "XRPL Bench – Savings
+  (Mainnet)".
+- No two Wallets and no two purposes share key material derived from a passkey.
+  Each use gets its own derivation (`addendum.md` §8).
+
+#### FR-71: The kind of passkey is stated
+Synced and device-bound passkeys are both allowed. After a passkey is created or
+chosen, the app reads which kind it is and states the consequence plainly:
+- **Synced:** anyone who gets into the passkey provider's account can open and
+  sign with this Wallet.
+- **Device-bound:** if this device or key is lost, only the written Seed or a
+  Controlling Wallet recovers the funds.
+
+#### FR-72: Passkey-only Mainnet Wallets need a confirmed written Seed
+A Mainnet Wallet whose only check is a passkey cannot be created until the user
+has written down its Seed and confirmed some of its words in the app.
+- This replaces FR-7's mandatory PIN as the protection against losing the one
+  credential.
+- Testnet and Devnet skip it.
+- `[ASSUMPTION]` "Only check is a passkey" means: the Open Check is a passkey and
+  the Signing Check is a passkey or Standard. The rule also applies when checks
+  are edited into that state later (FR-73).
+
+#### FR-73: Checks can be edited, the Seed Method cannot
+The user can change a Wallet's Open Check, auto-lock, Signing Check, and which
+passkey it uses. The Seed is re-encrypted, and the address does not change.
+- Weakening a check requires passing the current one first. `[ASSUMPTION]`
+  Simpler and stricter: **any** change to a Wallet's checks requires passing the
+  current check that the change affects.
+- The Seed Method is not editable (FR-62).
+- FR-65's Mainnet floor and FR-72's written-Seed rule hold after an edit too.
+
+#### FR-74: Existing Wallets carry over unchanged
+On updating to the build that ships §4.14, every existing Wallet becomes a Stored
+Seed Wallet whose Open Check is its current Unlock Method (passkey and App PIN,
+as today) and whose Signing Check is Standard.
+- No address changes, and no re-import is needed.
+- Nothing becomes weaker than it was before the update. Any stronger check is the
+  user's choice, made through FR-73.
+- The update obeys FR-48: it applies only when the user accepts it.
+
+#### FR-75: A Wallet can be controlled by an Account Master Key (later step)
+After creation, a separate step asks "Will this wallet be controlled by a master
+key?". Yes means: another Wallet, the Controlling Wallet, holds the Account
+Master Key, and this Wallet's key becomes that Account's Regular Key.
+- Any Wallet can be a Controlling Wallet, including a Devnet Wallet with no
+  checks.
+- **Controlling Wallet on this device:** the app warns plainly that whoever has
+  this phone can take over that Account.
+- **Controlling Wallet on an offline device:** it signs by QR (FR-78).
+- `[ASSUMPTION]` The Regular Key's arrival on-ledger is confirmed as validated
+  (FR-22) before the app treats this Wallet as controlled.
+
+#### FR-76: A passkey can be added as an extra key
+A passkey can be added later to an existing Wallet as an additional Regular Key
+for its Account. The Wallet's existing key keeps working.
+- An Account has one Regular Key. If one is already set, adding another replaces it, and the confirm step says in plain words that the old key stops working. *Decided 2026-10-11.*
+
+#### FR-77: Turn off the Account Master Key, from Settings
+From the Settings tab, the user can turn off the Account Master Key of a Wallet
+whose Account has a Regular Key, and turn it back on.
+- It is offered only once a Regular Key is set on the Account and validated
+  (FR-22). Otherwise the control is `aria-disabled` with the reason in visible
+  text (§9.1). The ledger refuses it in that state anyway.
+- Before it proceeds, the app states the exact consequence (NFR-7): after this,
+  the Account Master Key, and the Controlling Wallet that holds it, can no longer
+  sign for this Account. If the Regular Key is also lost (for a passkey, the
+  passkey or the app's domain), the funds are lost for good.
+- It is an irreversible-class action. It needs a confirm step, and it passes the
+  Signing Check of the Wallet that signs it.
+- Turning it back on is signed with the Regular Key. `[ASSUMPTION]` It is offered
+  in the same place, with no extra warning beyond the confirm step.
+- The Account's current state (on or off) is read from the ledger, never
+  remembered locally. A failed read is reported as unknown (FR-59), never shown
+  as on or off.
+
+#### FR-78: Two-device signing by QR
+An online device builds the unsigned transaction, and an offline device running
+XRPL Bench signs it by QR.
+- The transaction's expiry window is long enough for a two-device round, and the
+  expiry is stated in plain words before signing.
+- An expired transaction is reported as expired (FR-24), never as failed.
+- `[ASSUMPTION]` Signing ahead of time, or several transactions per round, is
+  out of scope for this feature.
+
 ## 5. Non-Goals (Explicit)
 
 **This is not an exchange, and will not become one.** Permanently out of scope:
@@ -595,8 +909,9 @@ a path to the unlock or Seed surfaces.
 
 ### 6.1 In Scope
 
-All thirteen features in §4 — FR-1 through FR-59. Every one is implemented at the
-time of writing; this PRD records the v1 boundary rather than proposing it.
+All thirteen shipped features in §4 — FR-1 through FR-59. Every one is
+implemented at the time of writing; for these, this PRD records the v1 boundary
+rather than proposing it. The planned §4.14 is in §6.3, not here.
 FR-57 and FR-58 document money-correctness behaviour the code already has and
 this PRD previously failed to state.
 
@@ -606,7 +921,11 @@ this PRD previously failed to state.
   epic. Not required for a minimum functional self-custody wallet.
 - **Multi-signing and regular-key rotation** — same; and multi-party signing is a
   different product shape from the single-operator assumption in §2.
-- **User-editable RPC endpoints** — v1 ships one hardcoded endpoint plus one
+  *Narrowed by §4.14:* setting a Regular Key from a Controlling Wallet (FR-75)
+  and adding a passkey as an extra key (FR-76) are planned. Rotation as a
+  general feature and multi-signing remain out.
+- **User-editable RPC endpoints** — *planned in §4.14 (FR-61); still out of v1
+  as built.* v1 ships one hardcoded endpoint plus one
   failover per Network (FR-41). **This is the deferral most likely to be missed
   by an operator who does not trust the shipped endpoints**, and it is tracked
   as an open question (§10) rather than left as an annotation, because an
@@ -617,6 +936,12 @@ this PRD previously failed to state.
 - **RTL layout** — recorded as genuinely unreviewed rather than dismissed.
 - **Automated accessibility audit (axe)** — unavailable in the build environment;
   the manual keyboard and screen-reader pass per component stands in for it.
+
+### 6.3 Planned, not built
+
+- **§4.14 Per-Wallet Key Setup and Signing Checks** — FR-60 through FR-78. Its
+  phase-blockers, §10 questions 7 to 9, were answered 2026-10-10. FR-74 (existing Wallets carry over
+  unchanged) is the precondition for shipping any of it.
 
 ## 7. Success Metrics
 
@@ -659,6 +984,12 @@ comforting falsehood §9.6 exists to forbid.
   are enforced by review and by the manual pass, and SM-C3 is the guard against
   reading this metric as more than it is.
 - **SM-5 — A release rebuilds byte-identically from its tag.** Validates FR-50.
+- **SM-7 — A Signing Check cannot be bypassed.** *Planned with §4.14.* With the
+  app unlocked and a Wallet's Open Check passed, no code path yields the Seed of
+  a Wallet with a Signing Check unless that check succeeds, and a wrong App PIN
+  at that check advances the shared failure count. Validates FR-66 through
+  FR-69. Measured by a test that fails on any such code path, plus the manual
+  pass.
 - **SM-6 — Every surface passes keyboard-only and screen-reader use at 320px and
   200% zoom.** Validates FR-44, FR-53 through FR-56.
 
@@ -670,6 +1001,9 @@ comforting falsehood §9.6 exists to forbid.
 - **SM-C2 — Do not optimize for perceived speed on ledger reads.** Counterbalances
   SM-1's cross-check cost. Caching an RPC response to make a balance appear
   faster is the failure mode this product is built to avoid.
+- **SM-C4 — Do not optimize for fewer signing prompts.** Counterbalances SM-7
+  and extends SM-C1 to §4.14. Caching a passed Signing Check across signatures
+  to spare a prompt turns it back into the show-only check §4.14 rejects.
 - **SM-C3 — Do not optimize for gate count.** Counterbalances SM-4. Four green
   gates mean nothing is *provably* broken, not that a change works; adding gates
   is not the same as verifying.
@@ -692,6 +1026,9 @@ than blanket — §3 and §4 carry nothing on focus, colour, or viewport.
     is what lets a refresh inside the auto-lock window avoid re-entering the PIN.
     `docs/decisions.md` §4 records this by name and instructs that it must not be
     "fixed" by removal. Its lifetime is the auto-lock window, not "immediately".
+  - *Planned change (FR-67):* under §4.14 this handle can no longer open the
+    Seed of a Wallet with a Signing Check. Such a Seed is opened only by that
+    check, and only for one signature.
   - Decrypted Seed plaintext is the thing that exists only transiently, for the
     duration of a signing operation, and is cleared as soon as it is used.
 - **NFR-3 — Every ledger read goes through a query hook.** Its key includes the
@@ -796,7 +1133,9 @@ is not deferred, it is forgotten.
    "re-import your Wallet with your Seed" — but nothing is said in between. For a
    user whose Seed backup is imperfect, arriving at eight is effectively loss.
    NFR-7 wants a consequence stated *before* the irreversible step; here it lands
-   after. Neither the requirement nor the build does this today.
+   after. Neither the requirement nor the build does this today. *Partly answered
+   by planned FR-68*, which states the tries left at the signing prompt. The
+   unlock surface still does not.
    *Owner: Otavio. Revisit: before the first real Mainnet funding (§7, SM-3).*
 3. **Is a scoped deploy credential obtainable?** The CI deploy uses an
    account-wide API key, recorded as residual risk in
@@ -811,10 +1150,43 @@ is not deferred, it is forgotten.
    that owns it. The accepted risk is that RTL then becomes unbudgeted work
    discovered late.
    *Owner: Otavio. Revisit: when a user requiring an RTL locale exists.*
-6. **Should RPC endpoints become user-editable?** §6.2 names this as the
-   deferral most likely to be missed by an operator who does not trust the two
-   shipped endpoints.
-   *Owner: Otavio. Revisit: on the first concrete objection to an endpoint.*
+6. **Should RPC endpoints become user-editable?** *Answered yes, as planned
+   FR-61* (built-in list or a custom Node with a connection test). It stays
+   open only until §4.14 ships.
+   *Owner: Otavio. Revisit: when FR-61 ships; close it then.*
+
+**§4.14 phase-blockers.** These had to be resolved before architecture or epics
+for §4.14. All three were answered by Otavio on 2026-10-10.
+
+7. **Which Signing Checks can a Passkey-Derived Seed Wallet have?** The Seed
+   exists only while the passkey produces it, so Standard and App PIN would need
+   the Seed held somewhere between signatures, which contradicts "never stored".
+   *Answered 2026-10-10: passkey only (FR-63, FR-67). Storing the Seed between
+   signatures would make it a Stored Seed Wallet.*
+8. **What does the hard lock lock, now that checks are per Wallet?** FR-9's
+   eighth failure blocks "the unlock path", and recovery is re-import from Seed.
+   With a shared App PIN count (FR-68), it is unclear whether the hard lock
+   blocks the App PIN for every Wallet or only for the Wallet where it was
+   reached, and what recovery means for a Passkey-Derived Seed Wallet, whose
+   passkey still works.
+   *Answered 2026-10-10: the hard lock blocks the App PIN for every Wallet that
+   uses it; Wallets checked only by passkey keep working; recovery stays
+   re-import from Seed (FR-68).*
+9. **Does an App PIN exist on a device where no Wallet uses one?** The draft
+   says no (FR-68). That affects FR-9's count and the migration (FR-74), where
+   every existing Wallet keeps the PIN it has.
+   *Answered 2026-10-10: no. The App PIN is created the first time a Wallet
+   chooses it (FR-68).*
+
+**§4.14 non-blockers,** deferred with `[ASSUMPTION]` defaults in place:
+
+10. **Pre-selected answers at each creation question** (FR-60).
+    *Answered 2026-10-11: the FR-60 defaults stand. Revisit only if the §4.14 UX
+    pass finds a reason.*
+11. **Built-in Node list per Network** (FR-61).
+    *Answered 2026-10-11: the list is in FR-61. Live check before build.*
+12. ~~Ever offering "turn off the Account Master Key"~~ — **answered
+    2026-10-09: yes, from Settings (FR-77).**
 
 **Defects in the authoritative inputs, reported and not repaired.** These are not
 open questions about the product — they are places where a document this PRD
@@ -825,6 +1197,18 @@ defers to is wrong, recorded so §0's tie-break rule is applied with open eyes.
 - `docs/user-stories/wallet-security.md` specifies passkey-only unlock that
   "never falls back", with the key-encryption key in platform secure storage —
   a mechanism a PWA cannot use, and contradicted by the mandatory PIN in FR-7.
+  Planned §4.14 makes passkey-only a real per-Wallet choice again (FR-65,
+  FR-72), but through PRF, not platform secure storage. The epic file is still
+  stale either way.
+- *Resolved 2026-10-10:* `docs/decisions.md` §2 recorded the mandatory PIN
+  fallback that planned §4.14 reverses (FR-7's note, FR-72); §15 now records the
+  planned supersession, and the §2 rows point to it.
+- *Resolved 2026-10-10:* `PRODUCT.md` and `docs/user-stories/INDEX.md` listed
+  regular-key rotation as deferred. Both now keep only multi-signing deferred
+  and point to §4.14 as planned.
+- §4.14 has no epic file. `docs/user-stories/INDEX.md` now lists it as planned.
+- `docs/user-stories/INDEX.md`'s Quick Reference has no Devnet facts; they are in
+  the addendum §8 until §4.14 is built.
 - `docs/user-stories/INDEX.md` lists neither an Address Book epic nor an epic
   file, though the capability ships and FR-21 and FR-45 depend on it (§4.11).
 - `CLAUDE.md`'s five-document table has no row for the product layer, though it
@@ -851,7 +1235,9 @@ nothing is *provably* broken, not that a change works.
 - **§0** — `[ASSUMPTION]` This PRD records the v1 boundary as built rather than
   proposing new scope. Confirmed as the accepted frame: §6.1's "already
   implemented", §7's correctness-gate metrics, and §2.3's absent journeys all
-  follow from it and are deliberate, not omissions.
+  follow from it and are deliberate, not omissions. *Amended 2026-10-09:* it
+  holds for FR-1 through FR-59 only. §4.14 is planned scope (see the next §0
+  entry below).
 - **§0** — `[ASSUMPTION]` The tie-break rule now defers to an epic file only
   *where it is current*. Two stale files are named in §10; the qualification is
   necessary because applying the rule literally would regress shipped behaviour.
@@ -864,5 +1250,12 @@ nothing is *provably* broken, not that a change works.
   (in scope, shipped), even though `docs/user-stories/INDEX.md` does not list it.
   FR-21 and FR-45 depend on it existing, and neither has an authoritative
   acceptance criterion anywhere. This is a known contract gap, not a closed one.
+- **§0** — The as-built frame now has one planned exception, §4.14, decided
+  2026-10-09. Shipped FRs keep describing what ships, and carry *Planned change*
+  notes rather than being rewritten.
+- **§4.14** — `[ASSUMPTION]` tags inline in FR-60, FR-61, FR-66, FR-68, FR-69,
+  FR-72, FR-73, FR-75, FR-77, and FR-78. None blocks a phase: §10 questions 7
+  to 9 were answered 2026-10-10. Questions 10 and 11 were answered
+  2026-10-11. The rest are small enough to settle in the §4.14 UX pass.
 - **§7** — `[ASSUMPTION]` Success metrics are correctness gates rather than usage
   targets. No usage target exists anywhere in the repo record.

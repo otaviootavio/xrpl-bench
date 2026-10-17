@@ -1,10 +1,19 @@
 import type { QueryClient } from '@tanstack/react-query'
 import { wipeVault } from '@/lib/crypto/auth'
 import { disconnectAllClients } from '@/lib/xrpl/client'
-import { clearPersistedAppState } from '@/store/app-store'
+import { removeAccountScoped } from '@/lib/xrpl/query-keys'
+import { clearPersistedAppState, useAppStore } from '@/store/app-store'
 
 /**
- * The one owner of local teardown — AD-16. It clears **two** sets, never one:
+ * The one owner of local teardown — AD-16, amended by AD-26. It has **three**
+ * scopes, and a lock only ever uses the first:
+ *
+ *  - **Per-lock** (`tearDownLock`): drop that lock's key and persisted session
+ *    and remove the account-scoped query data of the Wallets on it — unless
+ *    another OPEN lock holds a record for the same Account, whose data must stay
+ *    readable. Nothing belonging to another lock is touched.
+ *
+ * A full reset (`tearDownAllLocalState`) clears **two** sets, never one:
  *
  *  - **Account data** never survives a teardown that claims to remove it. Its
  *    persisted owners are listed in `PERSISTED_ACCOUNT_DATA` below; its
@@ -88,7 +97,7 @@ export async function tearDownAllLocalState(queryClient: QueryClient): Promise<v
 }
 
 /**
- * Lock and single-wallet removal. Clears the in-memory account data — the
+ * Single-wallet removal. Clears the in-memory account data — the
  * TanStack Query cache, where balances, trust lines and history live — and
  * nothing else: the vault keeps the other wallets' seeds, the app store keeps
  * their labels, and the shell stays so the app still opens offline.
@@ -99,6 +108,44 @@ export async function tearDownAllLocalState(queryClient: QueryClient): Promise<v
  */
 export function clearCachedAccountData(queryClient: QueryClient): void {
   queryClient.clear()
+}
+
+/**
+ * Removes the account-scoped query data of every Wallet on the given locks —
+ * which have ALREADY closed — except an Account that a still-open lock also
+ * holds a Wallet for (AD-18: two records can share `(network, Account)`).
+ * Idempotent, so the observer in `useClearCacheOnLock` and `tearDownLock` may
+ * both run it.
+ */
+export function removeLockedAccountData(queryClient: QueryClient, lockIds: readonly string[]): void {
+  const { wallets, openLocks } = useAppStore.getState()
+  const closed = new Set(lockIds)
+  const stillReadable = new Set(
+    wallets.filter((w) => !closed.has(w.lockId) && w.lockId in openLocks).map((w) => `${w.network}:${w.address}`),
+  )
+  for (const w of wallets) {
+    if (!closed.has(w.lockId) || w.lockId in openLocks) continue
+    if (stillReadable.has(`${w.network}:${w.address}`)) continue
+    removeAccountScoped(queryClient, w.network, w.address)
+  }
+  // The last open lock closing leaves nothing readable, so the ledger-wide and
+  // counterparty-keyed entries (destination checks, reserves, fee) go too — the
+  // old app-wide lock cleared everything, and so does the last one now.
+  if (Object.keys(openLocks).length === 0) clearCachedAccountData(queryClient)
+}
+
+/** Per-lock scope: closes ONE lock and removes its Wallets' account data. */
+export function tearDownLock(queryClient: QueryClient, lockId: string): void {
+  useAppStore.getState().closeLock(lockId)
+  removeLockedAccountData(queryClient, [lockId])
+}
+
+/** Closes every lock (backgrounding past the grace). The shell and the vault
+ * stay; only the keys, sessions and account data of the Wallets go. */
+export function tearDownAllLocks(queryClient: QueryClient): void {
+  const ids = Object.keys(useAppStore.getState().openLocks)
+  useAppStore.getState().closeAllLocks()
+  removeLockedAccountData(queryClient, ids)
 }
 
 /**

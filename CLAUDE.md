@@ -43,7 +43,9 @@ expanded in `docs/agents/`.
   boundary. Never `Number()` a drops value.
 - No secret ever enters `localStorage`, React state, a store, the URL, or
   anything serializable — not even in development.
-- An unlock is proven by decrypting known ciphertext, never by deriving a key.
+- An unlock is proven by decrypting known ciphertext, never by deriving a key. A
+  Passkey-Derived Seed has no ciphertext: its proof is that the address the
+  passkey derives equals the Wallet's recorded address.
 - Every ledger read goes through a TanStack Query hook whose key comes from the
   one key factory. An account-scoped key includes the active wallet *and* the
   active network; a ledger-wide or device-scoped read is a named exception on
@@ -68,11 +70,12 @@ feature, and do not re-derive it.
 | [docs/user-stories/in-app-notices.md](docs/user-stories/in-app-notices.md) · [docs/sprints/notices-sprints.md](docs/sprints/notices-sprints.md) | **Complete and visually verified** (2026-09-02). N1–N4 decided and Sprint 16/17 built in `docs/decisions.md` §9; a later pass with a real browser confirmed the visual acceptance criteria and fixed two defects gates alone had missed (§9.5). |
 | [docs/sprints/bugfix-sprints.md](docs/sprints/bugfix-sprints.md) · [interface-sprints.md](docs/sprints/interface-sprints.md) | Complete. Kept as the record of what was found and decided. |
 | [docs/sprints/mobile-chrome-sprints.md](docs/sprints/mobile-chrome-sprints.md) | **Complete** (2026-09-09). A pale status bar above the dark panel on a dark-mode home-screen install: an installed PWA ignores the `media` form of `theme-color` and takes the manifest colour, which cannot carry a media query — and all four browser-surface hex literals had drifted from `--background` besides. `index.html` now writes one theme-color tag from a head script (the form an installed app *does* honour, so the bar follows the finish and a live switch); the manifest bakes dark as the floor; `check:contrast` measures all four literals. The Android install itself was not verifiable from this machine — see the file's Verification table. |
+| [docs/sprints/passkey-signing-sprints.md](docs/sprints/passkey-signing-sprints.md) | **Planned, not built** (Sprints 18–22). Per-Wallet key setup and passkey-gated signing, PRD §4.14. Contract: `_bmad-output/specs/spec-passkey-signing/`. |
 
-**All twelve epics are now built.** The five tables above are the record of
-what was found, decided, and shipped — read one before touching its area, not
-because more work is pending, but because the reasoning is the load-bearing
-part.
+**All twelve epics are built; the passkey-signing plan above is the one open item.** The five tables above are the record of
+what was found, decided, and shipped, except the passkey-signing row, which is
+planned — read one before touching its area, because the reasoning is the
+load-bearing part.
 
 ## Gates
 

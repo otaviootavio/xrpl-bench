@@ -1,12 +1,13 @@
 import { useEffect, useState } from 'react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { TooltipProvider } from '@/components/ui/tooltip'
+import { PinPromptProvider } from '@/components/wallet/PinPromptDialog'
 import { Onboarding } from '@/pages/Onboarding'
-import { Unlock } from '@/pages/Unlock'
 import { Main } from '@/pages/Main'
-import { useAppStore } from '@/store/app-store'
-import { listWallets } from '@/lib/crypto/keystore'
-import { restoreSession } from '@/lib/crypto/auth'
+import { appStateHydrationFailed, appStateSettled, useAppStore } from '@/store/app-store'
+import { listWallets, migrateLegacyVault } from '@/lib/crypto/keystore'
+import { restoreOpenLocks } from '@/lib/crypto/lock'
+import { notify, setNoticeWalletReader } from '@/lib/notify'
 import { setTxInFlightReporter } from '@/lib/xrpl/writes'
 
 /**
@@ -21,48 +22,81 @@ import { setTxInFlightReporter } from '@/lib/xrpl/writes'
  */
 setTxInFlightReporter((inFlight) => useAppStore.getState().setTxInFlight(inFlight))
 
+// A notice belongs to the Wallet that was active when it was raised, and goes when
+// another becomes active: an error about Wallet A must not sit over Wallet B.
+setNoticeWalletReader(() => useAppStore.getState().activeWalletId)
+useAppStore.subscribe((state, previous) => {
+  if (state.activeWalletId !== previous.activeWalletId) notify.scopeToWallet(state.activeWalletId)
+})
+
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: { retry: 1, refetchOnWindowFocus: false },
   },
 })
 
+/** Story 12.1 / AD-27: the legacy-vault relabel, run once per app start and only
+ * here — in a build the user has already activated. Idempotent and atomic in the
+ * vault; an error leaves every Wallet on its legacy shape, still openable. */
+let migration: Promise<void> | null = null
+function migrateOnce(): Promise<void> {
+  migration ??= appStateSettled()
+    .then(() => {
+      // A failed read leaves the store on its defaults, and the relabel writes
+      // `network` into the vault for good: skip it, so every Wallet stays on its
+      // legacy shape and the next app start tries again.
+      if (appStateHydrationFailed()) return undefined
+      const { network, autoLockMinutes } = useAppStore.getState()
+      return migrateLegacyVault({ network, autoLockMinutes })
+    })
+    .then(() => undefined)
+    .catch((err: unknown) => {
+      // Not cached: a later call retries.
+      console.error('Legacy vault migration failed; Wallets stay on their legacy shape.', err)
+      migration = null
+    })
+  return migration
+}
+
+/** Story 4 / AD-26: there is no app-wide unlock gate. The app opens to the shell;
+ * `Main` shows the active Wallet's locked view until its own lock is open. */
 function Gate() {
   const wallets = useAppStore((s) => s.wallets)
   const setWallets = useAppStore((s) => s.setWallets)
-  const activeWalletId = useAppStore((s) => s.activeWalletId)
   const setActiveWalletId = useAppStore((s) => s.setActiveWalletId)
-  const unlocked = useAppStore((s) => s.unlocked)
-  const unlock = useAppStore((s) => s.unlock)
+  const openLock = useAppStore((s) => s.openLock)
   const [ready, setReady] = useState(false)
 
   useEffect(() => {
     // Hydrates the wallet list from IndexedDB on mount — not a ledger read,
     // so it's outside the TanStack Query guardrail. zustand setters are
     // referentially stable, so listing them here is safe and complete
-    // (docs/decisions.md guardrail #2: never disable exhaustive-deps).
+    // (docs/decisions.md guardrail #2: never disable exhaustive-deps). Runs
+    // once: the selection is read from the store, not from a dependency, so
+    // switching Wallets never re-restores sessions.
     let cancelled = false
-    listWallets().then(async (stored) => {
+    migrateOnce().then(() => listWallets(useAppStore.getState().network)).then(async (stored) => {
       if (cancelled) return
       setWallets(stored)
-      if (!activeWalletId && stored.length > 0) setActiveWalletId(stored[0].id)
-      // Restores a still-valid unlocked session so a page refresh within
-      // the auto-lock window doesn't force re-entering the PIN/passkey —
-      // see docs/decisions.md and lib/crypto/auth.ts restoreSession().
+      const active = useAppStore.getState().activeWalletId
+      if (stored.length > 0 && !stored.some((w) => w.id === active)) setActiveWalletId(stored[0].id)
+      // Restores each lock's still-valid session so a page refresh within ITS
+      // auto-lock window doesn't force re-entering the PIN/passkey — see
+      // lib/crypto/lock.ts restoreOpenLocks(). Locks without a valid session stay closed.
       if (stored.length > 0) {
-        const restoredKey = await restoreSession()
-        if (!cancelled && restoredKey) unlock(restoredKey)
+        for (const restored of await restoreOpenLocks().catch(() => [])) {
+          if (!cancelled) openLock(restored.lockId, restored.key, restored.autoLockMinutes, restored.expiresAt)
+        }
       }
       if (!cancelled) setReady(true)
     })
     return () => {
       cancelled = true
     }
-  }, [activeWalletId, setActiveWalletId, setWallets, unlock])
+  }, [openLock, setActiveWalletId, setWallets])
 
   if (!ready) return null
   if (wallets.length === 0) return <Onboarding />
-  if (!unlocked) return <Unlock />
   return <Main />
 }
 
@@ -70,7 +104,9 @@ function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <TooltipProvider>
-        <Gate />
+        <PinPromptProvider>
+          <Gate />
+        </PinPromptProvider>
       </TooltipProvider>
     </QueryClientProvider>
   )

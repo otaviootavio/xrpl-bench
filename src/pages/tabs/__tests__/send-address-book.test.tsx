@@ -20,13 +20,13 @@ const useRecommendedFee = vi.fn()
 const useTrustLines = vi.fn()
 const fetchQuery = vi.fn()
 const submitXrpPayment = vi.fn()
-const unlockWalletForSigning = vi.fn()
+const signingHandleFor = vi.fn()
 const invalidateQueries = vi.fn()
 const addAddressBookEntry = vi.fn()
 let network: 'mainnet' | 'testnet' = 'testnet'
 let addressBook: { address: string; network?: string; destinationTag?: string; label?: string }[] = []
 
-vi.mock('@/hooks/useDestinationInfo', () => ({ useDestinationInfo: () => useDestinationInfo() }))
+vi.mock('@/hooks/useDestinationInfo', () => ({ useDestinationInfo: (...a: unknown[]) => useDestinationInfo(...a) }))
 vi.mock('@/hooks/useRecommendedFee', () => ({ useRecommendedFee: () => useRecommendedFee() }))
 vi.mock('@/hooks/useTrustLines', () => ({ useTrustLines: () => useTrustLines() }))
 vi.mock('@/hooks/useSpendableBalance', () => ({ useSpendableBalance: () => useSpendableBalance() }))
@@ -39,7 +39,13 @@ vi.mock('@/components/ui/select', () => ({
 }))
 vi.mock('@tanstack/react-query', () => ({ useQueryClient: () => ({ invalidateQueries, fetchQuery }) }))
 vi.mock('@/lib/crypto/keystore', () => ({
-  unlockWalletForSigning: (...args: unknown[]) => unlockWalletForSigning(...args),
+  signingHandleFor: (...args: unknown[]) => signingHandleFor(...args),
+  unavailablePrompts: { pin: async () => null },
+}))
+const fetchAccountState = vi.fn()
+vi.mock('@/lib/xrpl/reads', () => ({
+  fetchAccountState: (...a: unknown[]) => fetchAccountState(...a),
+  fetchAccountLines: vi.fn(async () => []),
 }))
 vi.mock('@/lib/xrpl/writes', () => ({
   submitXrpPayment: (...args: unknown[]) => submitXrpPayment(...args),
@@ -49,9 +55,13 @@ vi.mock('@/components/wallet/AddressLink', () => ({
   TxLink: ({ hash }: { hash: string }) => <span>{hash}</span>,
   AddressLink: ({ address }: { address: string }) => <span>{address}</span>,
 }))
+let activeNode: string | undefined
 vi.mock('@/store/app-store', () => ({
   useAppStore: (selector: (s: Record<string, unknown>) => unknown) =>
     selector({ network, vaultKey: {}, addressBook, addAddressBookEntry }),
+  useWalletOpenKey: () => ({}),
+  useActiveNetwork: () => network,
+  useActiveNode: () => activeNode,
   useActiveWallet: () => ({ id: 'w1', address: WALLET_ADDRESS, label: 'Test' }),
 }))
 
@@ -59,6 +69,21 @@ import { SendTab } from '../SendTab'
 
 const EXCHANGE = 'rHb9CJAWyB4rj91VRWn96DkukG4bwdtyTh'
 const WALLET_ADDRESS = 'r4NagxniGTmPRr8yBRXRD6NNpZP7FfP4KR'
+
+/** A handle whose Signing Check passes at once. */
+const signed = vi.fn()
+const fakeHandle = () => ({
+  address: WALLET_ADDRESS,
+  signsAsMaster: true,
+  open: async () => ({ sign: (tx: unknown) => (signed(tx), { tx_blob: '00', hash: 'AA' }), dispose: () => {} }),
+})
+/** A submit that, like the choke point, opens the Signer before reporting `outcome`. */
+const opening = (outcome: unknown) => async (_network: unknown, handle: { open(): Promise<{ sign(tx: unknown): unknown; dispose(): void }> }) => {
+  const signer = await handle.open()
+  signer.sign({})
+  signer.dispose()
+  return outcome
+}
 const NOW = 1_800_000_000_000
 
 function info() {
@@ -68,6 +93,7 @@ function info() {
 beforeEach(() => {
   addressBook = []
   network = 'testnet'
+  activeNode = undefined
   vi.useFakeTimers()
   vi.setSystemTime(NOW)
   // Read per render, so a test that changes `network` sees the check for it.
@@ -91,8 +117,9 @@ beforeEach(() => {
   useRecommendedFee.mockReturnValue({ data: '12', isError: false, refetch: vi.fn() })
   useTrustLines.mockReturnValue({ data: [] })
   fetchQuery.mockImplementation(async () => info())
-  unlockWalletForSigning.mockResolvedValue({ address: WALLET_ADDRESS })
-  submitXrpPayment.mockResolvedValue({ status: 'validated', resultCode: 'tesSUCCESS', hash: 'AB' })
+  signed.mockClear()
+  signingHandleFor.mockImplementation(async () => fakeHandle())
+  submitXrpPayment.mockImplementation(opening({ status: 'validated', resultCode: 'tesSUCCESS', hash: 'AB' }))
 })
 
 afterEach(() => {
@@ -255,8 +282,32 @@ describe('SendTab — the warning is decided on the network too', () => {
     review('3')
     await confirm()
 
-    expect(submitXrpPayment).toHaveBeenCalledWith('mainnet', expect.anything(), expect.objectContaining({ destinationTag: 3 }))
+    expect(submitXrpPayment).toHaveBeenCalledWith('mainnet', expect.anything(), expect.objectContaining({ destinationTag: 3 }), undefined)
     expect(addAddressBookEntry.mock.calls[0][0]).toMatchObject({ network: 'mainnet', address: EXCHANGE, destinationTag: '3' })
+  })
+})
+
+describe('SendTab — the signing handle', () => {
+  it('reaches the choke point with what it says about itself, so a master-key send from an Account whose master key is off is refused there', async () => {
+    review('3')
+    await confirm()
+    expect(submitXrpPayment.mock.calls[0][1]).toMatchObject({ address: WALLET_ADDRESS, signsAsMaster: true })
+  })
+})
+
+describe('SendTab — the active Wallet\'s Node', () => {
+  it('reaches the XRP submit and the destination re-check', async () => {
+    activeNode = 'wss://node.example.com'
+    review('3')
+    await confirm()
+    expect(submitXrpPayment.mock.calls[0][3]).toBe('wss://node.example.com')
+    expect(useDestinationInfo).toHaveBeenCalledWith('testnet', EXCHANGE, 'XRP', 'wss://node.example.com')
+    // The re-check that authorises the payment asks the same Node: run the
+    // options `fetchQuery` was handed and see which Node its read names.
+    expect(fetchQuery).toHaveBeenCalled()
+    fetchAccountState.mockResolvedValue({ exists: true, requireDestTag: false })
+    await fetchQuery.mock.calls[0][0].queryFn()
+    expect(fetchAccountState).toHaveBeenCalledWith('testnet', EXCHANGE, 'wss://node.example.com')
   })
 })
 
@@ -265,7 +316,7 @@ describe('SendTab — the entry a send writes', () => {
     review('0042')
     await confirm()
 
-    expect(submitXrpPayment).toHaveBeenCalledWith('testnet', expect.anything(), expect.objectContaining({ destinationTag: 42 }))
+    expect(submitXrpPayment).toHaveBeenCalledWith('testnet', expect.anything(), expect.objectContaining({ destinationTag: 42 }), undefined)
     expect(addAddressBookEntry).toHaveBeenCalledOnce()
     const [entry] = addAddressBookEntry.mock.calls[0]
     expect(entry.address).toBe(EXCHANGE)
@@ -281,7 +332,7 @@ describe('SendTab — the entry a send writes', () => {
     expect(screen.getByText(/plus a network fee of 0\.00001 XRP/)).toBeTruthy()
     await confirm()
 
-    expect(submitXrpPayment).toHaveBeenCalledWith('testnet', expect.anything(), expect.objectContaining({ feeDrops: '10' }))
+    expect(submitXrpPayment).toHaveBeenCalledWith('testnet', expect.anything(), expect.objectContaining({ feeDrops: '10' }), undefined)
   })
 
   it('refuses on the form when the fee read is above the cap', () => {

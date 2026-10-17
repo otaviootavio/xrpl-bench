@@ -17,10 +17,11 @@ export function fetchAccountStateOnce(
   queryClient: QueryClient,
   network: NetworkId,
   address: string,
+  node?: string,
 ): Promise<AccountState> {
   return queryClient.fetchQuery({
     queryKey: queryKeys.accountState(network, address),
-    queryFn: () => fetchAccountState(network, address),
+    queryFn: () => fetchAccountState(network, address, node),
     staleTime: 15_000,
     // The import screens await this before they either write or warn. Under
     // the default `'online'` mode a browser that reports itself offline
@@ -28,6 +29,26 @@ export function fetchAccountStateOnce(
     // at "Checking…" with nothing to tell the operator. `'always'` lets the
     // read run and fail, so an unreachable ledger reaches the caller as an
     // error it can report (Epic 11, story 11.1).
+    networkMode: 'always',
+  })
+}
+
+/**
+ * A read that is never served from the cache: for a guard on a money-moving or
+ * key-changing action (AD-29), where a 15-second-old answer is not good enough.
+ * The same cache entry and key as `useAccountState`, refreshed by the result.
+ * Rejects when the read errors; the caller claims nothing then.
+ */
+export function fetchAccountStateFresh(
+  queryClient: QueryClient,
+  network: NetworkId,
+  address: string,
+  node?: string,
+): Promise<AccountState> {
+  return queryClient.fetchQuery({
+    queryKey: queryKeys.accountState(network, address),
+    queryFn: () => fetchAccountState(network, address, node),
+    staleTime: 0,
     networkMode: 'always',
   })
 }
@@ -81,12 +102,12 @@ export interface DestinationInfo {
  * the answer the form displays and the answer that authorises the payment
  * cannot come from differently-configured reads.
  */
-export function destinationInfoQueryOptions(network: NetworkId, destination: string, asset: string) {
+export function destinationInfoQueryOptions(network: NetworkId, destination: string, asset: string, node?: string) {
   return {
     queryKey: queryKeys.destinationInfo(network, destination, asset),
     staleTime: DESTINATION_CHECK_FRESHNESS_MS,
     queryFn: async (): Promise<DestinationInfo> => {
-      const state = await fetchAccountState(network, destination)
+      const state = await fetchAccountState(network, destination, node)
       const info: DestinationInfo = {
         network,
         destination,
@@ -96,7 +117,7 @@ export function destinationInfoQueryOptions(network: NetworkId, destination: str
       }
       if (asset !== 'XRP' && state.exists) {
         const [currency, issuer] = asset.split('|')
-        const lines = await fetchAccountLines(network, destination)
+        const lines = await fetchAccountLines(network, destination, node)
         info.hasTrustLine = lines.some((l) => l.currency === currency && l.account === issuer)
       }
       return info
@@ -122,8 +143,9 @@ export function fetchDestinationInfoOnce(
   network: NetworkId,
   destination: string,
   asset: string,
+  node?: string,
 ): Promise<DestinationInfo> {
   // The key is `queryKeys.destinationInfo(...)` by construction, since the
   // options come from the one definition above (§5.4).
-  return queryClient.fetchQuery(destinationInfoQueryOptions(network, destination, asset))
+  return queryClient.fetchQuery(destinationInfoQueryOptions(network, destination, asset, node))
 }

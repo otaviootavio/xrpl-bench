@@ -29,7 +29,7 @@ import type { NetworkId } from '@/lib/xrpl/networks'
  *
  * A failed read is none of the three; `query.isError` is that fact.
  */
-export function useDestinationCheck(network: NetworkId, destination: string, asset: string) {
+export function useDestinationCheck(network: NetworkId, destination: string, asset: string, node?: string) {
   /** The last clock reading the form has actually taken, written only by the
    * timer below. Rendering never calls `Date.now()` itself: a render that reads
    * the clock answers differently each time it runs, and a guard that cannot be
@@ -39,7 +39,7 @@ export function useDestinationCheck(network: NetworkId, destination: string, ass
   const [observedNow, setObservedNow] = useState(Date.now)
 
   // Ledger reads go through a query hook, never an onBlur handler (§4).
-  const query = useDestinationInfo(network, destination, asset)
+  const query = useDestinationInfo(network, destination, asset, node)
   const info = query.data
   const destinationValid = isValidClassicAddress(destination)
 

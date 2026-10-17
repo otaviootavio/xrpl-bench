@@ -1,6 +1,5 @@
 /** @vitest-environment jsdom */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { Wallet } from 'xrpl'
 
 /**
  * FR-48 / AD-9: an app update must never activate mid-transaction. After the
@@ -41,8 +40,8 @@ vi.mock('@/pages/Main', () => ({ Main: () => null }))
 // and calls `.sign()`.
 const wallet = {
   address: 'rN7n7otQDd6FczFgLdSqtcsAUxDkw6fzRH',
-  sign: () => ({ tx_blob: '00', hash: 'ABCD' }),
-} as unknown as Wallet
+  open: async () => ({ sign: () => ({ tx_blob: '00', hash: 'ABCD' }), dispose: () => {} }),
+}
 const DESTINATION = 'rPT1Sjq2YGrBMTttX4GZHjKu9dyfzbpAYe'
 
 async function loadApp() {
@@ -76,6 +75,7 @@ describe('App installs the in-flight reporter the update gate depends on', () =>
         ({
           isConnected: () => true,
           connect: async () => {},
+          request: async () => ({ result: { ledger_index: 50 } }),
           autofill: async (tx: any) => {
             seenDuringSubmit.push(useAppStore.getState().txInFlight)
             return { ...tx, Fee: '12', Sequence: 1, LastLedgerSequence: 100 }
@@ -104,6 +104,7 @@ describe('App installs the in-flight reporter the update gate depends on', () =>
         ({
           isConnected: () => true,
           connect: async () => {},
+          request: async () => ({ result: { ledger_index: 50 } }),
           autofill: async (tx: any) => ({ ...tx, Fee: '12', Sequence: 1, LastLedgerSequence: 100 }),
           submitAndWait: async () => {
             seenDuringSubmit.push(useAppStore.getState().txInFlight)

@@ -111,11 +111,19 @@ trading UI, fiat on/off-ramp, staking or yield or lending, KYC/AML, custodial
 recovery, shared or omnibus addresses.
 
 **Deferred, and recorded as deferred rather than silently absent.** Checks,
-Escrow, Payment Channels, multi-signing and regular-key rotation (all real XRPL
-features, each its own future epic); fiat-equivalent balance display (would add a
+Escrow, Payment Channels and multi-signing (all real XRPL features, each its own
+future epic); fiat-equivalent balance display (would add a
 price-oracle dependency); Web Push for incoming payments (impossible without a
 backend — see Positioning); user-editable custom RPC endpoints (v1 ships one
 hardcoded endpoint plus one failover per network).
+
+**Planned, decided but not built.** Per-Wallet key setup and signing checks:
+each Wallet chooses its network and Node, how its Seed is kept, and the check
+that opens it and the check that signs for it; regular keys, turning off the
+Account Master Key, and two-device signing. This narrows the regular-key and
+custom-endpoint deferrals above. Specified in the PRD
+(`_bmad-output/planning-artifacts/prds/prd-xrpl-wallet-2026-09-12/prd.md`
+§4.14); why it changes `docs/decisions.md` §2 is in §15 there.
 
 **Ledger facts the product must respect** (verified 2026-08-31; code reads live
 values from `server_state` regardless): an address becomes an account only on

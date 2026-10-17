@@ -1,8 +1,9 @@
-import { Wallet, type Payment, type SubmittableTransaction, type TrustSet, TrustSetFlags } from 'xrpl'
+import { type AccountSet, AccountSetAsfFlags, hashes, type Payment, type SetRegularKey, type SubmittableTransaction, type TrustSet, TrustSetFlags } from 'xrpl'
 import { getXrplClient, holdXrplClient } from './client'
 import type { NetworkId } from './networks'
 import { MAX_FEE_DROPS, feeWithinCap, formatXrp, isCanonicalPositiveDrops } from './money'
 import { isRecord } from './narrow'
+import { fetchAccountState } from './reads'
 
 /**
  * Reports whether a transaction is currently in flight.
@@ -70,6 +71,54 @@ export class FeeAboveCapError extends Error {
   }
 }
 
+/**
+ * Refused before anything is signed: this wallet signs with its Account's MASTER
+ * key and the ledger shows that key turned off. Every transaction would be
+ * rejected, and it would only surface as "expired" (the network answers
+ * `tefMASTER_DISABLED` and the wait runs on to the end of the window).
+ */
+export class MasterKeyOffError extends Error {
+  constructor() {
+    super(
+      'The master key of this account is turned off, and this wallet signs with the master key, so it cannot send. Use the wallet that signs as the account’s Regular Key. Nothing was signed or submitted, and no fee was spent.',
+    )
+    this.name = 'MasterKeyOffError'
+  }
+}
+
+/**
+ * A one-use signing capability (AD-22). Structural, so `xrpl` never imports
+ * `crypto`: `lib/crypto/keystore` builds one that satisfies it. It holds the
+ * Seed only in a closure, valid for one `sign`, and `dispose` clears it whether
+ * or not `sign` ran.
+ */
+export interface Signer {
+  sign(tx: SubmittableTransaction): { tx_blob: string; hash: string }
+  dispose(): void
+}
+
+/**
+ * What the choke point is given instead of a `Wallet`. `open` runs the
+ * Wallet's Signing Check (a PIN or passkey prompt, possibly long) and returns a
+ * `Signer`; the choke point calls it after autofill and before the ledger
+ * window is fixed, so a slow prompt cannot eat the window (AD-22). It rejects
+ * when the check fails or is cancelled, and nothing is then signed.
+ */
+export interface SigningHandle {
+  address: string
+  /** True when the key that signs IS the Account's master key (its own address),
+   * so the ledger refuses it once the master key is off. Absent: not known. */
+  signsAsMaster?: boolean
+  open(): Promise<Signer>
+}
+
+/** Two-device signing (AD-30): the window must outlast a round trip between two
+ * devices, so it is 75 ledgers (roughly four to six minutes), not autofill's 20. */
+export const TWO_DEVICE_LEDGER_WINDOW = 75
+
+/** rippled's own default distance to `LastLedgerSequence` (xrpl.js autofill). */
+const LEDGER_WINDOW = 20
+
 export type SubmitOutcome =
   | { status: 'validated'; hash: string; resultCode: string; ledgerIndex?: number }
   /** In a validated ledger, but the transaction did NOT do what was asked and
@@ -95,8 +144,9 @@ function classify(resultCode: string): 'validated' | 'claimed' | 'failed' {
  */
 export async function submitAndClassify(
   network: NetworkId,
-  wallet: Wallet,
+  signing: SigningHandle,
   tx: SubmittableTransaction,
+  node?: string,
 ): Promise<SubmitOutcome> {
   // app-versioning-and-updates.md US-5: the single choke point every write
   // passes through, so the update flow always sees an accurate "is anything
@@ -113,7 +163,7 @@ export async function submitAndClassify(
     // Held, not merely fetched: `submitAndWait` polls on this one client until
     // the transaction settles, so a read replacing it after a dropped socket
     // must not close it under the wait (see `holdXrplClient`).
-    const held = await holdXrplClient(network)
+    const held = await holdXrplClient(network, node)
     release = held.release
     const client = held.client
     // A `Fee` already on `tx` (Send pins the figure it showed) is left alone
@@ -122,8 +172,29 @@ export async function submitAndClassify(
     const prepared = await client.autofill(tx)
     // Thrown inside the `try`, so the in-flight depth is still lowered.
     if (!feeWithinCap(prepared.Fee)) throw new FeeAboveCapError(prepared.Fee)
-    const signed = wallet.sign(prepared)
-    const lastLedgerSequence = prepared.LastLedgerSequence
+    // Before the Signing Check, so no PIN or passkey prompt is wasted on a send the
+    // ledger can only refuse. A failed read does not relax it.
+    if (signing.signsAsMaster) await assertMasterKeyOn(network, signing.address, node)
+    // The Signing Check runs HERE, after the fee was shown and capped and
+    // before the window is fixed. It may take as long as the user does.
+    const signer = await signing.open()
+    let signed: { tx_blob: string; hash: string }
+    let lastLedgerSequence: number | undefined
+    try {
+      // The window starts at the validated ledger as it is NOW, not as it was
+      // at autofill. A caller-supplied `LastLedgerSequence` is kept.
+      let toSign: SubmittableTransaction = prepared
+      if (tx.LastLedgerSequence === undefined) {
+        const res = await client.request({ command: 'ledger', ledger_index: 'validated' })
+        const validated = res.result.ledger_index
+        if (typeof validated !== 'number') throw new Error('The current ledger could not be read, so nothing was signed.')
+        toSign = { ...prepared, LastLedgerSequence: validated + LEDGER_WINDOW }
+      }
+      lastLedgerSequence = toSign.LastLedgerSequence
+      signed = signer.sign(toSign)
+    } finally {
+      signer.dispose()
+    }
     try {
       const res = await client.submitAndWait(signed.tx_blob)
       const meta = res.result.meta
@@ -142,7 +213,7 @@ export async function submitAndClassify(
       // Detected structurally (comparing the validated ledger index against the
       // tx's own LastLedgerSequence) rather than by matching on error-message
       // text, which silently reclassifies whenever xrpl.js rewords it.
-      if (await isExpiry(err, network, lastLedgerSequence)) {
+      if (await isExpiry(err, network, lastLedgerSequence, node)) {
         return { status: 'expired', hash: signed.hash }
       }
       throw err
@@ -159,7 +230,17 @@ export async function submitAndClassify(
   }
 }
 
-async function isExpiry(err: unknown, network: NetworkId, lastLedgerSequence?: number): Promise<boolean> {
+async function assertMasterKeyOn(network: NetworkId, account: string, node?: string): Promise<void> {
+  let state
+  try {
+    state = await fetchAccountState(network, account, node)
+  } catch (err) {
+    throw new Error('The account could not be read to confirm its master key is on, so nothing was signed. Try again.', { cause: err })
+  }
+  if (state.exists && state.disableMasterKey) throw new MasterKeyOffError()
+}
+
+async function isExpiry(err: unknown, network: NetworkId, lastLedgerSequence?: number, node?: string): Promise<boolean> {
   // Read structurally, not by `instanceof XrplError` (see `narrow.ts`): an
   // expiry missed here would be rethrown as a failure.
   const { name, message } = isRecord(err) ? err : {}
@@ -168,7 +249,7 @@ async function isExpiry(err: unknown, network: NetworkId, lastLedgerSequence?: n
   }
   if (lastLedgerSequence === undefined) return false
   try {
-    const client = await getXrplClient(network)
+    const client = await getXrplClient(network, node)
     const res = await client.request({ command: 'ledger', ledger_index: 'validated' })
     const validatedIndex = res.result.ledger_index
     return typeof validatedIndex === 'number' && validatedIndex > lastLedgerSequence
@@ -179,7 +260,7 @@ async function isExpiry(err: unknown, network: NetworkId, lastLedgerSequence?: n
 
 export async function submitXrpPayment(
   network: NetworkId,
-  wallet: Wallet,
+  signing: SigningHandle,
   params: {
     destination: string
     amountDrops: string
@@ -189,21 +270,22 @@ export async function submitXrpPayment(
      * subject to the choke point's cap. */
     feeDrops?: string
   },
+  node?: string,
 ): Promise<SubmitOutcome> {
   const tx: Payment = {
     TransactionType: 'Payment',
-    Account: wallet.address,
+    Account: signing.address,
     Destination: params.destination,
     Amount: params.amountDrops,
     ...(params.destinationTag !== undefined ? { DestinationTag: params.destinationTag } : {}),
     ...(params.feeDrops !== undefined ? { Fee: params.feeDrops } : {}),
   }
-  return submitAndClassify(network, wallet, tx)
+  return submitAndClassify(network, signing, tx, node)
 }
 
 export async function submitIssuedPayment(
   network: NetworkId,
-  wallet: Wallet,
+  signing: SigningHandle,
   params: {
     destination: string
     currency: string
@@ -215,31 +297,144 @@ export async function submitIssuedPayment(
      * subject to the choke point's cap. */
     feeDrops?: string
   },
+  node?: string,
 ): Promise<SubmitOutcome> {
   const tx: Payment = {
     TransactionType: 'Payment',
-    Account: wallet.address,
+    Account: signing.address,
     Destination: params.destination,
     Amount: { currency: params.currency, issuer: params.issuer, value: params.value },
     ...(params.destinationTag !== undefined ? { DestinationTag: params.destinationTag } : {}),
     ...(params.feeDrops !== undefined ? { Fee: params.feeDrops } : {}),
   }
-  return submitAndClassify(network, wallet, tx)
+  return submitAndClassify(network, signing, tx, node)
 }
 
 export async function submitTrustSet(
   network: NetworkId,
-  wallet: Wallet,
+  signing: SigningHandle,
   params: { currency: string; issuer: string; limit: string }, // limit "0" removes the line
+  node?: string,
 ): Promise<SubmitOutcome> {
   const tx: TrustSet = {
     TransactionType: 'TrustSet',
-    Account: wallet.address,
+    Account: signing.address,
     LimitAmount: { currency: params.currency, issuer: params.issuer, value: params.limit },
     // Holders should not let balances ripple through their trust lines —
     // rippling is for issuers. Without NoRipple a holder's balance can shift
     // as a side effect of unrelated payments between other parties.
     Flags: TrustSetFlags.tfSetNoRipple,
   }
-  return submitAndClassify(network, wallet, tx)
+  return submitAndClassify(network, signing, tx, node)
+}
+
+/** Sets the Account's single Regular Key (AD-29). `Account` is the Account the
+ * handle signs for; the choke point is unchanged. */
+export async function submitSetRegularKey(
+  network: NetworkId,
+  signing: SigningHandle,
+  params: { regularKey: string },
+  node?: string,
+): Promise<SubmitOutcome> {
+  const tx: SetRegularKey = {
+    TransactionType: 'SetRegularKey',
+    Account: signing.address,
+    RegularKey: params.regularKey,
+  }
+  return submitAndClassify(network, signing, tx, node)
+}
+
+/** Turns the Account's master key off (`SetFlag`) or on (`ClearFlag`), `asfDisableMaster`
+ * (AD-29). `Account` is the Account the handle signs for; the choke point is unchanged. */
+export async function submitMasterKeyFlag(
+  network: NetworkId,
+  signing: SigningHandle,
+  params: { enable: boolean },
+  node?: string,
+): Promise<SubmitOutcome> {
+  const tx: AccountSet = {
+    TransactionType: 'AccountSet',
+    Account: signing.address,
+    ...(params.enable
+      ? { ClearFlag: AccountSetAsfFlags.asfDisableMaster }
+      : { SetFlag: AccountSetAsfFlags.asfDisableMaster }),
+  }
+  return submitAndClassify(network, signing, tx, node)
+}
+
+/** The current validated ledger's index (AD-30). Throws if it cannot be read. */
+export async function validatedLedgerIndex(network: NetworkId, node?: string): Promise<number> {
+  const held = await holdXrplClient(network, node)
+  try {
+    const res = await held.client.request({ command: 'ledger', ledger_index: 'validated' })
+    const index = res.result.ledger_index
+    if (typeof index !== 'number') throw new Error('The current ledger could not be read.')
+    return index
+  } finally {
+    held.release()
+  }
+}
+
+/**
+ * Builds a transaction for another device to sign (AD-30): autofill (Sequence,
+ * Fee), the fee cap, then `LastLedgerSequence` set explicitly to the validated
+ * ledger plus `TWO_DEVICE_LEDGER_WINDOW`. Nothing is signed or submitted.
+ * `Fee`, if the caller set one, is left alone and still capped.
+ */
+export async function prepareUnsigned(
+  network: NetworkId,
+  tx: SubmittableTransaction,
+  node?: string,
+): Promise<SubmittableTransaction> {
+  const held = await holdXrplClient(network, node)
+  try {
+    const prepared = await held.client.autofill(tx)
+    if (!feeWithinCap(prepared.Fee)) throw new FeeAboveCapError(prepared.Fee)
+    const res = await held.client.request({ command: 'ledger', ledger_index: 'validated' })
+    const validated = res.result.ledger_index
+    if (typeof validated !== 'number') throw new Error('The current ledger could not be read, so nothing was built.')
+    return { ...prepared, LastLedgerSequence: validated + TWO_DEVICE_LEDGER_WINDOW }
+  } finally {
+    held.release()
+  }
+}
+
+/**
+ * Signs an already-prepared transaction once, on the offline device (AD-30). It
+ * opens the Wallet's Signing Check, signs, and disposes the Signer in `finally`.
+ * No network is used. Refuses a fee over the cap, or an `Account` that is not
+ * the handle's. Returns the blob only; nothing is submitted.
+ */
+export async function signPrepared(signing: SigningHandle, tx: SubmittableTransaction): Promise<{ tx_blob: string; hash: string }> {
+  if (!feeWithinCap(tx.Fee)) throw new FeeAboveCapError(tx.Fee)
+  if (tx.Account !== signing.address) throw new Error('This transaction is not for this wallet’s account. Nothing was signed.')
+  const signer = await signing.open()
+  try {
+    return signer.sign(tx)
+  } finally {
+    signer.dispose()
+  }
+}
+
+/**
+ * Submits a blob another device signed (AD-30), through the one choke point
+ * unchanged: the Signer returns the received blob instead of signing, so the
+ * fee cap, in-flight signal and classification all still apply. `tx` is the
+ * unsigned transaction the blob was verified to equal, with its own Fee,
+ * Sequence and `LastLedgerSequence`, which autofill and the choke point leave alone.
+ */
+export function submitSignedBlob(
+  network: NetworkId,
+  tx: SubmittableTransaction,
+  txBlob: string,
+  node?: string,
+): Promise<SubmitOutcome> {
+  const signing: SigningHandle = {
+    address: tx.Account,
+    open: async () => ({
+      sign: () => ({ tx_blob: txBlob, hash: hashes.hashSignedTx(txBlob) }),
+      dispose: () => {},
+    }),
+  }
+  return submitAndClassify(network, signing, tx, node)
 }

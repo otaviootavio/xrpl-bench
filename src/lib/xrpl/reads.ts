@@ -16,8 +16,8 @@ export interface AccountState {
 
 /** Wraps `account_info`. Returns exists:false (never throws) for an
  * unfunded/not-yet-activated address — see account-onboarding.md US-4. */
-export async function fetchAccountState(network: NetworkId, address: string): Promise<AccountState> {
-  const client = await getXrplClient(network)
+export async function fetchAccountState(network: NetworkId, address: string, node?: string): Promise<AccountState> {
+  const client = await getXrplClient(network, node)
   try {
     const res = await client.request({ command: 'account_info', account: address, ledger_index: 'validated' })
     const data = res.result.account_data
@@ -70,8 +70,8 @@ export interface TrustLine {
  * paginated (~200 lines per page), and stopping at the first page silently
  * under-reported balances, tokens and the Send asset picker for any account
  * with more trust lines than that. */
-export async function fetchAccountLines(network: NetworkId, address: string): Promise<TrustLine[]> {
-  const client = await getXrplClient(network)
+export async function fetchAccountLines(network: NetworkId, address: string, node?: string): Promise<TrustLine[]> {
+  const client = await getXrplClient(network, node)
   try {
     const lines: TrustLine[] = []
     let marker: unknown = undefined
@@ -110,8 +110,8 @@ export interface ServerReserves {
 
 /** Wraps `server_state` for live reserve values (never hardcoded — they can
  * change via network amendment; see docs/user-stories/INDEX.md Quick Reference). */
-export async function fetchServerReserves(network: NetworkId): Promise<ServerReserves> {
-  const client = await getXrplClient(network)
+export async function fetchServerReserves(network: NetworkId, node?: string): Promise<ServerReserves> {
+  const client = await getXrplClient(network, node)
   const res = await client.request({ command: 'server_state' })
   const vl = res.result.state.validated_ledger
   return {
@@ -121,8 +121,8 @@ export async function fetchServerReserves(network: NetworkId): Promise<ServerRes
 }
 
 /** Wraps `fee` for the current recommended open-ledger fee, in drops. */
-export async function fetchRecommendedFeeDrops(network: NetworkId): Promise<string> {
-  const client = await getXrplClient(network)
+export async function fetchRecommendedFeeDrops(network: NetworkId, node?: string): Promise<string> {
+  const client = await getXrplClient(network, node)
   const res = await client.request({ command: 'fee' })
   return res.result.drops.open_ledger_fee
 }
@@ -188,8 +188,9 @@ export async function fetchAccountTx(
   network: NetworkId,
   address: string,
   marker?: unknown,
+  node?: string,
 ): Promise<{ items: TxSummary[]; marker?: unknown }> {
-  const client = await getXrplClient(network)
+  const client = await getXrplClient(network, node)
   let res
   try {
     res = await client.request({
@@ -244,8 +245,8 @@ export async function fetchAccountTx(
  * returned unchanged, with the same normalised payment amount `fetchAccountTx`
  * produces laid beside it — so no caller ever reads a raw `DeliverMax` as if
  * it arrived. There is no account here, so there is no direction. */
-export async function fetchTx(network: NetworkId, hash: string) {
-  const client = await getXrplClient(network)
+export async function fetchTx(network: NetworkId, hash: string, node?: string) {
+  const client = await getXrplClient(network, node)
   const res = await client.request({ command: 'tx', transaction: hash })
   // API v2 nests the transaction under `tx_json`; v1 lays it flat on `result`.
   // Typed as the two fields read, so a v1 response (no `tx_json`) is admitted

@@ -24,10 +24,11 @@ export function useDestinationInfo(
   network: NetworkId,
   destination: string,
   asset: string, // 'XRP' or `${currency}|${issuer}`
+  node?: string,
 ) {
   const valid = isValidClassicAddress(destination)
   return useQuery<DestinationInfo>({
-    ...destinationInfoQueryOptions(network, destination, asset),
+    ...destinationInfoQueryOptions(network, destination, asset, node),
     enabled: valid,
   })
 }

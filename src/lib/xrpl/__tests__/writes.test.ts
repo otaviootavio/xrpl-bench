@@ -7,9 +7,16 @@ import {
   setTxInFlightReporter,
   submitAndClassify,
   submitIssuedPayment,
+  submitMasterKeyFlag,
+  submitSetRegularKey,
   submitTrustSet,
   submitXrpPayment,
   FeeAboveCapError,
+  TWO_DEVICE_LEDGER_WINDOW,
+  prepareUnsigned,
+  signPrepared,
+  submitSignedBlob,
+  validatedLedgerIndex,
 } from '../writes'
 
 /**
@@ -54,7 +61,8 @@ function installFakeClient(
       client.autofilled.push({ ...tx })
       client.autofillOptions.push(options)
       // Like xrpl.js: a preset `Fee` is left alone; otherwise one is computed.
-      const prepared: any = { ...tx, Sequence: 1, LastLedgerSequence: 100 }
+      // Like xrpl.js: a caller-set `LastLedgerSequence` is left alone.
+      const prepared: any = { Sequence: 1, LastLedgerSequence: 100, ...tx }
       if (prepared.Fee == null) {
         const fee = behaviour.autofillFee ?? '12'
         if (fee !== 'absent') prepared.Fee = fee
@@ -68,16 +76,26 @@ function installFakeClient(
       if (behaviour.submit) return behaviour.submit()
       return { result: { meta: { TransactionResult: 'tesSUCCESS' }, ledger_index: 42 } }
     },
+    // The first read is the window, taken at signing: 80 gives LastLedgerSequence
+    // 100, as the old autofill fixture did. Later reads are expiry checks.
     request: async () => {
       log.push('request')
-      return { result: { ledger_index: behaviour.validatedLedgerIndex ?? 50 } }
+      const first = client.windowRead
+      client.windowRead = false
+      return { result: { ledger_index: first ? 80 : (behaviour.validatedLedgerIndex ?? 50) } }
     },
+    windowRead: true,
   }
   setXrplClientFactory(() => client as any)
   return client as unknown as FakeClient & { autofilled: any[]; autofillOptions: any[]; submitted: string[] }
 }
 
-const wallet = Wallet.fromSeed('sEdTM1uX8pu2do5XvTnutH6HsouMaM2')
+const realWallet = Wallet.fromSeed('sEdTM1uX8pu2do5XvTnutH6HsouMaM2')
+/** The handle the choke point takes: `open` stands in for the Signing Check. */
+const wallet = {
+  address: realWallet.address,
+  open: async () => ({ sign: (tx: any) => realWallet.sign(tx), dispose: () => {} }),
+}
 
 beforeEach(() => {
   log = []
@@ -264,7 +282,8 @@ describe('the write choke point raises and clears the in-flight flag', () => {
     })
 
     expect(outcome.status).toBe('expired')
-    expect(log).not.toContain('request')
+    // Only the window read; the expiry check never asked the ledger again.
+    expect(log.filter((e) => e === 'request')).toHaveLength(1)
     expect(log.at(-1)).toBe('in-flight:false')
   })
 
@@ -317,6 +336,7 @@ describe('a write keeps its client open across a drop and a concurrent replaceme
           client.connected = false
         },
         autofill: async (tx: any) => ({ ...tx, Fee: '12', Sequence: 1, LastLedgerSequence: 100 }),
+        request: async () => ({ result: { ledger_index: 50 } }),
         submitAndWait: async () => {
           // The drop, then a concurrent read that replaces the cached client.
           client.connected = false
@@ -397,6 +417,9 @@ describe("two overlapping writes cannot clear each other's in-flight signal", ()
    * them, so the test decides which write finishes first. */
   function installParkedClient(validatedLedgerIndex = 50) {
     const parked: { resolve: (v: any) => void; reject: (e: unknown) => void }[] = []
+    // The first two reads are the two writes' windows (taken at signing); the
+    // later ones are expiry checks and see `validatedLedgerIndex`.
+    let reads = 0
     const client = {
       isConnected: () => true,
       connect: async () => {},
@@ -405,7 +428,7 @@ describe("two overlapping writes cannot clear each other's in-flight signal", ()
         new Promise((resolve, reject) => {
           parked.push({ resolve, reject })
         }),
-      request: async () => ({ result: { ledger_index: validatedLedgerIndex } }),
+      request: async () => ({ result: { ledger_index: reads++ < 2 ? 80 : validatedLedgerIndex } }),
     }
     setXrplClientFactory(() => client as any)
     return parked
@@ -673,5 +696,256 @@ describe('the fee cap on every write, and the pinned fee', () => {
 
     expect(client.submitted).toEqual([])
     expect(log.at(-1)).toBe('in-flight:false')
+  })
+})
+
+describe('every write forwards the Wallet\'s Node', () => {
+  const NODE = 'wss://node.example.com'
+  const PARAMS = { destination: 'rPT1Sjq2YGrBMTttX4GZHjKu9dyfzbpAYe', amountDrops: '1000000' }
+
+  /** Records the URL of each client built, and lets a test drop the socket. */
+  function nodeClient(opts: { failSubmit?: boolean } = {}) {
+    const urls: string[] = []
+    const state = { connected: true }
+    setXrplClientFactory((url) => {
+      urls.push(url)
+      return {
+        isConnected: () => state.connected,
+        connect: async () => {},
+        disconnect: async () => {},
+        autofill: async (tx: any) => ({ ...tx, Fee: '12', Sequence: 1, LastLedgerSequence: 100 }),
+        submitAndWait: async () => {
+          if (opts.failSubmit) {
+            state.connected = false
+            throw new Error('connection dropped')
+          }
+          return { result: { meta: { TransactionResult: 'tesSUCCESS' }, ledger_index: 42 } }
+        },
+        // 50 for the window read; past it once the socket dropped.
+        request: async () => ({ result: { ledger_index: state.connected ? 50 : 200 } }),
+      } as any
+    })
+    return urls
+  }
+
+  it('submitXrpPayment, submitIssuedPayment and submitTrustSet reach only the custom Node', async () => {
+    const urls = nodeClient()
+    await submitXrpPayment('mainnet', wallet, PARAMS, NODE)
+    await submitIssuedPayment(
+      'mainnet',
+      wallet,
+      { ...PARAMS, currency: 'USD', issuer: 'rHb9CJAWyB4rj91VRWn96DkukG4bwdtyTh', value: '1' },
+      NODE,
+    )
+    await submitTrustSet('mainnet', wallet, { currency: 'USD', issuer: 'rHb9CJAWyB4rj91VRWn96DkukG4bwdtyTh', limit: '10' }, NODE)
+    // One pooled client, built for the custom Node and never for a built-in one.
+    expect(urls).toEqual([NODE])
+  })
+
+  it('submitAndClassify forwards it to the hold and to the expiry check', async () => {
+    const urls = nodeClient({ failSubmit: true })
+    const outcome = await submitAndClassify(
+      'mainnet',
+      wallet,
+      { TransactionType: 'Payment', Account: wallet.address, Destination: PARAMS.destination, Amount: '1' },
+      NODE,
+    )
+    expect(outcome.status).toBe('expired')
+    // The hold built it, the dropped socket made the expiry check build another
+    // — both for the custom Node.
+    expect(urls).toEqual([NODE, NODE])
+  })
+})
+
+describe('the Signing Check runs inside the choke point (AD-22)', () => {
+  const PAY = { destination: 'rPT1Sjq2YGrBMTttX4GZHjKu9dyfzbpAYe', amountDrops: '1000000' }
+
+  function loggingHandle(opts: { openFails?: boolean; signFails?: boolean } = {}) {
+    const state = { disposed: 0, signed: [] as any[] }
+    const handle = {
+      address: realWallet.address,
+      open: async () => {
+        log.push('open')
+        if (opts.openFails) throw new Error('check cancelled')
+        return {
+          sign: (tx: any) => {
+            log.push('sign')
+            if (opts.signFails) throw new Error('sign failed')
+            state.signed.push(tx)
+            return realWallet.sign(tx)
+          },
+          dispose: () => {
+            state.disposed += 1
+          },
+        }
+      },
+    }
+    return { handle, state }
+  }
+
+  it('opens the Signer after autofill, reads the window after the open, then signs and submits', async () => {
+    installFakeClient({ validatedLedgerIndex: 700 })
+    const { handle, state } = loggingHandle()
+    await submitXrpPayment('testnet', handle, PAY)
+    expect(log.filter((e) => ['autofill', 'open', 'request', 'sign', 'submitAndWait'].includes(e))).toEqual([
+      'autofill',
+      'open',
+      'request',
+      'sign',
+      'submitAndWait',
+    ])
+    expect(state.disposed).toBe(1)
+  })
+
+  it('sets LastLedgerSequence to the validated ledger read after the open, plus 20', async () => {
+    const client = installFakeClient()
+    ;(client as any).request = async () => {
+      log.push('request')
+      // What the ledger is NOW, after a long prompt — not what autofill saw.
+      return { result: { ledger_index: log.includes('open') ? 1000 : 10 } }
+    }
+    const { handle, state } = loggingHandle()
+    await submitXrpPayment('testnet', handle, PAY)
+    expect(state.signed[0].LastLedgerSequence).toBe(1020)
+    expect(decode(client.submitted[0]).LastLedgerSequence).toBe(1020)
+  })
+
+  it('submits nothing when the check fails, and lowers the in-flight depth', async () => {
+    const client = installFakeClient()
+    const { handle } = loggingHandle({ openFails: true })
+    await expect(submitXrpPayment('testnet', handle, PAY)).rejects.toThrow('check cancelled')
+    expect(client.submitted).toEqual([])
+    expect(log).not.toContain('sign')
+    expect(log.filter((e) => e.startsWith('in-flight'))).toEqual(['in-flight:true', 'in-flight:false'])
+  })
+
+  it('never opens the check for a fee above the cap', async () => {
+    installFakeClient({ autofillFee: '99999999' })
+    const { handle } = loggingHandle()
+    await expect(submitXrpPayment('testnet', handle, PAY)).rejects.toBeInstanceOf(FeeAboveCapError)
+    expect(log).not.toContain('open')
+  })
+
+  it('disposes the Signer even when signing throws', async () => {
+    const client = installFakeClient()
+    const { handle, state } = loggingHandle({ signFails: true })
+    await expect(submitXrpPayment('testnet', handle, PAY)).rejects.toThrow('sign failed')
+    expect(state.disposed).toBe(1)
+    expect(client.submitted).toEqual([])
+  })
+
+  it('signs a caller-set LastLedgerSequence unchanged and reads no window', async () => {
+    const client = installFakeClient({ validatedLedgerIndex: 700 })
+    const { handle, state } = loggingHandle()
+    await submitAndClassify('testnet', handle, {
+      TransactionType: 'Payment',
+      Account: realWallet.address,
+      Destination: PAY.destination,
+      Amount: '1',
+      LastLedgerSequence: 4242,
+    })
+    expect(state.signed[0].LastLedgerSequence).toBe(4242)
+    expect(decode(client.submitted[0]).LastLedgerSequence).toBe(4242)
+  })
+
+  it('rejects a non-numeric validated ledger index with nothing signed or submitted', async () => {
+    const client = installFakeClient()
+    ;(client as any).request = async () => ({ result: { ledger_index: '700' } })
+    const { handle, state } = loggingHandle()
+    await expect(submitXrpPayment('testnet', handle, PAY)).rejects.toThrow(/nothing was signed/)
+    expect(state.signed).toEqual([])
+    expect(client.submitted).toEqual([])
+    expect(state.disposed).toBe(1)
+    expect(log.filter((e) => e.startsWith('in-flight'))).toEqual(['in-flight:true', 'in-flight:false'])
+  })
+})
+
+describe('a Regular Key change signs SetRegularKey for the handle’s Account', () => {
+  it('signs the Account and the new Regular Key through the choke point', async () => {
+    const client = installFakeClient()
+
+    const outcome = await submitSetRegularKey('testnet', wallet, { regularKey: 'rPT1Sjq2YGrBMTttX4GZHjKu9dyfzbpAYe' })
+
+    expect(outcome.status).toBe('validated')
+    expect(log[0]).toBe('in-flight:true')
+    expect(log.at(-1)).toBe('in-flight:false')
+    const signed = decode(client.submitted[0])
+    expect(signed.TransactionType).toBe('SetRegularKey')
+    expect(signed.Account).toBe(wallet.address)
+    expect(signed.RegularKey).toBe('rPT1Sjq2YGrBMTttX4GZHjKu9dyfzbpAYe')
+  })
+})
+
+describe('a master-key change signs AccountSet asfDisableMaster for the handle’s Account', () => {
+  it.each([
+    ['off', false, 'SetFlag', 'ClearFlag'],
+    ['on', true, 'ClearFlag', 'SetFlag'],
+  ])('turning it %s sets %s and not %s', async (_n, enable, present, absent) => {
+    const client = installFakeClient()
+    const outcome = await submitMasterKeyFlag('testnet', wallet, { enable })
+    expect(outcome.status).toBe('validated')
+    const signed = decode(client.submitted[0]) as Record<string, unknown>
+    expect(signed.TransactionType).toBe('AccountSet')
+    expect(signed.Account).toBe(wallet.address)
+    expect(signed[present]).toBe(4)
+    expect(signed[absent]).toBeUndefined()
+    expect(log[0]).toBe('in-flight:true')
+    expect(log.at(-1)).toBe('in-flight:false')
+  })
+})
+
+describe('two-device building, signing and submitting (AD-30)', () => {
+  const payment: any = { TransactionType: 'Payment', Account: realWallet.address, Destination: 'rPT1Sjq2YGrBMTttX4GZHjKu9dyfzbpAYe', Amount: '1000000' }
+
+  it('sets LastLedgerSequence to the validated ledger plus 75, explicitly, over autofill\'s own', async () => {
+    installFakeClient({ validatedLedgerIndex: 1000 })
+    // The fake's first ledger read answers 80 (the signing window); drain it.
+    await validatedLedgerIndex('testnet')
+    expect(TWO_DEVICE_LEDGER_WINDOW).toBe(75)
+    const prepared: any = await prepareUnsigned('testnet', payment)
+    expect(prepared.LastLedgerSequence).toBe(1075)
+    expect(prepared.Sequence).toBe(1)
+    expect(prepared.Fee).toBe('12')
+    expect(log).not.toContain('submitAndWait')
+  })
+
+  it('refuses a fee above the cap, building nothing', async () => {
+    installFakeClient({ autofillFee: '20000' })
+    await expect(prepareUnsigned('testnet', payment)).rejects.toThrow(FeeAboveCapError)
+  })
+
+  it('signs once, disposes the Signer in finally, and refuses a foreign Account or an over-cap fee', async () => {
+    let disposed = 0
+    const handle = {
+      address: realWallet.address,
+      open: async () => ({ sign: (tx: any) => realWallet.sign(tx), dispose: () => void (disposed += 1) }),
+    }
+    const tx: any = { ...payment, Sequence: 3, Fee: '12', LastLedgerSequence: 500 }
+    const signed = await signPrepared(handle, tx)
+    expect(decode(signed.tx_blob).Amount).toBe('1000000')
+    expect(disposed).toBe(1)
+    await expect(signPrepared(handle, { ...tx, Account: 'rPT1Sjq2YGrBMTttX4GZHjKu9dyfzbpAYe' })).rejects.toThrow(/not for this wallet/)
+    await expect(signPrepared(handle, { ...tx, Fee: '10001' })).rejects.toThrow(FeeAboveCapError)
+    const throwing = { ...handle, open: async () => ({ sign: () => { throw new Error('boom') }, dispose: () => void (disposed += 1) }) }
+    await expect(signPrepared(throwing, tx)).rejects.toThrow('boom')
+    expect(disposed).toBe(2)
+  })
+
+  it('submits a received blob through the choke point: in-flight signal, one submission of that exact blob', async () => {
+    const client = installFakeClient()
+    const tx: any = { ...payment, Sequence: 3, Fee: '12', LastLedgerSequence: 500 }
+    const blob = realWallet.sign(tx).tx_blob
+    const outcome = await submitSignedBlob('testnet', tx, blob)
+    expect(outcome.status).toBe('validated')
+    expect(client.submitted).toEqual([blob])
+    expect(log[0]).toBe('in-flight:true')
+    expect(log.at(-1)).toBe('in-flight:false')
+  })
+
+  it('still caps the fee of a received blob', async () => {
+    const client = installFakeClient()
+    const tx: any = { ...payment, Sequence: 3, Fee: '20000', LastLedgerSequence: 500 }
+    await expect(submitSignedBlob('testnet', tx, 'AB')).rejects.toThrow(FeeAboveCapError)
+    expect(client.submitted).toEqual([])
   })
 })

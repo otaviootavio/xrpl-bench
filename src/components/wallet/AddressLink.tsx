@@ -2,7 +2,7 @@ import { ExternalLinkIcon } from 'lucide-react'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { Button } from '@/components/ui/button'
 import { accountExplorerUrl, txExplorerUrl, type NetworkId } from '@/lib/xrpl/networks'
-import { useAppStore } from '@/store/app-store'
+import { useActiveNetwork } from '@/store/app-store'
 import { cn } from '@/lib/utils'
 
 function truncateMiddle(value: string, head = 6, tail = 4): string {
@@ -75,7 +75,7 @@ type AddressLinkProps = {
 )
 
 export function AddressLink({ address, network: recordedNetwork, className, ...rest }: AddressLinkProps) {
-  const activeNetwork = useAppStore((s) => s.network)
+  const activeNetwork = useActiveNetwork()
   const network = recordedNetwork ?? activeNetwork
   if (rest.iconOnly) {
     // No address, no affordance: a `—` placeholder where an icon button sits
@@ -120,7 +120,7 @@ export function AddressLink({ address, network: recordedNetwork, className, ...r
 
 /** Transaction hash equivalent — block-explorer-links.md US-2. */
 export function TxLink({ hash, className }: { hash: string; className?: string }) {
-  const network = useAppStore((s) => s.network)
+  const network = useActiveNetwork()
   if (!hash) {
     return <span className={cn('text-muted-foreground', className)}>—</span>
   }

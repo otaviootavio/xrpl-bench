@@ -27,7 +27,8 @@ vi.mock('idb-keyval', () => ({
   set: async (k: string, v: string) => void h.idb.set(k, v),
   del: async (k: string) => void h.idb.delete(k),
 }))
-vi.mock('@/lib/crypto/auth', () => ({ wipeVault: () => h.wipeVault(), endSession: async () => {} }))
+vi.mock('@/lib/crypto/auth', () => ({ wipeVault: () => h.wipeVault() }))
+vi.mock('@/lib/crypto/lock', () => ({ endLockSession: async () => {}, endAllLockSessions: async () => {}, getLockInfo: async () => ({ id: 'legacy', openCheck: 'pin', autoLockMinutes: 5, pin: true, passkey: false }) }))
 vi.mock('@/lib/crypto/keystore', () => ({
   addressFromSeed: () => '',
   generateAndStoreWallet: async () => {},
@@ -85,10 +86,10 @@ function installShell() {
 
 async function seedResidue() {
   const s = useAppStore.getState()
-  s.setWallets([{ id: 'w1', label: 'Savings', address: 'rAliceAddressLabelThatMustNotSurvive' } as never])
+  s.setWallets([{ id: 'w1', seedId: 'w1', lockId: 'legacy', network: 'testnet', label: 'Savings', address: 'rAliceAddressLabelThatMustNotSurvive' } as never])
   s.setActiveWalletId('w1')
   s.addAddressBookEntry({ address: 'rBobCounterpartyThatMustNotSurvive', label: 'Bob — landlord' })
-  useAppStore.setState({ unlocked: true } as never)
+  useAppStore.setState({ openLocks: { legacy: { key: {} as CryptoKey, autoLockMinutes: 5 } } } as never)
   await flush()
   expect(h.idb.get(APP_STATE_STORAGE_KEY)).toContain('Bob — landlord')
 }
@@ -139,7 +140,7 @@ describe('Settings — Erase everything', () => {
       expect(onDisk).not.toContain(residue)
     }
     expect(h.wipeVault).toHaveBeenCalledTimes(1)
-    expect(useAppStore.getState().unlocked).toBe(false)
+    expect(useAppStore.getState().openLocks).toEqual({})
   })
 
   it('locks but does not reload as though the device were clean when a clear fails, and says so', async () => {
@@ -151,7 +152,7 @@ describe('Settings — Erase everything', () => {
     await waitFor(() => expect(useNoticeStore.getState().notices.length).toBeGreaterThan(0))
     expect(JSON.stringify(useNoticeStore.getState().notices)).toMatch(/reset did not finish/i)
     expect(reload).not.toHaveBeenCalled()
-    expect(useAppStore.getState().unlocked).toBe(false)
+    expect(useAppStore.getState().openLocks).toEqual({})
   })
 
   it('calls unregister on every service-worker registration and deletes every cache key', async () => {
@@ -174,9 +175,10 @@ describe('Settings — Erase everything', () => {
 describe('Settings — Remove one wallet', () => {
   it('leaves the precache and the service-worker registration alone, and does not reset the device', async () => {
     const { cacheStorage, live, sw, registration } = installShell()
-    const keep = { id: 'w2', label: 'Spending', address: 'rCarolSecondWalletAddress' }
-    useAppStore.getState().setWallets([{ id: 'w1', label: 'Savings', address: 'rAliceAddressLabelThatMustNotSurvive' }, keep] as never)
+    const keep = { id: 'w2', seedId: 'w2', lockId: 'legacy', network: 'testnet', label: 'Spending', address: 'rCarolSecondWalletAddress' }
+    useAppStore.getState().setWallets([{ id: 'w1', seedId: 'w1', lockId: 'legacy', network: 'testnet', label: 'Savings', address: 'rAliceAddressLabelThatMustNotSurvive' }, keep] as never)
     useAppStore.getState().setActiveWalletId('w1')
+    useAppStore.setState({ openLocks: { legacy: { key: {} as CryptoKey, autoLockMinutes: 5 } } } as never)
     h.listWallets.mockResolvedValue([keep])
     renderSettings()
 

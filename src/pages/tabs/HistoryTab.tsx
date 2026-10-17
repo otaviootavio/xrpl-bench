@@ -7,7 +7,7 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { AddressLink, TxLink } from '@/components/wallet/AddressLink'
 import { TxStatusBadge } from '@/components/wallet/TxStatusBadge'
 import { QueryErrorState } from '@/components/wallet/QueryErrorState'
-import { useAppStore, useActiveWallet } from '@/store/app-store'
+import { useActiveWallet, useActiveNetwork, useActiveNode } from '@/store/app-store'
 import { useAccountTxHistory } from '@/hooks/useAccountTxHistory'
 import { formatXrp, formatAmountString, displayCurrencyCode } from '@/lib/xrpl/money'
 import { describeResultCode } from '@/lib/xrpl/result-codes'
@@ -15,12 +15,13 @@ import { describeResultCode } from '@/lib/xrpl/result-codes'
 type Filter = 'all' | 'sent' | 'received'
 
 export function HistoryTab() {
-  const network = useAppStore((s) => s.network)
+  const network = useActiveNetwork()
+  const node = useActiveNode()
   const wallet = useActiveWallet()
   const [filter, setFilter] = useState<Filter>('all')
   const [expanded, setExpanded] = useState<string | null>(null)
   const { data, isLoading, isError, refetch, fetchNextPage, hasNextPage, isFetchingNextPage } =
-    useAccountTxHistory(network, wallet?.address ?? null)
+    useAccountTxHistory(network, wallet?.address ?? null, node)
 
   if (!wallet) return <p className="text-muted-foreground">No active wallet.</p>
 

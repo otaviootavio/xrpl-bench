@@ -9,7 +9,7 @@ const useTrustLines = vi.fn()
 const fetchQuery = vi.fn()
 const submitXrpPayment = vi.fn()
 const submitIssuedPayment = vi.fn()
-const unlockWalletForSigning = vi.fn()
+const signingHandleFor = vi.fn()
 /** Named, so a test can see what a send discards and for whom. */
 const invalidateQueries = vi.fn()
 
@@ -47,7 +47,8 @@ vi.mock('@tanstack/react-query', () => ({
   useQueryClient: () => ({ invalidateQueries, fetchQuery }),
 }))
 vi.mock('@/lib/crypto/keystore', () => ({
-  unlockWalletForSigning: (...args: unknown[]) => unlockWalletForSigning(...args),
+  signingHandleFor: (...args: unknown[]) => signingHandleFor(...args),
+  unavailablePrompts: { pin: async () => null },
 }))
 vi.mock('@/lib/xrpl/writes', () => ({
   submitXrpPayment: (...args: unknown[]) => submitXrpPayment(...args),
@@ -63,12 +64,16 @@ vi.mock('@/components/wallet/AddressLink', () => ({
  * `SendTab` is not remounted by either switch in the app, and is not here. */
 let network = 'testnet'
 let walletAddress = 'r4NagxniGTmPRr8yBRXRD6NNpZP7FfP4KR'
+let activeNode: string | undefined
 
 vi.mock('@/store/app-store', () => ({
   useAppStore: (selector: (s: Record<string, unknown>) => unknown) =>
     // A real vaultKey: with `null` here `doSend` returns at its first line and
     // every submit-path assertion below would pass without reaching the guard.
     selector({ network, vaultKey: {}, addressBook: [], addAddressBookEntry: vi.fn() }),
+  useWalletOpenKey: () => ({}),
+  useActiveNetwork: () => network,
+  useActiveNode: () => activeNode,
   useActiveWallet: () => ({ id: 'w1', address: walletAddress, label: 'Test' }),
 }))
 
@@ -86,6 +91,21 @@ import { formatXrp } from '@/lib/xrpl/money'
 const DESTINATION = 'rHb9CJAWyB4rj91VRWn96DkukG4bwdtyTh'
 const OTHER_DESTINATION = 'rPT1Sjq2YGrBMTttX4GZHjKu9dyfzbpAYe'
 const WALLET_ADDRESS = 'r4NagxniGTmPRr8yBRXRD6NNpZP7FfP4KR'
+
+/** A handle whose Signing Check passes at once. */
+const signed = vi.fn()
+const disposed = vi.fn()
+const fakeHandle = () => ({
+  address: WALLET_ADDRESS,
+  open: async () => ({ sign: (tx: unknown) => (signed(tx), { tx_blob: '00', hash: 'AA' }), dispose: () => disposed() }),
+})
+/** A submit that, like the choke point, opens the Signer before reporting `outcome`. */
+const opening = (outcome: unknown) => async (_network: unknown, handle: { open(): Promise<{ sign(tx: unknown): unknown; dispose(): void }> }) => {
+  const signer = await handle.open()
+  signer.sign({})
+  signer.dispose()
+  return outcome
+}
 
 /** A fixed wall clock. Every age in this file is stated against it, so the
  * freshness assertions are decided by arithmetic rather than by how long the
@@ -176,6 +196,7 @@ function settleClock() {
 beforeEach(() => {
   network = 'testnet'
   walletAddress = WALLET_ADDRESS
+  activeNode = undefined
   vi.useFakeTimers()
   vi.setSystemTime(NOW)
   useDestinationInfo.mockReturnValue(query())
@@ -185,9 +206,11 @@ beforeEach(() => {
   fetchQuery.mockResolvedValue(info())
   // The active wallet's own address, not the destination's: a signing wallet
   // that IS the recipient describes a self-send the form already refuses.
-  unlockWalletForSigning.mockResolvedValue({ address: WALLET_ADDRESS })
-  submitXrpPayment.mockResolvedValue({ status: 'validated', resultCode: 'tesSUCCESS', hash: 'AB' })
-  submitIssuedPayment.mockResolvedValue({ status: 'validated', resultCode: 'tesSUCCESS', hash: 'CD' })
+  signed.mockClear()
+  disposed.mockClear()
+  signingHandleFor.mockImplementation(async () => fakeHandle())
+  submitXrpPayment.mockImplementation(opening({ status: 'validated', resultCode: 'tesSUCCESS', hash: 'AB' }))
+  submitIssuedPayment.mockImplementation(opening({ status: 'validated', resultCode: 'tesSUCCESS', hash: 'CD' }))
 })
 
 afterEach(() => {
@@ -495,13 +518,14 @@ describe('SendTab — the submit path re-checks before it spends', () => {
     render(<SendTab />)
     await reviewAndConfirm()
 
-    expect(unlockWalletForSigning).toHaveBeenCalledOnce()
+    expect(signingHandleFor).toHaveBeenCalledOnce()
     expect(fetchQuery).toHaveBeenCalledOnce()
     expect(submitXrpPayment).toHaveBeenCalledOnce()
     // The unlock can take seconds; the check that authorises the payment must
     // be the one taken after it.
-    expect(unlockWalletForSigning.mock.invocationCallOrder[0]).toBeLessThan(fetchQuery.mock.invocationCallOrder[0])
-    expect(fetchQuery.mock.invocationCallOrder[0]).toBeLessThan(submitXrpPayment.mock.invocationCallOrder[0])
+    expect(signingHandleFor.mock.invocationCallOrder[0]).toBeLessThan(fetchQuery.mock.invocationCallOrder[0])
+    // Run inside the choke point's `open`, so it precedes the signature.
+    expect(fetchQuery.mock.invocationCallOrder[0]).toBeLessThan(signed.mock.invocationCallOrder[0])
     // And on the SAME cache entry the form's own check reads, from the one key
     // factory — a probe on a different key could not disagree with the display
     // because it would never be looking at it.
@@ -526,7 +550,9 @@ describe('SendTab — the submit path re-checks before it spends', () => {
     render(<SendTab />)
     await reviewAndConfirm()
 
-    expect(submitXrpPayment).not.toHaveBeenCalled()
+    expect(signed).not.toHaveBeenCalled()
+    // The Signer the check opened is disposed, exactly once.
+    expect(disposed).toHaveBeenCalledOnce()
     expect(screen.getByText('Payment not sent — destination check failed')).toBeTruthy()
   })
 
@@ -598,7 +624,9 @@ describe('SendTab — the submit path re-checks before it spends', () => {
     render(<SendTab />)
     await reviewAndConfirm()
 
-    expect(submitXrpPayment).not.toHaveBeenCalled()
+    expect(signed).not.toHaveBeenCalled()
+    // The Signer the check opened is disposed, exactly once.
+    expect(disposed).toHaveBeenCalledOnce()
     expect(screen.getByText('Payment not sent — this address now requires a destination tag')).toBeTruthy()
   })
 
@@ -621,7 +649,7 @@ describe('SendTab — the submit path re-checks before it spends', () => {
     fireEvent.change(screen.getByLabelText('Amount'), { target: { value: '1' } })
     expect(reviewButton().disabled).toBe(false)
     expect(screen.queryByRole('button', { name: 'Confirm and send' })).toBeNull()
-    expect(unlockWalletForSigning).not.toHaveBeenCalled()
+    expect(signingHandleFor).not.toHaveBeenCalled()
     expect(submitXrpPayment).not.toHaveBeenCalled()
   })
 
@@ -629,7 +657,7 @@ describe('SendTab — the submit path re-checks before it spends', () => {
     // The expiry timer is independent of `busy`. A check aging out during the
     // unlock must not pull "Sending…" off the screen mid-submission.
     let release: (w: unknown) => void = () => {}
-    unlockWalletForSigning.mockImplementationOnce(() => new Promise((r) => (release = r)))
+    signingHandleFor.mockImplementationOnce(() => new Promise((r) => (release = r)))
 
     const { rerender } = render(<SendTab />)
     fillValidForm()
@@ -645,14 +673,14 @@ describe('SendTab — the submit path re-checks before it spends', () => {
     expect(screen.getByText('Sending…')).toBeTruthy()
 
     await act(async () => {
-      release({ address: WALLET_ADDRESS })
+      release(fakeHandle())
     })
     expect(submitXrpPayment).toHaveBeenCalledOnce()
   })
 
   it('signs the fee the dialog showed, not one read during the unlock', async () => {
     let release: (w: unknown) => void = () => {}
-    unlockWalletForSigning.mockImplementationOnce(() => new Promise((r) => (release = r)))
+    signingHandleFor.mockImplementationOnce(() => new Promise((r) => (release = r)))
     useRecommendedFee.mockReturnValue(feeRead({ data: '10' }))
 
     const { rerender } = render(<SendTab />)
@@ -668,7 +696,7 @@ describe('SendTab — the submit path re-checks before it spends', () => {
       rerender(<SendTab />)
     })
     await act(async () => {
-      release({ address: WALLET_ADDRESS })
+      release(fakeHandle())
     })
 
     expect(submitXrpPayment).toHaveBeenCalledOnce()
@@ -682,7 +710,7 @@ describe('SendTab — the submit path re-checks before it spends', () => {
     // press reachable — and `busy` there is a render closure, so the guard in
     // `doSend` would not catch it either.
     let release: (w: unknown) => void = () => {}
-    unlockWalletForSigning.mockImplementationOnce(() => new Promise((r) => (release = r)))
+    signingHandleFor.mockImplementationOnce(() => new Promise((r) => (release = r)))
 
     render(<SendTab />)
     fillValidForm()
@@ -694,7 +722,7 @@ describe('SendTab — the submit path re-checks before it spends', () => {
     expect((screen.getByRole('button', { name: 'Cancel' }) as HTMLButtonElement).disabled).toBe(true)
 
     await act(async () => {
-      release({ address: WALLET_ADDRESS })
+      release(fakeHandle())
     })
     expect(submitXrpPayment).toHaveBeenCalledOnce()
   })
@@ -748,7 +776,9 @@ describe('SendTab — the submit path re-checks before it spends', () => {
     const { rerender } = render(<SendTab />)
     await reviewAndConfirm()
 
-    expect(submitXrpPayment).not.toHaveBeenCalled()
+    expect(signed).not.toHaveBeenCalled()
+    // The Signer the check opened is disposed, exactly once.
+    expect(disposed).toHaveBeenCalledOnce()
     expect(screen.getByText('Payment not sent — this address stopped being activated')).toBeTruthy()
 
     // The probe writes through to the entry the form observes, so the
@@ -772,7 +802,9 @@ describe('SendTab — the submit path re-checks before it spends', () => {
     fireEvent.change(screen.getByTestId('asset'), { target: { value: TOKEN_ASSET } })
     await reviewAndConfirm()
 
-    expect(submitIssuedPayment).not.toHaveBeenCalled()
+    expect(signed).not.toHaveBeenCalled()
+    // The Signer the check opened is disposed, exactly once.
+    expect(disposed).toHaveBeenCalledOnce()
     expect(screen.getByText('Payment not sent — the recipient stopped accepting this token')).toBeTruthy()
 
     // The same write-through on the issued-currency leg.
@@ -817,7 +849,7 @@ describe('SendTab — the submit path re-checks before it spends', () => {
     // Nothing was signed and nothing was submitted, and the confirm step goes
     // with the attempt rather than standing over a failure: re-confirming a
     // payment after one is an act the operator takes again.
-    unlockWalletForSigning.mockRejectedValue(new Error('unlock failed'))
+    signingHandleFor.mockRejectedValue(new Error('unlock failed'))
     render(<SendTab />)
     await reviewAndConfirm()
 
@@ -864,7 +896,7 @@ describe('SendTab — the submit path re-checks before it spends', () => {
   })
 
   it('invalidates every account-scoped entry for the sender after a claimed send', async () => {
-    submitXrpPayment.mockResolvedValue({ status: 'claimed', resultCode: 'tecUNFUNDED_PAYMENT', hash: 'AB' })
+    submitXrpPayment.mockImplementation(opening({ status: 'claimed', resultCode: 'tecUNFUNDED_PAYMENT', hash: 'AB' }))
     render(<SendTab />)
     await reviewAndConfirm()
 
@@ -893,7 +925,7 @@ describe('SendTab — the submit path re-checks before it spends', () => {
     ['failed', { status: 'failed', resultCode: 'tefPAST_SEQ', hash: 'AB' }],
     ['expired', { status: 'expired', hash: 'AB' }],
   ])('leaves the destination check alone after a %s send — nothing changed on its side', async (_s, outcome) => {
-    submitXrpPayment.mockResolvedValue(outcome)
+    submitXrpPayment.mockImplementation(opening(outcome))
     render(<SendTab />)
     await reviewAndConfirm()
 
@@ -1308,7 +1340,20 @@ describe('a failed fee read does not block a token send', () => {
       'testnet',
       expect.anything(),
       expect.objectContaining({ feeDrops: '10' }),
+      undefined,
     )
+  })
+
+  it('submits a token send through the active Wallet\'s Node', async () => {
+    // The XRP branch is covered in send-address-book; a token branch that
+    // dropped `node` would sign through the built-in Nodes while XRP did not.
+    activeNode = 'wss://node.example.com'
+    renderTokenForm()
+    fireEvent.click(reviewButton())
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Confirm and send' }))
+    })
+    expect(submitIssuedPayment.mock.calls[0][3]).toBe('wss://node.example.com')
   })
 
   it('refuses on the form when the fee read is above the cap, naming the cap', () => {
@@ -1650,7 +1695,7 @@ describe('the confirm step closes with the guard and does not revive', () => {
 
   it('keeps "Sending…" on screen when a read fails during a send already under way', async () => {
     let release: (w: unknown) => void = () => {}
-    unlockWalletForSigning.mockImplementationOnce(() => new Promise((r) => (release = r)))
+    signingHandleFor.mockImplementationOnce(() => new Promise((r) => (release = r)))
     const { rerender } = openOnXrpForm()
     fireEvent.click(screen.getByRole('button', { name: 'Confirm and send' }))
 
@@ -1662,7 +1707,7 @@ describe('the confirm step closes with the guard and does not revive', () => {
     expect(screen.getByRole('button', { name: 'Sending…' })).toBeTruthy()
 
     await act(async () => {
-      release({ address: WALLET_ADDRESS })
+      release(fakeHandle())
     })
   })
 })
@@ -1774,7 +1819,7 @@ describe('the confirm step pins the fee it states', () => {
 
   it('keeps "Sending…" and the pinned figure on screen when the fee moves during a send, and signs the pin', async () => {
     let release: (w: unknown) => void = () => {}
-    unlockWalletForSigning.mockImplementationOnce(() => new Promise((r) => (release = r)))
+    signingHandleFor.mockImplementationOnce(() => new Promise((r) => (release = r)))
     const { rerender } = openOnXrpForm('10')
     fireEvent.click(screen.getByRole('button', { name: 'Confirm and send' }))
 
@@ -1787,7 +1832,7 @@ describe('the confirm step pins the fee it states', () => {
     expect(dialogFeeText()).not.toContain(formatXrp('15'))
 
     await act(async () => {
-      release({ address: WALLET_ADDRESS })
+      release(fakeHandle())
     })
     expect(submitXrpPayment).toHaveBeenCalledOnce()
     expect(submitXrpPayment.mock.calls[0][2].feeDrops).toBe('10')

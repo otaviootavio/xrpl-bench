@@ -3,6 +3,19 @@ import { type NoticeTone } from '@/lib/notice-tone'
 
 interface NotifyOptions {
   description?: string
+  /** The user action this reports on. A new attempt of it calls `notify.resolve(action)`. */
+  action?: string
+}
+
+/**
+ * Which Wallet is active, read when a notice is raised. Installed by the app at
+ * module scope (`App.tsx`) rather than imported, the same inversion as the
+ * in-flight reporter in `lib/xrpl/writes.ts`: `lib` reports upward, it does not
+ * reach into the store (AD-1).
+ */
+let readActiveWalletId: () => string | null = () => null
+export function setNoticeWalletReader(read: () => string | null) {
+  readActiveWalletId = read
 }
 
 type NotifyType = 'success' | 'info' | 'error' | 'warning'
@@ -50,6 +63,8 @@ function raise(type: NotifyType, message: string, options?: NotifyOptions) {
     message,
     description: options?.description,
     persistent,
+    walletId: readActiveWalletId() ?? undefined,
+    action: options?.action,
   })
   if (!persistent) {
     setTimeout(() => useNoticeStore.getState().dismiss(id), AUTO_DISMISS_MS)
@@ -90,6 +105,17 @@ export const notify = {
    * funnel.
    */
   dismiss: (id: string) => useNoticeStore.getState().dismiss(id),
+  /**
+   * A new attempt of `action` starts: what the last one reported is no longer
+   * current. Errors still never expire on a timer (docs/decisions.md §6.5); they
+   * are taken back only when the thing they said stops being true.
+   */
+  resolve: (action: string) => useNoticeStore.getState().dismissAction(action),
+  /**
+   * The active Wallet changed: a notice about another Wallet is no longer about
+   * this screen. Notices about the app itself (no Wallet) stay.
+   */
+  scopeToWallet: (activeWalletId: string | null) => useNoticeStore.getState().dismissExceptWallet(activeWalletId),
 }
 
 /** Alias so call sites read identically to the pre-S16 sonner-backed API. */

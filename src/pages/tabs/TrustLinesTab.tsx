@@ -8,12 +8,13 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogD
 import { Skeleton } from '@/components/ui/skeleton'
 import { TrustLineRow } from '@/components/wallet/TrustLineRow'
 import { QueryErrorState } from '@/components/wallet/QueryErrorState'
-import { useAppStore, useActiveWallet } from '@/store/app-store'
+import { useActiveWallet, useActiveNetwork, useActiveNode, useWalletOpenKey } from '@/store/app-store'
 import { useTrustLines } from '@/hooks/useTrustLines'
 import { useServerReserves } from '@/hooks/useServerReserves'
 import { useSpendableBalance } from '@/hooks/useSpendableBalance'
 import { submitTrustSet } from '@/lib/xrpl/writes'
-import { unlockWalletForSigning } from '@/lib/crypto/keystore'
+import { signingHandleFor } from '@/lib/crypto/keystore'
+import { usePrompts } from '@/hooks/usePrompts'
 import { formatXrp, displayCurrencyCode, coversOwnerReserve } from '@/lib/xrpl/money'
 import { describeResultCode } from '@/lib/xrpl/result-codes'
 import { invalidateAccountScoped } from '@/lib/xrpl/query-keys'
@@ -21,12 +22,16 @@ import { useQueryClient } from '@tanstack/react-query'
 import { toast } from '@/lib/notify'
 
 export function TrustLinesTab() {
-  const network = useAppStore((s) => s.network)
+  const network = useActiveNetwork()
+  const node = useActiveNode()
   const wallet = useActiveWallet()
-  const vaultKey = useAppStore((s) => s.vaultKey)
-  const trustLines = useTrustLines(network, wallet?.address ?? null)
-  const reserves = useServerReserves(network)
-  const { spendableDrops } = useSpendableBalance(network, wallet?.address ?? null)
+  // The Open Key of THIS Wallet's lock, never another's (AD-21).
+  const vaultKey = useWalletOpenKey(wallet?.id)
+  // The PIN dialog, for a Wallet whose Signing Check is the App PIN.
+  const prompts = usePrompts()
+  const trustLines = useTrustLines(network, wallet?.address ?? null, node)
+  const reserves = useServerReserves(network, node)
+  const { spendableDrops } = useSpendableBalance(network, wallet?.address ?? null, node)
   const queryClient = useQueryClient()
 
   const [open, setOpen] = useState(false)
@@ -42,24 +47,26 @@ export function TrustLinesTab() {
   async function submit(currencyArg: string, issuerArg: string, limitArg: string) {
     if (!wallet || !vaultKey) return
     setBusy(true)
+    // A new attempt: what the last one reported is not current.
+    toast.resolve('trustline')
     try {
-      const signingWallet = await unlockWalletForSigning(wallet.id, vaultKey)
-      const result = await submitTrustSet(network, signingWallet, { currency: currencyArg, issuer: issuerArg, limit: limitArg })
+      const signing = await signingHandleFor(wallet.id, { openKey: vaultKey, prompts })
+      const result = await submitTrustSet(network, signing, { currency: currencyArg, issuer: issuerArg, limit: limitArg }, node)
       if (result.status === 'validated') {
         toast.success('Trust line updated.')
         setOpen(false)
         setEditing(null)
         setConfirmClose(null)
       } else if (result.status === 'expired') {
-        toast.warning('This transaction expired before validating. It was not applied — you can retry.')
+        toast.warning('This transaction expired before validating. It was not applied — you can retry.', { action: 'trustline' })
       } else if (result.status === 'claimed') {
-        toast.error(`${describeResultCode(result.resultCode)} The network fee was still charged.`)
+        toast.error(`${describeResultCode(result.resultCode)} The network fee was still charged.`, { action: 'trustline' })
       } else {
-        toast.error(describeResultCode(result.resultCode))
+        toast.error(describeResultCode(result.resultCode), { action: 'trustline' })
       }
       await invalidateAccountScoped(queryClient, network, wallet.address)
     } catch (err: any) {
-      toast.error(err?.message ?? 'Failed to update trust line.')
+      toast.error(err?.message ?? 'Failed to update trust line.', { action: 'trustline' })
     } finally {
       setBusy(false)
     }

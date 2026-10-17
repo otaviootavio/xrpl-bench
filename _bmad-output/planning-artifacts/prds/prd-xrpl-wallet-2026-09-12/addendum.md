@@ -144,3 +144,82 @@ to be wrong rather than merely stale — withdrawn below.
 - `.panel-scribe` was previously listed here as "defined but unused, deletion
   pending". **It is already gone** from `src/`; `DESIGN.md` records its removal
   on 2026-09-02. **Withdrawn.**
+
+## 8. Per-Wallet key setup and signing checks (planned, `prd.md` §4.14)
+
+Added 2026-10-09 from `_bmad-output/forge/passkey-gated-signing/forged-idea.md`
+and its `.memlog.md`. Mechanism notes for architecture. The PRD holds the
+capabilities.
+
+**Threat model.** Targets someone using a phone that is already unlocked, within
+the auto-lock window. Partial help against malicious code running in the page.
+Little against stolen device storage, which is already encrypted at rest.
+
+**Today's mechanism, which this replaces.** One Vault key is wrapped under the
+App PIN and under the passkey (PRF, one fixed salt). Unlock puts a
+non-extractable `vaultKey` in session state. Signing decrypts the Seed with
+`vaultKey`, and no passkey is involved at sign time
+(`keystore.unlockWalletForSigning`). A sign-time passkey prompt added on top of
+this would be for show only: `vaultKey` could still open every Seed.
+
+**Mechanism direction.**
+- A Wallet with a Signing Check is never encrypted under `vaultKey`. Its Seed has
+  its own key, which only that check unwraps. `vaultKey` stays as it is for
+  Wallets without a Signing Check.
+- The Vault needs a lock per Wallet (or per group) instead of one app-wide key,
+  so that the Open Check can be per Wallet (FR-65).
+- PRF salts: a separate salt for each Wallet and each purpose (open, sign, create
+  the Seed), so no two Wallets or purposes share derived key material (FR-70).
+- PRF output is bound to the passkey's relying-party id, which is the app's
+  domain. A domain change loses every Passkey-Derived Seed. This is the same
+  cost `prd.md` §9.3 already records for IndexedDB, now permanent for funds.
+- After creation, read the backup-eligible flag to tell synced passkeys from
+  device-bound ones (FR-71).
+- Two-device signing by QR (FR-78): the offline device cannot read Sequence or
+  Fee, so the online device builds the unsigned transaction. xrpl.js `autofill`
+  sets `LastLedgerSequence` to validated ledger + 20 (`LEDGER_OFFSET`, about
+  1 minute; `node_modules/xrpl/src/sugar/autofill.ts`), which is too short for a
+  two-device round. Set it explicitly, e.g. + 75 (about 5 minutes). Use Tickets
+  only for signing ahead or several transactions per round.
+- `asfDisableMaster` is allowed by the ledger only once a Regular Key or signer
+  list exists. After that the Account Master Key can no longer sign. With a
+  passkey Regular Key, this removes the recovery path (FR-77). Turning it back on is
+  `AccountSet` with `ClearFlag: asfDisableMaster`, signed by the Regular Key. The
+  current state is `lsfDisableMaster` in `account_info`'s `account_flags`.
+
+**Devnet, verified live 2026-10-09.**
+- Node: `wss://s.devnet.rippletest.net:51233/`, JSON-RPC
+  `https://s.devnet.rippletest.net:51234/` (listed on xrpl.org's faucets page).
+  `server_info` reported `network_id` 2, `server_state` full, rippled 3.4.1,
+  base reserve 1 XRP.
+- Faucet: `POST https://faucet.devnet.rippletest.net/accounts` with
+  `{"destination": "<address>"}`. It funded an existing address with 100 test
+  XRP and returned `account`, `amount`, `transactionHash`. That is the same
+  shape as Testnet, so FR-40's "fund the address the user holds" rule applies
+  unchanged. CORS preflight returns 204.
+- Explorer: `https://devnet.xrpl.org/accounts/{address}` returns 200. The
+  transaction path is assumed to follow Testnet's `/transactions/{hash}` pattern.
+- Network ids for the custom-Node test (FR-61): Mainnet 0 (`xrplcluster.com`,
+  `s1.ripple.com`), Testnet 1 (`s.altnet.rippletest.net`), Devnet 2.
+
+**Rejected or parked.**
+- *A passkey signature as the XRPL signature.* XRPL accepts only secp256k1 and
+  Ed25519, and WebAuthn signs its own wrapper data, not the transaction.
+- *A passkey prompt that leaves the Seed openable by `vaultKey`.* For show only.
+- *A separate signing PIN.* Easy to forget, and a second lockout to maintain.
+- *An app-wide Open Check.* Makes "no check on Testnet" meaningless on any device
+  that also holds a Mainnet Wallet.
+- *Splitting keys with a server (MPC).* There is no backend.
+- *XLS-100 Smart Escrows and Xahau Hooks.* Neither is a way to authorise an
+  Account.
+- *`largeBlob` (storing the Seed inside the passkey).* Parked because support is
+  uneven, as of 2026-10: Safari 17+ and iCloud Keychain yes; Google Password
+  Manager reported since August 2026; Chrome desktop yes; Firefox no (bug
+  2033635). Each password manager has to implement it separately. If it is ever
+  used, store only the PRF-encrypted Seed, never the bare Seed.
+- *A new passkey for every Wallet, always.* Replaced by FR-70's "existing or
+  new" rule, with per-purpose salts as the isolation.
+
+**Decision reversed outside this PRD.** `docs/decisions.md` §1's mandatory PIN
+fallback (`prd.md` FR-7) is reversed by FR-65 and FR-72. It is reported in
+`prd.md` §10, not edited here.

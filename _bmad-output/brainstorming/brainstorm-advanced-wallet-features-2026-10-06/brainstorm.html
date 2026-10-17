@@ -1,0 +1,968 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Bench Brainstorm Keepsake</title>
+<meta name="description" content="A keepsake of the 2026-10-06 brainstorming session on advanced features for the xrpl-bench self-custody XRP Ledger wallet.">
+<style>
+:root{
+  --bg:#efe9dc;
+  --peg:#d9d0bd;
+  --panel:#fbf8f1;
+  --panel-2:#f4efe3;
+  --ink:#1d1b17;
+  --ink-2:#4b463d;
+  --rule:#c9bfaa;
+  --tape-bg:#1d1b17;
+  --tape-ink:#f6f1e6;
+  --you:#8a4b00;
+  --you-bg:#fbe9cc;
+  --coach:#24507e;
+  --coach-bg:#e1ebf6;
+  --fact:#3b5d3a;
+  --fact-bg:#e3eedf;
+  --warn:#8f2a1c;
+  --warn-bg:#f7e0da;
+  --wood:#7a5229;
+  --steel:#55606b;
+  --node:#fbf8f1;
+  --shadow:0 1px 0 rgba(0,0,0,.06),0 6px 18px -10px rgba(40,30,10,.35);
+  --mono:ui-monospace,"SFMono-Regular","Cascadia Mono","Roboto Mono",Menlo,Consolas,monospace;
+  --serif:"Iowan Old Style","Palatino Linotype",Palatino,"Book Antiqua",Georgia,serif;
+  --sans:system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+  color-scheme:light;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#14130f;
+    --peg:#24221b;
+    --panel:#1e1c16;
+    --panel-2:#26231b;
+    --ink:#ece5d6;
+    --ink-2:#b9b0a0;
+    --rule:#3d382d;
+    --tape-bg:#ece5d6;
+    --tape-ink:#14130f;
+    --you:#f2b765;
+    --you-bg:#3a2a12;
+    --coach:#8fbbe8;
+    --coach-bg:#172839;
+    --fact:#9fd09b;
+    --fact-bg:#1b2c1a;
+    --warn:#f1a194;
+    --warn-bg:#3a1a14;
+    --wood:#d3a26a;
+    --steel:#a9b4be;
+    --node:#26231b;
+    --shadow:0 1px 0 rgba(0,0,0,.4),0 8px 20px -12px rgba(0,0,0,.8);
+    color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#14130f;--peg:#24221b;--panel:#1e1c16;--panel-2:#26231b;--ink:#ece5d6;--ink-2:#b9b0a0;--rule:#3d382d;
+  --tape-bg:#ece5d6;--tape-ink:#14130f;--you:#f2b765;--you-bg:#3a2a12;--coach:#8fbbe8;--coach-bg:#172839;
+  --fact:#9fd09b;--fact-bg:#1b2c1a;--warn:#f1a194;--warn-bg:#3a1a14;--wood:#d3a26a;--steel:#a9b4be;--node:#26231b;
+  --shadow:0 1px 0 rgba(0,0,0,.4),0 8px 20px -12px rgba(0,0,0,.8);color-scheme:dark;
+}
+
+*,*::before,*::after{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{
+  margin:0;
+  background-color:var(--bg);
+  background-image:radial-gradient(circle at 12px 12px,var(--peg) 2.6px,transparent 3.2px);
+  background-size:24px 24px;
+  color:var(--ink);
+  font:16px/1.55 var(--sans);
+  overflow-x:hidden;
+}
+main{max-width:1120px;margin:0 auto;padding:0 16px 64px}
+p,li{overflow-wrap:anywhere}
+h1,h2,h3{font-family:var(--serif);line-height:1.15;margin:0}
+code,.mono{font-family:var(--mono);font-size:.92em}
+a{color:inherit}
+
+/* ---------- masthead ---------- */
+.mast{
+  position:relative;
+  margin:28px 0 8px;
+  padding:28px 22px 24px;
+  background:var(--panel);
+  border:1px solid var(--rule);
+  border-radius:6px;
+  box-shadow:var(--shadow);
+  overflow:hidden;
+}
+.mast::before{ /* wood rail */
+  content:"";position:absolute;inset:0 0 auto 0;height:10px;
+  background:repeating-linear-gradient(90deg,var(--wood) 0 38px,color-mix(in srgb,var(--wood) 80%,var(--bg)) 38px 40px);
+}
+.mast-grid{display:grid;grid-template-columns:1fr;gap:20px;align-items:center}
+@media (min-width:760px){.mast-grid{grid-template-columns:1.4fr 1fr}}
+.eyebrow{font:600 12px/1.3 var(--mono);letter-spacing:.14em;text-transform:uppercase;color:var(--ink-2)}
+.mast h1{font-size:clamp(34px,7vw,60px);letter-spacing:-.01em;margin:10px 0 12px}
+.mast h1 em{font-style:italic;color:var(--wood)}
+.lede{font-family:var(--serif);font-size:clamp(17px,2.4vw,20px);color:var(--ink-2);max-width:56ch;margin:0}
+.ticket{
+  margin-top:18px;display:flex;flex-wrap:wrap;gap:8px 18px;
+  font:13px/1.4 var(--mono);color:var(--ink-2);
+  border-top:1px dashed var(--rule);padding-top:12px;
+}
+.ticket b{color:var(--ink);font-weight:600}
+.mast svg{width:100%;height:auto;max-width:380px;justify-self:center;color:var(--ink)}
+
+/* ---------- label-maker tape headings ---------- */
+.sec{margin-top:56px}
+.tape{
+  display:inline-block;
+  background:var(--tape-bg);color:var(--tape-ink);
+  font:700 13px/1 var(--mono);letter-spacing:.22em;text-transform:uppercase;
+  padding:8px 12px 7px;border-radius:3px;
+  transform:rotate(-1.2deg);
+  box-shadow:0 2px 0 rgba(0,0,0,.15);
+}
+.sec > header h2{font-size:clamp(26px,4.6vw,38px);margin:14px 0 6px}
+.sec > header p{margin:0 0 18px;color:var(--ink-2);max-width:68ch}
+
+.panel{
+  background:var(--panel);border:1px solid var(--rule);border-radius:6px;
+  box-shadow:var(--shadow);padding:18px;
+}
+.grid{display:grid;gap:16px;grid-template-columns:repeat(auto-fill,minmax(min(100%,300px),1fr))}
+
+/* ---------- who tags ---------- */
+.tag{
+  display:inline-block;vertical-align:1px;
+  font:700 10.5px/1 var(--mono);letter-spacing:.1em;text-transform:uppercase;
+  padding:4px 6px 3px;border-radius:3px;margin-right:6px;white-space:nowrap;
+}
+.tag.you{background:var(--you);color:var(--panel)}
+.tag.coach{background:transparent;color:var(--coach);border:1.5px dashed var(--coach);padding:3px 5px 2px}
+.tag.fact{background:var(--fact-bg);color:var(--fact);border:1px solid var(--fact)}
+.tag.inf{background:transparent;color:var(--steel);border:1px dotted var(--steel)}
+.tag.note{background:var(--panel-2);color:var(--ink-2);border:1px solid var(--rule)}
+.tag.warn{background:var(--warn-bg);color:var(--warn);border:1px solid var(--warn)}
+
+ul.ideas{list-style:none;margin:0;padding:0;display:grid;gap:8px}
+ul.ideas li{
+  padding:8px 10px;border-radius:4px;background:var(--panel-2);
+  border:1px solid var(--rule);font-size:15px;
+}
+ul.ideas li[data-who="you"]{border:1px solid var(--you);background:var(--you-bg)}
+ul.ideas li[data-who="coach"]{border:1px dashed var(--coach)}
+ul.ideas li[hidden]{display:none}
+
+/* ---------- legend + filter ---------- */
+.legend{display:flex;flex-wrap:wrap;gap:10px 18px;align-items:center;font-size:14px;color:var(--ink-2)}
+.filter{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}
+.filter button,.btn{
+  font:600 13px/1 var(--mono);letter-spacing:.04em;
+  background:var(--panel);color:var(--ink);
+  border:1.5px solid var(--ink);border-radius:999px;padding:9px 14px;cursor:pointer;
+  min-height:36px;
+}
+.filter button[aria-pressed="true"]{background:var(--ink);color:var(--panel)}
+
+/* ---------- personas as tool drawers ---------- */
+.drawer{position:relative;padding-top:0;overflow:hidden}
+.drawer .front{
+  margin:0 -18px 14px;padding:14px 18px 12px;
+  background:linear-gradient(180deg,var(--panel-2),var(--panel));
+  border-bottom:1px solid var(--rule);
+  display:flex;align-items:center;gap:12px;
+}
+.drawer .handle{
+  flex:none;width:44px;height:12px;border-radius:8px;border:2px solid var(--steel);
+  background:linear-gradient(var(--panel),var(--panel-2));
+}
+.drawer h3{font-size:22px}
+.drawer .who{font:12px/1.3 var(--mono);color:var(--ink-2);margin-top:2px}
+.pain{
+  font-family:var(--serif);font-style:italic;font-size:16px;margin:0 0 12px;
+  padding-left:12px;border-left:2px solid var(--wood);color:var(--ink-2);
+}
+.subhead{font:700 12px/1.2 var(--mono);letter-spacing:.12em;text-transform:uppercase;color:var(--ink-2);margin:16px 0 8px}
+
+/* ---------- ledger printout ---------- */
+.ledger{
+  font-family:var(--mono);font-size:14px;
+  background:
+    repeating-linear-gradient(180deg,transparent 0 27px,color-mix(in srgb,var(--fact) 18%,transparent) 27px 28px),
+    var(--panel);
+  border:1px solid var(--rule);border-radius:6px;box-shadow:var(--shadow);
+  padding:8px 0;position:relative;
+}
+.ledger::before,.ledger::after{ /* tractor-feed holes */
+  content:"";position:absolute;top:0;bottom:0;width:14px;
+  background:radial-gradient(circle at 7px 14px,var(--bg) 3px,transparent 3.6px) 0 0/14px 28px repeat-y;
+}
+.ledger::before{left:4px}.ledger::after{right:4px}
+.ledger ol{list-style:none;margin:0;padding:0 28px;counter-reset:l}
+.ledger li{
+  counter-increment:l;display:grid;grid-template-columns:3.2em 1fr;gap:8px;
+  padding:6px 0;border-bottom:1px dashed var(--rule);line-height:1.45;
+}
+.ledger li:last-child{border-bottom:0}
+.ledger li::before{content:"#" counter(l,decimal-leading-zero);color:var(--fact);font-weight:700}
+.ledger .k{font-weight:700}
+.allows-grid{display:grid;gap:16px;grid-template-columns:1fr}
+@media (min-width:900px){.allows-grid{grid-template-columns:1.25fr 1fr}}
+.cant{border:2px solid var(--warn);background:var(--warn-bg);border-radius:6px;padding:14px 16px}
+.cant h3{font-size:19px;color:var(--warn);margin-bottom:8px}
+.cant ul{margin:0;padding-left:18px}
+.cant li{margin:6px 0}
+
+/* ---------- topology ---------- */
+.topo svg{width:100%;height:auto;display:block}
+.topo figure{margin:0}
+.topo figcaption{font-size:14px;color:var(--ink-2);margin-top:8px}
+.topo h3{font-size:20px;margin-bottom:6px}
+.n-acct{fill:var(--node);stroke:var(--ink);stroke-width:1.8}
+.n-key{fill:var(--you-bg);stroke:var(--wood);stroke-width:1.8}
+.n-off{fill:var(--panel-2);stroke:var(--steel);stroke-width:1.8;stroke-dasharray:4 3}
+.edge{stroke:var(--ink-2);stroke-width:1.6;fill:none}
+.edge-refill{stroke:var(--fact);stroke-width:1.8;fill:none;stroke-dasharray:5 4}
+.arrowhead{fill:var(--ink-2)}
+.arrowhead-g{fill:var(--fact)}
+.svgt{fill:var(--ink);font:600 11px var(--mono)}
+.svgs{fill:var(--ink-2);font:10px var(--mono)}
+.model{display:grid;gap:10px;grid-template-columns:repeat(auto-fit,minmax(min(100%,220px),1fr));margin:16px 0}
+.model div{border:1.5px solid var(--ink);border-radius:6px;padding:10px 12px;background:var(--panel)}
+.model b{font-family:var(--mono);font-size:13px;letter-spacing:.06em;text-transform:uppercase;display:block;margin-bottom:4px}
+.policy{display:grid;gap:10px;grid-template-columns:repeat(auto-fit,minmax(min(100%,200px),1fr))}
+.policy div{border:1px solid var(--steel);background:var(--panel-2);padding:10px 12px;border-radius:4px}
+.policy b{display:block;font-family:var(--serif);font-size:18px}
+
+/* ---------- flip cards ---------- */
+.flips{display:grid;gap:14px;grid-template-columns:repeat(auto-fill,minmax(min(100%,250px),1fr))}
+.flip{
+  appearance:none;border:0;padding:0;background:none;color:inherit;font:inherit;text-align:left;
+  cursor:pointer;perspective:900px;display:block;width:100%;
+}
+.flip .inner{
+  display:grid;transition:transform .55s cubic-bezier(.2,.7,.2,1);transform-style:preserve-3d;
+}
+.flip .face{
+  grid-area:1/1;backface-visibility:hidden;-webkit-backface-visibility:hidden;
+  border-radius:8px;padding:16px;min-height:150px;
+  display:flex;flex-direction:column;gap:8px;box-shadow:var(--shadow);
+}
+.flip .front{background:var(--panel);border:1.5px solid var(--rule)}
+.flip .back{background:var(--coach-bg);border:1.5px dashed var(--coach);transform:rotateY(180deg)}
+.flip[aria-pressed="true"] .inner{transform:rotateY(180deg)}
+.flip .lbl{font:700 11px/1 var(--mono);letter-spacing:.14em;text-transform:uppercase;color:var(--ink-2)}
+.flip .assume{font-family:var(--serif);font-size:21px;line-height:1.2}
+.flip .assume::before{content:"\201C"}.flip .assume::after{content:"\201D"}
+.flip .hint{margin-top:auto;font:12px var(--mono);color:var(--ink-2)}
+.flip .back p{margin:0;font-size:15px}
+
+/* ---------- morphological grid ---------- */
+.axes{display:grid;gap:8px;grid-template-columns:repeat(auto-fit,minmax(min(100%,150px),1fr));margin-bottom:14px}
+.axes div{
+  background:var(--tape-bg);color:var(--tape-ink);border-radius:4px;padding:8px 10px;
+  font:700 12px/1.2 var(--mono);letter-spacing:.1em;text-transform:uppercase;text-align:center;
+}
+.combo{display:grid;gap:12px;grid-template-columns:repeat(auto-fill,minmax(min(100%,320px),1fr))}
+.combo article{background:var(--panel);border:1.5px dashed var(--coach);border-radius:6px;padding:12px 14px;box-shadow:var(--shadow)}
+.combo .slots{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:4px;margin:8px 0 10px}
+.slot{
+  font:600 10.5px/1.25 var(--mono);text-align:center;padding:6px 3px;border-radius:3px;
+  border:1px solid var(--rule);color:var(--ink-2);background:var(--panel-2);min-height:42px;
+  display:flex;align-items:center;justify-content:center;overflow-wrap:anywhere;
+}
+.slot.on{background:var(--ink);color:var(--panel);border-color:var(--ink)}
+.slot small{display:block;font-size:9px;letter-spacing:.08em;text-transform:uppercase;opacity:.75}
+.combo p{margin:0;font-size:15px}
+
+/* ---------- TRIZ ---------- */
+.triz-head{display:grid;grid-template-columns:1fr auto 1fr;gap:10px;align-items:center;text-align:center;margin-bottom:16px}
+.triz-head .pole{font-family:var(--serif);font-size:clamp(18px,4vw,32px);min-width:0;overflow-wrap:anywhere}
+.triz-head svg{width:min(160px,22vw);height:auto;color:var(--ink)}
+.sep{display:grid;gap:12px;grid-template-columns:repeat(auto-fill,minmax(min(100%,240px),1fr))}
+.sep article{background:var(--panel);border:1px solid var(--rule);border-radius:6px;padding:12px 14px;box-shadow:var(--shadow)}
+.sep h4{margin:0 0 6px;font:700 12px/1.3 var(--mono);letter-spacing:.1em;text-transform:uppercase;color:var(--wood)}
+.sep p{margin:0;font-size:15px}
+
+/* ---------- dial ---------- */
+.dial-wrap{display:grid;gap:18px;grid-template-columns:1fr;align-items:start}
+@media (min-width:760px){.dial-wrap{grid-template-columns:240px 1fr}}
+.dial{width:min(240px,70vw);height:auto;justify-self:center;color:var(--ink)}
+.dial .needle{transform-origin:120px 120px;transition:transform 1.4s cubic-bezier(.16,1,.3,1)}
+.eleven{display:grid;gap:10px;grid-template-columns:repeat(auto-fill,minmax(min(100%,230px),1fr))}
+.eleven li{list-style:none}
+.eleven{padding:0;margin:0}
+.eleven li{background:var(--panel);border:1.5px dashed var(--coach);border-radius:6px;padding:10px 12px;font-size:15px}
+.eleven li .lvl{font:700 11px var(--mono);color:var(--warn);letter-spacing:.08em;display:block;margin-bottom:4px}
+
+/* ---------- worst -> flip ---------- */
+.pairs{display:grid;gap:12px}
+.pair{display:grid;grid-template-columns:1fr;gap:0;border-radius:8px;overflow:hidden;box-shadow:var(--shadow);border:1px solid var(--rule)}
+@media (min-width:700px){.pair{grid-template-columns:1fr 46px 1fr}}
+.pair .worst{background:var(--warn-bg);padding:14px 16px;position:relative}
+.pair .worst p{margin:4px 0 0;text-decoration:line-through;text-decoration-thickness:2px;text-decoration-color:var(--warn);color:var(--ink)}
+.pair .turn{display:flex;align-items:center;justify-content:center;background:var(--panel-2);font:700 20px var(--mono);color:var(--ink-2);padding:4px}
+.pair .better{background:var(--panel);padding:14px 16px}
+.pair .better p{margin:4px 0 0}
+.pair .k{font:700 11px/1 var(--mono);letter-spacing:.14em;text-transform:uppercase}
+.pair .worst .k{color:var(--warn)}
+.pair .better .k{color:var(--fact)}
+
+/* ---------- synthesis (climax) ---------- */
+.climax{
+  margin-top:72px;padding:28px 18px 32px;border-radius:10px;
+  background:var(--tape-bg);color:var(--tape-ink);
+  box-shadow:0 20px 50px -24px rgba(0,0,0,.6);
+}
+.climax .tape{background:var(--tape-ink);color:var(--tape-bg)}
+.climax h2{font-size:clamp(30px,6vw,52px);margin:16px 0 8px}
+.climax > p{color:color-mix(in srgb,var(--tape-ink) 78%,var(--tape-bg));max-width:66ch;margin:0 0 22px}
+.toolwall{display:grid;gap:12px;grid-template-columns:repeat(auto-fill,minmax(min(100%,250px),1fr))}
+.tool{
+  background:var(--panel);color:var(--ink);border-radius:8px;padding:14px 14px 14px 60px;position:relative;min-height:120px;
+}
+.tool .letter{
+  position:absolute;left:12px;top:12px;width:36px;height:36px;border-radius:50%;
+  display:grid;place-items:center;background:var(--ink);color:var(--panel);
+  font:700 18px var(--serif);
+}
+.tool h3{font-size:18px;margin-bottom:4px}
+.tool p{margin:0;font-size:14px;color:var(--ink-2)}
+.tool.bet{border:3px solid var(--wood)}
+.tool.bet .star{font:700 10.5px var(--mono);letter-spacing:.1em;color:var(--wood);text-transform:uppercase;display:block;margin-bottom:4px}
+.bins{display:grid;gap:14px;grid-template-columns:repeat(auto-fit,minmax(min(100%,260px),1fr));margin-top:28px}
+.bin{background:var(--panel);color:var(--ink);border-radius:8px;padding:16px;position:relative}
+.bin h3{font-size:22px;display:flex;align-items:baseline;gap:8px;flex-wrap:wrap}
+.bin h3 small{font:600 11px var(--mono);letter-spacing:.1em;text-transform:uppercase;color:var(--ink-2)}
+.bin ul{margin:10px 0 0;padding-left:18px}
+.bin li{margin:5px 0}
+.bin.quick{border-top:8px solid var(--fact)}
+.bin.big{border-top:8px solid var(--wood)}
+.bin.park{border-top:8px dotted var(--steel)}
+.bin.park li{color:var(--ink-2)}
+.insights{display:grid;gap:14px;grid-template-columns:repeat(auto-fill,minmax(min(100%,300px),1fr));margin-top:28px}
+.insight{background:var(--panel);color:var(--ink);border-radius:8px;padding:16px 16px 16px;position:relative}
+.insight .no{font:700 34px/1 var(--serif);color:var(--wood);display:block;margin-bottom:6px}
+.insight h3{font-size:19px;margin-bottom:6px}
+.insight p{margin:0;font-size:15px;color:var(--ink-2)}
+.insight .stamp{
+  display:inline-block;margin-top:10px;font:700 11px/1 var(--mono);letter-spacing:.14em;text-transform:uppercase;
+  padding:5px 7px;border:2px solid currentColor;border-radius:3px;transform:rotate(-2deg);
+}
+.insight .stamp.open{color:var(--warn)}
+.insight .stamp.watch{color:var(--coach)}
+.insight .stamp.join{color:var(--fact)}
+
+footer{margin-top:40px;text-align:center;font:13px/1.6 var(--mono);color:var(--ink-2)}
+
+@media (prefers-reduced-motion: reduce){
+  .flip .inner,.dial .needle{transition:none}
+}
+</style>
+</head>
+<body>
+<main>
+
+<!-- ======================= MASTHEAD ======================= -->
+<header class="mast">
+  <div class="mast-grid">
+    <div>
+      <div class="eyebrow">Brainstorm keepsake · 2026-10-06</div>
+      <h1>Notes from the <em>bench</em></h1>
+      <p class="lede">Advanced features for <b>xrpl-bench</b>, a self-custody XRP Ledger wallet. The goal: give advanced users, developers and lazy testers more control and speed, without weakening the safe Mainnet default.</p>
+      <div class="ticket">
+        <span>mode <b>autonomous</b></span>
+        <span>status <b>complete</b></span>
+        <span>closed <b>22:00</b></span>
+        <span>techniques <b>7</b></span>
+        <span>clusters <b>A–G</b></span>
+      </div>
+    </div>
+    <svg viewBox="0 0 380 220" role="img" aria-labelledby="mastsvg">
+      <title id="mastsvg">A pegboard with a key, a vault and a small signer graph hanging from it</title>
+      <rect x="6" y="10" width="368" height="200" rx="8" fill="var(--panel-2)" stroke="var(--rule)"/>
+      <g fill="var(--peg)">
+        <circle cx="40" cy="36" r="4"/><circle cx="100" cy="36" r="4"/><circle cx="160" cy="36" r="4"/><circle cx="220" cy="36" r="4"/><circle cx="280" cy="36" r="4"/><circle cx="340" cy="36" r="4"/>
+        <circle cx="40" cy="186" r="4"/><circle cx="340" cy="186" r="4"/>
+      </g>
+      <!-- key -->
+      <g transform="translate(46 54)" stroke="var(--wood)" stroke-width="5" fill="none" stroke-linecap="round">
+        <path d="M14 0 v8"/>
+        <circle cx="14" cy="26" r="16"/>
+        <path d="M14 42 v84 M14 100 h14 M14 116 h10"/>
+      </g>
+      <!-- vault -->
+      <g transform="translate(118 62)">
+        <rect x="0" y="0" width="96" height="96" rx="8" fill="var(--node)" stroke="var(--ink)" stroke-width="3"/>
+        <circle cx="48" cy="48" r="24" fill="none" stroke="var(--ink)" stroke-width="3"/>
+        <g stroke="var(--ink)" stroke-width="3" stroke-linecap="round">
+          <path d="M48 24v-6M48 78v-6M24 48h-6M78 48h-6"/>
+          <path d="M48 48 L62 38"/>
+        </g>
+        <rect x="8" y="100" width="14" height="8" fill="var(--ink)"/><rect x="74" y="100" width="14" height="8" fill="var(--ink)"/>
+      </g>
+      <!-- signer graph -->
+      <g transform="translate(240 56)">
+        <line x1="54" y1="20" x2="18" y2="96" class="edge"/>
+        <line x1="54" y1="20" x2="54" y2="96" class="edge"/>
+        <line x1="54" y1="20" x2="90" y2="96" class="edge"/>
+        <rect x="30" y="2" width="48" height="34" rx="4" class="n-acct"/>
+        <circle cx="18" cy="104" r="13" class="n-key"/>
+        <circle cx="54" cy="104" r="13" class="n-key"/>
+        <circle cx="90" cy="104" r="13" class="n-off"/>
+        <text x="54" y="24" text-anchor="middle" class="svgs">r…</text>
+        <text x="54" y="140" text-anchor="middle" class="svgs">signers</text>
+      </g>
+    </svg>
+  </div>
+</header>
+
+<!-- ======================= LEGEND ======================= -->
+<section class="sec" aria-labelledby="h-legend">
+  <header><span class="tape">How to read this</span><h2 id="h-legend">Whose idea is whose</h2>
+  <p>Every idea carries a written label. Your ideas sit on a solid amber rule; coach ideas sit on a dashed blue rule and say <i>by coach</i>. Research and inference from the ledger docs get their own labels.</p></header>
+  <div class="panel">
+    <div class="legend">
+      <span><span class="tag you">yours</span>said by you</span>
+      <span><span class="tag coach">by coach</span>added by the coach</span>
+      <span><span class="tag fact">ledger fact</span>from XRPL docs</span>
+      <span><span class="tag inf">inference</span>reasoned from the facts</span>
+      <span><span class="tag note">direction</span>steering, questions, insights</span>
+    </div>
+    <div class="filter" role="group" aria-label="Show ideas from">
+      <button type="button" data-filter="all" aria-pressed="true">Show all</button>
+      <button type="button" data-filter="you" aria-pressed="false">Only yours</button>
+      <button type="button" data-filter="coach" aria-pressed="false">Only by coach</button>
+    </div>
+  </div>
+</section>
+
+<!-- ======================= SEEDS ======================= -->
+<section class="sec" aria-labelledby="h-seeds">
+  <header><span class="tape">The seed tray</span><h2 id="h-seeds">What you brought to the bench</h2>
+  <p>Three seeds and a fence around them.</p></header>
+  <div class="grid">
+    <div class="panel">
+      <div class="subhead">Seeds</div>
+      <ul class="ideas">
+        <li data-who="you"><span class="tag you">yours</span>Let the user choose how to lock and unlock the app: PIN, passphrase. Passkey already exists.</li>
+        <li data-who="you"><span class="tag you">yours</span>Split app-unlock from send authorization: the app opens freely, but a PIN is required to sign and send.</li>
+        <li data-who="you"><span class="tag you">yours</span>A no-secret mode for both open and send, acceptable for test wallets only.</li>
+      </ul>
+    </div>
+    <div class="panel">
+      <div class="subhead">Audience &amp; fence</div>
+      <ul class="ideas">
+        <li data-who="note"><span class="tag note">direction</span>Audience: advanced users, developers, lazy users testing.</li>
+        <li data-who="note"><span class="tag note">direction</span>Any unlock method must wrap and unwrap the master key.</li>
+        <li data-who="note"><span class="tag note">direction</span>Out of bounds: swaps/DEX, fiat, staking, KYC, custody.</li>
+        <li data-who="note"><span class="tag note">direction</span>Mandatory PIN fallback is the current decision (<code>decisions.md §2</code>).</li>
+        <li data-who="note"><span class="tag note">direction</span>Technique batch chosen: Persona Journey, Assumption Reversal, Morphological Analysis, TRIZ Contradiction.</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- ======================= PERSONA JOURNEY ======================= -->
+<section class="sec" aria-labelledby="h-persona">
+  <header><span class="tape">Technique 1 · Persona Journey</span><h2 id="h-persona">Three drawers, three people</h2>
+  <p>Each persona gets a drawer of the tool chest. Open it and you find their pain, then the tools that answer it.</p></header>
+  <div class="grid">
+
+    <article class="panel drawer">
+      <div class="front"><span class="handle" aria-hidden="true"></span><div><h3>The lazy tester</h3><div class="who">wants to test, not to set up</div></div></div>
+      <p class="pain">Has to unlock several times during repeated test runs. Creates and deletes many wallets, and does not want the full setup (seed backup, PIN onboarding) every time.</p>
+      <ul class="ideas">
+        <li data-who="you"><span class="tag you">yours</span>Developer-flagged wallet setup: the same flow as normal setup, but with skip buttons on each step (seed backup, PIN, etc.).</li>
+        <li data-who="you"><span class="tag you">yours</span>Each skip comes with a warning that it is for developers only, and a gentle push-back before allowing it.</li>
+        <li data-who="you"><span class="tag you">yours</span>The model is a phone setup flow: standard path by default, skippable steps with the right buttons.</li>
+        <li data-who="you"><span class="tag you">yours</span>Disposable wallets just pile up in the Wallets/Settings list; the user doesn't care about cleanup.</li>
+        <li data-who="you"><span class="tag you">yours</span>Disposables get an auto-generated name (random or from the creation date), so they're identifiable without typing a label.</li>
+        <li data-who="coach"><span class="tag coach">by coach</span>Disposable wallets exist only on Testnet/Devnet and are faucet-funded on creation.</li>
+        <li data-who="coach"><span class="tag coach">by coach</span>One tap "new funded test wallet" from anywhere.</li>
+        <li data-who="coach"><span class="tag coach">by coach</span>Two-word auto names (e.g. <i>amber-falcon</i>) plus creation time.</li>
+        <li data-who="coach"><span class="tag coach">by coach</span>Disposable badge with text and pattern, never colour alone.</li>
+        <li data-who="coach"><span class="tag coach">by coach</span>Disposables auto-archive after N days, with an optional sweep to a "home" test wallet first.</li>
+        <li data-who="coach"><span class="tag coach">by coach</span>Bulk delete of disposables.</li>
+        <li data-who="coach"><span class="tag coach">by coach</span>"Repeat last transaction" button.</li>
+        <li data-who="coach"><span class="tag coach">by coach</span>Recent test destinations as a quick pick.</li>
+        <li data-who="coach"><span class="tag coach">by coach</span>Two vaults: a Mainnet vault with the full ceremony and a Test vault with none.</li>
+        <li data-who="coach"><span class="tag coach">by coach</span>Code-level refusal: a wallet with no secret can never be switched to Mainnet.</li>
+      </ul>
+    </article>
+
+    <article class="panel drawer">
+      <div class="front"><span class="handle" aria-hidden="true"></span><div><h3>The developer</h3><div class="who">wants to see the wire</div></div></div>
+      <p class="pain">Needs raw transactions, raw responses and repeatable Testnet setups.</p>
+      <ul class="ideas">
+        <li data-who="coach"><span class="tag coach">by coach</span>Raw transaction composer: a JSON editor for any tx type, with autofill preview and validation before signing.</li>
+        <li data-who="coach"><span class="tag coach">by coach</span>Sign-only mode: sign a tx and output the blob without submitting it.</li>
+        <li data-who="coach"><span class="tag coach">by coach</span>Submit-only mode: paste a signed blob, submit it, and track it to validation.</li>
+        <li data-who="coach"><span class="tag coach">by coach</span>Decoder: paste any tx blob or hash and see readable fields.</li>
+        <li data-who="coach"><span class="tag coach">by coach</span>Network list includes Devnet and a custom rippled/Clio endpoint URL.</li>
+        <li data-who="coach"><span class="tag coach">by coach</span>Faucet per network, plus "fund N wallets" in one tap.</li>
+        <li data-who="coach"><span class="tag coach">by coach</span>Export a Testnet-only wallet as an xrpl.js snippet or <code>.env</code> line for test scripts.</li>
+        <li data-who="coach"><span class="tag coach">by coach</span>Deep link that prefills a send (destination, tag, amount) for integration tests. Never carries a secret, never auto-signs.</li>
+        <li data-who="coach"><span class="tag coach">by coach</span>Simulate before signing (rippled <code>simulate</code> method): show the engine result with nothing submitted.</li>
+        <li data-who="coach"><span class="tag coach">by coach</span>Developer panel showing the raw RPC response behind every figure (<code>account_info</code>, <code>account_lines</code>).</li>
+        <li data-who="coach"><span class="tag coach">by coach</span>Tx lifecycle view: submitted, tentative, validated, or expired past LastLedgerSequence.</li>
+        <li data-who="coach"><span class="tag coach">by coach</span>Copy-as-curl for every ledger read.</li>
+        <li data-who="coach"><span class="tag coach">by coach</span>Destination-tag tester: generate random tags and confirm which one the received payment carried.</li>
+        <li data-who="coach"><span class="tag coach">by coach</span>Test-token kit: on Testnet, one tap creates issuer + holder, trust line, and issues an IOU.</li>
+        <li data-who="coach"><span class="tag coach">by coach</span>Save and restore a Testnet scenario (a set of wallets and their state).</li>
+      </ul>
+    </article>
+
+    <article class="panel drawer">
+      <div class="front"><span class="handle" aria-hidden="true"></span><div><h3>The advanced user</h3><div class="who">wants the key to leave memory fast</div></div></div>
+      <p class="pain">Wants to choose the key, gate the signature, and hold the secret in memory for as short a time as possible.</p>
+      <ul class="ideas">
+        <li data-who="you"><span class="tag you">yours</span>Choose the signature/key type (e.g. ed25519 vs secp256k1) when creating a wallet.</li>
+        <li data-who="you"><span class="tag you">yours</span>Password/secret entry required at the transaction-signing step, not just at app unlock.</li>
+        <li data-who="you"><span class="tag you">yours</span>The secret is exposed in memory for the shortest possible time.</li>
+        <li data-who="you"><span class="tag you">yours</span>When a passkey is available, sign with the passkey/hardware (HSM) instead of decrypting the seed and signing in memory.</li>
+        <li data-who="you"><span class="tag you">yours</span>Master key + child wallets: a "master mode" phone holds the master key; "child mode" phones are derived/authorized from it and integrated.</li>
+        <li data-who="coach"><span class="tag coach">by coach</span>Choose ed25519 or secp256k1 at creation, with a one-line difference.</li>
+        <li data-who="coach"><span class="tag coach">by coach</span>Unlock the app and authorize a send as two separate checks, configurable per wallet.</li>
+        <li data-who="coach"><span class="tag coach">by coach</span>Step-up auth above an amount threshold.</li>
+        <li data-who="coach"><span class="tag coach">by coach</span>Decrypt the seed only inside the sign call and drop it right after (and say honestly that JS cannot guarantee zeroing).</li>
+        <li data-who="coach"><span class="tag coach">by coach</span>WebAuthn PRF extension: the passkey releases the wrapping secret at sign time, so the passkey gates every signature.</li>
+        <li data-who="coach"><span class="tag coach">by coach</span>Hardware signer (e.g. Ledger supports XRP) as a real "sign outside memory" path.</li>
+        <li data-who="coach"><span class="tag coach">by coach</span>Air-gapped signing by QR: an offline phone signs, an online phone submits.</li>
+        <li data-who="coach"><span class="tag coach">by coach</span>Passphrase as a third unlock method, wrapped like PIN and passkey, with an entropy floor.</li>
+        <li data-who="coach"><span class="tag coach">by coach</span>Seed reveal requires fresh auth plus a short countdown.</li>
+        <li data-who="coach"><span class="tag coach">by coach</span>Key rotation wizard: set a regular key, then optionally disable the master key.</li>
+        <li data-who="coach"><span class="tag coach">by coach</span>Advanced account flags UI: RequireDest, DisallowXRP, DepositAuth, with plain consequences.</li>
+        <li data-who="coach"><span class="tag coach">by coach</span>Deposit preauthorization management.</li>
+        <li data-who="coach"><span class="tag coach">by coach</span>AccountDelete wizard for any wallet, listing what blocks it.</li>
+      </ul>
+    </article>
+  </div>
+
+  <div class="panel" style="margin-top:16px">
+    <div class="subhead">A side thread from the advanced user · master &amp; child phones</div>
+    <div class="grid">
+      <ul class="ideas">
+        <li data-who="note"><span class="tag note">direction</span>You asked the coach to research the XRPL docs for master/child wallet usage and flow.</li>
+        <li data-who="you"><span class="tag you">yours</span>The master key can delete child accounts or redeem (sweep) their funds.</li>
+        <li data-who="note"><span class="tag note">direction</span>Child-phone spend policy is the user's decision; the app should guide creation. Support both multisig wallets and a master wallet with independent children. Stance relaxed to partner for this thread.</li>
+        <li data-who="you"><span class="tag you">yours</span>Support both: multisig wallets, and a master wallet with independent child wallets.</li>
+        <li data-who="you"><span class="tag you">yours</span>Positioning: xrpl-bench as an XRPL <b>tool belt</b>, coordinating complex advanced wallet setups that other apps don't.</li>
+        <li data-who="note"><span class="tag note">question</span>Setup must also cover the simplest topology: one account, one signer. How do we define the topology model?</li>
+        <li data-who="note"><span class="tag note">question</span>Unsure what watch-only does, and how "guarded" differs from multisig.</li>
+      </ul>
+      <ul class="ideas">
+        <li data-who="coach"><span class="tag coach">by coach</span>Scenario: a thief with an independent child key can SignerListSet/SetRegularKey to remove the master before the master sweeps. Master recovery is defeated unless the child cannot sign alone.</li>
+        <li data-who="coach"><span class="tag coach">by coach</span>Check XLS-75 Permission Delegation (DelegateSet) status: it could let an account grant another only specific tx types.</li>
+        <li data-who="coach"><span class="tag coach">by coach</span>Guided child creation: the child phone generates its key locally and shows its address as a QR; the master scans and funds it with the base reserve; the child signs a SignerListSet naming the master.</li>
+        <li data-who="coach"><span class="tag coach">by coach</span>Master dashboard: read-only view of all children's balances, plus an alert on unexpected outgoing tx (only while the app is open; no backend).</li>
+        <li data-who="coach"><span class="tag coach">by coach</span>Retire-child wizard: remove trust lines/objects first, wait for sequence age, then AccountDelete back to the master, showing the fee burned.</li>
+        <li data-who="coach"><span class="tag coach">by coach</span>Multisig signing without a backend: pass the unsigned tx between phones by QR/file/paste; each signs; the last one combines and submits.</li>
+        <li data-who="coach"><span class="tag coach">by coach</span>Multisig timing: the LastLedgerSequence window expires fast; use Tickets so gathering signatures isn't racing the ledger or other txs.</li>
+        <li data-who="coach"><span class="tag coach">by coach</span>Cost preview before setup: base reserve per child, owner reserve for the signer list, (N+1)× fee per multisig tx.</li>
+        <li data-who="coach"><span class="tag coach">by coach</span>Lost master: children keep working independently, but recovery power is gone, so guide the master seed backup harder than normal.</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- ======================= WHAT THE LEDGER ALLOWS ======================= -->
+<section class="sec" aria-labelledby="h-ledger">
+  <header><span class="tape">Research printout</span><h2 id="h-ledger">What the ledger allows</h2>
+  <p>The facts the session pulled from the XRPL docs, and what was reasoned from them. Every feature above has to fit inside this.</p></header>
+  <div class="allows-grid">
+    <div class="ledger" role="region" aria-label="XRPL facts">
+      <ol>
+        <li><span><span class="tag fact">ledger fact</span><span class="k">Key types.</span> secp256k1 (default) and ed25519 only, so a choice at creation is real.</span></li>
+        <li><span><span class="tag fact">ledger fact</span><span class="k">Master key</span> is tied to the address forever. A <span class="k">Regular Key</span> (SetRegularKey) can sign almost everything and can be replaced at any time; only one regular key per account.</span></li>
+        <li><span><span class="tag fact">ledger fact</span>The master key can be <span class="k">disabled</span> (asfDisableMaster) and recovered via the regular key or multisig.</span></li>
+        <li><span><span class="tag fact">ledger fact</span><span class="k">Multi-signing</span> via SignerListSet: 1–32 signer addresses, weights + quorum, each signer has its own key, fee is (N+1)×, and the signer list costs an owner reserve.</span></li>
+        <li><span><span class="tag fact">ledger fact</span>No protocol-level <span class="k">parent/child</span> derivation. HD (BIP44 <code>m/44'/144'</code>) is a wallet convention, and derived accounts are independent on-ledger.</span></li>
+        <li><span><span class="tag fact">ledger fact</span><span class="k">Passkeys</span> (WebAuthn) sign with P-256 over a WebAuthn challenge envelope, so they cannot produce an XRPL signature directly. A passkey can gate or unwrap, but cannot be the XRPL signer.</span></li>
+        <li><span><span class="tag fact">ledger fact</span>One key pair can play <span class="k">three roles</span>: master, regular key, signer-list member. The docs recommend the master offline for emergencies and a regular key for daily use.</span></li>
+        <li><span><span class="tag fact">ledger fact</span>Institutional topology in the docs: <span class="k">issuing (cold)</span>, <span class="k">standby (warm)</span>, <span class="k">operational (hot)</span>, a small balance refilled from above.</span></li>
+        <li><span><span class="tag fact">ledger fact</span>Xaman has a Multisign xApp. Multisig coordination exists elsewhere, so the differentiator is coordinating the <span class="k">whole topology</span>, not multisig alone.</span></li>
+        <li><span><span class="tag inf">inference</span><span class="k">Model A:</span> one shared account, each phone a signer on its SignerList. A stolen phone is removed via SignerListSet, which needs quorum without the stolen phone.</span></li>
+        <li><span><span class="tag inf">inference</span><span class="k">Model B:</span> each child phone is its own account, with the master phone's key as its Regular Key or on its SignerList. The master can sweep via Payment, or close via AccountDelete (remaining XRP to a destination).</span></li>
+        <li><span><span class="tag inf">inference</span><span class="k">AccountDelete</span> has preconditions (no blocking owned objects such as trust lines with a balance, sequence age ~256 ledgers) and burns a fee of one owner reserve.</span></li>
+      </ol>
+    </div>
+    <div class="cant">
+      <h3>What it does not allow</h3>
+      <ul>
+        <li><span class="tag inf">inference</span><b>No native spending limits.</b> A child that can sign alone can also drain alone, which means racing the thief, unless the child's own master key is disabled and the child's weight is below quorum.</li>
+        <li><span class="tag fact">ledger fact</span><b>No parent/child accounts.</b> "Derived" accounts are strangers to each other on-ledger.</li>
+        <li><span class="tag fact">ledger fact</span><b>No passkey signatures.</b> P-256 inside a WebAuthn envelope is not an XRPL signature.</li>
+        <li><span class="tag fact">ledger fact</span><b>One regular key.</b> Never two at once per account.</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- ======================= TOPOLOGY ======================= -->
+<section class="sec topo" aria-labelledby="h-topo">
+  <header><span class="tape">Technique · Topology tool belt</span><h2 id="h-topo">Four presets, one model</h2>
+  <p>You asked the coach to decide the topology designer screen. The answer: start from a preset card, shown as a diagram of accounts and devices; tap any node to edit; nothing is signed until a final <b>plan</b> screen lists every transaction, reserve and fee in order, then executes step by step with QR handoffs between devices. <span class="tag coach">by coach</span></p></header>
+
+  <div class="model" aria-label="The topology model">
+    <div><b>Nodes</b>Accounts.</div>
+    <div><b>Authority</b>Per account: master on/off, regular key, signer list N/quorum.</div>
+    <div><b>Edges</b>Account A's key authorizes account B.</div>
+  </div>
+
+  <div class="grid">
+    <figure class="panel">
+      <h3>Simple</h3>
+      <svg viewBox="0 0 240 160" role="img" aria-labelledby="t1">
+        <title id="t1">Simple: one account, one key on one phone</title>
+        <defs><marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="arrowhead"/></marker>
+        <marker id="ahg" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="arrowhead-g"/></marker></defs>
+        <rect x="70" y="14" width="100" height="40" rx="5" class="n-acct"/>
+        <text x="120" y="38" text-anchor="middle" class="svgt">account</text>
+        <line x1="120" y1="106" x2="120" y2="58" class="edge" marker-end="url(#ah)"/>
+        <circle cx="120" cy="124" r="18" class="n-key"/>
+        <text x="120" y="128" text-anchor="middle" class="svgt">key</text>
+        <text x="120" y="156" text-anchor="middle" class="svgs">master · this phone</text>
+      </svg>
+      <figcaption>One account, one signer: the simplest case the designer must also cover.</figcaption>
+    </figure>
+
+    <figure class="panel">
+      <h3>Daily key</h3>
+      <svg viewBox="0 0 240 160" role="img" aria-labelledby="t2">
+        <title id="t2">Daily key: master key offline, regular key on the phone for daily use</title>
+        <rect x="70" y="14" width="100" height="40" rx="5" class="n-acct"/>
+        <text x="120" y="38" text-anchor="middle" class="svgt">account</text>
+        <line x1="62" y1="106" x2="100" y2="58" class="edge" stroke-dasharray="4 3" marker-end="url(#ah)"/>
+        <line x1="178" y1="106" x2="140" y2="58" class="edge" marker-end="url(#ah)"/>
+        <circle cx="52" cy="122" r="18" class="n-off"/>
+        <text x="52" y="126" text-anchor="middle" class="svgt">M</text>
+        <text x="52" y="154" text-anchor="middle" class="svgs">master · offline</text>
+        <circle cx="188" cy="122" r="18" class="n-key"/>
+        <text x="188" y="126" text-anchor="middle" class="svgt">R</text>
+        <text x="188" y="154" text-anchor="middle" class="svgs">regular · phone</text>
+      </svg>
+      <figcaption>The docs' advice: master offline for emergencies, a regular key for daily use.</figcaption>
+    </figure>
+
+    <figure class="panel">
+      <h3>Shared vault</h3>
+      <svg viewBox="0 0 240 160" role="img" aria-labelledby="t3">
+        <title id="t3">Shared vault: one account with a signer list of several phones and a quorum</title>
+        <rect x="60" y="10" width="120" height="44" rx="5" class="n-acct"/>
+        <text x="120" y="30" text-anchor="middle" class="svgt">vault account</text>
+        <text x="120" y="45" text-anchor="middle" class="svgs">signer list · quorum</text>
+        <line x1="40" y1="104" x2="92" y2="58" class="edge" marker-end="url(#ah)"/>
+        <line x1="120" y1="102" x2="120" y2="58" class="edge" marker-end="url(#ah)"/>
+        <line x1="200" y1="104" x2="148" y2="58" class="edge" marker-end="url(#ah)"/>
+        <circle cx="34" cy="122" r="17" class="n-key"/><text x="34" y="126" text-anchor="middle" class="svgt">S1</text>
+        <circle cx="120" cy="122" r="17" class="n-key"/><text x="120" y="126" text-anchor="middle" class="svgt">S2</text>
+        <circle cx="206" cy="122" r="17" class="n-key"/><text x="206" y="126" text-anchor="middle" class="svgt">S3</text>
+        <text x="120" y="156" text-anchor="middle" class="svgs">each signer: own key, own phone</text>
+      </svg>
+      <figcaption>Model A: each phone is a signer. A lost phone is removed by the others, if they still make quorum.</figcaption>
+    </figure>
+
+    <figure class="panel">
+      <h3>Cold · warm · hot</h3>
+      <svg viewBox="0 0 240 160" role="img" aria-labelledby="t4">
+        <title id="t4">Cold, warm, hot: an issuing cold account refills a standby warm account, which refills a small operational hot account</title>
+        <rect x="8" y="20" width="64" height="44" rx="5" class="n-acct" stroke-dasharray="4 3"/>
+        <text x="40" y="40" text-anchor="middle" class="svgt">cold</text>
+        <text x="40" y="54" text-anchor="middle" class="svgs">issuing</text>
+        <rect x="88" y="58" width="64" height="44" rx="5" class="n-acct"/>
+        <text x="120" y="78" text-anchor="middle" class="svgt">warm</text>
+        <text x="120" y="92" text-anchor="middle" class="svgs">standby</text>
+        <rect x="168" y="96" width="64" height="44" rx="5" class="n-acct" style="stroke-width:3"/>
+        <text x="200" y="116" text-anchor="middle" class="svgt">hot</text>
+        <text x="200" y="130" text-anchor="middle" class="svgs">operational</text>
+        <path d="M72 46 Q84 52 86 70" class="edge-refill" marker-end="url(#ahg)"/>
+        <path d="M152 84 Q164 90 166 108" class="edge-refill" marker-end="url(#ahg)"/>
+        <text x="96" y="30" class="svgs">refill ↓</text>
+        <text x="8" y="140" class="svgs">small balance on hot,</text>
+        <text x="8" y="153" class="svgs">refilled from above</text>
+      </svg>
+      <figcaption>The institutional layout from the XRPL docs, offered as a preset.</figcaption>
+    </figure>
+  </div>
+
+  <div class="panel" style="margin-top:16px">
+    <div class="subhead">Child policy picker <span class="tag coach">by coach</span></div>
+    <div class="policy">
+      <div><b>Independent</b>The child signs alone. The master can sweep only if it is faster than a thief.</div>
+      <div><b>Guarded</b>The child sits below quorum and needs the master to co-sign. <span class="tag note">insight</span>This is just multisig on the child account (child + master, quorum needs master): same mechanism, different framing.</div>
+      <div><b>Watch-only</b>The child holds no signing power; it only sees.</div>
+    </div>
+  </div>
+
+  <div class="panel" style="margin-top:16px">
+    <div class="subhead">On the belt</div>
+    <ul class="ideas">
+      <li data-who="coach"><span class="tag coach">by coach</span>Topology plan export/import as a file to share with co-signers.</li>
+      <li data-who="coach"><span class="tag coach">by coach</span>Multisig signature rounds by QR between phones.</li>
+      <li data-who="coach"><span class="tag coach">by coach</span>Signer health check: compare the on-ledger signer list and regular key against the saved plan.</li>
+      <li data-who="coach"><span class="tag coach">by coach</span>Drift alert when the ledger shows an unexpected SignerListSet or SetRegularKey.</li>
+      <li data-who="coach"><span class="tag coach">by coach</span>"Rehearse on Testnet": build the same topology on Testnet first, try a theft drill, then do it for real.</li>
+      <li data-who="coach"><span class="tag coach">by coach</span>Tickets manager for multisig, so signature gathering never races sequence numbers.</li>
+      <li data-who="coach"><span class="tag coach">by coach</span>Signer roster labels using the WalletLocator field.</li>
+      <li data-who="coach"><span class="tag coach">by coach</span>Child top-up: the master refills a child to a target balance in one tap.</li>
+      <li data-who="coach"><span class="tag coach">by coach</span>Lost-device runbook generated from the topology: exactly which tx to sign from which device.</li>
+      <li data-who="coach"><span class="tag coach">by coach</span>Amendment status panel per network (which XRPL features are live).</li>
+    </ul>
+  </div>
+</section>
+
+<!-- ======================= ASSUMPTION REVERSAL ======================= -->
+<section class="sec" aria-labelledby="h-rev">
+  <header><span class="tape">Technique 2 · Assumption Reversal</span><h2 id="h-rev">Turn the key the other way</h2>
+  <p>Each card holds an assumption a wallet usually makes. Flip it to see the reversal. All fourteen are <span class="tag coach">by coach</span>.</p></header>
+  <p><button type="button" class="btn" id="flipall" aria-pressed="false">Flip all cards</button></p>
+  <div class="flips" id="flips">
+    <!-- generated cards below; content is static HTML for no-JS readers -->
+    <button type="button" class="flip" aria-pressed="false"><span class="inner"><span class="face front"><span class="lbl">Assumption</span><span class="assume">A wallet holds keys</span><span class="hint">Tap to reverse</span></span><span class="face back"><span class="lbl"><span class="tag coach">by coach</span>Reversal</span><p>Watch-only accounts.</p></span></span></button>
+    <button type="button" class="flip" aria-pressed="false"><span class="inner"><span class="face front"><span class="lbl">Assumption</span><span class="assume">The tx is built here</span><span class="hint">Tap to reverse</span></span><span class="face back"><span class="lbl"><span class="tag coach">by coach</span>Reversal</span><p>Import an unsigned tx made elsewhere and just review and sign it.</p></span></span></button>
+    <button type="button" class="flip" aria-pressed="false"><span class="inner"><span class="face front"><span class="lbl">Assumption</span><span class="assume">Send means now</span><span class="hint">Tap to reverse</span></span><span class="face back"><span class="lbl"><span class="tag coach">by coach</span>Reversal</span><p>Self-escrow with FinishAfter as a savings lock.</p></span></span></button>
+    <button type="button" class="flip" aria-pressed="false"><span class="inner"><span class="face front"><span class="lbl">Assumption</span><span class="assume">The sender knows the details</span><span class="hint">Tap to reverse</span></span><span class="face back"><span class="lbl"><span class="tag coach">by coach</span>Reversal</span><p>Payment request QR with address, tag, amount, memo.</p></span></span></button>
+    <button type="button" class="flip" aria-pressed="false"><span class="inner"><span class="face front"><span class="lbl">Assumption</span><span class="assume">Trust your node</span><span class="hint">Tap to reverse</span></span><span class="face back"><span class="lbl"><span class="tag coach">by coach</span>Reversal</span><p>Cross-check a balance against a second endpoint before a large send.</p></span></span></button>
+    <button type="button" class="flip" aria-pressed="false"><span class="inner"><span class="face front"><span class="lbl">Assumption</span><span class="assume">One lock for the app</span><span class="hint">Tap to reverse</span></span><span class="face back"><span class="lbl"><span class="tag coach">by coach</span>Reversal</span><p>Lock state per wallet.</p></span></span></button>
+    <button type="button" class="flip" aria-pressed="false"><span class="inner"><span class="face front"><span class="lbl">Assumption</span><span class="assume">Recovery is your memory</span><span class="hint">Tap to reverse</span></span><span class="face back"><span class="lbl"><span class="tag coach">by coach</span>Reversal</span><p>Social recovery via a signer list of friends' keys.</p></span></span></button>
+    <button type="button" class="flip" aria-pressed="false"><span class="inner"><span class="face front"><span class="lbl">Assumption</span><span class="assume">History belongs to the ledger</span><span class="hint">Tap to reverse</span></span><span class="face back"><span class="lbl"><span class="tag coach">by coach</span>Reversal</span><p>Private local notes and labels on transactions.</p></span></span></button>
+    <button type="button" class="flip" aria-pressed="false"><span class="inner"><span class="face front"><span class="lbl">Assumption</span><span class="assume">The app picks the fee</span><span class="hint">Tap to reverse</span></span><span class="face back"><span class="lbl"><span class="tag coach">by coach</span>Reversal</span><p>User fee cap and manual fee override.</p></span></span></button>
+    <button type="button" class="flip" aria-pressed="false"><span class="inner"><span class="face front"><span class="lbl">Assumption</span><span class="assume">Mainnet is the default</span><span class="hint">Tap to reverse</span></span><span class="face back"><span class="lbl"><span class="tag coach">by coach</span>Reversal</span><p>Mainnet must be explicitly enabled per wallet.</p></span></span></button>
+    <button type="button" class="flip" aria-pressed="false"><span class="inner"><span class="face front"><span class="lbl">Assumption</span><span class="assume">Signed means sent</span><span class="hint">Tap to reverse</span></span><span class="face back"><span class="lbl"><span class="tag coach">by coach</span>Reversal</span><p>Hold a signed tx locally for a countdown "undo send" window before submit.</p></span></span></button>
+    <button type="button" class="flip" aria-pressed="false"><span class="inner"><span class="face front"><span class="lbl">Assumption</span><span class="assume">The user checks addresses</span><span class="hint">Tap to reverse</span></span><span class="face back"><span class="lbl"><span class="tag coach">by coach</span>Reversal</span><p>Address-poisoning warning when a destination looks like an address-book entry but isn't.</p></span></span></button>
+    <button type="button" class="flip" aria-pressed="false"><span class="inner"><span class="face front"><span class="lbl">Assumption</span><span class="assume">Keys last forever</span><span class="hint">Tap to reverse</span></span><span class="face back"><span class="lbl"><span class="tag coach">by coach</span>Reversal</span><p>Rotation reminders for regular keys.</p></span></span></button>
+    <button type="button" class="flip" aria-pressed="false"><span class="inner"><span class="face front"><span class="lbl">Assumption</span><span class="assume">One person, one wallet</span><span class="hint">Tap to reverse</span></span><span class="face back"><span class="lbl"><span class="tag coach">by coach</span>Reversal</span><p>Shared-vault coordination for couples or small teams.</p></span></span></button>
+  </div>
+</section>
+
+<!-- ======================= MORPHOLOGICAL ======================= -->
+<section class="sec" aria-labelledby="h-morph">
+  <header><span class="tape">Technique 3 · Morphological Analysis</span><h2 id="h-morph">The gate combination lock</h2>
+  <p>Four dials: what guards opening the app, what guards a send, how far a setting reaches, and how long an approval lasts. Each card is a combination the coach dialled in; a filled slot is a dial that combination sets, an empty one is left open. All <span class="tag coach">by coach</span>.</p></header>
+  <div class="axes" aria-hidden="true"><div>Open gate</div><div>Send gate</div><div>Scope</div><div>Timeout</div></div>
+  <div class="combo">
+    <article><div class="slots"><span class="slot on"><span><small>open</small>none</span></span><span class="slot on"><span><small>send</small>passkey</span></span><span class="slot">—</span><span class="slot">—</span></div><p><span class="tag coach">by coach</span>Browse freely, spend guarded. Warn that it exposes balances on a shared device.</p></article>
+    <article><div class="slots"><span class="slot on"><span><small>open</small>PIN</span></span><span class="slot on"><span><small>send</small>new dest only</span></span><span class="slot">—</span><span class="slot">—</span></div><p><span class="tag coach">by coach</span>Open with PIN; re-auth at send only for new destinations.</p></article>
+    <article><div class="slots"><span class="slot on"><span><small>open</small>none / passkey</span></span><span class="slot on"><span><small>send</small>none / passkey</span></span><span class="slot on"><span><small>scope</small>network</span></span><span class="slot">—</span></div><p><span class="tag coach">by coach</span>Per-network policy: Testnet none/none, Mainnet passkey/passkey.</p></article>
+    <article><div class="slots"><span class="slot">—</span><span class="slot on"><span><small>send</small>every send / session</span></span><span class="slot on"><span><small>scope</small>wallet</span></span><span class="slot">—</span></div><p><span class="tag coach">by coach</span>Per-wallet policy: savings wallet re-auths every send, spending wallet uses session auth.</p></article>
+    <article><div class="slots"><span class="slot on"><span><small>open</small>unlock</span></span><span class="slot on"><span><small>send</small>step up</span></span><span class="slot">—</span><span class="slot on"><span><small>until</small>budget X</span></span></div><p><span class="tag coach">by coach</span>Session budget: after unlock, send up to X without re-auth, then step up.</p></article>
+    <article><div class="slots"><span class="slot on"><span><small>open</small>passphrase</span></span><span class="slot on"><span><small>send</small>passkey</span></span><span class="slot">—</span><span class="slot">—</span></div><p><span class="tag coach">by coach</span>Two factors split across two actions.</p></article>
+    <article><div class="slots"><span class="slot">—</span><span class="slot">—</span><span class="slot on"><span><small>scope</small>policy change</span></span><span class="slot">—</span></div><p><span class="tag coach">by coach</span>Changing a security policy needs the strongest method configured.</p></article>
+    <article><div class="slots"><span class="slot">—</span><span class="slot">—</span><span class="slot on"><span><small>scope</small>downgrade</span></span><span class="slot on"><span><small>wait</small>e.g. 24h</span></span></div><p><span class="tag coach">by coach</span>Lowering a security policy takes effect only after a cooldown.</p></article>
+    <article><div class="slots"><span class="slot on"><span><small>open</small>free</span></span><span class="slot">—</span><span class="slot on"><span><small>scope</small>balances</span></span><span class="slot">—</span></div><p><span class="tag coach">by coach</span>Privacy mode: balances hidden until auth, even when the app opens freely.</p></article>
+    <article><div class="slots"><span class="slot">—</span><span class="slot on"><span><small>send</small>approval</span></span><span class="slot">—</span><span class="slot on"><span><small>valid</small>30 s</span></span></div><p><span class="tag coach">by coach</span>A send approval is valid for 30 seconds, then expires.</p></article>
+    <article><div class="slots"><span class="slot">—</span><span class="slot on"><span><small>send</small>PIN</span></span><span class="slot on"><span><small>scope</small>send only</span></span><span class="slot">—</span></div><p><span class="tag coach">by coach</span>A wrong PIN at send blocks the send, not the whole app.</p></article>
+    <article><div class="slots"><span class="slot on"><span><small>preset</small>all four</span></span><span class="slot on"><span><small>preset</small>all four</span></span><span class="slot on"><span><small>preset</small>all four</span></span><span class="slot on"><span><small>preset</small>all four</span></span></div><p><span class="tag coach">by coach</span>Policy presets: <b>Paranoid</b> / <b>Balanced</b> / <b>Developer</b>.</p></article>
+    <article><div class="slots"><span class="slot on"><span><small>open</small>none</span></span><span class="slot">—</span><span class="slot">—</span><span class="slot">—</span></div><p><span class="tag coach">by coach</span>Honest copy: "no open gate" means encryption at rest only, said plainly.</p></article>
+  </div>
+</section>
+
+<!-- ======================= TRIZ ======================= -->
+<section class="sec" aria-labelledby="h-triz">
+  <header><span class="tape">Technique 4 · TRIZ Contradiction</span><h2 id="h-triz">Convenience against safety</h2>
+  <p>Instead of trading one for the other, separate them: in space, by value, by destination, or by handing the safety net to the ledger itself. All <span class="tag coach">by coach</span>.</p></header>
+  <div class="panel">
+    <div class="triz-head">
+      <div class="pole">Convenience</div>
+      <svg viewBox="0 0 160 90" role="img" aria-labelledby="scale"><title id="scale">A balance scale holding both sides level</title>
+        <g stroke="currentColor" stroke-width="3" fill="none" stroke-linecap="round">
+          <path d="M80 12v64M50 80h60M20 24h120"/>
+          <path d="M20 24l-14 30h28z M140 24l-14 30h28z"/>
+        </g>
+        <circle cx="80" cy="12" r="5" fill="currentColor"/>
+      </svg>
+      <div class="pole">Safety</div>
+    </div>
+    <div class="sep">
+      <article><h4>Separate in space</h4><p>The test vault and the Mainnet vault are physically separate stores.</p></article>
+      <article><h4>Separate by value</h4><p>Small sends fast, large sends slow.</p></article>
+      <article><h4>Separate by destination</h4><p>Known contacts fast, new addresses slow.</p></article>
+      <article><h4>Ledger as safety net</h4><p>Daily regular key on the phone, master key offline, so phone convenience is recoverable.</p></article>
+      <article><h4>Recovery-only signer</h4><p>A 1-of-2 signer list with the phone plus an offline backup key, purely for recovery.</p></article>
+      <article><h4>Narrow the target</h4><p>Recipient allowlist per wallet.</p></article>
+      <article><h4>Separate in time</h4><p>Build transactions at leisure, sign them all with one auth.</p></article>
+      <article><h4>Bundle the auth</h4><p>Batch transactions (XLS-56 Batch; check Mainnet status) for one auth covering several txs.</p></article>
+      <article><h4>Zero extra taps</h4><p>An undo window gives safety with no added steps.</p></article>
+      <article><h4>Say it out loud</h4><p>Low-security wallets carry a visible "fast lane" badge everywhere.</p></article>
+    </div>
+  </div>
+</section>
+
+<!-- ======================= CRANK TO 11 ======================= -->
+<section class="sec" aria-labelledby="h-11">
+  <header><span class="tape">Technique · Crank the Dial to 11</span><h2 id="h-11">Past the safe stop</h2>
+  <p>Push every knob to its extreme and see what survives. All <span class="tag coach">by coach</span>.</p></header>
+  <div class="dial-wrap">
+    <svg class="dial" viewBox="0 0 240 240" role="img" aria-labelledby="dialt"><title id="dialt">A control knob turned all the way to 11</title>
+      <circle cx="120" cy="120" r="104" fill="var(--panel)" stroke="var(--rule)" stroke-width="2"/>
+      <g id="ticks"></g>
+      <circle cx="120" cy="120" r="62" fill="var(--panel-2)" stroke="currentColor" stroke-width="3"/>
+      <g class="needle" id="needle" style="transform:rotate(150deg)">
+        <line x1="120" y1="120" x2="120" y2="68" stroke="var(--warn)" stroke-width="6" stroke-linecap="round"/>
+      </g>
+      <circle cx="120" cy="120" r="10" fill="currentColor"/>
+    </svg>
+    <ul class="eleven">
+      <li><span class="lvl">SIGNERS · 32</span>32-signer family vault.</li>
+      <li><span class="lvl">PRESENCE · 2 DEVICES</span>Every Mainnet send needs two devices in the same room (QR handshake).</li>
+      <li><span class="lvl">KEYS STORED · 0</span>Keyless mode: the app stores no key at all and signs only via hardware or QR.</li>
+      <li><span class="lvl">HORIZON · A LIFETIME</span>Dead-man switch: escrow to an heir with CancelAfter, renewed periodically.</li>
+      <li><span class="lvl">HORIZON · A LIFETIME</span>Inheritance via a signer list with an heir plus a trusted third party.</li>
+      <li><span class="lvl">VANITY · MAX</span>Vanity address generator.</li>
+      <li><span class="lvl">PULL, NOT PUSH</span>Checks (CheckCreate): payments the recipient pulls when ready.</li>
+      <li><span class="lvl">MICRO · STREAMING</span>Payment channels for developers testing micropayments.</li>
+      <li><span class="lvl">READ-ONLY</span>NFT viewer.</li>
+      <li><span class="lvl">MEMO · BOTH WAYS</span>Memo composer and decoder.</li>
+      <li><span class="lvl">EVERY SETUP · PRICED</span>Reserve calculator for any planned setup.</li>
+      <li><span class="lvl">CONTACTS · READ THE LEDGER</span>Address book that reads each contact's on-ledger flags (e.g. RequireDest) and warns before a missing tag.</li>
+    </ul>
+  </div>
+</section>
+
+<!-- ======================= WORST IDEA ======================= -->
+<section class="sec" aria-labelledby="h-worst">
+  <header><span class="tape">Technique · Worst Possible Idea</span><h2 id="h-worst">Break it on purpose, then flip it</h2>
+  <p>Six ways to ruin a self-custody wallet, each turned into its guardrail. All <span class="tag coach">by coach</span>.</p></header>
+  <div class="pairs">
+    <div class="pair"><div class="worst"><span class="k">Worst</span><p>Keep test seeds in localStorage.</p></div><div class="turn" aria-hidden="true">⟶</div><div class="better"><span class="k">Flip</span><p>The test vault is still encrypted, under a non-extractable device key with no user secret.</p></div></div>
+    <div class="pair"><div class="worst"><span class="k">Worst</span><p>One global "disable security" switch.</p></div><div class="turn" aria-hidden="true">⟶</div><div class="better"><span class="k">Flip</span><p>Per wallet and per network, and never applicable to Mainnet.</p></div></div>
+    <div class="pair"><div class="worst"><span class="k">Worst</span><p>Deep links that auto-sign.</p></div><div class="turn" aria-hidden="true">⟶</div><div class="better"><span class="k">Flip</span><p>Links only prefill; signing is always an explicit act.</p></div></div>
+    <div class="pair"><div class="worst"><span class="k">Worst</span><p>Sync seeds through a cloud.</p></div><div class="turn" aria-hidden="true">⟶</div><div class="better"><span class="k">Flip</span><p>Device-to-device QR transfer of an encrypted blob.</p></div></div>
+    <div class="pair"><div class="worst"><span class="k">Worst</span><p>Hide fees and reserves.</p></div><div class="turn" aria-hidden="true">⟶</div><div class="better"><span class="k">Flip</span><p>Every plan and send shows fee and reserve impact up front.</p></div></div>
+    <div class="pair"><div class="worst"><span class="k">Worst</span><p>Let the thief lower the policy.</p></div><div class="turn" aria-hidden="true">⟶</div><div class="better"><span class="k">Flip</span><p>Policy downgrades need the strongest auth plus a cooldown.</p></div></div>
+  </div>
+</section>
+
+<!-- ======================= SYNTHESIS ======================= -->
+<section class="climax" aria-labelledby="h-syn">
+  <span class="tape">Converge · Affinity clustering, then impact × effort</span>
+  <h2 id="h-syn">The tool wall</h2>
+  <p>Everything above, hung back on the wall in seven places. The two framed tools are the big bets. All clustering and ranking is <span class="tag coach" style="color:var(--tape-ink);border-color:var(--tape-ink)">by coach</span>.</p>
+
+  <div class="toolwall">
+    <article class="tool bet"><span class="letter">A</span><span class="star">Big bet</span><h3>Security policy engine</h3><p>Open gate vs send gate, per wallet/network, step-up, presets, downgrade cooldown. This is the seed idea.</p></article>
+    <article class="tool"><span class="letter">B</span><h3>Test bench</h3><p>Disposable faucet-funded wallets, test vault, test-token kit, scenarios. Literally the product name: xrpl-bench.</p></article>
+    <article class="tool"><span class="letter">C</span><h3>Developer tools</h3><p>Tx composer, sign-only/submit-only, decoder, simulate, raw RPC panel, lifecycle view.</p></article>
+    <article class="tool bet"><span class="letter">D</span><span class="star">Big bet</span><h3>Topology designer</h3><p>Presets (Simple / Daily key / Shared vault / Cold-warm-hot), QR signature rounds, Tickets, drift alert, rehearse on Testnet.</p></article>
+    <article class="tool"><span class="letter">E</span><h3>Key hygiene</h3><p>Key type choice, regular key rotation, disable master, hardware/air-gapped signing, WebAuthn PRF.</p></article>
+    <article class="tool"><span class="letter">F</span><h3>Payment safety</h3><p>Address-poisoning check, RequireDest-aware address book, undo window, allowlist, payment-request QR.</p></article>
+    <article class="tool"><span class="letter">G</span><h3>Long horizon</h3><p>Self-escrow savings, inheritance/dead-man switch, Checks.</p></article>
+  </div>
+
+  <div class="bins">
+    <div class="bin quick">
+      <h3>Quick wins <small>high impact · low effort</small></h3>
+      <ul>
+        <li>Key type at creation</li>
+        <li>Disposable Testnet wallets with auto-names</li>
+        <li>Sign-only / submit-only / decoder</li>
+        <li>RequireDest-aware destination warning</li>
+        <li>Cost / reserve preview</li>
+      </ul>
+    </div>
+    <div class="bin big">
+      <h3>Big bets <small>the real differentiator</small></h3>
+      <ul>
+        <li><b>A</b> · Security policy engine</li>
+        <li><b>D</b> · Topology designer</li>
+      </ul>
+      <p style="margin:10px 0 0;font-size:14px;color:var(--ink-2)">Each needs a spec.</p>
+    </div>
+    <div class="bin park">
+      <h3>Parked <small>not now</small></h3>
+      <ul>
+        <li>Vanity addresses</li>
+        <li>NFT viewer</li>
+        <li>32-signer vault</li>
+        <li>Payment channels</li>
+        <li>Paper wallets</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="insights">
+    <article class="insight"><span class="no">01</span><h3>Two vaults</h3><p>They dissolve the conflict with <code>decisions.md §2</code>: the Mainnet vault keeps the mandatory PIN untouched; the no-secret mode lives only in a Test vault that can never hold a Mainnet wallet.</p><span class="stamp join">Resolves a conflict</span></article>
+    <article class="insight"><span class="no">02</span><h3>Rehearse on Testnet</h3><p>Joins the test bench to the topology designer. The bench is the sandbox where a complex setup and a theft drill are tried before Mainnet.</p><span class="stamp join">B meets D</span></article>
+    <article class="insight"><span class="no">03</span><h3>A review stage</h3><p>Simulate, the plan screen and the undo window are one idea: a review stage between intent and ledger.</p><span class="stamp join">Three become one</span></article>
+    <article class="insight"><span class="no">04</span><h3>Two-layer downgrade defence</h3><p>The policy-downgrade cooldown (device) and the drift alert (ledger) are the same defence at two layers: nobody silently lowers your protection.</p><span class="stamp join">Device + ledger</span></article>
+    <article class="insight"><span class="no">05</span><h3>Passkeys can't sign</h3><p>Passkeys cannot sign XRPL txs. "Sign outside memory" means hardware or QR, while PRF makes the passkey a per-signature gate.</p><span class="stamp watch">Ledger fact</span></article>
+    <article class="insight"><span class="no">06</span><h3>The vaultKey decision conflict</h3><p>Decrypt-at-sign-time conflicts with the recorded vaultKey session decision (<code>decisions.md §2</code>, "do not remove vaultKey"). It needs an explicit product decision, not a quiet change.</p><span class="stamp open">Open decision</span></article>
+    <article class="insight"><span class="no">07</span><h3>Watch XLS-75</h3><p>An independent child plus guaranteed master recovery is impossible on today's ledger. Watch XLS-75 Permission Delegation V1_1.</p><span class="stamp watch">Watch the amendment</span></article>
+  </div>
+</section>
+
+<footer>
+  xrpl-bench · brainstorm · 2026-10-06 · status: complete<br>
+  Every idea on this page comes from the session log; nothing was added after the bench was cleared.
+</footer>
+</main>
+
+<script>
+(function(){
+  /* who-filter */
+  var btns = document.querySelectorAll('.filter button');
+  var items = document.querySelectorAll('ul.ideas li');
+  btns.forEach(function(b){
+    b.addEventListener('click', function(){
+      var f = b.getAttribute('data-filter');
+      btns.forEach(function(x){ x.setAttribute('aria-pressed', x === b ? 'true' : 'false'); });
+      items.forEach(function(li){
+        var who = li.getAttribute('data-who');
+        li.hidden = !(f === 'all' || who === f);
+      });
+    });
+  });
+
+  /* flip cards */
+  var cards = document.querySelectorAll('.flip');
+  cards.forEach(function(c){
+    c.addEventListener('click', function(){
+      c.setAttribute('aria-pressed', c.getAttribute('aria-pressed') === 'true' ? 'false' : 'true');
+    });
+  });
+  var all = document.getElementById('flipall');
+  all.addEventListener('click', function(){
+    var on = all.getAttribute('aria-pressed') !== 'true';
+    all.setAttribute('aria-pressed', on ? 'true' : 'false');
+    all.textContent = on ? 'Flip all back' : 'Flip all cards';
+    cards.forEach(function(c){ c.setAttribute('aria-pressed', on ? 'true' : 'false'); });
+  });
+
+  /* dial ticks 0..11 over a 300-degree sweep, starting at -150deg */
+  var g = document.getElementById('ticks');
+  var ns = 'http://www.w3.org/2000/svg';
+  for (var i = 0; i <= 11; i++){
+    var a = (-150 + i * (300/11)) * Math.PI / 180;
+    var x1 = 120 + Math.sin(a) * 74, y1 = 120 - Math.cos(a) * 74;
+    var x2 = 120 + Math.sin(a) * 84, y2 = 120 - Math.cos(a) * 84;
+    var l = document.createElementNS(ns, 'line');
+    l.setAttribute('x1', x1); l.setAttribute('y1', y1); l.setAttribute('x2', x2); l.setAttribute('y2', y2);
+    l.setAttribute('stroke', i === 11 ? 'var(--warn)' : 'var(--ink-2)');
+    l.setAttribute('stroke-width', i === 11 ? 4 : 2);
+    g.appendChild(l);
+    var t = document.createElementNS(ns, 'text');
+    t.setAttribute('x', 120 + Math.sin(a) * 95);
+    t.setAttribute('y', 124 - Math.cos(a) * 95);
+    t.setAttribute('text-anchor', 'middle');
+    t.setAttribute('class', 'svgt');
+    if (i === 11) t.setAttribute('style', 'fill:var(--warn);font-size:14px');
+    t.textContent = i;
+    g.appendChild(t);
+  }
+  /* needle: rest at 0, swing to 11 when the dial scrolls into view */
+  var needle = document.getElementById('needle');
+  var reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  if (!reduce && 'IntersectionObserver' in window){
+    needle.style.transform = 'rotate(-150deg)';
+    var io = new IntersectionObserver(function(es){
+      es.forEach(function(e){
+        if (e.isIntersecting){ needle.style.transform = 'rotate(150deg)'; io.disconnect(); }
+      });
+    }, {threshold: .5});
+    io.observe(needle.ownerSVGElement);
+  }
+})();
+</script>
+</body>
+</html>

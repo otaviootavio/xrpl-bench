@@ -3,10 +3,10 @@ import { fetchServerReserves } from '@/lib/xrpl/reads'
 import { queryKeys } from '@/lib/xrpl/query-keys'
 import type { NetworkId } from '@/lib/xrpl/networks'
 
-export function useServerReserves(network: NetworkId) {
+export function useServerReserves(network: NetworkId, node?: string) {
   return useQuery({
     queryKey: queryKeys.serverReserves(network),
-    queryFn: () => fetchServerReserves(network),
+    queryFn: () => fetchServerReserves(network, node),
     staleTime: 60_000,
   })
 }

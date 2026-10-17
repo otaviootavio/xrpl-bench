@@ -305,3 +305,93 @@ Item 8 shipped as a refactor that preserves behaviour (`spec-sendtab-split.md`).
 - source_spec: `_bmad-output/implementation-artifacts/spec-epic-6-retro-11-reset-unregisters-service-worker.md`
   summary: Nothing keeps `navigator.serviceWorker.getRegistrations()`/`unregister()` inside `lib/teardown.ts` `clearShell`. No lint rule or scan does it, and `docs/agents/keys-and-secrets.md` has no explicit **Never** for it.
   evidence: Raised by review pass 2. Today the protection is the negative assertions in the lock, removal and teardown tests, which a new caller elsewhere (a "repair offline" button, a debug path) would not trip. The fix edits agent-context docs, or adds a scan like the AD-16 persistence scan that item 13 is already moving.
+
+## Deferred from: code review of spec-passkey-signing, stories 1–2 (2026-10-13)
+
+- source_spec: `_bmad-output/specs/spec-passkey-signing/SPEC.md`
+  summary: A pooled custom-Node client that xrpl.js reconnects by itself after a drop is reused without `assertServesNetwork` running again (`src/lib/xrpl/client.ts`, `getXrplClient` / `connectCustomNode`).
+  evidence: Unverified, medium if true (a Node repointed mid-session is trusted until the pool entry is replaced). Settle it by checking whether a dropped xrpl.js `Client` reconnects to the same URL and reports `isConnected()` true without passing through `connectCustomNode`; if so, retire the slot on `disconnected`.
+- source_spec: `_bmad-output/specs/spec-passkey-signing/stories/1-per-wallet-locks-in-the-vault-with-migration-of-existing-wallets.md`, `.../2-network-and-node-per-wallet-including-devnet.md`
+  summary: Neither story had its browser pass, including whether `{label} · {Network}` clips in the 160px header picker.
+  evidence: Recorded as not done in both stories' Verification sections. Needs a real browser on the header, the Settings Node section, the Onboarding network choice and a Devnet Wallet.
+- source_spec: `_bmad-output/specs/spec-passkey-signing/stories/4-per-wallet-open-check-auto-lock-and-locked-wallet-view.md`
+  summary: A Wallet's stored `openCheck` is snapshotted at creation or migration and may go stale when a passkey is registered or removed (`storeWallet`, `migrateLegacyVault`).
+  evidence: Unverified. Raised against the stories 1–2 diff; settle it in the stories 3–4 review by checking every path that registers or removes a passkey on a lock.
+- source_spec: `_bmad-output/specs/spec-passkey-signing/stories/3-structural-signing-check-and-one-use-signer.md`
+  summary: `revealSeed` goes through `unlockWalletForSigning`, which throws when an unresolved algorithm derives an address different from the stored one, so the user cannot reveal that Seed.
+  evidence: Unverified; low to medium. Settle it by checking whether that state is reachable with a real Wallet and whether Seed reveal should fall back to the decrypted Seed when only the address check fails.
+
+## Deferred from: code review of spec-passkey-signing, stories 3–4 (2026-10-13)
+
+- source_spec: `_bmad-output/specs/spec-passkey-signing/SPEC.md`
+  summary: `Gate` (`src/App.tsx`) has no `catch` on `listWallets` or `restoreOpenLocks`: a vault read error leaves `ready` false and the app blank, with no message and no retry.
+  evidence: Verified by reading. The error screen is a product call (what to show, and it must not fall through to Onboarding with Wallets hidden). The pattern is not new in these stories.
+- source_spec: `_bmad-output/specs/spec-passkey-signing/stories/4-per-wallet-open-check-auto-lock-and-locked-wallet-view.md`
+  summary: `closeLock` / `closeAllLocks` fire `endLockSession` without awaiting and swallow its rejection, so a failed clear leaves a persisted session that a reload restores.
+  evidence: `src/store/app-store.ts` `closeLock`. Unverified whether the failure is reachable; settle it by making the clear fail in a test and reloading.
+- source_spec: `_bmad-output/specs/spec-passkey-signing/stories/4-per-wallet-open-check-auto-lock-and-locked-wallet-view.md`
+  summary: Auto-lock can fire while a signing prompt or `submitAndClassify` is in flight; `txInFlight` exists and the lock path ignores it.
+  evidence: Unverified, medium if true (the post-submit invalidation and the outcome target removed state). Needs a decision: defer the lock until the write settles, or show the outcome after it.
+- source_spec: `_bmad-output/specs/spec-passkey-signing/stories/4-per-wallet-open-check-auto-lock-and-locked-wallet-view.md`
+  summary: `withAppPin` writes the App PIN's salt and verifier to the vault meta and the lock record in two separate writes, so a failure between them leaves an App PIN with no lock.
+  evidence: `src/lib/crypto/lock.ts` `withAppPin` / `createLock`. Low to medium. A later `createLock` would then verify against a PIN the user never confirmed.
+- source_spec: `_bmad-output/specs/spec-passkey-signing/stories/3-structural-signing-check-and-one-use-signer.md`
+  summary: `sealSeedUnderSigningCheck`'s passkey branch reads the credential from the vault meta (the legacy passkey), not from the Wallet's own lock record.
+  evidence: No non-test caller yet. Belongs to stories 5 and 8, which build the creation and edit flows that call it.
+- source_spec: `_bmad-output/specs/spec-passkey-signing/stories/4-per-wallet-open-check-auto-lock-and-locked-wallet-view.md`
+  summary: `getLockInfo` for a non-legacy record with no `openCheck` field defaults to `'pin'` even when only a passkey wrapper exists.
+  evidence: Unverified; settle it by checking whether any writer can produce such a record.
+
+## Deferred from: code review of spec-passkey-signing, stories 5–6 (2026-10-14)
+
+- source_spec: `_bmad-output/specs/spec-passkey-signing/stories/5-creation-flow-for-stored-seed-wallets-with-check-policy.md`
+  summary: A Wallet created in `CreateWalletFlow` is written to IndexedDB (with its lock and any new App PIN verifier) before the backup step; only the store waits. Closing the tab there leaves a persisted Wallet whose Seed or ordinal was never shown, and a crash between `createLock` and `putStoredWallet` leaves an orphan lock record.
+  evidence: Raised by three layers; already carried as a deferred item in stories 5 and 6. Needs a product call: write only after the backup, or mark a Wallet "backup not confirmed" and prompt on the next start (the latter also covers orphan locks).
+- source_spec: `_bmad-output/specs/spec-passkey-signing/stories/6-passkey-derived-seed-with-passkey-rule-and-kind-statement.md`
+  summary: The Mainnet origin rule for Passkey-Derived Seeds is a denylist (`isTemporaryOrigin`: hosts ending `.b-cdn.net`). `getRpId` falls back to `location.hostname` when `__RP_ID__` is empty, so `localhost` or a stage host passes and the funds are bound to that rpId.
+  evidence: Verified by reading `policy.ts` and `webauthn.ts`. An allowlist of the production rpId is blocked on the production-domain decision (`docs/decisions.md` §8.11).
+- source_spec: `_bmad-output/specs/spec-passkey-signing/stories/6-passkey-derived-seed-with-passkey-rule-and-kind-statement.md`
+  summary: `restorePasskeyWallet` has no screen, and when no App PIN exists it takes one typed PIN with no confirmation; the PIN dialog says "Enter your App PIN" even when a PIN is being created.
+  evidence: Story 6 excludes the restore screen. Fix both with that screen.
+- source_spec: `_bmad-output/specs/spec-passkey-signing/stories/5-creation-flow-for-stored-seed-wallets-with-check-policy.md`
+  summary: The retry in `withAppPin` for two flows creating the first App PIN at once has no test.
+  evidence: Needs a concurrency harness over the IndexedDB mock; the case is two tabs creating together.
+- source_spec: `_bmad-output/specs/spec-passkey-signing/stories/6-passkey-derived-seed-with-passkey-rule-and-kind-statement.md`
+  summary: The fail-closed guard in `openDerivedSeed` (missing `derived`, a stored form of the Seed present, or an unresolved algorithm) has no test.
+  evidence: Needs a hand-built record; the guard is defensive.
+
+## Deferred from: code review of spec-passkey-signing, stories 7–8 (2026-10-14)
+
+- source_spec: `_bmad-output/specs/spec-passkey-signing/stories/3-structural-signing-check-and-one-use-signer.md`
+  summary: `sealSeedUnderSigningCheck`'s `rev` compare-and-swap and `rev + 1` have no test, and the function has no non-test caller.
+  evidence: A concurrent `editChecks` that changes only `lockId` or `openCheck` would no longer abort the seal if the check were removed. Add a test when the function gains a caller, or delete it.
+- source_spec: `_bmad-output/specs/spec-passkey-signing/stories/7-written-seed-confirmation-and-seed-reveal-behind-the-signing-check.md`
+  summary: `revealCheckSentence` in `SettingsTab.tsx` re-derives the keystore's reveal check-selection rule (they already differ: the keystore also tests `!stored.signing && !stored.sealedSeed`), against the "screens only render" rule.
+  evidence: Expose the reveal check kind from the keystore or `policy.ts` and have the component only word it. Medium refactor, no failure demonstrated.
+- source_spec: `_bmad-output/specs/spec-passkey-signing/stories/8-edit-a-wallets-checks-and-passkey.md`
+  summary: `editChecks` reads the lock twice outside a transaction (`getLockRecord` for the stamp, `getLockInfo` for the policy decision), and `lockStamp` omits the `none` lock's key, the PRF salt and the `rpId`.
+  evidence: Unverified, low to medium. Another tab changing the lock between the reads would pass the compare-and-swap with decisions made on old info. Derive both from one read.
+- source_spec: `_bmad-output/specs/spec-passkey-signing/stories/8-edit-a-wallets-checks-and-passkey.md`
+  summary: After a failed `editChecks`, `discardUnusedAppPin` can delete an App PIN another tab has just created and not yet used.
+  evidence: Same race as `withAppPin` (stories 5–6 deferred list); settle both together with a concurrency harness.
+
+## Deferred from: code review of spec-passkey-signing, stories 9–11 (2026-10-14)
+
+- source_spec: `_bmad-output/specs/spec-passkey-signing/stories/10-turn-the-account-master-key-off-and-on-from-settings.md`
+  summary: Turning the master key off with a Regular Key that no Wallet on this device can sign as locks the Account for good. `masterKeyAction` and `twoDeviceBlockedReason` only require that a Regular Key is set; the confirm text warns but nothing prevents it.
+  evidence: High impact, already recorded as deferred in story 10. Needs a product call: require a local Wallet that signs as that exact Regular Key (single-device path), and decide what the two-device path may assume, since the signer is not on this device.
+- source_spec: `_bmad-output/specs/spec-passkey-signing/stories/11-two-device-signing-by-qr.md`
+  summary: The offline review of a `SetRegularKey` shows a bare address: no "this key can send the account's funds" sentence, and no mention of an existing Regular Key that will stop working. Only `master-key-off` has a consequence line.
+  evidence: Story 11 does not require it, but `ControlWalletDialog` says it on the single-device path and the offline device is where the owner can cross-check least.
+- source_spec: `_bmad-output/specs/spec-passkey-signing/stories/11-two-device-signing-by-qr.md`
+  summary: The offline device needs `BarcodeDetector` to scan, which Safari and Firefox lack; the paste fallback is a long base64 JSON string.
+  evidence: Decide between a bundled QR decoder (e.g. jsQR) and stating the supported browsers.
+- source_spec: `_bmad-output/specs/spec-passkey-signing/stories/9-controlling-wallet-regular-key-and-extra-passkey-key.md`
+  summary: `storeWallet` checks the `(network, account, key)` duplicate before its write, not inside it, so two concurrent imports can both pass. `addControlledView` already repeats the check inside `mutateStoredWallet`.
+  evidence: Same narrow race as the other deferred concurrency items; settle them together.
+
+## Deferred from: browser passes of spec-passkey-signing (2026-10-14)
+
+- source_spec: `_bmad-output/specs/spec-passkey-signing/browser-pass-2026-10-14.md`
+  summary: Ten defects found in the browser passes; 1, 2, 4 and 5 were fixed in `74ab34d`, the rest are open: (1) a former Regular Key cannot be set again because its stale view hides it from `eligibleTargets`; (2) a send from an Account with the master key off ends as "expired" with no cause named; (3) toasts never expire (fixed in `2cc5012`); (4) the control result drops the Wallet's name; (5) wrong "another network" copy on removing a controlled view; (6) the picker cannot tell a Wallet from its controlled view; (7) the picker trigger clips the network suffix; (8) 320 px Settings overflow; (9) per-row Settings buttons share one accessible name; (10) controlled/uncontrolled Select warning.
+  evidence: Defects 1 and 4 confirmed by reading `src/lib/control.ts` and `ControlWalletDialog.tsx`; 2 is inferred (the node's result code was not read). Details and screenshots' names are in the record.

@@ -46,7 +46,7 @@ describe('checkBeforeImport', () => {
   it('has nothing to warn about for an account whose master key is enabled', async () => {
     fetchAccountState.mockResolvedValue(account({}))
     await expect(checkBeforeImport(queryClient, 'testnet', ADDRESS)).resolves.toBeNull()
-    expect(fetchAccountState).toHaveBeenCalledWith('testnet', ADDRESS)
+    expect(fetchAccountState).toHaveBeenCalledWith('testnet', ADDRESS, undefined)
   })
 
   it('has nothing to warn about for an account that does not exist yet', async () => {

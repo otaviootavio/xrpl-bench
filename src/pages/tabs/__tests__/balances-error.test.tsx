@@ -8,7 +8,9 @@ const useServerReserves = vi.fn()
 const useSpendableBalance = vi.fn()
 /** Named, so a test can see what the faucet discards and for whom. */
 const invalidateQueries = vi.fn()
-const requestTestnetFunds = vi.fn()
+const requestFaucetFunds = vi.fn()
+let network: 'mainnet' | 'testnet' | 'devnet' = 'testnet'
+let keyAddress: string | undefined
 
 vi.mock('@/hooks/useAccountState', () => ({ useAccountState: () => useAccountState() }))
 vi.mock('@/hooks/useTrustLines', () => ({ useTrustLines: () => useTrustLines() }))
@@ -16,12 +18,14 @@ vi.mock('@/hooks/useServerReserves', () => ({ useServerReserves: () => useServer
 vi.mock('@/hooks/useSpendableBalance', () => ({ useSpendableBalance: () => useSpendableBalance() }))
 vi.mock('@tanstack/react-query', () => ({ useQueryClient: () => ({ invalidateQueries }) }))
 vi.mock('@/lib/xrpl/faucet', () => ({
-  requestTestnetFunds: (...args: unknown[]) => requestTestnetFunds(...args),
+  requestFaucetFunds: (...args: unknown[]) => requestFaucetFunds(...args),
 }))
 vi.mock('@/components/wallet/AddressDisplay', () => ({ AddressDisplay: () => <div /> }))
 vi.mock('@/store/app-store', () => ({
-  useAppStore: (selector: (s: { network: string }) => unknown) => selector({ network: 'testnet' }),
-  useActiveWallet: () => ({ id: 'w1', address: 'rBoGUS9uiK9m3Kk6qnGRvWWCwAeN8hF3wR', label: 'Test' }),
+  useAppStore: (selector: (s: { network: string }) => unknown) => selector({ network }),
+  useActiveNetwork: () => network,
+  useActiveNode: () => undefined,
+  useActiveWallet: () => ({ id: 'w1', address: 'rBoGUS9uiK9m3Kk6qnGRvWWCwAeN8hF3wR', label: 'Test', ...(keyAddress ? { keyAddress } : {}) }),
 }))
 
 import { BalancesTab } from '../BalancesTab'
@@ -60,24 +64,26 @@ const spendableOk = () =>
 const reservesOk = () => query({ data: { baseReserveDrops: '1000000', ownerReserveDrops: '200000' } })
 
 beforeEach(() => {
+  network = 'testnet'
+  keyAddress = undefined
   useAccountState.mockReturnValue(accountOk())
   useTrustLines.mockReturnValue(ok())
   useServerReserves.mockReturnValue(reservesOk())
   useSpendableBalance.mockReturnValue(spendable())
   invalidateQueries.mockClear()
-  requestTestnetFunds.mockReset()
+  requestFaucetFunds.mockReset()
 })
 afterEach(cleanup)
 
 describe('BalancesTab — the faucet discards the whole account group', () => {
   it('invalidates every account-scoped entry for the active wallet after funding', async () => {
-    requestTestnetFunds.mockResolvedValue({ amountXrp: '100' })
+    requestFaucetFunds.mockResolvedValue({ amountXrp: '100' })
     render(<BalancesTab />)
     await act(async () => {
       fireEvent.click(screen.getByRole('button', { name: 'Fund with Testnet XRP' }))
     })
 
-    expect(requestTestnetFunds).toHaveBeenCalledWith('testnet', WALLET_ADDRESS)
+    expect(requestFaucetFunds).toHaveBeenCalledWith('testnet', WALLET_ADDRESS)
     for (const key of [
       queryKeys.accountState('testnet', WALLET_ADDRESS),
       queryKeys.accountTx('testnet', WALLET_ADDRESS),
@@ -86,6 +92,41 @@ describe('BalancesTab — the faucet discards the whole account group', () => {
     ]) {
       expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: key })
     }
+  })
+})
+
+describe('BalancesTab — a Wallet that operates another Account says so', () => {
+  it('shows the controlled note when its own key is not the Account, and none for its own Account', () => {
+    keyAddress = WALLET_ADDRESS
+    render(<BalancesTab />)
+    expect(screen.queryByTestId('controlled-note')).toBeNull()
+    cleanup()
+    keyAddress = 'rKeyThatIsNotTheAccount'
+    render(<BalancesTab />)
+    expect(screen.getByTestId('controlled-note').textContent).toContain('operates another account')
+  })
+})
+
+/** Faucet gating follows the network's own faucet, not a hardcoded Testnet. */
+describe('BalancesTab — the faucet follows the network', () => {
+  it('offers none on Mainnet and says why', () => {
+    network = 'mainnet'
+    useAccountState.mockReturnValue(query({ data: { exists: false, balanceDrops: '0', ownerCount: 0 } }))
+    render(<BalancesTab />)
+
+    expect(screen.queryByRole('button', { name: /^Fund with/ })).toBeNull()
+    expect(screen.getByText(/there is no faucet on Mainnet/)).toBeTruthy()
+  })
+
+  it('offers the Devnet faucet on Devnet, and asks it for Devnet', async () => {
+    network = 'devnet'
+    requestFaucetFunds.mockResolvedValue({ amountXrp: '100' })
+    render(<BalancesTab />)
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Fund with Devnet XRP' }))
+    })
+
+    expect(requestFaucetFunds).toHaveBeenCalledWith('devnet', WALLET_ADDRESS)
   })
 })
 

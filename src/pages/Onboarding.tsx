@@ -1,55 +1,54 @@
-import { useCallback, useRef, useState } from 'react'
+import { useRef, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Checkbox } from '@/components/ui/checkbox'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
-import { SeedReveal } from '@/components/wallet/SeedReveal'
+import { CreateWalletFlow } from '@/components/wallet/CreateWalletFlow'
 import { ChassisShell } from '@/components/ChassisShell'
 import { setUpVaultAuth, hasPasskeyRegistered } from '@/lib/crypto/auth'
-import { addressFromSeed, parseSeedInput, generateAndStoreWallet, importAndStoreWallet, listWallets, type WalletMeta } from '@/lib/crypto/keystore'
+import { DEFAULT_AUTO_LOCK_MINUTES } from '@/lib/crypto/lock'
+import { LEGACY_LOCK_ID } from '@/lib/crypto/db'
+import { addressFromSeed, parseSeedInput, importAndStoreWallet, listWallets, type WalletMeta } from '@/lib/crypto/keystore'
 import { checkBeforeImport, IMPORT_WARNING_COPY, INVALID_SEED_MESSAGE, type ImportWarning } from '@/lib/seed-import'
 import { useAppStore } from '@/store/app-store'
+import { NetworkChoice } from '@/components/wallet/NetworkChoice'
+import type { NetworkId } from '@/lib/xrpl/networks'
 import { useQueryClient } from '@tanstack/react-query'
 import { toast } from '@/lib/notify'
 import { BUILD, shortSha, sourceUrl } from '@/lib/build-info'
 import { ExternalLinkIcon } from 'lucide-react'
 
-type Step = 'choice' | 'vault-setup' | 'import-seed' | 'backup-confirm' | 'import-warning'
+type Step = 'choice' | 'create' | 'vault-setup' | 'import-seed' | 'import-warning'
 
 /**
  * IMPORTANT: this component intentionally does NOT call the app store's
- * `unlock()`/`setWallets()`/`setActiveWalletId()` until the entire flow is
- * finished (seed backed up for a new wallet, or any import warning
- * dismissed). App.tsx's top-level Gate switches to <Main> the instant
- * `wallets.length > 0 && unlocked`, so committing those earlier would skip
+ * `openLock()`/`setWallets()`/`setActiveWalletId()` until the entire flow is
+ * finished (any import warning dismissed; a new wallet's own flow, `CreateWalletFlow`,
+ * commits only after its seed backup). App.tsx's top-level Gate switches to <Main> the instant
+ * `wallets.length > 0`, so committing those earlier would skip
  * straight past the seed-backup screen — a real bug caught during browser
  * validation (the wallet's own account-onboarding.md US-6 requires an
  * explicit backup confirmation before continuing).
  *
  * Guardrail #3 also applies throughout: no seed — neither the generated one
- * nor the one typed in to import — is ever held in React state. Both live in
- * refs and are cleared as soon as the flow that needs them completes.
+ * (held by `CreateWalletFlow`) nor the one typed in to import — is ever held in
+ * React state. Both live in refs and are cleared as soon as the flow that needs
+ * them completes.
  */
 export function Onboarding() {
   const [step, setStep] = useState<Step>('choice')
-  const [mode, setMode] = useState<'generate' | 'import'>('generate')
   const [pin, setPin] = useState('')
   const [pinConfirm, setPinConfirm] = useState('')
   const [importWarning, setImportWarning] = useState<ImportWarning | null>(null)
-  const [backedUp, setBackedUp] = useState(false)
   const [busy, setBusy] = useState(false)
+  // A new Wallet is being written or backed up: leaving would strand it.
+  const [creating, setCreating] = useState(false)
 
   // Held locally until the flow completes — never written to the store early.
   const [vaultKey, setVaultKey] = useState<CryptoKey | null>(null)
-  const [pendingMeta, setPendingMeta] = useState<WalletMeta | null>(null)
 
-  // Secrets: refs only, never state. `hasPendingSeed` is a render flag, not
-  // the value itself.
-  const pendingSeedRef = useRef<string | null>(null)
-  const [hasPendingSeed, setHasPendingSeed] = useState(false)
-  const getPendingSeed = useCallback(() => pendingSeedRef.current, [])
+  // Secrets: refs only, never state.
   // Uncontrolled input — a controlled one would put the typed seed into React
   // state on every keystroke.
   const importSeedRef = useRef<HTMLInputElement | null>(null)
@@ -60,23 +59,27 @@ export function Onboarding() {
   // time — as this screen used to — read `''`, and import never got as far as
   // the probe.
   const pendingImportSeedRef = useRef<string | null>(null)
+  // The network the import was started for; check and write both use it.
+  const pendingImportNetworkRef = useRef<NetworkId>('testnet')
 
   const queryClient = useQueryClient()
-  const network = useAppStore((s) => s.network)
+  // The new Wallet's network, chosen here and fixed on its record (AD-19).
+  // Testnet is pre-selected: nothing real is at stake until it is changed.
+  const [network, setNewWalletNetwork] = useState<NetworkId>('testnet')
   const setWallets = useAppStore((s) => s.setWallets)
   const setActiveWalletId = useAppStore((s) => s.setActiveWalletId)
-  const unlock = useAppStore((s) => s.unlock)
+  const openLock = useAppStore((s) => s.openLock)
 
   function commitToStore(key: CryptoKey, meta: WalletMeta, wallets: WalletMeta[]) {
+    // The lock first: the Gate shows Main the moment `wallets` is non-empty, and
+    // a Wallet whose lock is not yet open would flash its locked view.
+    openLock(LEGACY_LOCK_ID, key, DEFAULT_AUTO_LOCK_MINUTES)
     setWallets(wallets)
     setActiveWalletId(meta.id)
-    unlock(key)
   }
 
   function clearSeeds() {
-    pendingSeedRef.current = null
     pendingImportSeedRef.current = null
-    setHasPendingSeed(false)
     if (importSeedRef.current) importSeedRef.current.value = ''
   }
 
@@ -94,50 +97,36 @@ export function Onboarding() {
       const key = await setUpVaultAuth('xrpl-wallet-user', pin)
       setVaultKey(key)
 
-      if (mode === 'generate') {
-        const { meta, seed } = await generateAndStoreWallet('My Wallet', key)
-        setPendingMeta(meta)
-        pendingSeedRef.current = seed
-        setHasPendingSeed(true)
-        setStep('backup-confirm')
-      } else {
-        const seed = pendingImportSeedRef.current
-        if (!seed) {
-          // Unreachable through the UI — the import step only advances with
-          // a parsed Seed — but never write, or probe, without one.
-          toast.error(INVALID_SEED_MESSAGE)
-          setStep('import-seed')
-          return
-        }
-        // Detect a disabled master key BEFORE the import is completed — the
-        // resolved decision in docs/decisions.md says to warn *before*
-        // completing import, so nothing is written to the vault until the
-        // user has seen the warning and chosen to continue. An account that
-        // could not be read warns too (lib/seed-import.ts).
-        const warning = await checkBeforeImport(queryClient, network, addressFromSeed(seed))
-        if (warning) {
-          setImportWarning(warning)
-          setStep('import-warning')
-          return
-        }
-        const meta = await importAndStoreWallet('My Wallet', seed, key)
-        const wallets = await listWallets()
-        clearSeeds()
-        commitToStore(key, meta, wallets)
-        toast.success('Wallet imported.')
+      const seed = pendingImportSeedRef.current
+      if (!seed) {
+        // Unreachable through the UI — the import step only advances with
+        // a parsed Seed — but never write, or probe, without one.
+        toast.error(INVALID_SEED_MESSAGE)
+        setStep('import-seed')
+        return
       }
+      // Detect a disabled master key BEFORE the import is completed — the
+      // resolved decision in docs/decisions.md says to warn *before*
+      // completing import, so nothing is written to the vault until the
+      // user has seen the warning and chosen to continue. An account that
+      // could not be read warns too (lib/seed-import.ts).
+      const importNetwork = pendingImportNetworkRef.current
+      const warning = await checkBeforeImport(queryClient, importNetwork, addressFromSeed(seed))
+      if (warning) {
+        setImportWarning(warning)
+        setStep('import-warning')
+        return
+      }
+      const meta = await importAndStoreWallet('My Wallet', seed, key, importNetwork)
+      const wallets = await listWallets(importNetwork)
+      clearSeeds()
+      commitToStore(key, meta, wallets)
+      toast.success('Wallet imported.')
     } catch (err: any) {
       toast.error(err?.message ?? 'Setup failed.')
     } finally {
       setBusy(false)
     }
-  }
-
-  async function finishBackup() {
-    if (!vaultKey || !pendingMeta) return
-    const wallets = await listWallets()
-    clearSeeds()
-    commitToStore(vaultKey, pendingMeta, wallets)
   }
 
   /** The import is only actually written to the vault here, once the user has
@@ -147,8 +136,8 @@ export function Onboarding() {
     if (!vaultKey || !seed) return
     setBusy(true)
     try {
-      const meta = await importAndStoreWallet('My Wallet', seed, vaultKey)
-      const wallets = await listWallets()
+      const meta = await importAndStoreWallet('My Wallet', seed, vaultKey, pendingImportNetworkRef.current)
+      const wallets = await listWallets(pendingImportNetworkRef.current)
       clearSeeds()
       setImportWarning(null)
       commitToStore(vaultKey, meta, wallets)
@@ -186,19 +175,13 @@ export function Onboarding() {
             </CardHeader>
             <CardContent className="flex flex-col gap-3">
               <Button
-                onClick={() => {
-                  setMode('generate')
-                  setStep('vault-setup')
-                }}
+                onClick={() => setStep('create')}
               >
                 Create a new wallet
               </Button>
               <Button
                 variant="outline"
-                onClick={() => {
-                  setMode('import')
-                  setStep('import-seed')
-                }}
+                onClick={() => setStep('import-seed')}
               >
                 Import an existing wallet
               </Button>
@@ -229,6 +212,7 @@ export function Onboarding() {
               <CardDescription>Enter your existing seed. It never leaves this device.</CardDescription>
             </CardHeader>
             <CardContent className="flex flex-col gap-3">
+              <NetworkChoice value={network} onChange={setNewWalletNetwork} disabled={busy} />
               <Label htmlFor="seed">Seed</Label>
               <Input id="seed" type="password" autoComplete="off" spellCheck={false} ref={importSeedRef} placeholder="s..." />
               <Button
@@ -236,6 +220,7 @@ export function Onboarding() {
                   const seed = parseSeedInput(importSeedRef.current?.value ?? '')
                   if (seed) {
                     pendingImportSeedRef.current = seed
+                    pendingImportNetworkRef.current = network
                     setStep('vault-setup')
                   } else {
                     toast.error(INVALID_SEED_MESSAGE)
@@ -278,23 +263,20 @@ export function Onboarding() {
     )
   }
 
-  if (step === 'backup-confirm' && hasPendingSeed) {
+  if (step === 'create') {
     return (
       <ChassisShell maxWidthClassName="max-w-md">
         <div className="flex min-h-full flex-col justify-center gap-6 p-6">
           <Card>
             <CardHeader>
-              <CardTitle as="h1">Back up your seed</CardTitle>
-              <CardDescription>This is the only way to recover your wallet.</CardDescription>
+              <CardTitle as="h1">Create a new wallet</CardTitle>
+              <CardDescription>Answer each question, or keep the answer already chosen. Keys are generated and stored on this device only.</CardDescription>
             </CardHeader>
-            <CardContent className="flex flex-col gap-4">
-              <SeedReveal getSeed={getPendingSeed} />
-              <label className="flex items-center gap-2 text-sm">
-                <Checkbox checked={backedUp} onCheckedChange={(v) => setBackedUp(v === true)} />
-                I've written down my seed and stored it somewhere safe.
-              </label>
-              <Button disabled={!backedUp} onClick={finishBackup}>
-                Continue to my wallet
+            <CardContent className="flex flex-col gap-3">
+              {/* Commits to the store itself, after the seed backup. */}
+              <CreateWalletFlow onInProgressChange={setCreating} />
+              <Button variant="outline" onClick={() => setStep('choice')} disabled={creating}>
+                Back
               </Button>
             </CardContent>
           </Card>

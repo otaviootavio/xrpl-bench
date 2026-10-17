@@ -163,6 +163,20 @@ describe('the destination check', () => {
     expect(info).toMatchObject({ network: NETWORK, destination: DESTINATION, asset: 'USD|rIssuer' })
   })
 
+  it('asks the Wallet\'s Node for the destination, the account and its trust lines', async () => {
+    // The check that authorises a payment must be answered by the Node the
+    // Wallet submits through. Dropping `node` here left every other test green.
+    const { client } = harness()
+    const NODE = 'wss://node.example.com'
+    vi.mocked(fetchAccountState).mockClear()
+    vi.mocked(fetchAccountLines).mockClear()
+
+    await fetchDestinationInfoOnce(client, NETWORK, DESTINATION, 'USD|rIssuer', NODE)
+
+    expect(fetchAccountState).toHaveBeenCalledWith(NETWORK, DESTINATION, NODE)
+    expect(fetchAccountLines).toHaveBeenCalledWith(NETWORK, DESTINATION, NODE)
+  })
+
   it('carries the trust-line answer and the tag flag out of the payload', async () => {
     // The stamp test above inspects only the triple, so the two fields the send
     // guard and the token warning actually consult were unverified: inverting

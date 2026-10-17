@@ -275,7 +275,7 @@ describe('the network is part of identity, and an unrecorded entry silences noth
 
   it('keeps a known network, and reads an unknown network value as not recorded without dropping the entry', () => {
     expect(migrateAddressBook([{ address: EXCHANGE, network: 'mainnet' }])).toEqual([{ address: EXCHANGE, network: 'mainnet' }])
-    expect(migrateAddressBook([{ address: EXCHANGE, network: 'devnet' }])).toEqual([{ address: EXCHANGE }])
+    expect(migrateAddressBook([{ address: EXCHANGE, network: 'signet' }])).toEqual([{ address: EXCHANGE }])
     expect(migrateAddressBook([{ address: EXCHANGE, network: 7 }, { address: OTHER, network: null }])).toEqual([
       { address: EXCHANGE },
       { address: OTHER },

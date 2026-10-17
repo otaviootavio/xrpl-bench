@@ -7,10 +7,10 @@ export interface FaucetResult {
   transactionHash?: string
 }
 
-/** Testnet-only funding via the public faucet — see network-selection.md
- * US-2. Verified live 2026-08-31: funds an EXISTING destination address
+/** Testnet and Devnet funding via each network's public faucet — see
+ * network-selection.md US-2. Verified live 2026-08-31: funds an EXISTING destination address
  * (no seed generated/returned) via POST {"destination": address}. */
-export async function requestTestnetFunds(network: NetworkId, address: string): Promise<FaucetResult> {
+export async function requestFaucetFunds(network: NetworkId, address: string): Promise<FaucetResult> {
   const { faucetUrl } = NETWORKS[network]
   if (!faucetUrl) {
     throw new Error('This network has no faucet. Fund this account with real XRP from an exchange or another wallet.')

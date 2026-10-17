@@ -55,13 +55,14 @@ export async function checkBeforeImport(
   queryClient: QueryClient,
   network: NetworkId,
   address: string,
+  node?: string,
 ): Promise<ImportWarning | null> {
   let timer: ReturnType<typeof setTimeout> | undefined
   const timedOut = new Promise<'timeout'>((resolve) => {
     timer = setTimeout(() => resolve('timeout'), IMPORT_CHECK_TIMEOUT_MS)
   })
   try {
-    const state = await Promise.race([fetchAccountStateOnce(queryClient, network, address), timedOut])
+    const state = await Promise.race([fetchAccountStateOnce(queryClient, network, address, node), timedOut])
     if (state === 'timeout') return 'unchecked'
     return state.exists && state.disableMasterKey ? 'master-key-disabled' : null
   } catch {

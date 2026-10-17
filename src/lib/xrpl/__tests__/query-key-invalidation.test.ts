@@ -1,6 +1,6 @@
 import { QueryClient } from '@tanstack/react-query'
 import { describe, expect, it } from 'vitest'
-import { invalidateAccountScoped, invalidateDestinationCheck, queryKeys } from '../query-keys'
+import { invalidateAccountScoped, invalidateDestinationCheck, queryKeys, removeAccountScoped } from '../query-keys'
 
 // The matrix row this covers: the account-scoped entries are invalidated using
 // factory-built keys. Every site that discards account data — the live
@@ -195,5 +195,29 @@ describe('invalidateDestinationCheck', () => {
     await invalidateDestinationCheck(client, NETWORK, DESTINATION)
     expect(isInvalidated(client, queryKeys.destinationInfo(NETWORK, DESTINATION, 'XRP'))).toBe(true)
     for (const key of untouched) expect(isInvalidated(client, key), JSON.stringify(key)).toBe(false)
+  })
+})
+
+// Review finding (story 12.4): closing a lock removes the Wallet's account data
+// from memory (guardrail #7), but every test seeded and checked only
+// `accountState`. A loop that dropped the other three left them readable after a lock.
+describe('removeAccountScoped', () => {
+  const present = (client: QueryClient, key: readonly unknown[]) => client.getQueryCache().find({ queryKey: key }) !== undefined
+
+  it('removes all four account-scoped entries of that wallet and network, and nothing else', () => {
+    const client = seededClient()
+    const others = [
+      queryKeys.accountState(NETWORK, 'rOther'),
+      queryKeys.accountTx(NETWORK, 'rOther'),
+      queryKeys.trustLines('mainnet', ADDRESS),
+      queryKeys.incomingPaymentWatch('mainnet', ADDRESS),
+      queryKeys.serverReserves(NETWORK),
+    ]
+    for (const key of others) client.setQueryData(key, {})
+
+    removeAccountScoped(client, NETWORK, ADDRESS)
+
+    for (const [, build] of accountScopedBuilders()) expect(present(client, build(NETWORK, ADDRESS))).toBe(false)
+    for (const key of others) expect(present(client, key)).toBe(true)
   })
 })

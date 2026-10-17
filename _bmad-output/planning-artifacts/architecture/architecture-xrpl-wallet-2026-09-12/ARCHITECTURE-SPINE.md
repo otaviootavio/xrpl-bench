@@ -98,6 +98,8 @@ without importing a component (AD-8).
 
 ### AD-2 — One owner of the ledger connection
 
+*Planned change (PRD §4.14, not built): AD-20: egress gains a user-supplied Node and the Devnet faucet; the pool is keyed by Node. See `architecture-xrpl-wallet-passkey-signing-2026-10-10/ARCHITECTURE-SPINE.md`. This AD describes what ships today.*
+
 - **Binds:** every ledger read and every write
 - **Prevents:** a second connection pool, a read that skips the failover loop,
   and a call path that no test can intercept.
@@ -128,6 +130,8 @@ without importing a component (AD-8).
 
 ### AD-3 — One owner of key material
 
+*Planned change (PRD §4.14, not built): AD-22: no Signer or Seed leaves `lib/crypto` except through reveal; callers receive a one-use Signer, not a live `Wallet`. See `architecture-xrpl-wallet-passkey-signing-2026-10-10/ARCHITECTURE-SPINE.md`. This AD describes what ships today.*
+
 - **Binds:** seed generation, import, signing, reveal, unlock
 - **Prevents:** a second place that turns a seed into a signer, which is a second
   place that has to get seed handling right.
@@ -151,6 +155,8 @@ without importing a component (AD-8).
 
 ### AD-5 — A non-extractable key handle is permitted session state `[ADOPTED]`
 
+*Planned change (PRD §4.14, not built): AD-21: one Open Key per lock, not one `vaultKey`. The non-extractable-handle rule is kept. See `architecture-xrpl-wallet-passkey-signing-2026-10-10/ARCHITECTURE-SPINE.md`. This AD describes what ships today.*
+
 - **Binds:** unlock, session restore, auto-lock
 - **Prevents:** an agent reading §4's "no secret in anything serializable"
   literally and removing working code, or the opposite — someone later putting
@@ -165,6 +171,8 @@ without importing a component (AD-8).
   is accepted as such. `docs/decisions.md` §4 states this in full.
 
 ### AD-6 — One source of truth for selection state and persisted entities
+
+*Planned change (PRD §4.14, not built): AD-19: Network and Node become fields of the Wallet, not an app-wide `network`. See `architecture-xrpl-wallet-passkey-signing-2026-10-10/ARCHITECTURE-SPINE.md`. This AD describes what ships today.*
 
 - **Binds:** every read, every write, every screen
 - **Prevents:** two components disagreeing about which wallet is active, stale
@@ -223,6 +231,8 @@ without importing a component (AD-8).
   `lib` and `store` can name a tone without importing upward.
 
 ### AD-9 — Every write passes one choke point `[ADOPTED]`
+
+*Planned change (PRD §4.14, not built): AD-22: `submitAndClassify` takes a one-use Signer and orders the Signing Check before the ledger window is fixed. See `architecture-xrpl-wallet-passkey-signing-2026-10-10/ARCHITECTURE-SPINE.md`. This AD describes what ships today.*
 
 - **Binds:** every transaction this app signs — payments and trust-line changes
   today, and every type added later
@@ -309,6 +319,8 @@ without importing a component (AD-8).
   failure and an empty result are different facts and never share a rendering.
 
 ### AD-16 — One owner of local persistence teardown
+
+*Planned change (PRD §4.14, not built): AD-25, AD-26: teardown gains a per-lock scope, and a PIN hard lock stops wiping passkey-only Wallets. See `architecture-xrpl-wallet-passkey-signing-2026-10-10/ARCHITECTURE-SPINE.md`. This AD describes what ships today.*
 
 - **Binds:** every module that persists anything, and every lock, removal and
   reset path
@@ -440,7 +452,7 @@ updates possible.
 ## Deferred
 
 - **Deferred XRPL features** — Checks, Escrow, Payment Channels, multi-signing
-  and regular-key rotation. Each is its own epic and each will need its own
+  and regular-key rotation. *Regular-key rotation and a user-editable endpoint are planned in PRD §4.14 (FR-61, FR-75, FR-76); strike them here when it ships.* Each is its own epic and each will need its own
   boundary decision when it arrives; none changes the paradigm.
 - **A second network provider or a user-editable endpoint.** AD-2 already seals
   the boundary this would sit behind, so the decision can wait until the feature

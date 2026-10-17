@@ -1,6 +1,6 @@
 import { describe, expect, it, beforeEach, vi, afterEach } from 'vitest'
 import { useNoticeStore } from '@/store/notice-store'
-import { toast } from '../notify'
+import { setNoticeWalletReader, toast } from '../notify'
 
 /**
  * docs/decisions.md §6.5: errors and warnings persist until dismissed;
@@ -61,5 +61,48 @@ describe('notify (toast)', () => {
     expect(info.tone).toBe('default')
     expect(error.tone).toBe('destructive')
     expect(warning.tone).toBe('warning')
+  })
+
+  it('errors still never auto-dismiss when they carry an action or a Wallet', () => {
+    setNoticeWalletReader(() => 'w1')
+    toast.error('Send failed.', { action: 'send' })
+    vi.advanceTimersByTime(60_000)
+    expect(useNoticeStore.getState().notices).toHaveLength(1)
+    setNoticeWalletReader(() => null)
+  })
+})
+
+describe('notices taken back when they stop being true', () => {
+  beforeEach(() => {
+    useNoticeStore.setState({ notices: [] })
+    vi.useFakeTimers()
+  })
+  afterEach(() => {
+    setNoticeWalletReader(() => null)
+    vi.useRealTimers()
+  })
+  const messages = () => useNoticeStore.getState().notices.map((n) => n.message)
+
+  it('a new attempt of an action takes back that action\'s notices, and only those', () => {
+    toast.error('The send was refused.', { action: 'send' })
+    toast.warning('Expired.', { action: 'send' })
+    toast.error('Incorrect PIN.', { action: 'unlock' })
+    toast.error('The update could not be checked.')
+    toast.resolve('send')
+    expect(messages()).toEqual(['Incorrect PIN.', 'The update could not be checked.'])
+  })
+
+  it('switching Wallet takes back the notices about another Wallet and keeps the app\'s own', () => {
+    setNoticeWalletReader(() => 'a')
+    toast.error('About A.')
+    setNoticeWalletReader(() => 'b')
+    toast.error('About B.')
+    setNoticeWalletReader(() => null)
+    toast.error('About the app.')
+
+    toast.scopeToWallet('b')
+    expect(messages()).toEqual(['About B.', 'About the app.'])
+    toast.scopeToWallet(null)
+    expect(messages()).toEqual(['About the app.'])
   })
 })

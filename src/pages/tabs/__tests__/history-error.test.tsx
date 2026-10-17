@@ -12,6 +12,8 @@ vi.mock('@/hooks/useAccountTxHistory', () => ({
 // this test is about, and standing up the real store would drag IndexedDB in.
 vi.mock('@/store/app-store', () => ({
   useAppStore: (selector: (s: { network: string }) => unknown) => selector({ network: 'testnet' }),
+  useActiveNetwork: () => 'testnet',
+  useActiveNode: () => undefined,
   useActiveWallet: () => ({ id: 'w1', address: 'rBoGUS9uiK9m3Kk6qnGRvWWCwAeN8hF3wR', label: 'Test' }),
 }))
 

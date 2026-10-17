@@ -26,13 +26,14 @@ vi.mock('@/lib/notify', () => ({
 }))
 
 const importAndStoreWallet = vi.fn()
+const generateAndStoreWallet = vi.fn()
 const addressFromSeed = vi.fn()
 vi.mock('@/lib/crypto/keystore', () => ({
   // The stub keeps the real contract: trim, then accept only a Seed.
   parseSeedInput: (raw: string) => (raw.trim() === SEED ? SEED : null),
   addressFromSeed: (seed: string) => addressFromSeed(seed),
   importAndStoreWallet: (...args: unknown[]) => importAndStoreWallet(...args),
-  generateAndStoreWallet: vi.fn(),
+  generateAndStoreWallet: (...args: unknown[]) => generateAndStoreWallet(...args),
   listWallets: async () => [{ id: 'w-new', label: 'Wallet', address: ADDRESS, createdAt: 0 }],
   removeWallet: vi.fn(),
   revealSeed: vi.fn(),
@@ -42,7 +43,10 @@ vi.mock('@/lib/crypto/auth', () => ({ setUpVaultAuth: async () => ({}) as Crypto
 /** The ledger, as the pre-flight check sees it: `fetchQuery` is the only call
  * `fetchAccountStateOnce` makes. */
 const fetchQuery = vi.fn()
-vi.mock('@tanstack/react-query', () => ({ useQueryClient: () => ({ fetchQuery, invalidateQueries: vi.fn() }) }))
+vi.mock('@tanstack/react-query', () => ({
+  useQueryClient: () => ({ fetchQuery, invalidateQueries: vi.fn() }),
+  useQuery: () => ({ data: undefined, refetch: vi.fn() }),
+}))
 
 vi.mock('@/lib/build-info', () => ({ BUILD: { version: '0.0.0' }, shortSha: 'abc1234', sourceUrl: '#', formatBuiltAt: () => 'now' }))
 vi.mock('@/hooks/useAppUpdate', () => ({
@@ -59,27 +63,30 @@ vi.mock('@/hooks/useAppUpdate', () => ({
     declineCurrent: vi.fn(),
   }),
 }))
-vi.mock('@/components/wallet/NetworkSelector', () => ({ NetworkSelector: () => null }))
 vi.mock('@/components/wallet/AddressLink', () => ({ AddressLink: ({ address }: { address: string }) => <span>{address}</span> }))
-vi.mock('@/lib/teardown', () => ({ tearDownAllLocalState: vi.fn(), clearCachedAccountData: vi.fn() }))
+vi.mock('@/lib/teardown', () => ({ tearDownAllLocalState: vi.fn(), clearCachedAccountData: vi.fn(), tearDownLock: vi.fn() }))
 
 const setActiveWalletId = vi.fn()
+const setWalletsMock = vi.fn()
+const openLockMock = vi.fn()
 vi.mock('@/store/app-store', () => ({
   useAppStore: (selector: (s: Record<string, unknown>) => unknown) =>
     selector({
       network: 'testnet',
       wallets: [],
-      setWallets: vi.fn(),
+      setWallets: setWalletsMock,
       activeWalletId: null,
       setActiveWalletId,
-      autoLockMinutes: 5,
-      setAutoLockMinutes: vi.fn(),
       addressBook: [],
-      // A real key: with `null` both handlers return at their first line.
-      vaultKey: {},
-      lock: vi.fn(),
-      unlock: vi.fn(),
+      openLocks: {},
+      setLockMinutes: vi.fn(),
+      closeAllLocks: vi.fn(),
+      openLock: openLockMock,
     }),
+  // A real key: with `null` both handlers return at their first line.
+  useWalletOpenKey: () => ({}),
+  useActiveNetwork: () => 'testnet',
+  useActiveNode: () => undefined,
 }))
 
 import { Onboarding } from '../Onboarding'
@@ -100,8 +107,11 @@ beforeEach(() => {
   toastSuccess.mockReset()
   importAndStoreWallet.mockReset().mockResolvedValue({ id: 'w-new', label: 'Wallet', address: ADDRESS, createdAt: 0 })
   addressFromSeed.mockReset().mockReturnValue(ADDRESS)
+  generateAndStoreWallet.mockReset().mockResolvedValue({ meta: { id: 'w-new' }, seed: SEED })
   fetchQuery.mockReset()
   setActiveWalletId.mockReset()
+  setWalletsMock.mockReset()
+  openLockMock.mockReset()
 })
 
 afterEach(cleanup)
@@ -287,5 +297,68 @@ describe('Onboarding: the Seed survives the move from the import step to the PIN
     expect(addressFromSeed).toHaveBeenCalledWith(SEED)
     expect(addressFromSeed).not.toHaveBeenCalledWith('')
     expect(toastSuccess).toHaveBeenCalledWith('Wallet imported.')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// The Network choice reaches the pre-check and the write, on both screens.
+// ---------------------------------------------------------------------------
+
+const radio = (name: RegExp) => fireEvent.click(screen.getByRole('radio', { name }))
+const NETWORK_LABEL = { mainnet: /^Mainnet/, devnet: /^Devnet/ } as const
+
+describe.each(['mainnet', 'devnet'] as const)('choosing %s', (network) => {
+  it('Onboarding import: the pre-check and the write use it', async () => {
+    ledger.masterKeyEnabled()
+    render(<Onboarding />)
+    await click('Import an existing wallet')
+    radio(NETWORK_LABEL[network])
+    ;(document.getElementById('seed') as HTMLInputElement).value = SEED
+    await click('Continue')
+    fireEvent.change(document.getElementById('pin')!, { target: { value: '123456' } })
+    fireEvent.change(document.getElementById('pin-confirm')!, { target: { value: '123456' } })
+    await click('Continue')
+    expect(fetchQuery.mock.calls[0][0].queryKey).toEqual(['accountState', network, ADDRESS])
+    expect(importAndStoreWallet.mock.calls[0][3]).toBe(network)
+  })
+
+  it('Settings import: the pre-check and the write use it, and "Import anyway" keeps it', async () => {
+    ledger.masterKeyDisabled()
+    render(<SettingsTab />)
+    await click('Add wallet')
+    await click('Import')
+    radio(NETWORK_LABEL[network])
+    ;(document.getElementById('wseed') as HTMLInputElement).value = SEED
+    await click('Add')
+    expect(fetchQuery.mock.calls[0][0].queryKey).toEqual(['accountState', network, ADDRESS])
+    await click('Import anyway')
+    expect(importAndStoreWallet.mock.calls[0][3]).toBe(network)
+  })
+})
+
+describe('Settings: the Network choice is reset for the next Add', () => {
+  it('returns to Testnet after an import completes', async () => {
+    ledger.masterKeyEnabled()
+    render(<SettingsTab />)
+    await click('Add wallet')
+    await click('Import')
+    radio(/^Mainnet/)
+    ;(document.getElementById('wseed') as HTMLInputElement).value = SEED
+    await click('Add')
+    await click('Add wallet')
+    expect((screen.getByRole('radio', { name: /^Testnet/ }) as HTMLInputElement).checked).toBe(true)
+  })
+})
+
+describe('Onboarding: the legacy lock is opened before the Wallet list is committed', () => {
+  it('calls openLock(\'legacy\', key, 5) before setWallets, so the new Wallet never flashes locked', async () => {
+    ledger.masterKeyDisabled()
+    await onboardingImport(SEED)
+    await click('Import anyway')
+    expect(openLockMock).toHaveBeenCalledTimes(1)
+    expect(openLockMock.mock.calls[0][0]).toBe('legacy')
+    expect(openLockMock.mock.calls[0][2]).toBe(5)
+    expect(setWalletsMock).toHaveBeenCalled()
+    expect(openLockMock.mock.invocationCallOrder[0]).toBeLessThan(setWalletsMock.mock.invocationCallOrder[0])
   })
 })

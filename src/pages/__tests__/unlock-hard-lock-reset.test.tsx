@@ -4,7 +4,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 
 /**
- * G-13's strongest path: the hard-lock reset on the Unlock screen —
+ * G-13's strongest path: the hard-lock reset on the locked-Wallet view —
  * `wallet-security.md`'s only way forward after eight failed attempts — must
  * leave no wallet label, address or Address Book entry behind after its
  * reload, and must not reload as though it had when a clear failed.
@@ -17,6 +17,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 const h = vi.hoisted(() => ({
   idb: new Map<string, string>(),
   wipeVault: vi.fn(async () => {}),
+  info: { id: 'legacy', openCheck: 'pin', autoLockMinutes: 5, pin: true, passkey: false } as Record<string, unknown>,
 }))
 
 vi.mock('idb-keyval', () => ({
@@ -26,12 +27,15 @@ vi.mock('idb-keyval', () => ({
 }))
 vi.mock('@/lib/crypto/auth', () => ({
   wipeVault: () => h.wipeVault(),
-  endSession: async () => {},
-  unlockVault: async () => {
+  getLockoutState: async () => ({ hardLocked: true, lockedUntil: 0 }),
+}))
+vi.mock('@/lib/crypto/lock', () => ({
+  endLockSession: async () => {},
+  endAllLockSessions: async () => {},
+  getLockInfo: async () => h.info,
+  openLock: async () => {
     throw new Error('not under test')
   },
-  hasPasskeyRegistered: async () => false,
-  getLockoutState: async () => ({ hardLocked: true, lockedUntil: 0 }),
 }))
 vi.mock('@/lib/xrpl/client', () => ({ disconnectAllClients: async () => {} }))
 vi.mock('@/lib/build-info', () => ({
@@ -44,6 +48,7 @@ import { Unlock } from '../Unlock'
 import { APP_STATE_STORAGE_KEY, useAppStore } from '@/store/app-store'
 import { useNoticeStore } from '@/store/notice-store'
 
+const WALLET = { id: 'w1', seedId: 'w1', lockId: 'legacy', label: 'Savings', address: 'rA', createdAt: 1, network: 'mainnet', algorithm: 'ed25519', openCheck: 'pin', signingCheck: 'standard' } as never
 const reload = vi.fn()
 const flush = () => new Promise((r) => setTimeout(r, 0))
 
@@ -60,7 +65,7 @@ function renderUnlock() {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   render(
     <QueryClientProvider client={qc}>
-      <Unlock />
+      <Unlock wallet={WALLET} />
     </QueryClientProvider>,
   )
 }
@@ -76,6 +81,7 @@ beforeEach(() => {
   reload.mockReset()
   vi.stubGlobal('location', { ...window.location, reload })
   useNoticeStore.setState({ notices: [] } as never)
+  h.info = { id: 'legacy', openCheck: 'pin', autoLockMinutes: 5, pin: true, passkey: false }
 })
 
 afterEach(() => {
@@ -88,7 +94,7 @@ describe('Unlock — hard-lock reset', () => {
   it('reloads with no wallet label, address or Address Book entry left in the persisted store', async () => {
     await seedResidue()
     renderUnlock()
-    await screen.findByText(/too many failed attempts/i)
+    await screen.findByText(/too many failed/i)
 
     await confirmReset()
     await waitFor(() => expect(reload).toHaveBeenCalledTimes(1))
@@ -107,7 +113,7 @@ describe('Unlock — hard-lock reset', () => {
     const registration = { unregister: vi.fn(async () => true) }
     Object.defineProperty(window.navigator, 'serviceWorker', { value: { getRegistrations: vi.fn(async () => [registration]) }, configurable: true })
     renderUnlock()
-    await screen.findByText(/too many failed attempts/i)
+    await screen.findByText(/too many failed/i)
 
     await confirmReset()
     await waitFor(() => expect(reload).toHaveBeenCalledTimes(1))
@@ -118,11 +124,30 @@ describe('Unlock — hard-lock reset', () => {
   it('does not reload as though the device were clean when a clear fails, and says so', async () => {
     h.wipeVault.mockRejectedValueOnce(new Error('IDB blocked'))
     renderUnlock()
-    await screen.findByText(/too many failed attempts/i)
+    await screen.findByText(/too many failed/i)
 
     await confirmReset()
     await waitFor(() => expect(useNoticeStore.getState().notices.length).toBeGreaterThan(0))
     expect(JSON.stringify(useNoticeStore.getState().notices)).toMatch(/reset did not finish/i)
     expect(reload).not.toHaveBeenCalled()
+  })
+
+  it('a hard lock deletes nothing by itself, and a lock a passkey opens still offers the passkey', async () => {
+    h.info = { id: 'legacy', openCheck: 'either', autoLockMinutes: 5, pin: true, passkey: true }
+    renderUnlock()
+    const message = await screen.findByText(/too many failed/i)
+    expect(message.textContent).toMatch(/nothing has been erased/i)
+    expect(message.textContent).not.toMatch(/delet|wipe|automatic/i)
+    expect(await screen.findByRole('button', { name: /unlock with passkey/i })).toBeTruthy()
+    expect(screen.queryByRole('button', { name: /unlock with pin/i })).toBeNull()
+    expect(h.wipeVault).not.toHaveBeenCalled()
+  })
+
+  it('shows only the wallet name — no address, balance or network — while locked', async () => {
+    renderUnlock()
+    await screen.findByText(/too many failed/i)
+    expect(screen.getByRole('heading', { name: 'Savings' })).toBeTruthy()
+    expect(screen.queryByText('rA')).toBeNull()
+    expect(screen.queryByText(/mainnet/i)).toBeNull()
   })
 })

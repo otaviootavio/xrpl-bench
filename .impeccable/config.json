@@ -1,0 +1,26 @@
+{
+  "detector": {
+    "ignoreRules": [],
+    "ignoreFiles": [],
+    "ignoreValues": [
+      {
+        "rule": "design-system-radius",
+        "value": "*",
+        "files": [
+          "_bmad-output/forge/passkey-gated-signing/forge-report.html"
+        ],
+        "createdAt": "2026-10-09T03:12:11.532Z",
+        "reason": "Claude: standalone BMAD forge-report keepsake in _bmad-output, not app UI governed by DESIGN.md"
+      },
+      {
+        "rule": "design-system-font-size",
+        "value": "*",
+        "files": [
+          "_bmad-output/forge/passkey-gated-signing/forge-report.html"
+        ],
+        "createdAt": "2026-10-09T03:12:11.575Z",
+        "reason": "Claude: standalone BMAD forge-report keepsake in _bmad-output, not app UI governed by DESIGN.md"
+      }
+    ]
+  }
+}

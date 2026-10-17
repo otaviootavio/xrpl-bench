@@ -61,6 +61,23 @@ function resolveCommitSha(isRelease: boolean): string {
   return 'unknown-dev'
 }
 
+/**
+ * The WebAuthn relying-party id (AD-24), baked in per branch: an rpId must
+ * match the page's origin, so `stage` and `prod` each have their own and `dev`
+ * has none. The hosts are the pull zones in .github/workflows/deploy.yml; a
+ * changed domain strands every Passkey-Derived Seed, so they are written here
+ * once and nowhere else. `RP_ID` overrides (a custom domain); with neither it
+ * is empty and `getRpId()` falls back to the page's host (local dev only).
+ */
+const RP_ID_BY_BRANCH: Record<string, string> = {
+  prod: 'sites-xrpl-bench-prod-pdbywc.b-cdn.net',
+  stage: 'sites-xrpl-bench-stage-bpl7ab.b-cdn.net',
+}
+
+function resolveRpId(): string {
+  return process.env.RP_ID || RP_ID_BY_BRANCH[process.env.GITHUB_REF_NAME ?? ''] || ''
+}
+
 export default defineConfig(({ mode }) => {
   // Anything not an explicit dev server is treated as release-grade.
   const isRelease = mode === 'production'
@@ -71,6 +88,7 @@ export default defineConfig(({ mode }) => {
     define: {
       __COMMIT_SHA__: JSON.stringify(commitSha),
       __BUILD_DATE__: JSON.stringify(builtAt),
+      __RP_ID__: JSON.stringify(resolveRpId()),
       __APP_VERSION__: JSON.stringify(process.env.npm_package_version ?? '0.0.0'),
     },
     plugins: [

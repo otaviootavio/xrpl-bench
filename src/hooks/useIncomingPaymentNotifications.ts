@@ -15,7 +15,7 @@ const MAX_SEEN = 500
  * lands, distinguishing XRP vs. token. Polls account_tx via TanStack Query
  * (never a raw useEffect fetch — docs/decisions.md guardrail #1) and diffs
  * against the last-seen hash to avoid re-notifying on every poll. */
-export function useIncomingPaymentNotifications(network: NetworkId, address: string | null) {
+export function useIncomingPaymentNotifications(network: NetworkId, address: string | null, node?: string) {
   const seenHashes = useRef<Set<string>>(new Set())
   const isFirstLoad = useRef(true)
   // The seen-set and first-load flag belong to ONE account on ONE network.
@@ -27,7 +27,7 @@ export function useIncomingPaymentNotifications(network: NetworkId, address: str
 
   const query = useQuery({
     queryKey: queryKeys.incomingPaymentWatch(network, address),
-    queryFn: () => fetchAccountTx(network, address as string),
+    queryFn: () => fetchAccountTx(network, address as string, undefined, node),
     enabled: !!address,
     // useAccountLiveUpdates invalidates this key the moment a transaction
     // affecting the account validates, so this poll is only a fallback for a

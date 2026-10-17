@@ -3,6 +3,7 @@ import { Button } from '@/components/ui/button'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Skeleton } from '@/components/ui/skeleton'
 import { StatusLegend } from '@/components/ui/lamp'
+import { ControlledNote } from '@/components/wallet/ControlledNote'
 import { AddressDisplay } from '@/components/wallet/AddressDisplay'
 import { Readout, type ScaleMark } from '@/components/wallet/Readout'
 import { QueryErrorState } from '@/components/wallet/QueryErrorState'
@@ -10,9 +11,11 @@ import { useAccountState } from '@/hooks/useAccountState'
 import { useSpendableBalance } from '@/hooks/useSpendableBalance'
 import { useTrustLines } from '@/hooks/useTrustLines'
 import { useServerReserves } from '@/hooks/useServerReserves'
-import { useAppStore, useActiveWallet } from '@/store/app-store'
+import { useActiveWallet, useActiveNetwork, useActiveNode } from '@/store/app-store'
 import { formatXrp, formatXrpValue, formatAmountString, displayCurrencyCode } from '@/lib/xrpl/money'
-import { requestTestnetFunds } from '@/lib/xrpl/faucet'
+import { requestFaucetFunds } from '@/lib/xrpl/faucet'
+import { NETWORKS } from '@/lib/xrpl/networks'
+import { DevnetNotice } from '@/components/wallet/DevnetNotice'
 import { invalidateAccountScoped } from '@/lib/xrpl/query-keys'
 import { toast } from '@/lib/notify'
 import { useQueryClient } from '@tanstack/react-query'
@@ -28,13 +31,14 @@ import { useState } from 'react'
  * separate facts.
  */
 export function BalancesTab() {
-  const network = useAppStore((s) => s.network)
+  const network = useActiveNetwork()
+  const node = useActiveNode()
   const wallet = useActiveWallet()
   const address = wallet?.address ?? null
-  const accountState = useAccountState(network, address)
-  const spendable = useSpendableBalance(network, address)
-  const trustLines = useTrustLines(network, address)
-  const reserves = useServerReserves(network)
+  const accountState = useAccountState(network, address, node)
+  const spendable = useSpendableBalance(network, address, node)
+  const trustLines = useTrustLines(network, address, node)
+  const reserves = useServerReserves(network, node)
   const queryClient = useQueryClient()
   const [funding, setFunding] = useState(false)
 
@@ -43,8 +47,8 @@ export function BalancesTab() {
   async function handleFaucet() {
     setFunding(true)
     try {
-      const result = await requestTestnetFunds(network, wallet!.address)
-      toast.success(`Funded with ${result.amountXrp} test XRP.`)
+      const result = await requestFaucetFunds(network, wallet!.address)
+      toast.success(`Funded with ${result.amountXrp} test XRP on ${NETWORKS[network].label}.`)
       await invalidateAccountScoped(queryClient, network, wallet!.address)
     } catch (err: any) {
       toast.error(err?.message ?? 'Faucet request failed.')
@@ -109,6 +113,7 @@ export function BalancesTab() {
 
   return (
     <div className="flex flex-col gap-3">
+      <DevnetNotice network={network} />
       {accountState.isLoading && <Skeleton className="h-36 w-full" />}
 
       {/* Where the readout would be, not inside it: the destructive tone does
@@ -142,9 +147,9 @@ export function BalancesTab() {
                 : 'the base reserve'}{' '}
               to become an account on-ledger.
             </span>
-            {network === 'testnet' ? (
+            {NETWORKS[network].faucetUrl ? (
               <Button size="sm" onClick={handleFaucet} disabled={funding}>
-                {funding ? 'Requesting…' : 'Fund with Testnet XRP'}
+                {funding ? 'Requesting…' : `Fund with ${NETWORKS[network].label} XRP`}
               </Button>
             ) : (
               <span>Fund it with real XRP from an exchange or another wallet — there is no faucet on Mainnet.</span>
@@ -171,9 +176,9 @@ export function BalancesTab() {
             </StatusLegend>
           }
           footer={
-            network === 'testnet' && (
+            NETWORKS[network].faucetUrl && (
               <Button size="sm" variant="outline" onClick={handleFaucet} disabled={funding}>
-                {funding ? 'Requesting…' : 'Fund with Testnet XRP'}
+                {funding ? 'Requesting…' : `Fund with ${NETWORKS[network].label} XRP`}
               </Button>
             )
           }
@@ -205,7 +210,10 @@ export function BalancesTab() {
           answers "which account" and the reading answers "what do I hold" —
           and the second question is the one this screen exists for. */}
       <div className="grid gap-3 sm:grid-cols-2 sm:items-start">
-        <AddressDisplay address={wallet.address} />
+        <div className="flex flex-col gap-2">
+          <AddressDisplay address={wallet.address} />
+          <ControlledNote wallet={wallet} />
+        </div>
 
         <Card>
           <CardHeader className="sm:flex-row sm:items-baseline sm:justify-between">

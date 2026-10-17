@@ -28,10 +28,8 @@ vi.mock('idb-keyval', () => ({
   set: async (k: string, v: string) => void h.idb.set(k, v),
   del: async (k: string) => void h.idb.delete(k),
 }))
-vi.mock('@/lib/crypto/auth', () => ({
-  wipeVault: () => h.wipeVault(),
-  endSession: async () => {},
-}))
+vi.mock('@/lib/crypto/auth', () => ({ wipeVault: () => h.wipeVault() }))
+vi.mock('@/lib/crypto/lock', () => ({ endLockSession: async () => {}, endAllLockSessions: async () => {} }))
 vi.mock('@/lib/xrpl/client', () => ({ disconnectAllClients: () => h.disconnectAllClients() }))
 
 import { clearCachedAccountData, PERSISTED_ACCOUNT_DATA, tearDownAllLocalState } from '../teardown'
@@ -80,11 +78,11 @@ function seededQueryClient() {
 
 async function seedStore() {
   const s = useAppStore.getState()
-  s.setNetwork('mainnet')
+  useAppStore.setState({ network: 'mainnet' })
   s.setWallets([{ id: 'w1', label: 'Savings', address: 'rAliceAddressLabelThatMustNotSurvive' } as never])
   s.setActiveWalletId('w1')
   s.addAddressBookEntry({ address: 'rBobCounterpartyThatMustNotSurvive', label: 'Bob — landlord' })
-  s.setAutoLockMinutes(30)
+  useAppStore.setState({ autoLockMinutes: 30 })
   s.declineUpdateVersion('deadbeef')
   await flush()
   // Precondition: the residue really is on disk before the teardown runs.
@@ -111,7 +109,7 @@ describe('tearDownAllLocalState — "remove everything" (G-13)', () => {
     // Both reset paths lock after teardown (Settings explicitly; the Unlock
     // screen is already locked, and any later setter behaves the same). The
     // persist middleware re-serializes the whole slice on that `set()`.
-    useAppStore.getState().lock()
+    useAppStore.getState().closeAllLocks()
     await flush()
 
     const onDisk = h.idb.get(APP_STATE_STORAGE_KEY)

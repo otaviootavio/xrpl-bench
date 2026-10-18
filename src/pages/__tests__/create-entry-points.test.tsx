@@ -1,6 +1,6 @@
 /** @vitest-environment jsdom */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { act, waitFor, cleanup, fireEvent, render, screen } from '@testing-library/react'
 
 /**
  * Story 5: both ways to make a new Wallet open the creation flow, and neither
@@ -57,11 +57,20 @@ vi.mock('@/components/wallet/AddressLink', () => ({ AddressLink: () => <span /> 
 
 import { Onboarding } from '../Onboarding'
 import { SettingsTab } from '../tabs/SettingsTab'
+import { WalletScreens } from '../WalletScreens'
+import { useRoute } from '@/hooks/useRoute'
 import { useAppStore } from '@/store/app-store'
+
+/** Settings, or the routed screen its buttons navigate to (what `Main` does). */
+function Host() {
+  const route = useRoute()
+  return route.screen === 'home' ? <SettingsTab /> : <WalletScreens route={route} />
+}
 
 const click = async (name: string | RegExp) => act(async () => void fireEvent.click(screen.getByRole('button', { name })))
 
 beforeEach(() => {
+  window.history.replaceState(null, '', '/')
   h.setUpVaultAuth.mockClear()
   h.generateAndStoreWallet.mockClear()
   h.createStoredWallet.mockClear()
@@ -95,8 +104,8 @@ describe('first run', () => {
 })
 
 describe('Settings > Add wallet', () => {
-  it('Generate shows the flow; it commits itself, so the dialog has no Add button for it', async () => {
-    render(<SettingsTab />)
+  it('Generate shows the flow; it commits itself, so the screen has no Add button for it', async () => {
+    render(<Host />)
     await click('Add wallet')
     expect(screen.getByText('the creation flow')).toBeTruthy()
     expect(screen.queryByRole('button', { name: 'Add' })).toBeNull()
@@ -105,25 +114,33 @@ describe('Settings > Add wallet', () => {
   })
 
   it('Import is untouched: label, network, seed and Add', async () => {
-    render(<SettingsTab />)
+    render(<Host />)
     await click('Add wallet')
+    expect(window.location.pathname).toBe('/wallets/new')
     await click('Import')
     expect(screen.queryByText('the creation flow')).toBeNull()
     expect(document.getElementById('wseed')).toBeTruthy()
     expect(screen.getByRole('button', { name: 'Add' })).toBeTruthy()
   })
 
-  it('the dialog cannot be dismissed while a Wallet is being written or backed up, then closes when done', async () => {
-    render(<SettingsTab />)
+  it('the screen cannot be left while a Wallet is being written or backed up, then returns to Settings when done', async () => {
+    render(<Host />)
     await click('Add wallet')
     const props = h.flowProps.at(-1) as { onInProgressChange: (b: boolean) => void; onDone: () => void }
     await act(async () => props.onInProgressChange(true))
-    fireEvent.keyDown(document.activeElement ?? document.body, { key: 'Escape' })
+    expect((screen.getByRole('button', { name: 'Settings' }) as HTMLButtonElement).disabled).toBe(true)
+    // The browser's Back is put back too.
+    await act(async () => {
+      window.history.back()
+      await new Promise((r) => setTimeout(r, 20))
+    })
+    expect(window.location.pathname).toBe('/wallets/new')
     expect(screen.getByText('the creation flow')).toBeTruthy()
     await act(async () => {
       props.onInProgressChange(false)
       props.onDone()
     })
-    expect(screen.queryByText('the creation flow')).toBeNull()
+    await waitFor(() => expect(screen.queryByText('the creation flow')).toBeNull())
+    expect(window.location.pathname).toBe('/')
   })
 })

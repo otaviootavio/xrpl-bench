@@ -3,10 +3,11 @@ import { useQuery } from '@tanstack/react-query'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Axis, Choice } from '@/components/wallet/check-controls'
+import { ScreenFooter, TaskScreen } from '@/components/wallet/TaskScreen'
+import { useLeaveBlocker } from '@/hooks/useRoute'
 import { minutesLabel } from '@/lib/minutes-label'
 import { WrittenSeedConfirm } from '@/components/wallet/WrittenSeedConfirm'
 import { usePrompts } from '@/hooks/usePrompts'
@@ -65,23 +66,28 @@ function signingWords(kind: SigningKind): string {
   return kind === 'standard' ? 'Standard' : kind === 'passkey' ? 'Passkey only' : 'App PIN only'
 }
 
-export interface EditChecksDialogProps {
-  /** The Wallet to edit; `null` closes the dialog. */
-  wallet: WalletMeta | null
+export interface EditChecksScreenProps {
+  /** The Wallet to edit; its lock is open (the route mounts this only then). */
+  wallet: WalletMeta
+  /** Leaves the screen: after a committed edit, or when the user goes back. */
   onClose: () => void
   /** Called once the edit is committed. The caller swaps the lock and session. */
   onEdited: (edited: EditedChecks) => void | Promise<void>
 }
 
-export function EditChecksDialog({ wallet, onClose, onEdited }: EditChecksDialogProps) {
-  // A step that is writing or waiting on the written Seed must not be closed from under it.
+export function EditChecksScreen({ wallet, onClose, onEdited }: EditChecksScreenProps) {
+  // A step that is writing or waiting on the written Seed must not be left from under it.
   const [locked, setLocked] = useState(false)
+  useLeaveBlocker(locked)
   return (
-    <Dialog open={wallet !== null} onOpenChange={(o) => !o && !locked && onClose()}>
-      <DialogContent>
-        {wallet && <EditChecksForm key={wallet.id} wallet={wallet} onClose={onClose} onEdited={onEdited} onLockedChange={setLocked} />}
-      </DialogContent>
-    </Dialog>
+    <TaskScreen
+      title="Edit checks"
+      description={`${wallet.label}. The address does not change. The check you pass now is the one the change affects.`}
+      onBack={onClose}
+      locked={locked}
+    >
+      <EditChecksForm key={wallet.id} wallet={wallet} onClose={onClose} onEdited={onEdited} onLockedChange={setLocked} />
+    </TaskScreen>
   )
 }
 
@@ -93,7 +99,7 @@ function EditChecksForm({
 }: {
   wallet: WalletMeta
   onClose: () => void
-  onEdited: EditChecksDialogProps['onEdited']
+  onEdited: EditChecksScreenProps['onEdited']
   onLockedChange: (locked: boolean) => void
 }) {
   const [capability, setCapability] = useState<PasskeyCapability | null>(null)
@@ -111,10 +117,6 @@ function EditChecksForm({
   if (lockQuery.isError) {
     return (
       <>
-        <DialogHeader>
-          <DialogTitle>Edit checks</DialogTitle>
-          <DialogDescription>{wallet.label}</DialogDescription>
-        </DialogHeader>
         <p role="alert" className="text-sm text-text-destructive">
           Could not read this wallet's checks. Nothing was changed.
         </p>
@@ -127,10 +129,6 @@ function EditChecksForm({
   if (capability === null || !lockQuery.data) {
     return (
       <>
-        <DialogHeader>
-          <DialogTitle>Edit checks</DialogTitle>
-          <DialogDescription>{wallet.label}</DialogDescription>
-        </DialogHeader>
         <p role="status" className="text-sm text-muted-foreground">
           Checking what this device supports…
         </p>
@@ -161,7 +159,7 @@ function EditChecksBody({
   capability: PasskeyCapability
   lock: { openCheck: CurrentChecks['openCheck']; autoLockMinutes: number }
   onClose: () => void
-  onEdited: EditChecksDialogProps['onEdited']
+  onEdited: EditChecksScreenProps['onEdited']
   onLockedChange: (locked: boolean) => void
 }) {
   const group = useId()
@@ -379,12 +377,6 @@ function EditChecksBody({
 
   return (
     <>
-      <DialogHeader>
-        <DialogTitle>Edit checks</DialogTitle>
-        <DialogDescription>
-          {wallet.label}. The address does not change. The check you pass now is the one the change affects.
-        </DialogDescription>
-      </DialogHeader>
       <div className="flex flex-col gap-5">
         <p className="flex flex-wrap items-center gap-2 text-sm">
           <span>Network: {NETWORKS[network].label}</span>
@@ -527,7 +519,10 @@ function EditChecksBody({
           </p>
         )}
 
-        <div className="flex flex-wrap gap-2">
+        <ScreenFooter>
+          <Button type="button" variant="outline" disabled={busy} onClick={onClose}>
+            Cancel
+          </Button>
           <Button
             type="button"
             aria-disabled={committed || !resolved.changed || !verdict.ok || (needsPin && pinReadFailed) ? true : undefined}
@@ -537,10 +532,7 @@ function EditChecksBody({
           >
             {busy ? 'Saving…' : 'Save changes'}
           </Button>
-          <Button type="button" variant="outline" disabled={busy} onClick={onClose}>
-            Cancel
-          </Button>
-        </div>
+        </ScreenFooter>
       </div>
     </>
   )

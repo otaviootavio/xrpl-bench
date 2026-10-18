@@ -36,10 +36,11 @@ vi.mock('@/lib/crypto/keystore', () => ({
   describeCheckFailure: () => 'x',
   setLockAutoLock: (...a: unknown[]) => h.setLockAutoLock(...a),
 }))
-// The dialog has its own test: here it is a stand-in that reports the committed edit.
-vi.mock('@/components/wallet/EditChecksDialog', () => ({
-  EditChecksDialog: ({ wallet, onEdited }: { wallet: { id: string } | null; onEdited: (e: unknown) => void }) =>
-    wallet ? <button onClick={() => void Promise.resolve(onEdited(h.edited)).catch(() => {})}>commit edit for {wallet.id}</button> : null,
+// The screen has its own test: here it is a stand-in that reports the committed edit.
+vi.mock('@/components/wallet/EditChecksScreen', () => ({
+  EditChecksScreen: ({ wallet, onEdited }: { wallet: { id: string }; onEdited: (e: unknown) => void }) => (
+    <button onClick={() => void Promise.resolve(onEdited(h.edited)).catch(() => {})}>commit edit for {wallet.id}</button>
+  ),
 }))
 vi.mock('@/lib/notify', () => ({ toast: { success: vi.fn(), error: vi.fn(), warning: vi.fn() } }))
 vi.mock('@/lib/xrpl/client', () => ({ disconnectAllClients: async () => {} }))
@@ -71,6 +72,8 @@ vi.mock('@/components/ui/select', () => ({
 }))
 
 import { SettingsTab } from '../SettingsTab'
+import { WalletScreens } from '../../WalletScreens'
+import { useRoute } from '@/hooks/useRoute'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { PromptsContext } from '@/hooks/usePrompts'
 import { useAppStore } from '@/store/app-store'
@@ -81,13 +84,19 @@ const B = { ...base, id: 'b', seedId: 'b', lockId: 'Y', label: 'Beta', address: 
 const OPEN = { key: {} as CryptoKey, autoLockMinutes: 5 }
 const PROMPTS = { pin: async () => '123456' }
 
+/** Settings, or the routed screen its buttons navigate to (what `Main` does). */
+function Host() {
+  const route = useRoute()
+  return route.screen === 'home' ? <SettingsTab /> : <WalletScreens route={route} />
+}
+
 function renderSettings() {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   render(
     <QueryClientProvider client={qc}>
       <PromptsContext.Provider value={PROMPTS}>
         <TooltipProvider>
-          <SettingsTab />
+          <Host />
         </TooltipProvider>
       </PromptsContext.Provider>
     </QueryClientProvider>,
@@ -95,6 +104,7 @@ function renderSettings() {
 }
 
 beforeEach(() => {
+  window.history.replaceState(null, '', '/')
   h.setLockAutoLock.mockReset().mockResolvedValue({ ok: true })
   h.startLockSession.mockClear()
   h.listed = []

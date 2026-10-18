@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { AppHeader } from '@/components/AppHeader'
 import { ChassisShell } from '@/components/ChassisShell'
@@ -8,6 +9,8 @@ import { HistoryTab } from './tabs/HistoryTab'
 import { TrustLinesTab } from './tabs/TrustLinesTab'
 import { SettingsTab } from './tabs/SettingsTab'
 import { Unlock } from './Unlock'
+import { WalletScreens } from './WalletScreens'
+import { useRoute } from '@/hooks/useRoute'
 import { useActiveWallet, useActiveNetwork, useActiveNode, useWalletIsOpen } from '@/store/app-store'
 import { useIncomingPaymentNotifications } from '@/hooks/useIncomingPaymentNotifications'
 import { useAccountLiveUpdates } from '@/hooks/useAccountLiveUpdates'
@@ -47,8 +50,14 @@ function OpenWallet({ showUpdateMarker }: { showUpdateMarker: boolean }) {
   const wallet = useActiveWallet()
   useIncomingPaymentNotifications(network, wallet?.address ?? null, node)
   useAccountLiveUpdates(network, wallet?.address ?? null, node)
+  const route = useRoute()
+  // Held here, not in `Tabs`, so the tab the user left (Settings) is the one a
+  // screen returns to; the live hooks above stay mounted behind the screen.
+  const [tab, setTab] = useState<string>('balances')
+  // A task screen takes the whole content area (mobile dialogs S2).
+  if (route.screen !== 'home') return <WalletScreens route={route} />
   return (
-    <Tabs defaultValue="balances">
+    <Tabs value={tab} onValueChange={setTab}>
       <TabsList>
         {PANELS.map((p) => {
           const marked = p.value === 'settings' && showUpdateMarker

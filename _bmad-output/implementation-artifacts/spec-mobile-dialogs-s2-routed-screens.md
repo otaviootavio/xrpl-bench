@@ -89,3 +89,22 @@ Pathname, not hash: the spec names `/wallets/new`. Whether the static host serve
 | Back / reload | 320x568 | Back returns to the Settings tab; reload at `/wallets/new` booted into the screen in dev |
 
 **Not met / not run:** Let another wallet sign was not opened in the browser (needs a second Testnet wallet); dark mode, real iOS/Android, on-screen keyboard and the camera scanner not run; the prod host's handling of a first load at `/wallets/new` is unverified (decisions.md 8.7), so status stays `in-review`. Known edge: if an edit moves a Wallet to a new lock and the wallet list refresh then fails, the screen resets to Settings and hides the "Saved, but the wallet could not be reopened" line.
+
+### Verification: second browser pass against the CAP-2 criteria (2026-10-17)
+
+**Tested:** commit 3896718 (dev server on `--port 5180 --strictPort`, fresh origin, own browser context). **Driven:** Playwright Chromium via the MCP, CDP virtual authenticator (`ctap2`, internal, resident key, UV, presence simulation, PRF). Throwaway Testnet wallets: one created through the onboarding flow and funded with the in-app faucet ("Funded with 100 test XRP"), a second created through `/wallets/new`. **Widths and themes:** 320x568, 375x667, 1280x800, each in light and dark (`emulateMedia`), plus 320x568 at root `font-size: 200%` in both themes. Screenshots under `.playwright-mcp/` (`s2-*.png`) were opened before being cited here: onboarding, Add wallet (Generate 320 light/dark, 1280 dark; Import 320 at 100% and 200%), Edit checks (320 light, 320 dark 200%, 1280 dark), two-device (320 dark, 320 light 200%), Let another wallet sign (375 dark, 320 light 200%). The rest were measured from the DOM, not looked at.
+
+| Criterion | Result |
+|---|---|
+| Edit checks: Save and Cancel inside the viewport at every size, no horizontal overflow | Met at all 8 combinations (Save at y 411-448 of 568 at 320; 219-331 at 200%). |
+| Two-device: role buttons wrap, no horizontal overflow at 320 and 375 | Met. Both buttons fit inside the panel (x 33-287 at 320, 33-342 at 375), document `scrollWidth` equals `clientWidth`, light and dark. |
+| Let another wallet sign: primary action in view, no overflow at 320 and 375 | Met at 100%. Set regular key and Cancel are in the sticky footer. |
+| Add wallet, Import: primary action in view | Met. Add sits in the sticky footer at 320 (100% and 200%). |
+| Add wallet and onboarding render the same `CreateWalletFlow` | Met by content: the same Label, Network, Node, Seed Method, Signature type, Open Check, Auto-lock and Signing Check fields on both. Onboarding was seen at 375 light only. |
+| Add wallet, Generate: primary action within one scroll of the form | **Not met.** `ScreenFooter` is rendered only for Import. In Generate mode the sticky footer holds only the empty status slot and CREATE WALLET sits at the end of the form: 1309px down a 431px scroll area at 320x568 (about 3 screens), 1274px at 375x667, 3629px at 320 and 200%. This is the "~3-screen scroll" CAP-2 names. |
+| Let another wallet sign: nothing overflows at 200% text zoom, 320px | **Not met.** The "Wallet that will sign" label and select end at x=287, past the panel's right edge at 273: the select pokes out of the plate (seen in `s2-ctl-320-light-z200.png`). Also at 200%, the Back button (x 65-265) is wider than the panel's content box (64-241) on the two-device and Let another wallet sign screens. It stays inside the panel edge but overlaps the padding. |
+| Back and routing | Met. Back is disabled during the seed backup and browser Back left `/wallets/new` on the backup step (history state `{screen:true}` only, no secret). Boot at `/wallets/new` with Wallets present opens the screen; `/wallets/x/checks` resets to `/`. Back while an Edit checks save is in flight was not exercised. |
+
+**Not run:** boot at `/wallets/new` with an empty vault; onboarding at 320, 1280 and dark (no second clean origin was used); Back during an in-flight Edit checks write; submitting Set regular key or Save changes against the ledger; the Let another wallet sign form after a wallet is chosen; real iOS/Android, the on-screen keyboard and the camera scanner; the prod host's first load at `/wallets/new`. Seen but out of this slice: at 320 and 200% the header's wallet selector collapses to a blank box, and the header plus the status slot leave the screen about 300px of 568.
+
+**Status:** stays `in-review` on the two Not met rows.

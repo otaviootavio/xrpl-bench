@@ -88,4 +88,4 @@ Tab-bar overlap (found in S2, not in the audit; `ui/tabs.tsx`): the nav list was
 | 200% text | No overprinting or overflow; one trigger per row (a word is about 165px against a 256px row), list 367px tall |
 | Gates | `lint`, `build`, `test` (1386), `check:contrast` green |
 
-Open: at 200% the six stacked tabs (367px) plus the header (204px) fill the 566px viewport, so content starts below the fold. Making that smaller means a different navigation pattern, and docs/decisions.md §6.13 ruled out scrolling the tabs out of view; that is a product decision, not done here.
+Decided (docs/decisions.md §7.2, amended 2026-10-18): the one-per-row stack at 200% stays; no new navigation pattern.

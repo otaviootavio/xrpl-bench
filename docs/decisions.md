@@ -500,6 +500,18 @@ called co-primary with desktop. §6.8's own goal (never shorten the labels, neve
 clip a trigger) is better served by wrapping than by scrolling. A keypad of
 function keys is also more native to §7.1's world than a scrolling strip.
 
+**Amendment, 2026-10-18 (200% text at 320px).** Below `sm` the nav list is a
+wrapping flex of third-width triggers that cannot shrink under their own word,
+not a `minmax(0,1fr)` grid, which overprinted BALANCES / SEND / RECEIVE once a
+word outgrew its column. At 100% it is still two rows of three; at 200% text
+each word (about 165px) fills a 256px row, so the six functions stack one per
+row (367px tall). **Decided: that stack stays.** The condition is a layout about
+160px wide, the failure worth preventing there is a clipped or unreachable
+control, and all six are reachable and legible; a scroll was ruled out above,
+and a bottom bar or menu would put every function behind a tap to relieve a
+layout nobody uses day to day. Revisit only if the stack is reported as a
+problem at a size people actually use.
+
 `variant="inline"` remains for compact filter rows (History's sent/received),
 which are a different control and must not stretch to six columns.
 

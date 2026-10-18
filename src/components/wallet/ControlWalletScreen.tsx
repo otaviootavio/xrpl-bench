@@ -216,7 +216,7 @@ function ControlWalletBody({
 
           <div className="flex flex-col gap-1 text-sm" aria-live="polite">
             <StatusLegend tone={status === 'controlled' ? 'live' : status === 'not-controlled' ? 'caution' : 'neutral'}>
-              {STATUS_WORDS[status].word}
+              <span className="min-w-0 [overflow-wrap:anywhere]">{STATUS_WORDS[status].word}</span>
             </StatusLegend>
             <p className="text-xs text-muted-foreground">{STATUS_WORDS[status].sentence}</p>
             {existing && <p className="text-xs text-muted-foreground">Current Regular Key: <span className="break-all font-mono">{existing}</span></p>}

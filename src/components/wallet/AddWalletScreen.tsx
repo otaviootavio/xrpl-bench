@@ -41,6 +41,7 @@ export function AddWalletScreen({ onClose }: { onClose: () => void }) {
   // The network a Wallet added here will live on — fixed at creation (AD-19).
   const [addNetwork, setAddNetwork] = useState<NetworkId>('testnet')
   const [addMode, setAddMode] = useState<'generate' | 'import'>('generate')
+  const [footerHost, setFooterHost] = useState<HTMLElement | null>(null)
   const [label, setLabel] = useState('')
   const [importWarning, setImportWarning] = useState<ImportWarning | null>(null)
   const [busy, setBusy] = useState(false)
@@ -139,7 +140,7 @@ export function AddWalletScreen({ onClose }: { onClose: () => void }) {
           // the flow asks each, and commits itself after the seed backup.
           <CreateWalletFlow
             defaultLabel=""
-            stickyAction
+            actionHost={footerHost}
             onInProgressChange={setCreating}
             onDone={() => {
               toast.success('Wallet added.')
@@ -161,6 +162,7 @@ export function AddWalletScreen({ onClose }: { onClose: () => void }) {
           </>
         )}
       </div>
+      {addMode === 'generate' && <div ref={setFooterHost} className="contents" />}
       {addMode === 'import' && (
         <ScreenFooter>
           <Button ref={addButtonRef} onClick={handleAddImport} disabled={busy}>

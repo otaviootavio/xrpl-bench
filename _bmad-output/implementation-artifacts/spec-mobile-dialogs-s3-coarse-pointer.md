@@ -89,3 +89,13 @@ Status: done
 | No horizontal overflow at 320/375/1280 | Met on the screens above (document scrollWidth equals clientWidth) |
 
 **Not run:** App PIN prompt, master-key sheet (button disabled on these accounts), Send review sheet, switch primitive (none on screen), Edit trust line limit (no trust line), real iOS focus zoom, Mainnet. Light theme at 375 only checked for Settings and trust sheet. The empty dashed footer strip visible at the bottom of every screen was not investigated.
+
+## Fixes after the browser pass (2026-10-17)
+
+Four defects from the pass above were fixed with the smallest change each:
+- TaskScreen sticky footer buttons: added `pointer-coarse:[&>button]:min-h-11` beside `min-h-9`, so footer buttons reach 44px on coarse.
+- Tab triggers: `pointer-coarse:min-h-11 pointer-coarse:text-xs` in `tabs.tsx` (12px, 44px).
+- Select options: `pointer-coarse:min-h-11 pointer-coarse:text-base` in `select.tsx` (16px, 44px).
+- Checkbox: coarse hit area `after:-inset-3.5` to `-inset-4` (46px from the padding box), and the two seed/ordinal backup label rows in `CreateWalletFlow.tsx` got `pointer-coarse:min-h-11`. The unit test's class assertion was updated.
+
+Re-checked by gates only (lint, build, test, check:contrast), not re-browsed; the measured heights above are expected from the classes, not re-measured.

@@ -55,7 +55,7 @@ export function ScreenFooter({ className, ...props }: ComponentProps<'div'>) {
       data-slot="screen-footer"
       className={cn(
         'sticky bottom-0 z-10 -mx-4 -mb-4 flex flex-col-reverse gap-2 rounded-b-md border-t border-border bg-card px-4 pt-3',
-        '[&>button]:h-auto [&>button]:min-h-9 [&>button]:whitespace-normal [&>button]:py-2 pb-[max(1rem,env(safe-area-inset-bottom))] shadow-[0_-10px_10px_-10px_rgb(0_0_0/0.4)] sm:flex-row sm:justify-end',
+        '[&>button]:h-auto [&>button]:min-h-9 pointer-coarse:[&>button]:min-h-11 [&>button]:whitespace-normal [&>button]:py-2 pb-[max(1rem,env(safe-area-inset-bottom))] shadow-[0_-10px_10px_-10px_rgb(0_0_0/0.4)] sm:flex-row sm:justify-end',
         className,
       )}
       {...props}

@@ -73,7 +73,7 @@ deferred: []
 - Real-browser pass at 320x568 and 375x667, both finishes, Mainnet-labelled wallet if one can be created without funds at risk; screenshots opened, recorded under Verification.
 
 ### 2026-10-17 — Review pass
-- verdicts: 24 findings — high 0, medium 3, low 7, false 6, maybe-false 1 (plus 7 duplicates across layers, one row each below)
+- verdicts: 14 rows after merging duplicates across layers — high 0, medium 3, low 7, false 4
 - findings:
   - `[low]` `[patch]` `WORDS:Record` lost its space (blind, edge) — restored.
   - `[medium]` `[patch]` Held confirm key not tied to the phrase field for assistive tech (blind, edge) — `aria-describedby={held ? phraseId : undefined}` added.

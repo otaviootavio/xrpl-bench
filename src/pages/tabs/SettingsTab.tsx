@@ -94,8 +94,9 @@ export function SettingsTab() {
   const [confirmResetAll, setConfirmResetAll] = useState(false)
   const [confirmRevealFor, setConfirmRevealFor] = useState<string | null>(null)
   // Mainnet only: adding a view of this Seed there is a step toward real funds, so it is asked once.
-  // The opener unmounts once its view exists, so focus returns to the row's Reveal seed key instead.
-  const lastNetworkFor = useRef<string | null>(null)
+  // After Confirm the opener unmounts (its view now exists), so focus returns to the row's Reveal seed key instead.
+  // On Cancel, Escape and Back it is null, and the Dialog recalls the opener itself.
+  const networkFallbackFor = useRef<string | null>(null)
   const [confirmNetworkFor, setConfirmNetworkFor] = useState<{ walletId: string; target: NetworkId } | null>(null)
 
   // Guardrail #3: a decrypted seed must NEVER enter React state (state is
@@ -244,7 +245,7 @@ export function SettingsTab() {
               </div>
               <div className="flex w-full min-w-0 flex-col gap-2">
                 {w.id !== activeWalletId && (
-                  <Button size="sm" className={PRIMARY_ACTION} onClick={() => setActiveWalletId(w.id)}>
+                  <Button size="sm" className={PRIMARY_ACTION} aria-label={`Use this wallet: ${w.label}`} onClick={() => setActiveWalletId(w.id)}>
                     Use this wallet
                   </Button>
                 )}
@@ -257,24 +258,24 @@ export function SettingsTab() {
                         size="sm"
                         className={ROW_ACTION}
                         aria-label={`Use ${w.label} on ${NETWORKS[n].label}`}
-                        onClick={() => (n === 'mainnet' ? (lastNetworkFor.current = w.id, setConfirmNetworkFor({ walletId: w.id, target: n })) : void handleUseOnOtherNetwork(w.id, n))}
+                        onClick={() => (n === 'mainnet' ? (networkFallbackFor.current = null, setConfirmNetworkFor({ walletId: w.id, target: n })) : void handleUseOnOtherNetwork(w.id, n))}
                       >
                         Use on {NETWORKS[n].label}
                       </Button>
                     ))}
-                    <Button variant="outline" size="sm" className={ROW_ACTION} onClick={() => navigate(walletScreenPath('edit-checks', w.id))}>
+                    <Button variant="outline" size="sm" className={ROW_ACTION} aria-label={`Edit checks for ${w.label}`} onClick={() => navigate(walletScreenPath('edit-checks', w.id))}>
                       Edit checks
                     </Button>
                     {holdsMasterKey(w) && (
-                      <Button variant="outline" size="sm" className={ROW_ACTION} onClick={() => navigate(walletScreenPath('control', w.id))}>
+                      <Button variant="outline" size="sm" className={ROW_ACTION} aria-label={`Let another wallet sign for ${w.label}`} onClick={() => navigate(walletScreenPath('control', w.id))}>
                         Let another wallet sign
                       </Button>
                     )}
-                    <Button variant="outline" size="sm" className={ROW_ACTION} data-reveal-seed={w.id} onClick={() => setConfirmRevealFor(w.id)}>
+                    <Button variant="outline" size="sm" className={ROW_ACTION} aria-label={`Reveal seed of ${w.label}`} data-reveal-seed={w.id} onClick={() => setConfirmRevealFor(w.id)}>
                       Reveal seed
                     </Button>
                     {/* Removing destroys the Seed, so it needs the Wallet's own lock open. */}
-                    <Button variant="danger" size="sm" className={ROW_ACTION} onClick={() => setConfirmRemove(w.id)}>
+                    <Button variant="danger" size="sm" className={ROW_ACTION} aria-label={`Remove ${w.label}`} onClick={() => setConfirmRemove(w.id)}>
                       Remove
                     </Button>
                   </div>
@@ -542,7 +543,9 @@ export function SettingsTab() {
       <Dialog open={!!confirmNetworkFor} onOpenChange={(o) => !o && setConfirmNetworkFor(null)}>
         <DialogContent
           dismissOnOutsidePress
-          returnFocusTo={() => document.querySelector<HTMLElement>(`[data-reveal-seed="${lastNetworkFor.current}"]`)}
+          returnFocusTo={() =>
+            networkFallbackFor.current ? document.querySelector<HTMLElement>(`[data-reveal-seed="${networkFallbackFor.current}"]`) : null
+          }
         >
           <DialogHeader>
             <DialogTitle>
@@ -560,6 +563,7 @@ export function SettingsTab() {
             <Button
               onClick={() => {
                 const pending = confirmNetworkFor
+                networkFallbackFor.current = pending?.walletId ?? null
                 setConfirmNetworkFor(null)
                 if (pending) void handleUseOnOtherNetwork(pending.walletId, pending.target)
               }}

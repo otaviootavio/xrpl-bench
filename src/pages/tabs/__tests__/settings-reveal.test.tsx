@@ -56,7 +56,7 @@ async function openReveal() {
       </TooltipProvider>
     </QueryClientProvider>,
   )
-  fireEvent.click(screen.getByRole('button', { name: 'Reveal seed' }))
+  fireEvent.click(screen.getByRole('button', { name: /^Reveal seed of / }))
   fireEvent.click(await screen.findByRole('button', { name: 'Show my seed' }))
 }
 
@@ -80,7 +80,7 @@ describe('SettingsTab reveal seed: the dialog names the check', () => {
         </TooltipProvider>
       </QueryClientProvider>,
     )
-    fireEvent.click(screen.getByRole('button', { name: 'Reveal seed' }))
+    fireEvent.click(screen.getByRole('button', { name: /^Reveal seed of / }))
     return (await screen.findByRole('dialog')).textContent ?? ''
   }
 

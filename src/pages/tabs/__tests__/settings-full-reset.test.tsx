@@ -182,7 +182,7 @@ describe('Settings — Remove one wallet', () => {
     h.listWallets.mockResolvedValue([keep])
     renderSettings()
 
-    fireEvent.click((await screen.findAllByRole('button', { name: /^remove$/i }))[0])
+    fireEvent.click((await screen.findAllByRole('button', { name: /^remove (?!all wallets)/i }))[0])
     fireEvent.click(await screen.findByRole('button', { name: /remove wallet/i }))
     await waitFor(() => expect(h.removeWallet).toHaveBeenCalledWith('w1'))
     await waitFor(() => expect(useAppStore.getState().activeWalletId).toBe('w2'))

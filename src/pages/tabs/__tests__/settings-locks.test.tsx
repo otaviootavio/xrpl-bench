@@ -103,9 +103,9 @@ describe('Settings with two locks', () => {
     expect(screen.queryByText('rBetaAddr')).toBeNull()
     expect(screen.getByText('rAlphaAddr')).toBeTruthy()
     // Alpha (open) has Reveal and Remove; Beta (closed) does not: exactly one of each.
-    expect(screen.getAllByRole('button', { name: 'Reveal seed' })).toHaveLength(1)
-    expect(screen.getAllByRole('button', { name: 'Remove' })).toHaveLength(1)
-    expect(screen.getByRole('button', { name: 'Use this wallet' })).toBeTruthy()
+    expect(screen.getAllByRole('button', { name: /^Reveal seed of / })).toHaveLength(1)
+    expect(screen.getAllByRole('button', { name: /^Remove (?!all wallets)/ })).toHaveLength(1)
+    expect(screen.getByRole('button', { name: /^Use this wallet: / })).toBeTruthy()
   })
 
   it('mounts the master-key control only for a Wallet whose lock is open', () => {
@@ -127,7 +127,7 @@ describe('Settings with two locks', () => {
 
 describe('Settings Remove closes the lock of a Wallet that was its last', () => {
   async function remove(walletLabelIndex: number) {
-    fireEvent.click(screen.getAllByRole('button', { name: 'Remove' })[walletLabelIndex])
+    fireEvent.click(screen.getAllByRole('button', { name: /^Remove (?!all wallets)/ })[walletLabelIndex])
     fireEvent.click(await screen.findByRole('button', { name: 'Remove wallet' }))
   }
 
@@ -169,12 +169,12 @@ describe('Settings mounts the control and two-device entries only for an open lo
     useAppStore.setState({ wallets: [holder, closedHolder], openLocks: { X: OPEN } } as never)
     renderSettings()
     expect(screen.getAllByTestId('two-device-sign')).toHaveLength(1)
-    expect(screen.getAllByRole('button', { name: 'Let another wallet sign' })).toHaveLength(1)
+    expect(screen.getAllByRole('button', { name: /^Let another wallet sign for / })).toHaveLength(1)
     cleanup()
     useAppStore.setState({ openLocks: {} } as never)
     renderSettings()
     expect(screen.queryByTestId('two-device-sign')).toBeNull()
-    expect(screen.queryByRole('button', { name: 'Let another wallet sign' })).toBeNull()
+    expect(screen.queryByRole('button', { name: /^Let another wallet sign for / })).toBeNull()
   })
 
   it('a Wallet that operates another Account shows the controlled note and cannot hand out control', () => {
@@ -182,7 +182,7 @@ describe('Settings mounts the control and two-device entries only for an open lo
     renderSettings()
     expect(screen.getAllByTestId('controlled-note')).toHaveLength(1)
     // Only the master-key holder offers it; the Regular-Key view does not.
-    expect(screen.getAllByRole('button', { name: 'Let another wallet sign' })).toHaveLength(1)
+    expect(screen.getAllByRole('button', { name: /^Let another wallet sign for / })).toHaveLength(1)
   })
 
   it('a closed controlled Wallet shows no note: its key address stays hidden', () => {
@@ -200,7 +200,7 @@ describe('Settings Reveal', () => {
     useAppStore.setState({ openLocks: { X: { key: keyX, autoLockMinutes: 5 }, Y: { key: keyY, autoLockMinutes: 5 } } } as never)
     renderSettings()
     // Beta is the second row; Alpha (active) is the first.
-    fireEvent.click(screen.getAllByRole('button', { name: 'Reveal seed' })[1])
+    fireEvent.click(screen.getAllByRole('button', { name: /^Reveal seed of / })[1])
     fireEvent.click(await screen.findByRole('button', { name: 'Show my seed' }))
     await waitFor(() => expect(h.revealSeed).toHaveBeenCalled())
     expect(h.revealSeed.mock.calls[0][0]).toBe('b')
@@ -241,7 +241,7 @@ describe('Settings auto-lock', () => {
 
 describe('Settings Remove and the removed Wallet\'s lock', () => {
   const removeAlpha = async () => {
-    fireEvent.click(screen.getAllByRole('button', { name: 'Remove' })[0])
+    fireEvent.click(screen.getAllByRole('button', { name: /^Remove (?!all wallets)/ })[0])
     fireEvent.click(await screen.findByRole('button', { name: 'Remove wallet' }))
   }
 
@@ -258,7 +258,7 @@ describe('Settings Remove and the removed Wallet\'s lock', () => {
     useAppStore.setState({ wallets: [A, A2, B], openLocks: { X: OPEN, Y: OPEN } } as never)
     h.listed = [A2, B]
     renderSettings()
-    fireEvent.click(screen.getAllByRole('button', { name: 'Remove' })[0])
+    fireEvent.click(screen.getAllByRole('button', { name: /^Remove (?!all wallets)/ })[0])
     fireEvent.click(await screen.findByRole('button', { name: 'Remove wallet' }))
     await waitFor(() => expect(useAppStore.getState().wallets.map((w) => w.id)).toEqual(['a2', 'b']))
     expect(Object.keys(useAppStore.getState().openLocks).sort()).toEqual(['X', 'Y'])

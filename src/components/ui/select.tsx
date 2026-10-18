@@ -75,7 +75,7 @@ function SelectItem({ className, children, ...props }: React.ComponentProps<type
         // labels, and transforming someone's own label misrepresents it (and can
         // make a screen reader read it as an acronym). The lamp carries the
         // panel signal; the text stays as the user wrote it.
-        'font-legend text-[0.8125rem] transition-colors',
+        'font-legend text-[0.8125rem] pointer-coarse:min-h-11 pointer-coarse:text-base transition-colors',
         'focus:bg-accent focus:text-accent-foreground',
         'data-[disabled]:pointer-events-none data-[disabled]:opacity-55',
         className,

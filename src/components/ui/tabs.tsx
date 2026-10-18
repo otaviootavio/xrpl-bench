@@ -50,6 +50,7 @@ function TabsTrigger({ className, ...props }: React.ComponentProps<typeof TabsPr
       className={cn(
         'relative inline-flex shrink-0 items-center justify-center whitespace-nowrap px-3 pb-2 pt-1.5',
         'font-legend text-[0.6875rem] font-semibold uppercase tracking-[0.11em]',
+        'pointer-coarse:min-h-11 pointer-coarse:text-xs',
         'transition-colors hover:text-foreground',
         'disabled:pointer-events-none disabled:opacity-55',
         // The detent: a lit rule sitting on the strip's own bottom border.

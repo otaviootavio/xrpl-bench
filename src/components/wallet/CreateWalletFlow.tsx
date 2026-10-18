@@ -451,7 +451,7 @@ function CreateWalletForm({ capability, onDone, onInProgressChange, defaultLabel
           <p className="font-medium">{kind.title}</p>
           <p className="text-muted-foreground">{kind.body}</p>
         </div>
-        <label className="flex items-center gap-2 text-sm">
+        <label className="flex items-center gap-2 text-sm pointer-coarse:min-h-11">
           <Checkbox checked={backedUp} onCheckedChange={(v) => setBackedUp(v === true)} />
           I've written down the ordinal with this wallet's name.
         </label>
@@ -475,7 +475,7 @@ function CreateWalletForm({ capability, onDone, onInProgressChange, defaultLabel
           <p className="text-sm text-muted-foreground">Write it down: it is how you recover this wallet.</p>
         </div>
         <SeedReveal getSeed={getSeed} />
-        <label className="flex items-center gap-2 text-sm">
+        <label className="flex items-center gap-2 text-sm pointer-coarse:min-h-11">
           <Checkbox checked={backedUp} onCheckedChange={(v) => setBackedUp(v === true)} />
           I've written down my seed and stored it somewhere safe.
         </label>

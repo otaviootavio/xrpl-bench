@@ -49,7 +49,7 @@ describe('coarse-pointer sizing lives in the primitives', () => {
 
   it('a checkbox extends its hit area to 44px', () => {
     render(<Checkbox aria-label="c" />)
-    expect(screen.getByRole('checkbox').className).toMatch(/pointer-coarse:after:-inset-3\.5/)
+    expect(screen.getByRole('checkbox').className).toMatch(/pointer-coarse:after:-inset-4/)
   })
 
   it('never disables viewport zoom', () => {

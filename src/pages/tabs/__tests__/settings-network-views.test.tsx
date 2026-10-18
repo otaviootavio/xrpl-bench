@@ -108,13 +108,13 @@ describe('Settings — use on another network', () => {
   it('says only the view goes when the Seed has another view, and the seed goes when it has none', () => {
     setWallets([MAINNET, TESTNET, OTHER])
     renderSettings()
-    fireEvent.click(screen.getAllByRole('button', { name: 'Remove' })[0])
+    fireEvent.click(screen.getAllByRole('button', { name: /^Remove (?!all wallets)/ })[0])
     expect(screen.getByText(/removes only this one wallet/i)).toBeTruthy()
     cleanup()
 
     setWallets([MAINNET, TESTNET, OTHER])
     renderSettings()
-    fireEvent.click(screen.getAllByRole('button', { name: 'Remove' })[2])
+    fireEvent.click(screen.getAllByRole('button', { name: /^Remove (?!all wallets)/ })[2])
     expect(screen.getByText(/will no longer hold the encrypted seed/i)).toBeTruthy()
     expect(screen.queryByText(/network only/i)).toBeNull()
   })
@@ -152,8 +152,27 @@ describe('Settings — use on another network', () => {
   it('keeps one primary key per row and groups the rest under a label, Remove last', () => {
     setWallets([MAINNET, OTHER])
     renderSettings()
-    expect(screen.getAllByRole('button', { name: 'Use this wallet' })).toHaveLength(1)
+    expect(screen.getAllByRole('button', { name: /^Use this wallet: / })).toHaveLength(1)
     const group = screen.getByRole('group', { name: 'More actions for Spending' })
     expect(group.querySelector('button:last-child')?.textContent).toBe('Remove')
+  })
+
+  it('gives two inactive rows distinct primary-action names, visible text unchanged', () => {
+    useAppStore.setState({ activeWalletId: 'w9', wallets: [MAINNET, OTHER], network: 'mainnet', openLocks: { legacy: { key: {} as CryptoKey, autoLockMinutes: 5 } } } as never)
+    renderSettings()
+    const a = screen.getByRole('button', { name: 'Use this wallet: Savings' })
+    const b = screen.getByRole('button', { name: 'Use this wallet: Spending' })
+    expect(a.textContent).toBe('Use this wallet')
+    expect(b.textContent).toBe('Use this wallet')
+  })
+
+  it('Cancel on the Mainnet dialog returns focus to its opener', async () => {
+    setWallets([TESTNET])
+    renderSettings()
+    const opener = screen.getByRole('button', { name: 'Use Savings on Mainnet' })
+    opener.focus()
+    fireEvent.click(opener)
+    fireEvent.click(await screen.findByRole('button', { name: 'Cancel' }))
+    await waitFor(() => expect(document.activeElement).toBe(opener))
   })
 })

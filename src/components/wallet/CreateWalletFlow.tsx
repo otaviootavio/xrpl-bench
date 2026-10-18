@@ -591,11 +591,11 @@ function CreateWalletForm({ capability, onDone, onInProgressChange, defaultLabel
         <h2 id={`${group}-recommended`} className="font-legend text-xs uppercase text-muted-foreground">
           {isRecommended ? 'Recommended' : 'Your choices'}
         </h2>
-        <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-sm">
+        <dl className="grid gap-y-2 text-sm">
           {summaryRows.map(([term, value]) => (
-            <div key={term} className="contents">
+            <div key={term}>
               <dt className="text-muted-foreground">{term}</dt>
-              <dd className="min-w-0 break-all">{value}</dd>
+              <dd className="min-w-0 break-words">{value}</dd>
             </div>
           ))}
         </dl>

@@ -80,7 +80,7 @@ afterEach(cleanup)
 describe('reveal behind a PIN Signing Check', () => {
   async function reveal() {
     renderWithPrompts(<SettingsTab />)
-    fireEvent.click(screen.getByRole('button', { name: 'Reveal seed' }))
+    fireEvent.click(screen.getByRole('button', { name: /^Reveal seed of / }))
     fireEvent.click(await screen.findByRole('button', { name: 'Show my seed' }))
   }
 

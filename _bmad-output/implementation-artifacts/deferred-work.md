@@ -402,3 +402,16 @@ Item 8 shipped as a refactor that preserves behaviour (`spec-sendtab-split.md`).
 - source_spec: `_bmad-output/implementation-artifacts/spec-mobile-dialogs-s1-sheet.md`
   summary: Name the sheet-footer shadow in DESIGN.md and record the viewport-meta change in docs/decisions.md.
   evidence: The shadow is a literal not in the shadow vocabulary; the meta change affects the whole app.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-mobile-dialogs-s2-routed-screens.md`
+  summary: Add wallet's sticky Create footer starts below the fold (top at 745 in a 568 viewport) at 320px with 200% text and only sticks into view after about 500px of scrolling.
+  evidence: Measured in the batched browser pass; reachable, so rated partial against CAP-2 "within one scroll". Cause is `ScreenFooter` sitting inside the form container.
+- source_spec: `_bmad-output/implementation-artifacts/spec-mobile-dialogs-s2-routed-screens.md`
+  summary: The header wallet selector collapses to a 56px blank box at 320px with 200% text, and the Let another wallet sign alert legend chip overflows its plate by 10px.
+  evidence: Measured (AppHeader trigger aria-label "Active wallet"; chip 184 vs plate 174). The header selector predates this work.
+- source_spec: `_bmad-output/implementation-artifacts/spec-mobile-dialogs-s5c-vocabulary-hierarchy-focus.md`
+  summary: The Radio checked dot is a radial-gradient background that may not render under forced-colors (Windows High Contrast).
+  evidence: Unverified (maybe-false, medium if true); settle with a Windows High Contrast run.
+- source_spec: `_bmad-output/implementation-artifacts/spec-mobile-dialogs-s1-sheet.md`
+  summary: Edit trust line limit sheet, import-warning sheet, the Mainnet typed phrase and the Mainnet "Use on Mainnet" confirm with funds were never opened in a browser; real touch input and real browser zoom were emulated only.
+  evidence: No trust line, no seed with a master-key warning, and Mainnet is off limits for throwaway tests; Playwright mouse input hangs under coarse-pointer emulation.

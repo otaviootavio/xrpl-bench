@@ -116,7 +116,7 @@ afterEach(cleanup)
 describe('Settings: Edit checks', () => {
   it('is offered only for a Wallet whose lock is open', () => {
     renderSettings()
-    expect(screen.getAllByRole('button', { name: 'Edit checks' })).toHaveLength(1)
+    expect(screen.getAllByRole('button', { name: /^Edit checks for / })).toHaveLength(1)
   })
 
   it('the auto-lock edit passes the prompts, so the Open Check can be re-passed', async () => {
@@ -133,7 +133,7 @@ describe('Settings: Edit checks', () => {
     h.listed = [moved, B]
     h.edited = { meta: moved, changed: true, previousLockId: 'X', openKey: KEY, autoLockMinutes: 5, previousLockRemoved: true }
     renderSettings()
-    fireEvent.click(screen.getByRole('button', { name: 'Edit checks' }))
+    fireEvent.click(screen.getByRole('button', { name: /^Edit checks for / }))
     fireEvent.click(await screen.findByRole('button', { name: /commit edit for a/ }))
     await waitFor(() => expect(Object.keys(useAppStore.getState().openLocks)).toEqual(['Z']))
     expect(h.startLockSession).toHaveBeenCalledWith('Z', KEY, 5)
@@ -149,7 +149,7 @@ describe('Settings: Edit checks', () => {
     h.listed = [moved, B]
     h.edited = { meta: moved, changed: true, previousLockId: 'legacy', openKey: KEY, autoLockMinutes: 5, previousLockRemoved: false }
     renderSettings()
-    fireEvent.click(screen.getByRole('button', { name: 'Edit checks' }))
+    fireEvent.click(screen.getByRole('button', { name: /^Edit checks for / }))
     fireEvent.click(await screen.findByRole('button', { name: /commit edit for a/ }))
     await waitFor(() => expect(Object.keys(useAppStore.getState().openLocks).sort()).toEqual(['Z', 'legacy']))
   })
@@ -159,7 +159,7 @@ describe('Settings: Edit checks', () => {
     h.edited = { meta: A, changed: true, previousLockId: 'X', autoLockMinutes: 15, previousLockRemoved: false }
     h.listed = [A, B]
     renderSettings()
-    fireEvent.click(screen.getAllByRole('button', { name: 'Edit checks' })[0])
+    fireEvent.click(screen.getAllByRole('button', { name: /^Edit checks for / })[0])
     fireEvent.click(await screen.findByRole('button', { name: /commit edit for a/ }))
     await waitFor(() => expect(useAppStore.getState().openLocks.X.autoLockMinutes).toBe(15))
     expect(h.startLockSession).not.toHaveBeenCalled()
@@ -171,7 +171,7 @@ describe('Settings: Edit checks', () => {
     h.startLockSession.mockRejectedValueOnce(new Error('idb down'))
     h.edited = { meta: { ...A, lockId: 'Z' }, changed: true, previousLockId: 'X', openKey: KEY, autoLockMinutes: 5, previousLockRemoved: true }
     renderSettings()
-    fireEvent.click(screen.getByRole('button', { name: 'Edit checks' }))
+    fireEvent.click(screen.getByRole('button', { name: /^Edit checks for / }))
     fireEvent.click(await screen.findByRole('button', { name: /commit edit for a/ }))
     await waitFor(() => expect(useAppStore.getState().openLocks.X).toBeUndefined())
   })

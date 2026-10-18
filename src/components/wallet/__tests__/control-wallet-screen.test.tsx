@@ -4,7 +4,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-libra
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 
 /**
- * Story 9: the dialog and the note only RENDER what `lib/control.ts` decides.
+ * Story 9: the screen and the note only RENDER what `lib/control.ts` decides.
  * The flow is stubbed at its edge; the status and blocked-reason functions are real.
  */
 const h = vi.hoisted(() => ({
@@ -24,7 +24,7 @@ vi.mock('@/lib/control', async (importOriginal) => {
   return { ...actual, setRegularKey: (...a: unknown[]) => h.setRegularKey(...a), confirmControl: (...a: unknown[]) => h.confirmControl(...a) }
 })
 
-import { ControlWalletDialog } from '../ControlWalletDialog'
+import { ControlWalletScreen } from '../ControlWalletScreen'
 import { ControlledNote } from '../ControlledNote'
 
 const base = { seedId: 's', lockId: 'l', createdAt: 1, network: 'testnet', algorithm: 'ed25519', seedMethod: 'stored', openCheck: 'pin', signingCheck: 'standard' } as const
@@ -43,7 +43,7 @@ function mount(wallets: unknown[] = [CONTROLLER, TARGET]) {
   const onControlled = vi.fn()
   render(
     <QueryClientProvider client={new QueryClient()}>
-      <ControlWalletDialog controller={CONTROLLER} wallets={wallets as never} onClose={onClose} onControlled={onControlled} />
+      <ControlWalletScreen controller={CONTROLLER} wallets={wallets as never} onClose={onClose} onControlled={onControlled} />
     </QueryClientProvider>,
   )
   return { onClose, onControlled }
@@ -56,7 +56,7 @@ beforeEach(() => {
 })
 afterEach(cleanup)
 
-describe('Control dialog', () => {
+describe('Control screen', () => {
   it('is aria-disabled with the reason in words on an errored read, and a click signs nothing', async () => {
     h.account = { isError: true, data: undefined }
     mount()
@@ -119,7 +119,7 @@ describe('Control dialog', () => {
   })
 })
 
-describe('Control dialog: the result names the Wallet that now operates the Account', () => {
+describe('Control screen: the result names the Wallet that now operates the Account', () => {
   it('says "Phone now operates this account" even though Phone has left the eligible list by then', async () => {
     h.setRegularKey.mockResolvedValue({ status: 'controlled', meta: TARGET, sent: true })
     mount()
@@ -129,7 +129,7 @@ describe('Control dialog: the result names the Wallet that now operates the Acco
   })
 })
 
-describe('Control dialog: the list cannot refresh after a validated change', () => {
+describe('Control screen: the list cannot refresh after a validated change', () => {
   it('says it is done on the ledger and offers Check again, with no unhandled rejection', async () => {
     h.setRegularKey.mockResolvedValue({ status: 'controlled', meta: TARGET, sent: true })
     h.confirmControl.mockResolvedValue({ status: 'controlled', meta: TARGET, sent: false })

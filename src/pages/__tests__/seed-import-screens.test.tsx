@@ -90,7 +90,7 @@ vi.mock('@/store/app-store', () => ({
 }))
 
 import { Onboarding } from '../Onboarding'
-import { SettingsTab } from '../tabs/SettingsTab'
+import { AddWalletScreen } from '@/components/wallet/AddWalletScreen'
 
 function accountState(over: Record<string, unknown> = {}) {
   return { exists: true, address: ADDRESS, balanceDrops: '10000000', ownerCount: 0, sequence: 1, requireDestTag: false, disableMasterKey: false, ...over }
@@ -103,6 +103,7 @@ const ledger = {
 }
 
 beforeEach(() => {
+  onClose.mockReset()
   toastError.mockReset()
   toastSuccess.mockReset()
   importAndStoreWallet.mockReset().mockResolvedValue({ id: 'w-new', label: 'Wallet', address: ADDRESS, createdAt: 0 })
@@ -139,14 +140,15 @@ async function onboardingImport(value: string) {
   await click('Continue')
 }
 
-/** Settings: Add wallet, Import, type the value, Add. */
+/** Settings > Add wallet (the routed screen): Import, type the value, Add. */
 async function settingsImport(value: string) {
-  render(<SettingsTab />)
-  await click('Add wallet')
+  render(<AddWalletScreen onClose={onClose} />)
   await click('Import')
   ;(document.getElementById('wseed') as HTMLInputElement).value = value
   await click('Add')
 }
+
+const onClose = vi.fn()
 
 const screens = [
   { name: 'Onboarding', importValue: onboardingImport },
@@ -227,12 +229,13 @@ describe('Settings: dismissing the warning is cancelling it', () => {
     })
     expect(screen.queryByText('Master key disabled')).toBeNull()
     expect(importAndStoreWallet).not.toHaveBeenCalled()
+    // Back on the form, the typed Seed is gone.
+    expect((document.getElementById('wseed') as HTMLInputElement).value).toBe('')
   })
 
   it('clears the input after a completed import', async () => {
     ledger.masterKeyEnabled()
-    render(<SettingsTab />)
-    await click('Add wallet')
+    render(<AddWalletScreen onClose={onClose} />)
     await click('Import')
     const input = document.getElementById('wseed') as HTMLInputElement
     input.value = SEED
@@ -243,15 +246,14 @@ describe('Settings: dismissing the warning is cancelling it', () => {
 })
 
 describe('Settings: the busy guards hold while the check or the write runs', () => {
-  it('the Add dialog cannot be closed, re-submitted or switched to Generate while the check is in flight', async () => {
+  it('the Add screen cannot be left, re-submitted or switched to Generate while the check is in flight', async () => {
     let settle!: (v: unknown) => void
     fetchQuery.mockReturnValue(new Promise((r) => (settle = r)))
     await settingsImport(SEED)
     expect(screen.getByRole('button', { name: 'Checking…' })).toBeTruthy()
 
-    await act(async () => {
-      fireEvent.keyDown(document.activeElement ?? document.body, { key: 'Escape' })
-    })
+    // The screen cannot be left while the check runs: Back is disabled.
+    expect((screen.getByRole('button', { name: 'Settings' }) as HTMLButtonElement).disabled).toBe(true)
     expect(screen.getByText('Add another wallet')).toBeTruthy()
 
     await click('Checking…')
@@ -324,8 +326,7 @@ describe.each(['mainnet', 'devnet'] as const)('choosing %s', (network) => {
 
   it('Settings import: the pre-check and the write use it, and "Import anyway" keeps it', async () => {
     ledger.masterKeyDisabled()
-    render(<SettingsTab />)
-    await click('Add wallet')
+    render(<AddWalletScreen onClose={onClose} />)
     await click('Import')
     radio(NETWORK_LABEL[network])
     ;(document.getElementById('wseed') as HTMLInputElement).value = SEED
@@ -337,15 +338,17 @@ describe.each(['mainnet', 'devnet'] as const)('choosing %s', (network) => {
 })
 
 describe('Settings: the Network choice is reset for the next Add', () => {
-  it('returns to Testnet after an import completes', async () => {
+  it('returns to Testnet after an import completes: the screen leaves, and the next one starts fresh', async () => {
     ledger.masterKeyEnabled()
-    render(<SettingsTab />)
-    await click('Add wallet')
+    const first = render(<AddWalletScreen onClose={onClose} />)
     await click('Import')
     radio(/^Mainnet/)
     ;(document.getElementById('wseed') as HTMLInputElement).value = SEED
     await click('Add')
-    await click('Add wallet')
+    expect(onClose).toHaveBeenCalledTimes(1)
+    first.unmount()
+    render(<AddWalletScreen onClose={onClose} />)
+    await click('Import')
     expect((screen.getByRole('radio', { name: /^Testnet/ }) as HTMLInputElement).checked).toBe(true)
   })
 })

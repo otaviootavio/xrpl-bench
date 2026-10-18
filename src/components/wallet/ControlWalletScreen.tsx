@@ -2,10 +2,11 @@ import { useEffect, useRef, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Label } from '@/components/ui/label'
 import { StatusLegend } from '@/components/ui/lamp'
 import { AddressLink } from '@/components/wallet/AddressLink'
+import { ScreenFooter, TaskScreen } from '@/components/wallet/TaskScreen'
+import { useLeaveBlocker } from '@/hooks/useRoute'
 import { useAccountState } from '@/hooks/useAccountState'
 import { usePrompts } from '@/hooks/usePrompts'
 import { confirmControl, controlStatus, eligibleTargets, setRegularKey, setRegularKeyBlockedReason, type ControlResult } from '@/lib/control'
@@ -30,26 +31,36 @@ function usesPasskey(w: WalletMeta): boolean {
  * Seed, key or PIN. The action is `aria-disabled` with its reason in words when
  * the ledger read errored (AD-29), never hidden.
  */
-export function ControlWalletDialog({
+export function ControlWalletScreen({
   controller,
   wallets,
   onClose,
   onControlled,
 }: {
-  controller: WalletMeta | null
+  controller: WalletMeta
   wallets: readonly WalletMeta[]
   onClose: () => void
   onControlled: (meta: WalletMeta) => void | Promise<void>
 }) {
   // True while a key-changing transaction is in flight or the replace confirm is
-  // open: dismissing then would hide the outcome or strand the flow.
+  // open: leaving then would hide the outcome or strand the flow.
   const [locked, setLocked] = useState(false)
+  useLeaveBlocker(locked)
+  const mainnet = controller.network === 'mainnet'
   return (
-    <Dialog open={!!controller} onOpenChange={(o) => !o && !locked && onClose()}>
-      {controller && (
-        <ControlWalletBody controller={controller} wallets={wallets} onClose={onClose} onControlled={onControlled} onLockedChange={setLocked} />
-      )}
-    </Dialog>
+    <TaskScreen
+      title="Let another wallet sign for this account"
+      description={
+        <>
+          {controller.label} on {NETWORKS[controller.network].label}
+          {mainnet && ' — real funds'}. Its account is <AddressLink address={controller.address} />.
+        </>
+      }
+      onBack={onClose}
+      locked={locked}
+    >
+      <ControlWalletBody controller={controller} wallets={wallets} onClose={onClose} onControlled={onControlled} onLockedChange={setLocked} />
+    </TaskScreen>
   )
 }
 
@@ -94,7 +105,6 @@ function ControlWalletBody({
   const blocked = setRegularKeyBlockedReason(state, readFailed)
   const status = target ? controlStatus(state, target.keyAddress) : 'unknown'
   const existing = state?.exists ? state.regularKey : undefined
-  const mainnet = controller.network === 'mainnet'
 
   async function finish(r: ControlResult) {
     setResult(r)
@@ -149,15 +159,7 @@ function ControlWalletBody({
   const done = result?.status === 'controlled'
 
   return (
-    <DialogContent>
-      <DialogHeader>
-        <DialogTitle>Let another wallet sign for this account</DialogTitle>
-        <DialogDescription>
-          {controller.label} on {NETWORKS[controller.network].label}
-          {mainnet && ' — real funds'}. Its account is <AddressLink address={controller.address} />.
-        </DialogDescription>
-      </DialogHeader>
-
+    <>
       <Alert variant="warning">
         <AlertTitle>Whoever holds this phone can take over the account</AlertTitle>
         <AlertDescription>
@@ -171,14 +173,14 @@ function ControlWalletBody({
             This account already has a Regular Key, <span className="break-all font-mono">{replaceKey}</span>. Setting a new one
             replaces it, and that key will stop working. Replace it?
           </p>
-          <DialogFooter>
+          <ScreenFooter>
             <Button variant="outline" onClick={() => answerReplace(false)}>
               Keep it
             </Button>
             <Button variant="danger" onClick={() => answerReplace(true)}>
               Replace it
             </Button>
-          </DialogFooter>
+          </ScreenFooter>
         </div>
       ) : (
         <>
@@ -234,7 +236,7 @@ function ControlWalletBody({
             </p>
           )}
 
-          <DialogFooter>
+          <ScreenFooter>
             <Button variant="outline" onClick={onClose} disabled={busy}>
               {done ? 'Close' : 'Cancel'}
             </Button>
@@ -252,9 +254,9 @@ function ControlWalletBody({
                 {busy ? 'Working…' : existing && existing !== target?.keyAddress ? 'Replace Regular Key' : 'Set Regular Key'}
               </Button>
             )}
-          </DialogFooter>
+          </ScreenFooter>
         </>
       )}
-    </DialogContent>
+    </>
   )
 }

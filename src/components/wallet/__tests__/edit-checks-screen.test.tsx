@@ -4,7 +4,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-libra
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 
 /**
- * Story 8: the edit dialog RENDERS what `lib/crypto/policy.ts` says about the
+ * Story 8: the edit screen RENDERS what `lib/crypto/policy.ts` says about the
  * result of an edit — it decides nothing itself. The keystore is stubbed at its
  * edge; the policy is the real one.
  */
@@ -27,7 +27,7 @@ vi.mock('@/lib/crypto/keystore', () => ({
     r.status === 'wrong-credential' ? `Incorrect PIN. ${r.triesRemaining} tries remaining.` : 'Locked out.',
 }))
 
-import { EditChecksDialog } from '../EditChecksDialog'
+import { EditChecksScreen } from '../EditChecksScreen'
 import { useAppStore } from '@/store/app-store'
 
 const META = {
@@ -54,7 +54,7 @@ async function mount(wallet: Record<string, unknown> = META, onEdited = vi.fn(),
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   render(
     <QueryClientProvider client={qc}>
-      <EditChecksDialog wallet={wallet as never} onClose={onClose} onEdited={onEdited} />
+      <EditChecksScreen wallet={wallet as never} onClose={onClose} onEdited={onEdited} />
     </QueryClientProvider>,
   )
   await screen.findByText('Open Check')
@@ -69,7 +69,7 @@ beforeEach(() => {
 })
 afterEach(cleanup)
 
-describe('Edit checks dialog', () => {
+describe('Edit checks screen', () => {
   it('asks nothing and offers no save while nothing is changed', async () => {
     await mount()
     expect(save().getAttribute('aria-disabled')).toBe('true')
@@ -159,7 +159,7 @@ describe('Edit checks dialog', () => {
     [{ status: 'refused', reason: 'A Mainnet wallet must auto-lock after at least 1 minute of inactivity.' }, /at least 1 minute/],
     [{ status: 'cancelled' }, /Cancelled\. Nothing was changed/],
     [{ status: 'wrong-credential', kind: 'pin', triesRemaining: 7 }, /Incorrect PIN\. 7 tries remaining\. Nothing was changed/],
-  ])('a %j result is said in plain words and does not close the dialog', async (result, words) => {
+  ])('a %j result is said in plain words and does not leave the screen', async (result, words) => {
     h.editChecks.mockResolvedValue(result)
     const { onClose, onEdited } = await mount()
     await click(radio(/Passkey only: create a new one/))
@@ -228,7 +228,7 @@ describe('Edit checks dialog', () => {
     expect(h.editChecks).toHaveBeenCalledOnce()
   })
 
-  it('Escape does not close the dialog while the edit is being written', async () => {
+  it('cannot be left while the edit is being written: Back and Cancel are disabled', async () => {
     let release: (v: unknown) => void = () => {}
     h.editChecks.mockImplementation(() => new Promise((resolve) => (release = resolve)))
     const { onClose } = await mount()
@@ -236,14 +236,15 @@ describe('Edit checks dialog', () => {
     await click(save())
     await screen.findByRole('button', { name: 'Saving…' })
 
-    await act(async () => void fireEvent.keyDown(screen.getByRole('dialog'), { key: 'Escape' }))
+    expect((screen.getByRole('button', { name: 'Settings' }) as HTMLButtonElement).disabled).toBe(true)
+    expect((screen.getByRole('button', { name: 'Cancel' }) as HTMLButtonElement).disabled).toBe(true)
     expect(onClose).not.toHaveBeenCalled()
-    expect(screen.getByRole('dialog')).toBeTruthy()
+    expect(screen.getByRole('heading', { name: 'Edit checks' })).toBeTruthy()
 
     await act(async () => release(done))
   })
 
-  it('Escape does not close the dialog while it waits on the written Seed', async () => {
+  it('cannot be left while it waits on the written Seed', async () => {
     let finished: (() => void) | undefined
     h.editChecks.mockImplementation(async (_id: unknown, _req: unknown, ctx: { confirmWrittenSeed: (seed: string) => Promise<boolean> }) => {
       await ctx.confirmWrittenSeed(SEED)
@@ -256,7 +257,7 @@ describe('Edit checks dialog', () => {
     await click(save())
     await screen.findByText('Write down your Seed')
 
-    await act(async () => void fireEvent.keyDown(screen.getByRole('dialog'), { key: 'Escape' }))
+    expect((screen.getByRole('button', { name: 'Settings' }) as HTMLButtonElement).disabled).toBe(true)
     expect(onClose).not.toHaveBeenCalled()
     await act(async () => finished?.())
   })
@@ -268,7 +269,7 @@ describe('Edit checks dialog', () => {
     const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
     render(
       <QueryClientProvider client={qc}>
-        <EditChecksDialog wallet={legacy as never} onClose={vi.fn()} onEdited={vi.fn()} />
+        <EditChecksScreen wallet={legacy as never} onClose={vi.fn()} onEdited={vi.fn()} />
       </QueryClientProvider>,
     )
     await screen.findByText('Open Check')

@@ -6,6 +6,7 @@ import { Onboarding } from '@/pages/Onboarding'
 import { Main } from '@/pages/Main'
 import { appStateHydrationFailed, appStateSettled, useAppStore } from '@/store/app-store'
 import { listWallets, migrateLegacyVault } from '@/lib/crypto/keystore'
+import { resetToHome } from '@/lib/route'
 import { restoreOpenLocks } from '@/lib/crypto/lock'
 import { notify, setNoticeWalletReader } from '@/lib/notify'
 import { setTxInFlightReporter } from '@/lib/xrpl/writes'
@@ -94,6 +95,12 @@ function Gate() {
       cancelled = true
     }
   }, [openLock, setActiveWalletId, setWallets])
+
+  // A task screen's path means nothing before there is a Wallet: boot at the shell.
+  const noWallets = ready && wallets.length === 0
+  useEffect(() => {
+    if (noWallets) resetToHome()
+  }, [noWallets])
 
   if (!ready) return null
   if (wallets.length === 0) return <Onboarding />

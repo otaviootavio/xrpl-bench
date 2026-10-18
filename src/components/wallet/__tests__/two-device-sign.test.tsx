@@ -30,7 +30,7 @@ vi.mock('@/lib/two-device', async (importOriginal) => {
   }
 })
 
-import { TwoDeviceSign } from '../TwoDeviceSign'
+import { TwoDeviceScreen, TwoDeviceSign } from '../TwoDeviceSign'
 import { useAppStore } from '@/store/app-store'
 
 const WALLET = {
@@ -41,15 +41,17 @@ const state = (extra: Record<string, unknown> = {}) => ({
   exists: true, address: 'rA', balanceDrops: '50000000', ownerCount: 0, sequence: 1, requireDestTag: false, disableMasterKey: false, ...extra,
 })
 const click = async (el: HTMLElement) => act(async () => void fireEvent.click(el))
+const onClose = vi.fn()
 const mount = (w: unknown = WALLET) =>
   render(
     <QueryClientProvider client={new QueryClient()}>
-      <TwoDeviceSign wallet={w as never} />
+      <TwoDeviceScreen wallet={w as never} onClose={onClose} />
     </QueryClientProvider>,
   )
 const btn = (name: RegExp | string) => screen.getByRole('button', { name })
 
 beforeEach(() => {
+  onClose.mockReset()
   h.account = { isError: false, data: state() }
   h.buildUnsigned.mockReset()
   h.signUnsigned.mockReset()
@@ -61,7 +63,6 @@ describe('TwoDeviceSign, online side', () => {
   it('is aria-disabled with the reason as text on an errored read, and a click builds nothing', async () => {
     h.account = { isError: true, data: state() }
     mount()
-    await click(btn('Sign with two devices'))
     await click(btn(/This device is online/))
     expect(btn('Build the transaction').getAttribute('aria-disabled')).toBe('true')
     expect(screen.getByText(/ledger could not be read/)).toBeTruthy()
@@ -72,7 +73,6 @@ describe('TwoDeviceSign, online side', () => {
   it('states the expiry as a window, with the figure, beside the code, and offers copy and the paste field', async () => {
     h.buildUnsigned.mockResolvedValue({ status: 'built', text: 'xrplbench:1:u:AAA', tx: {}, lastLedgerSequence: 1075 })
     mount()
-    await click(btn('Sign with two devices'))
     await click(btn(/This device is online/))
     fireEvent.change(screen.getByLabelText('Destination'), { target: { value: 'rPT1Sjq2YGrBMTttX4GZHjKu9dyfzbpAYe' } })
     fireEvent.change(screen.getByLabelText('Amount (XRP)'), { target: { value: '1.5' } })
@@ -83,14 +83,13 @@ describe('TwoDeviceSign, online side', () => {
     expect(screen.getByText('1075')).toBeTruthy()
     expect(screen.getByTestId('qr').textContent).toBe('xrplbench:1:u:AAA')
     expect(btn(/Copy the text of the transaction to sign/)).toBeTruthy()
-    // jsdom has no BarcodeDetector: the same dialog takes the signed result as pasted text.
+    // jsdom has no BarcodeDetector: the same screen takes the signed result as pasted text.
     expect(screen.getByLabelText(/Or paste the text of the signed transaction/)).toBeTruthy()
   })
 
   it('shows a refusal reason as text and builds no code', async () => {
     h.buildUnsigned.mockResolvedValue({ status: 'refused', reason: 'The amount is more than this account can spend.' })
     mount()
-    await click(btn('Sign with two devices'))
     await click(btn(/This device is online/))
     fireEvent.change(screen.getByLabelText('Destination'), { target: { value: 'rX' } })
     fireEvent.change(screen.getByLabelText('Amount (XRP)'), { target: { value: '1' } })
@@ -103,7 +102,6 @@ describe('TwoDeviceSign, online side', () => {
     h.buildUnsigned.mockResolvedValue({ status: 'built', text: 'xrplbench:1:u:AAA', tx: {}, lastLedgerSequence: 1075 })
     h.submitReturned.mockResolvedValue({ status: 'expired', reason: 'This transaction expired before it validated.' })
     mount()
-    await click(btn('Sign with two devices'))
     await click(btn(/This device is online/))
     fireEvent.change(screen.getByLabelText('Destination'), { target: { value: 'rX' } })
     fireEvent.change(screen.getByLabelText('Amount (XRP)'), { target: { value: '1' } })
@@ -117,12 +115,11 @@ describe('TwoDeviceSign, online side', () => {
 })
 
 describe('TwoDeviceSign, busy lock', () => {
-  it('keeps the dialog open while a return is being submitted, submits once, and closes after', async () => {
+  it('cannot be left while a return is being submitted, submits once, and can be left after', async () => {
     h.buildUnsigned.mockResolvedValue({ status: 'built', text: 'xrplbench:1:u:AAA', tx: {}, lastLedgerSequence: 1075 })
     let finish: (v: unknown) => void = () => {}
     h.submitReturned.mockReturnValue(new Promise((res) => (finish = res)))
     mount()
-    await click(btn('Sign with two devices'))
     await click(btn(/This device is online/))
     fireEvent.change(screen.getByLabelText('Destination'), { target: { value: 'rX' } })
     fireEvent.change(screen.getByLabelText('Amount (XRP)'), { target: { value: '1' } })
@@ -131,20 +128,22 @@ describe('TwoDeviceSign, busy lock', () => {
     await click(btn('Use the pasted text'))
     await click(btn('Use the pasted text'))
     expect(h.submitReturned).toHaveBeenCalledTimes(1)
-    await click(screen.getAllByRole('button', { name: 'Close' })[0])
-    fireEvent.keyDown(document.activeElement ?? document.body, { key: 'Escape' })
+    // The screen cannot be left while the return is submitted: Back is disabled.
+    expect((btn('Settings') as HTMLButtonElement).disabled).toBe(true)
+    await click(btn('Settings'))
+    expect(onClose).not.toHaveBeenCalled()
     expect(screen.getByText(/Checking and sending/)).toBeTruthy()
     await act(async () => finish({ status: 'expired', reason: 'This transaction expired before it validated.' }))
     await waitFor(() => expect(screen.getByText(/expired before it validated/)).toBeTruthy())
-    await click(screen.getAllByRole('button', { name: 'Close' })[0])
-    expect(screen.queryByText(/expired before it validated/)).toBeNull()
+    expect((btn('Settings') as HTMLButtonElement).disabled).toBe(false)
+    await click(btn('Settings'))
+    expect(onClose).toHaveBeenCalledTimes(1)
   })
 })
 
 describe('TwoDeviceSign, online side: requests and results', () => {
   const open = async () => {
     mount()
-    await click(btn('Sign with two devices'))
     await click(btn(/This device is online/))
   }
   const builtOk = { status: 'built', text: 'xrplbench:1:u:AAA', tx: {}, lastLedgerSequence: 1075 }
@@ -235,7 +234,6 @@ describe('TwoDeviceSign, offline side', () => {
     return e.ok ? e.text : ''
   }
   const paste = async (text: string) => {
-    await click(btn('Sign with two devices'))
     await click(btn(/This device is offline/))
     fireEvent.change(screen.getByLabelText(/Or paste the text of the transaction to sign/), { target: { value: text } })
     await click(btn('Use the pasted text'))
@@ -275,5 +273,23 @@ describe('TwoDeviceSign, offline side', () => {
     await paste(unsigned())
     await click(btn('Confirm and sign'))
     expect(screen.getByText('Cancelled. Nothing was signed.')).toBeTruthy()
+  })
+})
+
+describe('TwoDeviceSign, the Settings row', () => {
+  it('opens the screen by navigating to its path, and carries nothing but the Wallet id', async () => {
+    window.history.replaceState(null, '', '/')
+    render(<TwoDeviceSign wallet={WALLET} />)
+    await click(btn('Sign with two devices'))
+    expect(window.location.pathname).toBe('/wallets/w/two-device')
+    expect(window.history.state).toEqual({ screen: true })
+  })
+
+  it('wraps the two role buttons instead of letting them run sideways', async () => {
+    mount()
+    for (const b of [btn(/This device is online/), btn(/This device is offline/)]) {
+      expect(b.className).toContain('whitespace-normal')
+      expect(b.className).toContain('h-auto')
+    }
   })
 })

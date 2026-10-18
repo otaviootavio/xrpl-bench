@@ -1,10 +1,6 @@
 import { useCallback, useRef, useState } from 'react'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { NetworkChoice } from '@/components/wallet/NetworkChoice'
-import { CreateWalletFlow } from '@/components/wallet/CreateWalletFlow'
-import { EditChecksDialog, type EditedChecks } from '@/components/wallet/EditChecksDialog'
-import { ControlWalletDialog } from '@/components/wallet/ControlWalletDialog'
 import { ControlledNote } from '@/components/wallet/ControlledNote'
 import { TwoDeviceSign } from '@/components/wallet/TwoDeviceSign'
 import { MasterKeyControl } from '@/components/wallet/MasterKeyControl'
@@ -16,23 +12,22 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { ExternalLinkIcon } from 'lucide-react'
 import { BUILD, shortSha, sourceUrl, formatBuiltAt } from '@/lib/build-info'
 import { useAppUpdate } from '@/hooks/useAppUpdate'
-import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogTrigger, DialogDescription } from '@/components/ui/dialog'
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from '@/components/ui/dialog'
 import { Separator } from '@/components/ui/separator'
 import { SeedReveal } from '@/components/wallet/SeedReveal'
 import { AddressLink } from '@/components/wallet/AddressLink'
 import { usePrompts } from '@/hooks/usePrompts'
-import { useAppStore, useActiveNetwork, useWalletOpenKey } from '@/store/app-store'
+import { useAppStore, useActiveNetwork } from '@/store/app-store'
+import { navigate, ADD_WALLET_PATH, walletScreenPath } from '@/lib/route'
 import { counterpartyKey, tagNotRecorded } from '@/store/address-book'
 import { NETWORKS, NETWORK_IDS, type NetworkId } from '@/lib/xrpl/networks'
-import { addNetworkView, addressFromSeed, importAndStoreWallet, listWallets, parseSeedInput, removeWallet, revealSeed, setLockAutoLock, describeCheckFailure, type WalletMeta } from '@/lib/crypto/keystore'
-import { getLockInfo, startLockSession } from '@/lib/crypto/lock'
+import { addNetworkView, listWallets, removeWallet, revealSeed, setLockAutoLock, describeCheckFailure, type WalletMeta } from '@/lib/crypto/keystore'
+import { getLockInfo } from '@/lib/crypto/lock'
 import { LEGACY_LOCK_ID } from '@/lib/crypto/db'
 import { queryKeys } from '@/lib/xrpl/query-keys'
 import { RESET_INCOMPLETE_MESSAGE, tearDownAllLocalState, clearCachedAccountData, tearDownLock } from '@/lib/teardown'
-import { checkBeforeImport, IMPORT_WARNING_COPY, INVALID_SEED_MESSAGE, type ImportWarning } from '@/lib/seed-import'
 import { toast } from '@/lib/notify'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 
@@ -65,8 +60,6 @@ export function SettingsTab() {
   // Only the fallback for a record the vault migration has not reached
   // (`listWallets`); every ledger read takes its network from its own Wallet.
   const activeNetwork = useActiveNetwork()
-  // The network a Wallet added here will live on — fixed at creation (AD-19).
-  const [addNetwork, setAddNetwork] = useState<NetworkId>('testnet')
   const wallets = useAppStore((s) => s.wallets)
   const setWallets = useAppStore((s) => s.setWallets)
   const activeWalletId = useAppStore((s) => s.activeWalletId)
@@ -76,12 +69,10 @@ export function SettingsTab() {
   const setLockMinutes = useAppStore((s) => s.setLockMinutes)
   const closeAllLocks = useAppStore((s) => s.closeAllLocks)
   const closeLock = useAppStore((s) => s.closeLock)
-  const openLock = useAppStore((s) => s.openLock)
-  // Settings is mounted only for an open Wallet. Its lock is the one a new
-  // Wallet is added under and the one whose auto-lock this card edits (AD-21).
+  // Settings is mounted only for an open Wallet. Its lock is the one whose
+  // auto-lock this card edits (AD-21).
   const activeWallet = wallets.find((w) => w.id === activeWalletId) ?? null
   const activeLockId = activeWallet?.lockId ?? null
-  const vaultKey = useWalletOpenKey(activeWalletId)
   const prompts = usePrompts()
   const lockInfoQuery = useQuery({
     queryKey: queryKeys.lockInfo(activeLockId ?? ''),
@@ -93,18 +84,9 @@ export function SettingsTab() {
     useAppUpdate()
   const queryClient = useQueryClient()
 
-  const [addOpen, setAddOpen] = useState(false)
-  const [addMode, setAddMode] = useState<'generate' | 'import'>('generate')
-  const [label, setLabel] = useState('')
   const [confirmRemove, setConfirmRemove] = useState<string | null>(null)
   const [confirmResetAll, setConfirmResetAll] = useState(false)
   const [confirmRevealFor, setConfirmRevealFor] = useState<string | null>(null)
-  const [editChecksFor, setEditChecksFor] = useState<string | null>(null)
-  const [controlFor, setControlFor] = useState<string | null>(null)
-  const [importWarning, setImportWarning] = useState<ImportWarning | null>(null)
-  const [busy, setBusy] = useState(false)
-  // A new Wallet is being written or backed up inside the Add dialog.
-  const [creating, setCreating] = useState(false)
 
   // Guardrail #3: a decrypted seed must NEVER enter React state (state is
   // serializable and reachable from devtools). It lives in a ref for exactly
@@ -112,99 +94,12 @@ export function SettingsTab() {
   // drive rendering.
   const revealedSeedRef = useRef<string | null>(null)
   const [seedVisibleFor, setSeedVisibleFor] = useState<string | null>(null)
-  // Uncontrolled: a controlled input would put the typed seed into React
-  // state on every keystroke (guardrail #3).
-  const seedInputRef = useRef<HTMLInputElement | null>(null)
-  // The parsed Seed while the master-key warning is open. The Add dialog — and
-  // the input inside it — closes when the warning opens, so the value has to
-  // be held somewhere that outlives the input: a ref, never state.
-  const pendingImportSeedRef = useRef<string | null>(null)
-  // The network the pre-check ran against: the store uses this one, never the
-  // current radio, so check and write cannot disagree.
-  const pendingImportNetworkRef = useRef<NetworkId>('testnet')
   const getRevealedSeed = useCallback(() => revealedSeedRef.current, [])
 
   async function refreshWallets() {
     const fresh = await listWallets(activeNetwork)
     setWallets(fresh)
     return fresh
-  }
-
-  /** The vault write for an import, and everything that follows a completed
-   * add. Reached only after the pre-flight check: directly when it found
-   * nothing to warn about, or from "Import anyway". */
-  async function storeImported(seed: string, key: CryptoKey, net: NetworkId) {
-    const meta = await importAndStoreWallet(label || 'Wallet', seed, key, net, activeLockId ?? undefined)
-    await refreshWallets()
-    setActiveWalletId(meta.id)
-    finishAdd()
-  }
-
-  function finishAdd() {
-    pendingImportSeedRef.current = null
-    toast.success('Wallet added.')
-    setAddOpen(false)
-    setAddNetwork('testnet')
-    setLabel('')
-    if (seedInputRef.current) seedInputRef.current.value = ''
-  }
-
-  async function handleAddWallet() {
-    if (!vaultKey || busy) return
-    // Generate is `CreateWalletFlow`'s: it makes the Wallet its own lock.
-    if (addMode === 'generate') return
-
-    // Import. The same operation as Onboarding's (lib/seed-import.ts): parse,
-    // check, and only then write — docs/decisions.md §2 states the
-    // disabled-master-key check for import unconditionally, so it must not be
-    // limited to the onboarding path, and it must come before the vault write
-    // here too, not after it.
-    const seed = parseSeedInput(seedInputRef.current?.value ?? '')
-    if (!seed) {
-      toast.error(INVALID_SEED_MESSAGE)
-      return
-    }
-    const net = addNetwork
-    setBusy(true)
-    try {
-      const warning = await checkBeforeImport(queryClient, net, addressFromSeed(seed))
-      if (warning) {
-        pendingImportSeedRef.current = seed
-        pendingImportNetworkRef.current = net
-        setAddOpen(false)
-        setImportWarning(warning)
-        return
-      }
-      await storeImported(seed, vaultKey, net)
-    } catch (err: any) {
-      toast.error(err?.message ?? 'Could not add wallet.')
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  /** "Import anyway": the operator has read the warning and chosen to go on. */
-  async function acceptImportWarning() {
-    const seed = pendingImportSeedRef.current
-    if (!vaultKey || !seed || busy) return
-    setBusy(true)
-    try {
-      await storeImported(seed, vaultKey, pendingImportNetworkRef.current)
-      setImportWarning(null)
-    } catch (err: any) {
-      toast.error(err?.message ?? 'Could not add wallet.')
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  /** Cancel, Escape, the overlay and the close button all land here: the
-   * import is abandoned and nothing is written. */
-  function cancelImportWarning() {
-    pendingImportSeedRef.current = null
-    setImportWarning(null)
-    setLabel('')
-    setAddNetwork('testnet')
   }
 
   async function handleConfirmReveal(id: string) {
@@ -280,29 +175,6 @@ export function SettingsTab() {
     }
   }
 
-  /** An edit of a Wallet's checks was committed. When it moved to a new lock the
-   * keystore handed back that lock's Open Key and touched no session: this is
-   * where the old lock closes and the new one opens (FR-73, AD-21). The new lock
-   * opens first, so no listed Wallet is ever shown with a closed lock. */
-  async function handleEdited(edited: EditedChecks) {
-    const { meta, previousLockId } = edited
-    try {
-      if (edited.openKey) {
-        await startLockSession(meta.lockId, edited.openKey, edited.autoLockMinutes)
-        openLock(meta.lockId, edited.openKey, edited.autoLockMinutes)
-      } else if (edited.changed) {
-        setLockMinutes(meta.lockId, edited.autoLockMinutes)
-      }
-      await refreshWallets()
-      await queryClient.invalidateQueries({ queryKey: queryKeys.lockInfo(meta.lockId) })
-      if (previousLockId !== meta.lockId) queryClient.removeQueries({ queryKey: queryKeys.lockInfo(previousLockId) })
-      toast.success(edited.changed ? 'Checks updated.' : 'Nothing to change.')
-    } finally {
-      // The old lock record is already deleted: its session must close whatever failed above.
-      if (edited.previousLockRemoved) closeLock(previousLockId)
-    }
-  }
-
   async function handleFullReset() {
     // `tearDownAllLocalState` owns the whole clear set (AD-16), including the
     // persisted app store — wallets, Address Book, auto-lock and declined
@@ -327,65 +199,7 @@ export function SettingsTab() {
             <CardTitle>Wallets</CardTitle>
             <CardDescription>Switch, add, or remove wallets on this device.</CardDescription>
           </div>
-          {/* Not closable while a check or a write is running: closing reads as
-              "stop", and the write would still land behind it. */}
-          <Dialog open={addOpen} onOpenChange={(o) => {
-              if (busy || creating) return
-              setAddOpen(o)
-              if (!o) setAddNetwork('testnet')
-            }}>
-            <DialogTrigger asChild>
-              <Button>Add wallet</Button>
-            </DialogTrigger>
-            <DialogContent>
-              <DialogHeader>
-                <DialogTitle>Add another wallet</DialogTitle>
-                <DialogDescription>Generate a new wallet or import one with a seed.</DialogDescription>
-              </DialogHeader>
-              <div className="grid gap-3">
-                <div className="flex gap-2">
-                  <Button variant={addMode === 'generate' ? 'default' : 'outline'} onClick={() => setAddMode('generate')} type="button" disabled={busy || creating}>
-                    Generate
-                  </Button>
-                  <Button variant={addMode === 'import' ? 'default' : 'outline'} onClick={() => setAddMode('import')} type="button" disabled={busy || creating}>
-                    Import
-                  </Button>
-                </div>
-                {addMode === 'generate' ? (
-                  // Network, Node, Seed Method, signature type, Open Check, Signing Check:
-                  // the flow asks each, and commits itself after the seed backup.
-                  <CreateWalletFlow
-                    defaultLabel=""
-                    onInProgressChange={setCreating}
-                    onDone={() => {
-                      toast.success('Wallet added.')
-                      setAddOpen(false)
-                    }}
-                  />
-                ) : (
-                  <>
-                    <div className="grid gap-1.5">
-                      <Label htmlFor="wlabel">Label</Label>
-                      <Input id="wlabel" value={label} onChange={(e) => setLabel(e.target.value)} placeholder="Savings" disabled={busy} />
-                    </div>
-                    {/* Frozen with the dialog while a check or a write runs. */}
-                    <NetworkChoice value={addNetwork} onChange={setAddNetwork} disabled={busy} />
-                    <div className="grid gap-1.5">
-                      <Label htmlFor="wseed">Seed</Label>
-                      <Input id="wseed" type="password" autoComplete="off" spellCheck={false} ref={seedInputRef} />
-                    </div>
-                  </>
-                )}
-              </div>
-              {addMode === 'import' && (
-                <DialogFooter>
-                  <Button onClick={handleAddWallet} disabled={busy}>
-                    {busy ? 'Checking…' : 'Add'}
-                  </Button>
-                </DialogFooter>
-              )}
-            </DialogContent>
-          </Dialog>
+          <Button onClick={() => navigate(ADD_WALLET_PATH)}>Add wallet</Button>
         </CardHeader>
         <CardContent className="flex flex-col gap-2">
           {wallets.map((w) => (
@@ -428,12 +242,12 @@ export function SettingsTab() {
                   </Button>
                 ))}
                 {w.lockId in openLocks && (
-                  <Button variant="outline" size="sm" onClick={() => setEditChecksFor(w.id)}>
+                  <Button variant="outline" size="sm" onClick={() => navigate(walletScreenPath('edit-checks', w.id))}>
                     Edit checks
                   </Button>
                 )}
                 {w.lockId in openLocks && holdsMasterKey(w) && (
-                  <Button variant="outline" size="sm" onClick={() => setControlFor(w.id)}>
+                  <Button variant="outline" size="sm" onClick={() => navigate(walletScreenPath('control', w.id))}>
                     Let another wallet sign
                   </Button>
                 )}
@@ -675,22 +489,6 @@ export function SettingsTab() {
         </CardContent>
       </Card>
 
-      <ControlWalletDialog
-        controller={wallets.find((w) => w.id === controlFor) ?? null}
-        wallets={wallets}
-        onClose={() => setControlFor(null)}
-        onControlled={async () => {
-          await refreshWallets()
-          toast.success('The other wallet now operates this account.')
-        }}
-      />
-
-      <EditChecksDialog
-        wallet={wallets.find((w) => w.id === editChecksFor) ?? null}
-        onClose={() => setEditChecksFor(null)}
-        onEdited={handleEdited}
-      />
-
       <Dialog open={!!confirmRevealFor} onOpenChange={(o) => !o && setConfirmRevealFor(null)}>
         <DialogContent>
           <DialogHeader>
@@ -718,29 +516,6 @@ export function SettingsTab() {
             <DialogTitle>Wallet seed</DialogTitle>
           </DialogHeader>
           {seedVisibleFor && <SeedReveal getSeed={getRevealedSeed} />}
-        </DialogContent>
-      </Dialog>
-
-      <Dialog open={!!importWarning} onOpenChange={(o) => !o && !busy && cancelImportWarning()}>
-        <DialogContent variant="sheet">
-          <DialogHeader>
-            <DialogTitle>Heads up</DialogTitle>
-            <DialogDescription>Check this before the seed is saved to this device.</DialogDescription>
-          </DialogHeader>
-          {importWarning && (
-            <Alert variant="warning">
-              <AlertTitle>{IMPORT_WARNING_COPY[importWarning].title}</AlertTitle>
-              <AlertDescription>{IMPORT_WARNING_COPY[importWarning].body}</AlertDescription>
-            </Alert>
-          )}
-          <DialogFooter>
-            <Button variant="outline" onClick={cancelImportWarning} disabled={busy}>
-              Cancel import
-            </Button>
-            <Button onClick={acceptImportWarning} disabled={busy}>
-              {busy ? 'Importing…' : 'Import anyway'}
-            </Button>
-          </DialogFooter>
         </DialogContent>
       </Dialog>
 

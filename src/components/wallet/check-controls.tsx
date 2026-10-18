@@ -44,7 +44,7 @@ export function Choice({
         <span>{label}</span>
       </label>
       {hasText && (
-        <div id={textId} className="ml-6">
+        <div id={textId} className="ml-6 min-w-0 break-words">
           {detail && <p className="text-xs text-muted-foreground">{detail}</p>}
           {state.note && <p className="text-xs text-muted-foreground">{state.note}</p>}
           {!state.available && state.reason && <p className="text-xs text-text-warning">{state.reason}</p>}
@@ -56,7 +56,7 @@ export function Choice({
 
 export function Axis({ legend, children }: { legend: string; children: ReactNode }) {
   return (
-    <fieldset className="flex flex-col gap-1.5">
+    <fieldset className="flex min-w-0 flex-col gap-1.5">
       <legend className="mb-1 text-sm font-medium">{legend}</legend>
       {children}
     </fieldset>

@@ -1,10 +1,12 @@
 import { useRef, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { Button } from '@/components/ui/button'
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { QrCode } from '@/components/wallet/QrCode'
+import { TaskScreen } from '@/components/wallet/TaskScreen'
+import { useLeaveBlocker } from '@/hooks/useRoute'
+import { navigate, walletScreenPath } from '@/lib/route'
 import { QrScanner } from '@/components/wallet/QrScanner'
 import { useAccountState } from '@/hooks/useAccountState'
 import { usePrompts } from '@/hooks/usePrompts'
@@ -34,64 +36,63 @@ const KINDS: { kind: TwoDeviceKind; label: string }[] = [
   { kind: 'master-key', label: 'Master key' },
 ]
 
-/**
- * Two-device signing (FR-78, AD-30). One device is online and builds a
- * transaction; the other holds the key, has no network, confirms and signs it.
- * This only renders: judging, building, signing and verifying are
- * `lib/two-device.ts`, and nothing here outlives the dialog. Mount only for a
- * Wallet whose lock is open (AD-26).
- */
+/** The Settings row's entry to the two-device screen. */
 export function TwoDeviceSign({ wallet }: { wallet: WalletMeta }) {
-  const [open, setOpen] = useState(false)
-  const [role, setRole] = useState<Role | null>(null)
-  // True while a build, a Signing Check or a submission is running: closing then would hide the outcome.
-  const [busy, setBusy] = useState(false)
-  const mainnet = wallet.network === 'mainnet'
-
-  function close() {
-    if (busy) return
-    setOpen(false)
-    setRole(null)
-  }
-
   return (
     <div className="mt-1 text-xs text-muted-foreground" data-testid="two-device-sign">
-      <Button variant="outline" size="sm" onClick={() => setOpen(true)}>
+      <Button variant="outline" size="sm" onClick={() => navigate(walletScreenPath('two-device', wallet.id))}>
         Sign with two devices
       </Button>
-      <Dialog open={open} onOpenChange={(o) => !o && close()}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Sign with two devices</DialogTitle>
-            <DialogDescription>
-              {wallet.label} on {NETWORKS[wallet.network].label}
-              {mainnet && ' — real funds'}.
-            </DialogDescription>
-          </DialogHeader>
-          {role === null && (
-            <div className="flex flex-col gap-2 text-sm">
-              <p>
-                A key that lives on a device with no network cannot read the sequence number or the fee. The online device builds the
-                transaction, the offline device signs it, and the online device checks what came back before it sends anything.
-              </p>
-              <Button variant="outline" onClick={() => setRole('online')}>
-                This device is online: build a transaction
-              </Button>
-              <Button variant="outline" onClick={() => setRole('offline')}>
-                This device is offline: sign a transaction
-              </Button>
-            </div>
-          )}
-          {role === 'online' && <OnlinePanel wallet={wallet} onBusy={setBusy} />}
-          {role === 'offline' && <OfflinePanel wallet={wallet} onBusy={setBusy} />}
-          <DialogFooter>
-            <Button variant="outline" onClick={close} aria-disabled={busy ? true : undefined}>
-              Close
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </div>
+  )
+}
+
+/** The primary Button is `whitespace-nowrap`: a long role sentence overflowed sideways at 320px. */
+const ROLE_BUTTON = 'h-auto min-h-9 w-full whitespace-normal py-2 text-center'
+
+/**
+ * Two-device signing (FR-78, AD-30), a routed screen. One device is online and
+ * builds a transaction; the other holds the key, has no network, confirms and
+ * signs it. This only renders: judging, building, signing and verifying are
+ * `lib/two-device.ts`, and nothing here outlives the screen. Mount only for a
+ * Wallet whose lock is open (AD-26).
+ */
+export function TwoDeviceScreen({ wallet, onClose }: { wallet: WalletMeta; onClose: () => void }) {
+  const [role, setRole] = useState<Role | null>(null)
+  // True while a build, a Signing Check or a submission is running: leaving then would hide the outcome.
+  const [busy, setBusy] = useState(false)
+  useLeaveBlocker(busy)
+  const mainnet = wallet.network === 'mainnet'
+
+  return (
+    <TaskScreen
+      title="Sign with two devices"
+      description={
+        <>
+          {wallet.label} on {NETWORKS[wallet.network].label}
+          {mainnet && ' — real funds'}.
+        </>
+      }
+      onBack={onClose}
+      locked={busy}
+    >
+      {role === null && (
+        <div className="flex flex-col gap-2 text-sm">
+          <p>
+            A key that lives on a device with no network cannot read the sequence number or the fee. The online device builds the
+            transaction, the offline device signs it, and the online device checks what came back before it sends anything.
+          </p>
+          <Button variant="outline" className={ROLE_BUTTON} onClick={() => setRole('online')}>
+            This device is online: build a transaction
+          </Button>
+          <Button variant="outline" className={ROLE_BUTTON} onClick={() => setRole('offline')}>
+            This device is offline: sign a transaction
+          </Button>
+        </div>
+      )}
+      {role === 'online' && <OnlinePanel wallet={wallet} onBusy={setBusy} />}
+      {role === 'offline' && <OfflinePanel wallet={wallet} onBusy={setBusy} />}
+    </TaskScreen>
   )
 }
 

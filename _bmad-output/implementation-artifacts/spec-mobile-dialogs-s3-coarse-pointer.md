@@ -65,3 +65,27 @@ deferred: []
 ## Auto Run Result
 
 Status: done
+
+## Verification (browser pass, 2026-10-17)
+
+**Tested:** commit 65d686f74d03f0cf079b5b54f96df0044a8f8784, `bun run dev -- --port 5181 --strictPort` (fresh origin, stopped by PID). No product code changed.
+
+**Driven:** Playwright MCP, `browser.newContext({ hasTouch: true, isMobile: true, deviceScaleFactor: 2 })` (confirmed `(pointer: coarse)` true) plus a fine-pointer context at 1280. CDP virtual authenticator (ctap2, internal, resident key, UV, PRF, automatic presence). Two throwaway Testnet wallets; the first funded with the in-app faucet (100 XRP). Computed font-size and bounding-rect heights measured per element; screenshots in `.playwright-mcp/s3v-*.png` (the MCP resolves them against the main checkout root), all cited ones opened.
+
+**Widths and themes:** 320, 375 and 1280, dark and light, for Settings and the Add trust line sheet (coarse); 375 dark for onboarding Create, Add wallet (generate/import), Edit checks, Let another wallet sign, Sign with two devices (online/offline), Remove / Reveal seed / Remove all dialogs, header wallet selector. Fine pointer: 1280 dark and light (Create, Remove dialog).
+
+| Criterion | Result |
+|---|---|
+| Inputs, textarea, select trigger, primitive buttons compute 16px and >=44px (coarse) | Met for text inputs, password input, textareas (16px/44px and 82px), combobox triggers (44px) and `Button` everywhere except below |
+| Not met: TaskScreen sticky footer buttons | 41.6px at coarse (Add wallet "Add", Edit checks "Cancel"/"Save changes", Let another wallet sign "Cancel"/"Set Regular Key"); `src/components/wallet/TaskScreen.tsx:58` has `[&>button]:h-auto [&>button]:min-h-9 ... py-2`, which beats `pointer-coarse:h-11` |
+| Not met: tab triggers (Balances, Send, Receive, History, Tokens, Settings) | 11px and 30.5px high at every width on coarse |
+| Not met: select dropdown options (header wallet selector) | 13px and 32px high on coarse |
+| Close button >= 44px | Met: 44x44 in Remove, Reveal seed, Remove all, Add trust line; 28px on fine pointer |
+| Radio hit areas >= 44px | Met: every radio label row is 44px (native input stays 13px inside it) |
+| Checkbox hit area >= 44px | Not met: hit area 42.4px (16px box + `after:-inset-3.5` measured from the padding box) on "I've written down my seed"; its label row is 40px |
+| Dialog field labels 12px, not 11px | Met on every pointer and width (coarse and fine) |
+| Fine pointer unchanged | Met: input 36px/13px, buttons 36px/13px, close 28px, radio rows 20px |
+| Viewport zoom not disabled | Met: viewport meta read-only, no zoom limit (unit test) |
+| No horizontal overflow at 320/375/1280 | Met on the screens above (document scrollWidth equals clientWidth) |
+
+**Not run:** App PIN prompt, master-key sheet (button disabled on these accounts), Send review sheet, switch primitive (none on screen), Edit trust line limit (no trust line), real iOS focus zoom, Mainnet. Light theme at 375 only checked for Settings and trust sheet. The empty dashed footer strip visible at the bottom of every screen was not investigated.

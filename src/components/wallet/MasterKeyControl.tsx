@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { StatusLegend } from '@/components/ui/lamp'
 import { useAccountState } from '@/hooks/useAccountState'
-import { usePrompts } from '@/hooks/usePrompts'
+import { useYieldingPrompts } from '@/hooks/usePrompts'
 import type { WalletMeta } from '@/lib/crypto/keystore'
 import { masterKeyAction, masterKeyStatus, setMasterKey, type MasterKeyResult, type MasterKeyStatus } from '@/lib/master-key'
 import { NETWORKS } from '@/lib/xrpl/networks'
@@ -24,7 +24,7 @@ const WORDS: Record<MasterKeyStatus, { tone: 'live' | 'caution' | 'neutral'; tex
  */
 export function MasterKeyControl({ wallet }: { wallet: WalletMeta }) {
   const queryClient = useQueryClient()
-  const prompts = usePrompts()
+  const { prompts, promptOpen } = useYieldingPrompts()
   const openKey = useWalletOpenKey(wallet.id)
   const account = useAccountState(wallet.network, wallet.address, wallet.node)
   const wallets = useAppStore((s) => s.wallets)
@@ -102,8 +102,8 @@ export function MasterKeyControl({ wallet }: { wallet: WalletMeta }) {
         <p role="status">Validated. The ledger now shows the master key as {result.state}.</p>
       )}
 
-      <Dialog open={confirming} onOpenChange={(o) => !o && !busy && setConfirming(false)}>
-        <DialogContent>
+      <Dialog open={confirming && !promptOpen} onOpenChange={(o) => !o && !busy && setConfirming(false)}>
+        <DialogContent variant="sheet">
           <DialogHeader>
             <DialogTitle>{turningOff ? 'Turn the master key off?' : 'Turn the master key on?'}</DialogTitle>
             <DialogDescription>

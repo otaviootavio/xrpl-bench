@@ -20,7 +20,7 @@ import { useTrustLines } from '@/hooks/useTrustLines'
 import { useDestinationCheck } from '@/hooks/useDestinationCheck'
 import { submitXrpPayment, submitIssuedPayment, type SigningHandle, type SubmitOutcome } from '@/lib/xrpl/writes'
 import { signingHandleFor } from '@/lib/crypto/keystore'
-import { usePrompts } from '@/hooks/usePrompts'
+import { useYieldingPrompts } from '@/hooks/usePrompts'
 import { formatXrp, xrpToDropsString, displayCurrencyCode, MAX_FEE_DROPS } from '@/lib/xrpl/money'
 import { checkFunds, heldTokenLines, selectedTokenLine, spendableReadState, tokenAssetKey } from '@/lib/xrpl/funds-check'
 import { readStateOf, type ReadState } from '@/lib/read-state'
@@ -65,7 +65,7 @@ export function SendTab() {
   // The Open Key of THIS Wallet's lock, never another's (AD-21).
   const vaultKey = useWalletOpenKey(wallet?.id)
   // The PIN dialog, for a Wallet whose Signing Check is the App PIN.
-  const prompts = usePrompts()
+  const { prompts, promptOpen } = useYieldingPrompts()
   const addressBook = useAppStore((s) => s.addressBook)
   const addAddressBookEntry = useAppStore((s) => s.addAddressBookEntry)
   const queryClient = useQueryClient()
@@ -796,8 +796,8 @@ export function SendTab() {
           not bring it back. So does the live fee read moving away from the
           figure pinned at "Review payment". Only an explicit "Review payment"
           does. */}
-      <Dialog open={confirmOpen} onOpenChange={(o) => !o && setConfirmingFor(null)}>
-        <DialogContent>
+      <Dialog open={confirmOpen && !promptOpen} onOpenChange={(o) => !o && setConfirmingFor(null)}>
+        <DialogContent variant="sheet">
           <DialogHeader>
             <DialogTitle>Send {amountLabel}?</DialogTitle>
             <DialogDescription>

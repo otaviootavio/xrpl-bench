@@ -12,7 +12,10 @@ const h = vi.hoisted(() => ({
 
 vi.mock('idb-keyval', () => ({ get: async () => undefined, set: async () => {}, del: async () => {} }))
 vi.mock('@/hooks/useAccountState', () => ({ useAccountState: () => h.account }))
-vi.mock('@/hooks/usePrompts', () => ({ usePrompts: () => ({ pin: async () => null }) }))
+vi.mock('@/hooks/usePrompts', () => ({
+  usePrompts: () => ({ pin: async () => null }),
+  useYieldingPrompts: () => ({ prompts: { pin: async () => null }, promptOpen: false }),
+}))
 vi.mock('@/store/app-store', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/store/app-store')>()
   return { ...actual, useWalletOpenKey: () => null }

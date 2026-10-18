@@ -395,3 +395,10 @@ Item 8 shipped as a refactor that preserves behaviour (`spec-sendtab-split.md`).
 - source_spec: `_bmad-output/specs/spec-passkey-signing/browser-pass-2026-10-14.md`
   summary: Ten defects found in the browser passes; 1, 2, 4 and 5 were fixed in `74ab34d`, the rest are open: (1) a former Regular Key cannot be set again because its stale view hides it from `eligibleTargets`; (2) a send from an Account with the master key off ends as "expired" with no cause named; (3) toasts never expire (fixed in `2cc5012`); (4) the control result drops the Wallet's name; (5) wrong "another network" copy on removing a controlled view; (6) the picker cannot tell a Wallet from its controlled view; (7) the picker trigger clips the network suffix; (8) 320 px Settings overflow; (9) per-row Settings buttons share one accessible name; (10) controlled/uncontrolled Select warning.
   evidence: Defects 1 and 4 confirmed by reading `src/lib/control.ts` and `ControlWalletDialog.tsx`; 2 is inferred (the node's result code was not read). Details and screenshots' names are in the record.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-mobile-dialogs-s1-sheet.md`
+  summary: iOS Safari does not honour `interactive-widget=resizes-content`, so the keyboard may cover a sheet's sticky footer.
+  evidence: Unverified (maybe-false, medium if true); needs real iOS Safari, or a `visualViewport`-driven height.
+- source_spec: `_bmad-output/implementation-artifacts/spec-mobile-dialogs-s1-sheet.md`
+  summary: Name the sheet-footer shadow in DESIGN.md and record the viewport-meta change in docs/decisions.md.
+  evidence: The shadow is a literal not in the shadow vocabulary; the meta change affects the whole app.

@@ -65,8 +65,9 @@ describe('MasterKeyControl', () => {
   it('says unknown, aria-disabled with the reason as text, on an errored read; a click signs nothing', async () => {
     h.account = { isError: true, data: state({ regularKey: 'rKey' }) }
     mount(MASTER)
-    expect(screen.getByText(/^Master key: unknown/)).toBeTruthy()
-    expect(screen.queryByText(/^Master key: on/)).toBeNull()
+    expect(screen.getByText(/^Master key unknown/)).toBeTruthy()
+    expect(screen.getByText('The ledger could not be read, or the account is not on it.')).toBeTruthy()
+    expect(screen.queryByText(/^Master key on/)).toBeNull()
     expect(action('Turn master key off').getAttribute('aria-disabled')).toBe('true')
     expect(screen.getByText(/cannot tell whether the master key is on/)).toBeTruthy()
     await click(action('Turn master key off'))
@@ -83,6 +84,7 @@ describe('MasterKeyControl', () => {
 
   it('is aria-disabled for the Regular Key wallet while the master key is on', () => {
     mount(REGULAR)
+    expect(screen.getByText('The ledger shows it can sign for this account.')).toBeTruthy()
     expect(action('Turn master key on').getAttribute('aria-disabled')).toBe('true')
     expect(screen.getByText(/already on/)).toBeTruthy()
   })
@@ -90,7 +92,8 @@ describe('MasterKeyControl', () => {
   it('is aria-disabled for the master wallet while the master key is off, pointing to the Regular Key wallet', () => {
     h.account = { isError: false, data: state({ regularKey: 'rKey', disableMasterKey: true }) }
     mount(MASTER)
-    expect(screen.getByText(/^Master key: off/)).toBeTruthy()
+    expect(screen.getByText(/^Master key off/)).toBeTruthy()
+    expect(screen.getByText('The ledger shows only the Regular Key can sign for this account.')).toBeTruthy()
     expect(action('Turn master key off').getAttribute('aria-disabled')).toBe('true')
     expect(screen.getByText(/already off/)).toBeTruthy()
   })
@@ -191,7 +194,7 @@ describe('MasterKeyControl', () => {
     await click(screen.getAllByRole('button', { name: 'Turn master key on' }).at(-1)!)
     await waitFor(() => expect(h.setMasterKey).toHaveBeenCalledWith('r', true, expect.objectContaining({ confirmed: true })))
     expect(await screen.findByText('Submitted, could not confirm.')).toBeTruthy()
-    expect(screen.getByText(/^Master key: unknown/)).toBeTruthy()
+    expect(screen.getByText(/^Master key unknown/)).toBeTruthy()
   })
 
   it('recovers from an unconfirmed result only when "Check again" re-reads successfully', async () => {
@@ -200,13 +203,13 @@ describe('MasterKeyControl', () => {
     mount(MASTER)
     await click(action('Turn master key off'))
     await click(screen.getAllByRole('button', { name: 'Turn master key off' }).at(-1)!)
-    await screen.findByText(/^Master key: unknown/)
+    await screen.findByText(/^Master key unknown/)
     expect(action('Turn master key off').getAttribute('aria-disabled')).toBe('true')
     expect(screen.getByText(/cannot tell whether the master key is on/)).toBeTruthy()
 
     h.refetch.mockResolvedValueOnce({ isError: true, data: undefined })
     await click(action('Check again'))
-    expect(screen.getByText(/^Master key: unknown/)).toBeTruthy()
+    expect(screen.getByText(/^Master key unknown/)).toBeTruthy()
 
     h.refetch.mockResolvedValueOnce({ isError: false, data: state({ regularKey: 'rKey', disableMasterKey: true }) })
     await click(action('Check again'))

@@ -56,6 +56,12 @@ function revealCheckSentence(wallet: WalletMeta | undefined): string {
   }
 }
 
+/** A wallet row keeps one primary key; every other action sits in a labelled
+ * group whose keys may wrap their text rather than push the row wider than a
+ * 320px screen. */
+const PRIMARY_ACTION = 'h-auto min-h-8 max-w-full self-start whitespace-normal py-1 pointer-coarse:min-h-11'
+const ROW_ACTION = 'h-auto min-h-8 max-w-full whitespace-normal py-1 pointer-coarse:min-h-11'
+
 export function SettingsTab() {
   // Only the fallback for a record the vault migration has not reached
   // (`listWallets`); every ledger read takes its network from its own Wallet.
@@ -87,6 +93,10 @@ export function SettingsTab() {
   const [confirmRemove, setConfirmRemove] = useState<string | null>(null)
   const [confirmResetAll, setConfirmResetAll] = useState(false)
   const [confirmRevealFor, setConfirmRevealFor] = useState<string | null>(null)
+  // Mainnet only: adding a view of this Seed there is a step toward real funds, so it is asked once.
+  // The opener unmounts once its view exists, so focus returns to the row's Reveal seed key instead.
+  const lastNetworkFor = useRef<string | null>(null)
+  const [confirmNetworkFor, setConfirmNetworkFor] = useState<{ walletId: string; target: NetworkId } | null>(null)
 
   // Guardrail #3: a decrypted seed must NEVER enter React state (state is
   // serializable and reachable from devtools). It lives in a ref for exactly
@@ -205,8 +215,8 @@ export function SettingsTab() {
         </CardHeader>
         <CardContent className="flex flex-col gap-2">
           {wallets.map((w) => (
-            <div key={w.id} className="panel-plate flex flex-wrap items-center justify-between gap-2 rounded-md p-3">
-              <div>
+            <div key={w.id} className="panel-plate flex min-w-0 flex-col gap-2 rounded-md p-3">
+              <div className="min-w-0">
                 <div className="flex items-center gap-2">
                   <span className="font-legend text-sm font-semibold">{w.label}</span>
                   {w.id === activeWalletId && (
@@ -232,37 +242,42 @@ export function SettingsTab() {
                   <p className="mt-1 text-xs text-muted-foreground">Locked. Switch to this wallet to unlock it.</p>
                 )}
               </div>
-              <div className="flex flex-wrap gap-2">
+              <div className="flex w-full min-w-0 flex-col gap-2">
                 {w.id !== activeWalletId && (
-                  <Button variant="outline" size="sm" onClick={() => setActiveWalletId(w.id)}>
+                  <Button size="sm" className={PRIMARY_ACTION} onClick={() => setActiveWalletId(w.id)}>
                     Use this wallet
                   </Button>
                 )}
-                {w.lockId in openLocks && NETWORK_IDS.filter((n) => !wallets.some((o) => o.seedId === w.seedId && o.network === n)).map((n) => (
-                  <Button key={n} variant="outline" size="sm" aria-label={`Use ${w.label} on ${NETWORKS[n].label}`} onClick={() => void handleUseOnOtherNetwork(w.id, n)}>
-                    Use on {NETWORKS[n].label}
-                  </Button>
-                ))}
                 {w.lockId in openLocks && (
-                  <Button variant="outline" size="sm" onClick={() => navigate(walletScreenPath('edit-checks', w.id))}>
-                    Edit checks
-                  </Button>
-                )}
-                {w.lockId in openLocks && holdsMasterKey(w) && (
-                  <Button variant="outline" size="sm" onClick={() => navigate(walletScreenPath('control', w.id))}>
-                    Let another wallet sign
-                  </Button>
-                )}
-                {w.lockId in openLocks && (
-                  <Button variant="outline" size="sm" data-reveal-seed={w.id} onClick={() => setConfirmRevealFor(w.id)}>
-                    Reveal seed
-                  </Button>
-                )}
-                {/* Removing destroys the Seed, so it needs the Wallet's own lock open. */}
-                {w.lockId in openLocks && (
-                  <Button variant="danger" size="sm" onClick={() => setConfirmRemove(w.id)}>
-                    Remove
-                  </Button>
+                  <div role="group" aria-label={`More actions for ${w.label}`} className="flex min-w-0 flex-wrap gap-2">
+                    {NETWORK_IDS.filter((n) => !wallets.some((o) => o.seedId === w.seedId && o.network === n)).map((n) => (
+                      <Button
+                        key={n}
+                        variant="outline"
+                        size="sm"
+                        className={ROW_ACTION}
+                        aria-label={`Use ${w.label} on ${NETWORKS[n].label}`}
+                        onClick={() => (n === 'mainnet' ? (lastNetworkFor.current = w.id, setConfirmNetworkFor({ walletId: w.id, target: n })) : void handleUseOnOtherNetwork(w.id, n))}
+                      >
+                        Use on {NETWORKS[n].label}
+                      </Button>
+                    ))}
+                    <Button variant="outline" size="sm" className={ROW_ACTION} onClick={() => navigate(walletScreenPath('edit-checks', w.id))}>
+                      Edit checks
+                    </Button>
+                    {holdsMasterKey(w) && (
+                      <Button variant="outline" size="sm" className={ROW_ACTION} onClick={() => navigate(walletScreenPath('control', w.id))}>
+                        Let another wallet sign
+                      </Button>
+                    )}
+                    <Button variant="outline" size="sm" className={ROW_ACTION} data-reveal-seed={w.id} onClick={() => setConfirmRevealFor(w.id)}>
+                      Reveal seed
+                    </Button>
+                    {/* Removing destroys the Seed, so it needs the Wallet's own lock open. */}
+                    <Button variant="danger" size="sm" className={ROW_ACTION} onClick={() => setConfirmRemove(w.id)}>
+                      Remove
+                    </Button>
+                  </div>
                 )}
               </div>
             </div>
@@ -361,7 +376,7 @@ export function SettingsTab() {
               <Separator />
             </>
           )}
-          <Button variant="danger" className="w-fit" onClick={() => setConfirmResetAll(true)}>
+          <Button variant="danger" className="h-auto min-h-9 w-fit max-w-full whitespace-normal py-2 text-left pointer-coarse:min-h-11" onClick={() => setConfirmResetAll(true)}>
             Remove all wallets from this device
           </Button>
         </CardContent>
@@ -521,6 +536,37 @@ export function SettingsTab() {
             <DialogTitle>Wallet seed</DialogTitle>
           </DialogHeader>
           {seedVisibleFor && <SeedReveal getSeed={getRevealedSeed} />}
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!confirmNetworkFor} onOpenChange={(o) => !o && setConfirmNetworkFor(null)}>
+        <DialogContent
+          dismissOnOutsidePress
+          returnFocusTo={() => document.querySelector<HTMLElement>(`[data-reveal-seed="${lastNetworkFor.current}"]`)}
+        >
+          <DialogHeader>
+            <DialogTitle>
+              Use {wallets.find((w) => w.id === confirmNetworkFor?.walletId)?.label ?? 'this wallet'} on Mainnet?
+            </DialogTitle>
+            <DialogDescription>
+              Mainnet moves real funds. This adds the same key as a wallet on Mainnet; nothing is sent. Anything sent to this address
+              there is real XRP.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setConfirmNetworkFor(null)}>
+              Cancel
+            </Button>
+            <Button
+              onClick={() => {
+                const pending = confirmNetworkFor
+                setConfirmNetworkFor(null)
+                if (pending) void handleUseOnOtherNetwork(pending.walletId, pending.target)
+              }}
+            >
+              Use on Mainnet
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
 

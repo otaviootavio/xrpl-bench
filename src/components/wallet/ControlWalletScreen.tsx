@@ -3,6 +3,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { StatusLegend } from '@/components/ui/lamp'
 import { AddressLink } from '@/components/wallet/AddressLink'
 import { ScreenFooter, TaskScreen } from '@/components/wallet/TaskScreen'
@@ -15,9 +16,9 @@ import { NETWORKS } from '@/lib/xrpl/networks'
 import { useWalletOpenKey } from '@/store/app-store'
 
 const STATUS_WORDS = {
-  controlled: 'Controlled by the chosen wallet',
-  'not-controlled': 'Not controlled by the chosen wallet',
-  unknown: 'Unknown: choose a wallet, or the ledger could not be read',
+  controlled: { word: 'Controlled', sentence: 'The chosen wallet signs for this account.' },
+  'not-controlled': { word: 'Not controlled', sentence: 'The chosen wallet does not sign for this account.' },
+  unknown: { word: 'Unknown', sentence: 'Choose a wallet, or the ledger could not be read.' },
 } as const
 
 function usesPasskey(w: WalletMeta): boolean {
@@ -191,30 +192,33 @@ function ControlWalletBody({
                 No other wallet on {NETWORKS[controller.network].label} is on this device. Add one first.
               </p>
             ) : (
-              <select
-                id="control-target"
-                className="h-9 w-full min-w-0 rounded-md border bg-card px-2 text-sm"
+              <Select
                 value={targetId}
                 disabled={busy || done}
-                onChange={(e) => {
-                  setTargetId(e.target.value)
+                onValueChange={(v) => {
+                  setTargetId(v)
                   setResult(null)
                 }}
               >
-                <option value="">Choose a wallet</option>
-                {targets.map((t) => (
-                  <option key={t.id} value={t.id}>
-                    {t.label}
-                  </option>
-                ))}
-              </select>
+                <SelectTrigger id="control-target">
+                  <SelectValue placeholder="Choose a wallet" />
+                </SelectTrigger>
+                <SelectContent>
+                  {targets.map((t) => (
+                    <SelectItem key={t.id} value={t.id}>
+                      {t.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             )}
           </div>
 
           <div className="flex flex-col gap-1 text-sm" aria-live="polite">
             <StatusLegend tone={status === 'controlled' ? 'live' : status === 'not-controlled' ? 'caution' : 'neutral'}>
-              {STATUS_WORDS[status]}
+              {STATUS_WORDS[status].word}
             </StatusLegend>
+            <p className="text-xs text-muted-foreground">{STATUS_WORDS[status].sentence}</p>
             {existing && <p className="text-xs text-muted-foreground">Current Regular Key: <span className="break-all font-mono">{existing}</span></p>}
             {blocked && <p className="text-xs text-text-destructive" id="control-blocked">{blocked}</p>}
           </div>

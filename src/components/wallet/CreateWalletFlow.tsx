@@ -439,7 +439,7 @@ function CreateWalletForm({ capability, onDone, onInProgressChange, defaultLabel
     return (
       <div className="flex flex-col gap-4">
         <div>
-          <h2 className="text-sm font-medium">Write down your ordinal</h2>
+          <h2 className="panel-legend">Write down your ordinal</h2>
           <p className="text-sm text-muted-foreground">
             This wallet has no Seed stored anywhere. Your passkey plus this number rebuild the wallet. This version has no restore screen yet. The number is shown only now.
           </p>
@@ -474,7 +474,7 @@ function CreateWalletForm({ capability, onDone, onInProgressChange, defaultLabel
     return (
       <div className="flex flex-col gap-4">
         <div>
-          <h2 className="text-sm font-medium">Back up your seed</h2>
+          <h2 className="panel-legend">Back up your seed</h2>
           <p className="text-sm text-muted-foreground">Write it down: it is how you recover this wallet.</p>
         </div>
         <SeedReveal getSeed={getSeed} />

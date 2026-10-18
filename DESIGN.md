@@ -448,7 +448,7 @@ The legend plate's shape is one exported constant (`ANNUNCIATOR_LEGEND`), shared
 ### Don't:
 
 - **Don't** ship a chroma-zero neutral. Every grey in this system has hue.
-- **Don't** style `:focus` or `:focus-visible`, and never write `outline-none`.
+- **Don't** style `:focus` or `:focus-visible`, and never write `outline-none`. The one exception is the skip link's reveal-only `focus:` utilities in `Main.tsx` (visibility, never a ring or outline; `docs/decisions.md` §6.3).
 - **Don't** round controls, plates, fields, or containers beyond the machined 0.125rem scale — no pills, no `rounded-lg` web chrome. The indicator lamp disc is the one intentional full-round element.
 - **Don't** wash an alert's field in its tone colour. Light a legend-sized plate instead; commit orange stays the only saturated field.
 - **Don't** use a fill token (`--destructive`, `--warning`, `--success`) as a text colour, or a `--text-*` token as a fill. They are separately measured.

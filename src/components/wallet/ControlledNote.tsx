@@ -3,10 +3,10 @@ import { useAccountState } from '@/hooks/useAccountState'
 import { controlStatus, operatesAnotherAccount, type ControlStatus } from '@/lib/control'
 import type { WalletMeta } from '@/lib/crypto/keystore'
 
-const WORDS: Record<ControlStatus, { tone: 'live' | 'caution' | 'neutral'; text: string }> = {
-  controlled: { tone: 'live', text: 'Controlled: the ledger shows this wallet’s key as the Regular Key' },
-  'not-controlled': { tone: 'caution', text: 'Not controlled: the ledger no longer shows this wallet’s key as the Regular Key, so it cannot sign' },
-  unknown: { tone: 'neutral', text: 'Unknown: the ledger could not be read, or the account is not on it' },
+const WORDS: Record<ControlStatus, { tone: 'live' | 'caution' | 'neutral'; text: string; sentence: string }> = {
+  controlled: { tone: 'live', text: 'Controlled', sentence: 'The ledger shows this wallet’s key as the Regular Key.' },
+  'not-controlled': { tone: 'caution', text: 'Not controlled', sentence: 'The ledger no longer shows this wallet’s key as the Regular Key, so it cannot sign.' },
+  unknown: { tone: 'neutral', text: 'Unknown', sentence: 'The ledger could not be read, or the account is not on it.' },
 }
 
 /**
@@ -27,6 +27,7 @@ function ControlledNoteBody({ wallet }: { wallet: WalletMeta }) {
     <div className="mt-1 flex flex-col gap-1 text-xs text-muted-foreground" data-testid="controlled-note">
       <p>This wallet operates another account as that account’s Regular Key. Its own address is {wallet.keyAddress}.</p>
       <StatusLegend tone={words.tone}>{words.text}</StatusLegend>
+      <p>{words.sentence}</p>
     </div>
   )
 }

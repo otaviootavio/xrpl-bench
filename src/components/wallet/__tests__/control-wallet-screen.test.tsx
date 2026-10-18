@@ -35,6 +35,16 @@ const state = (extra: Record<string, unknown> = {}) => ({
   exists: true, address: 'rAcct', balanceDrops: '1', ownerCount: 0, sequence: 1, requireDestTag: false, disableMasterKey: false, ...extra,
 })
 
+// A Radix Select is a combobox plus a listbox; jsdom lacks two DOM methods it calls.
+Element.prototype.hasPointerCapture ??= () => false
+Element.prototype.releasePointerCapture ??= () => {}
+Element.prototype.scrollIntoView ??= () => {}
+const choose = (name: string) => {
+  const trigger = screen.getByRole('combobox', { name: 'Wallet that will sign' })
+  fireEvent.keyDown(trigger, { key: 'ArrowDown' })
+  fireEvent.keyDown(screen.getByRole('option', { name }), { key: 'Enter' })
+}
+
 const click = async (el: HTMLElement) => act(async () => void fireEvent.click(el))
 const setButton = () => screen.getByRole('button', { name: /Set Regular Key|Replace Regular Key|Working/ })
 
@@ -60,7 +70,7 @@ describe('Control screen', () => {
   it('is aria-disabled with the reason in words on an errored read, and a click signs nothing', async () => {
     h.account = { isError: true, data: undefined }
     mount()
-    fireEvent.change(screen.getByLabelText('Wallet that will sign'), { target: { value: 't' } })
+    choose('Phone')
     expect(setButton().getAttribute('aria-disabled')).toBe('true')
     expect(screen.getAllByText(/could not be read/).length).toBeGreaterThan(0)
     await click(setButton())
@@ -70,21 +80,41 @@ describe('Control screen', () => {
   it('is aria-disabled when the master key is off', async () => {
     h.account = { isError: false, data: state({ disableMasterKey: true }) }
     mount()
-    fireEvent.change(screen.getByLabelText('Wallet that will sign'), { target: { value: 't' } })
+    choose('Phone')
     expect(setButton().getAttribute('aria-disabled')).toBe('true')
     expect(screen.getByText(/master key turned off/)).toBeTruthy()
   })
 
   it('says unknown, not "not controlled", until a wallet is chosen', () => {
     mount()
-    expect(screen.getByText(/Unknown: choose a wallet/)).toBeTruthy()
+    expect(screen.getByText('Unknown')).toBeTruthy()
+    expect(screen.getByText(/Choose a wallet, or the ledger could not be read/)).toBeTruthy()
     expect(screen.queryByText(/Not controlled/)).toBeNull()
+  })
+
+  it('shows the controlled and not-controlled word with its sentence once a wallet is chosen', () => {
+    h.account = { isError: false, data: state({ regularKey: 'rKey' }) }
+    mount()
+    choose('Phone')
+    expect(screen.getByText('Controlled')).toBeTruthy()
+    expect(screen.getByText('The chosen wallet signs for this account.')).toBeTruthy()
+    cleanup()
+    h.account = { isError: false, data: state({ regularKey: 'rOther' }) }
+    mount()
+    choose('Phone')
+    expect(screen.getByText('Not controlled')).toBeTruthy()
+    expect(screen.getByText('The chosen wallet does not sign for this account.')).toBeTruthy()
+  })
+
+  it('shows the placeholder, not a stale label, when no wallet is chosen', () => {
+    mount()
+    expect(screen.getByRole('combobox', { name: 'Wallet that will sign' }).textContent).toContain('Choose a wallet')
   })
 
   it('states the takeover warning, and the passkey extra-key sentence for a passkey target', async () => {
     mount([CONTROLLER, PASSKEY_TARGET])
     expect(screen.getByText(/Whoever holds this phone can take over the account/)).toBeTruthy()
-    fireEvent.change(screen.getByLabelText('Wallet that will sign'), { target: { value: 'p' } })
+    choose('Passkey wallet')
     expect(screen.getByText(/The passkey becomes an extra key for this account\. The master key keeps working\./)).toBeTruthy()
   })
 
@@ -96,7 +126,7 @@ describe('Control screen', () => {
       return { status: 'cancelled', reason: 'Cancelled. Nothing was signed.' }
     })
     mount()
-    fireEvent.change(screen.getByLabelText('Wallet that will sign'), { target: { value: 't' } })
+    choose('Phone')
     await click(screen.getByRole('button', { name: 'Replace Regular Key' }))
     expect(await screen.findByText(/that key will stop working/)).toBeTruthy()
     expect(screen.getByText('rOld')).toBeTruthy()
@@ -109,7 +139,7 @@ describe('Control screen', () => {
     h.setRegularKey.mockResolvedValue({ status: 'unconfirmed', reason: 'Could not confirm. Check again.' })
     h.confirmControl.mockResolvedValue({ status: 'controlled', meta: TARGET, sent: false })
     const { onControlled } = mount()
-    fireEvent.change(screen.getByLabelText('Wallet that will sign'), { target: { value: 't' } })
+    choose('Phone')
     expect(screen.queryByRole('button', { name: 'Check again' })).toBeNull()
     await click(setButton())
     await click(await screen.findByRole('button', { name: 'Check again' }))
@@ -123,7 +153,7 @@ describe('Control screen: the result names the Wallet that now operates the Acco
   it('says "Phone now operates this account" even though Phone has left the eligible list by then', async () => {
     h.setRegularKey.mockResolvedValue({ status: 'controlled', meta: TARGET, sent: true })
     mount()
-    fireEvent.change(screen.getByLabelText('Wallet that will sign'), { target: { value: 't' } })
+    choose('Phone')
     await click(setButton())
     expect(await screen.findByText(/Done\. Phone now operates this account\./)).toBeTruthy()
   })
@@ -135,7 +165,7 @@ describe('Control screen: the list cannot refresh after a validated change', () 
     h.confirmControl.mockResolvedValue({ status: 'controlled', meta: TARGET, sent: false })
     const { onControlled } = mount()
     onControlled.mockRejectedValueOnce(new Error('idb down'))
-    fireEvent.change(screen.getByLabelText('Wallet that will sign'), { target: { value: 't' } })
+    choose('Phone')
     await click(setButton())
     expect(await screen.findByText(/done on the ledger, but this screen could not refresh/)).toBeTruthy()
     // Check again claims once more and, this time, the refresh works.
@@ -157,19 +187,22 @@ describe('ControlledNote', () => {
   it('says controlled only when the ledger shows the key as the Regular Key', () => {
     h.account = { isError: false, data: state({ regularKey: 'rKey' }) }
     mountNote(controlled)
-    expect(screen.getByText(/^Controlled:/)).toBeTruthy()
+    expect(screen.getByText('Controlled')).toBeTruthy()
+    expect(screen.getByText(/The ledger shows this wallet’s key as the Regular Key\./)).toBeTruthy()
   })
 
   it('says not controlled when the ledger shows a different key', () => {
     h.account = { isError: false, data: state({ regularKey: 'rOther' }) }
     mountNote(controlled)
-    expect(screen.getByText(/^Not controlled:/)).toBeTruthy()
+    expect(screen.getByText('Not controlled')).toBeTruthy()
+    expect(screen.getByText(/no longer shows this wallet’s key as the Regular Key, so it cannot sign\./)).toBeTruthy()
   })
 
   it('never renders a failed read as current: unknown, even with data cached', () => {
     h.account = { isError: true, data: state({ regularKey: 'rKey' }) }
     mountNote(controlled)
-    expect(screen.getByText(/^Unknown:/)).toBeTruthy()
-    expect(screen.queryByText(/^Controlled:/)).toBeNull()
+    expect(screen.getByText('Unknown')).toBeTruthy()
+    expect(screen.getByText(/could not be read, or the account is not on it\./)).toBeTruthy()
+    expect(screen.queryByText('Controlled')).toBeNull()
   })
 })

@@ -118,4 +118,42 @@ describe('Settings — use on another network', () => {
     expect(screen.getByText(/will no longer hold the encrypted seed/i)).toBeTruthy()
     expect(screen.queryByText(/network only/i)).toBeNull()
   })
+
+  it('asks before adding the Mainnet view: nothing is added until the dialog is confirmed', async () => {
+    setWallets([TESTNET])
+    h.listWallets.mockResolvedValue([TESTNET, MAINNET])
+    renderSettings()
+    fireEvent.click(screen.getByRole('button', { name: 'Use Savings on Mainnet' }))
+    expect(await screen.findByText('Use Savings on Mainnet?')).toBeTruthy()
+    expect(screen.getByText(/Mainnet moves real funds/)).toBeTruthy()
+    expect(h.addNetworkView).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole('button', { name: 'Use on Mainnet' }))
+    await waitFor(() => expect(h.addNetworkView).toHaveBeenCalledWith('w2', 'mainnet'))
+  })
+
+  it('Cancel on the Mainnet dialog adds nothing', async () => {
+    setWallets([TESTNET])
+    renderSettings()
+    fireEvent.click(screen.getByRole('button', { name: 'Use Savings on Mainnet' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Cancel' }))
+    await waitFor(() => expect(screen.queryByText('Use Savings on Mainnet?')).toBeNull())
+    expect(h.addNetworkView).not.toHaveBeenCalled()
+  })
+
+  it('a non-mainnet target stays a single step', async () => {
+    setWallets([TESTNET])
+    h.listWallets.mockResolvedValue([TESTNET, DEVNET])
+    renderSettings()
+    fireEvent.click(screen.getByRole('button', { name: 'Use Savings on Devnet' }))
+    await waitFor(() => expect(h.addNetworkView).toHaveBeenCalledWith('w2', 'devnet'))
+    expect(screen.queryByText(/on Mainnet\?/)).toBeNull()
+  })
+
+  it('keeps one primary key per row and groups the rest under a label, Remove last', () => {
+    setWallets([MAINNET, OTHER])
+    renderSettings()
+    expect(screen.getAllByRole('button', { name: 'Use this wallet' })).toHaveLength(1)
+    const group = screen.getByRole('group', { name: 'More actions for Spending' })
+    expect(group.querySelector('button:last-child')?.textContent).toBe('Remove')
+  })
 })

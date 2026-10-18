@@ -279,6 +279,15 @@ this failure was in the *generic* primitives, which that rule does not name —
 so the rule now reads: **no component, generic or bespoke, suppresses or
 recolors the platform focus indicator.**
 
+**The one exception: the skip link's reveal.** The skip link in `Main.tsx` is
+`sr-only` until it is focused, and its `focus:` utilities (`not-sr-only`,
+position, box, type) exist only to make it appear. `:focus-visible` cannot be
+that trigger, because a click-focus landing must reveal it too. They style
+visibility, never an indicator: no ring, no outline, no `outline-none`. A test
+pins that the link's classes contain neither. `grep -rnE "focus:|outline-none" src`
+therefore matches that one line and nothing else. Select items use Radix's
+`data-[highlighted]` state, not `focus:`.
+
 ### 6.4 Card titles are headings; controls are never hidden to convey state
 
 **Decision.** `CardTitle` renders an `<h2>` by default, with an `as` prop for

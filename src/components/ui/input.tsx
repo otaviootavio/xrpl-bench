@@ -13,7 +13,7 @@ import { cn } from '@/lib/utils'
  * address, an amount, a currency code, or a seed, all of which are read by
  * character-comparison. Pass `font-legend` for the rare prose field.
  *
- * Nothing here touches `:focus` or sets `outline-none` (docs/decisions.md §6.3).
+ * Nothing here styles the focus state or removes the outline (docs/decisions.md §6.3).
  */
 function Input({ className, type, ...props }: React.ComponentProps<'input'>) {
   return (

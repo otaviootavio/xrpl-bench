@@ -74,3 +74,12 @@ Surfaces, 12 in code (the spec says 11): Reset device, Import warning, App PIN p
 Observation, not a criterion: after an outside tap on a kept-open sheet, `document.activeElement` is `<body>` (focus not pulled back into the sheet).
 
 **Not run:** touch/coarse-pointer emulation; 390px (375 used); light/dark and 320/1280 for the ten overlays not listed above; Master key "turn on" variant; PIN prompt focus return and a successful PIN-prompt Escape; Back on a routed screen with an overlay other than the Import warning; Mainnet; real iOS/Android hardware Back; executing any destructive confirm.
+
+## Verification: fixes after the browser pass (2026-10-17)
+
+Fixed, and re-checked by the gates only (lint, build, test, check:contrast). NOT re-browsed.
+
+- PIN prompt Back/Cancel leaving the app: `pushOverlay`'s release check (`src/lib/route.ts`) could run twice in one tick when a sheet and its PIN prompt released together, calling `history.back()` twice for one entry. It is now one check per tick. This is a reasoned fix: the double release was inferred from the console trace, not reproduced.
+- Wallet seed dialog and Import warning sheet focus return: `DialogContent` takes `returnFocusTo`, preferred over the remembered opener. Settings points it at the Reveal seed button (`data-reveal-seed`), AddWalletScreen at the Add button by ref.
+- Outside tap on a kept-open dialog: focus held before the tap is restored if it fell to body.
+- Not investigated: the 320px light-theme horizontal scrollbar behind Remove all (unconfirmed, outside S4).

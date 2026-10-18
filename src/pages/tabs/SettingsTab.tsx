@@ -117,6 +117,7 @@ export function SettingsTab() {
         return
       }
       revealedSeedRef.current = result.value
+      lastRevealedFor.current = id
       setSeedVisibleFor(id)
       setConfirmRevealFor(null)
     } catch (err: any) {
@@ -124,6 +125,7 @@ export function SettingsTab() {
     }
   }
 
+  const lastRevealedFor = useRef<string | null>(null)
   function closeSeedDialog() {
     revealedSeedRef.current = null
     setSeedVisibleFor(null)
@@ -252,7 +254,7 @@ export function SettingsTab() {
                   </Button>
                 )}
                 {w.lockId in openLocks && (
-                  <Button variant="outline" size="sm" onClick={() => setConfirmRevealFor(w.id)}>
+                  <Button variant="outline" size="sm" data-reveal-seed={w.id} onClick={() => setConfirmRevealFor(w.id)}>
                     Reveal seed
                   </Button>
                 )}
@@ -511,7 +513,10 @@ export function SettingsTab() {
       </Dialog>
 
       <Dialog open={!!seedVisibleFor} onOpenChange={(o) => !o && closeSeedDialog()}>
-        <DialogContent dismissOnOutsidePress>
+        <DialogContent
+          dismissOnOutsidePress
+          returnFocusTo={() => document.querySelector<HTMLElement>(`[data-reveal-seed="${lastRevealedFor.current}"]`)}
+        >
           <DialogHeader>
             <DialogTitle>Wallet seed</DialogTitle>
           </DialogHeader>

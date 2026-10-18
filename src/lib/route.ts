@@ -55,6 +55,7 @@ let blockedPath = HOME_PATH
 let bypassNext = false
 let afterBypass: (() => void) | null = null
 let installed = false
+let settleScheduled = false
 
 /** The open dialogs and sheets, oldest first. They share ONE history entry (below). */
 const overlays: Array<{ close: () => void }> = []
@@ -191,7 +192,12 @@ export function pushOverlay(close: () => void): () => void {
     released = true
     const at = overlays.indexOf(overlay)
     if (at !== -1) overlays.splice(at, 1)
+    // One check per tick: two overlays released together (a sheet and its PIN
+    // prompt) must pop the one entry once, not twice.
+    if (settleScheduled) return
+    settleScheduled = true
     setTimeout(() => {
+      settleScheduled = false
       if (overlays.length === 0 && hasOverlayEntry()) {
         bypassNext = true
         window.history.back()

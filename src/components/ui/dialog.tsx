@@ -82,9 +82,13 @@ function DialogContent({
   onOpenAutoFocus,
   onCloseAutoFocus,
   onPointerDownOutside,
+  returnFocusTo,
   ...props
 }: React.ComponentProps<typeof DialogPrimitive.Content> & {
   variant?: 'dialog' | 'sheet'
+  /** Where focus goes on close when the remembered opener cannot be it (it
+   * unmounted, or was disabled as the dialog opened). */
+  returnFocusTo?: () => HTMLElement | null
   /** A tap outside closes only a confirm with nothing typed. Everything else
    * ignores it: a stray tap on the gutter must not discard work. Escape, Back
    * and the buttons still close. */
@@ -115,7 +119,7 @@ function DialogContent({
         onCloseAutoFocus={(event) => {
           onCloseAutoFocus?.(event)
           if (event.defaultPrevented) return
-          const target = opener?.recall()
+          const target = returnFocusTo?.() ?? opener?.recall()
           // Another overlay already open means this one closed to hand over to it:
           // focus belongs to that one.
           if (document.querySelector('[data-slot="dialog-content"]')) {
@@ -129,7 +133,14 @@ function DialogContent({
         }}
         onPointerDownOutside={(event) => {
           onPointerDownOutside?.(event)
-          if (!dismissOnOutsidePress) event.preventDefault()
+          if (!dismissOnOutsidePress) {
+            event.preventDefault()
+            // The tap moves focus to the page; a kept-open dialog keeps it.
+            const held = document.activeElement
+            setTimeout(() => {
+              if (held instanceof HTMLElement && held.isConnected && document.activeElement === document.body) held.focus()
+            }, 0)
+          }
         }}
         {...props}
       >

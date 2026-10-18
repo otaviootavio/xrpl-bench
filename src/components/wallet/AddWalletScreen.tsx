@@ -54,6 +54,9 @@ export function AddWalletScreen({ onClose }: { onClose: () => void }) {
   // Uncontrolled: a controlled input would put the typed seed into React state
   // on every keystroke (guardrail #3).
   const seedInputRef = useRef<HTMLInputElement | null>(null)
+  // Add is disabled while the pre-import check runs, so the warning sheet cannot
+  // record it as its opener; focus returns to it by this ref instead.
+  const addButtonRef = useRef<HTMLButtonElement | null>(null)
   // The parsed Seed while the master-key warning is open.
   const pendingImportSeedRef = useRef<string | null>(null)
   // The network the pre-check ran against: the store uses this one, never the
@@ -160,14 +163,14 @@ export function AddWalletScreen({ onClose }: { onClose: () => void }) {
       </div>
       {addMode === 'import' && (
         <ScreenFooter>
-          <Button onClick={handleAddImport} disabled={busy}>
+          <Button ref={addButtonRef} onClick={handleAddImport} disabled={busy}>
             {busy ? 'Checking…' : 'Add'}
           </Button>
         </ScreenFooter>
       )}
 
       <Dialog open={!!importWarning} onOpenChange={(o) => !o && !busy && cancelImportWarning()}>
-        <DialogContent variant="sheet">
+        <DialogContent variant="sheet" returnFocusTo={() => addButtonRef.current}>
           <DialogHeader>
             <DialogTitle>Heads up</DialogTitle>
             <DialogDescription>Check this before the seed is saved to this device.</DialogDescription>

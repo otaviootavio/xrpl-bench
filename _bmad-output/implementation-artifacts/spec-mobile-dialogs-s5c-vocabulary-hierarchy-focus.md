@@ -89,6 +89,24 @@ deferred: []
 **Manual checks (if no CLI):**
 - A real-browser pass is required (per `docs/agents/verifying-your-work.md`): 320x568 and 375x667, light and dark; open the screenshots; Settings row, Mainnet confirm, each new screen, skip link reveal on Tab with the platform ring unaffected, Select arrow-key highlight. Record it in the Verification section.
 
+### Batched browser pass (2026-10-18)
+
+**Tree and commit:** worktree `mobile-dialogs-s2-s5`, HEAD c5bcd54 (`bun run dev -- --port 5190 --strictPort`, fresh origin, stopped afterwards by PID).
+**Driven by:** Playwright MCP Chromium with a CDP virtual authenticator (ctap2, internal, UV, PRF, presence simulation); two throwaway Testnet wallets (Alpha funded from the in-app faucet, Beta unfunded; Beta also given a Mainnet *view* only, never funded); `emulateMedia` for light/dark; coarse pointer by CDP `Emulation.setTouchEmulationEnabled` (`pointer: coarse` true) with measurements and DOM clicks only; 200% text zoom emulated as `html { font-size: 200% }` at a 320 px viewport (not browser zoom). Widths 320, 375, 1280. Screenshots in `.playwright-mcp/` (uncommitted), each opened before being cited.
+**Not run for any spec:** real touch input (pointer events were DOM-dispatched), real browser zoom, a real device.
+
+Criteria for this spec:
+
+- Settings, two wallets (plus Beta's Mainnet view row): each row has one filled primary ("Use this wallet" on the inactive one, none on the active one), Remove is last and red. MET. Caveat: the rest of the actions are a flat wrapped list, not a labelled group, and "Use this wallet" sits after the Custom node form rather than first in the row; two inactive rows both expose the accessible name "Use this wallet" with no wallet name.
+- 320: Settings `main` scrollWidth 305 = clientWidth 305; "Remove all wallets from this device" wraps to two lines, scrollWidth 238 = clientWidth 238 (293/293 under coarse). Row buttons all within the row. MET.
+- Coarse: all Settings buttons >= 44 px, Remove all 44 px. MET.
+- "Use on Mainnet" opens a confirm dialog titled "Use <wallet> on Mainnet?"; Cancel adds nothing (no new row); Confirm adds a separate Mainnet view row for Beta (throwaway, unfunded, only a view) and the sentence "adds the same key as a wallet on Mainnet; nothing is sent" is true. Focus after Confirm lands on Reveal seed in the same row (the opener was removed). Dark 320 dialog has no overflow. MET.
+- Let another wallet sign: shared Select with placeholder "Choose a wallet", legend "WALLET THAT WILL SIGN" uppercase (computed `text-transform: uppercase`), no native `<select>`, no radios on that screen; status legends "UNKNOWN", "NOT CONTROLLED", "CONTROLLED". MET. Shared Radio: verified on Create/Edit checks (native radios replaced by `data-slot=radio` inputs). MET.
+- Skip link: first Tab on the unlocked app reveals "Skip to content" at (8, 8); the only outline is the browser's own `auto` ring, no authored ring, shadow or outline. Onboarding (no shell) has no skip link, first Tab lands on Create a new wallet. MET.
+- Select arrow-key highlight shows `data-highlighted` and a filled background. MET.
+- 320@200%: Let another wallet sign legend chip overflows by 10 px, wallet header Select collapses to an empty box (see S2). PARTIAL.
+
+
 ## Review Triage Log
 
 ### 2026-10-17 — Review pass

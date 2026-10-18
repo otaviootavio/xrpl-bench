@@ -118,3 +118,18 @@ Fixed, then re-checked **only by gates** (`bun run lint`, `build`, `test`, `chec
 Out of this slice and untouched: the header wallet selector collapsing to a blank box at 320 and 200%, and the header plus status slot leaving about 300px of 568.
 
 **Status:** stays `in-review` until the three fixes are re-browsed at 320x568, 375x667 and 320 at 200%.
+
+### Batched browser pass (2026-10-18)
+
+**Tree and commit:** worktree `mobile-dialogs-s2-s5`, HEAD c5bcd54 (`bun run dev -- --port 5190 --strictPort`, fresh origin, stopped afterwards by PID).
+**Driven by:** Playwright MCP Chromium with a CDP virtual authenticator (ctap2, internal, UV, PRF, presence simulation); two throwaway Testnet wallets (Alpha funded from the in-app faucet, Beta unfunded; Beta also given a Mainnet *view* only, never funded); `emulateMedia` for light/dark; coarse pointer by CDP `Emulation.setTouchEmulationEnabled` (`pointer: coarse` true) with measurements and DOM clicks only; 200% text zoom emulated as `html { font-size: 200% }` at a 320 px viewport (not browser zoom). Widths 320, 375, 1280. Screenshots in `.playwright-mcp/` (uncommitted), each opened before being cited.
+**Not run for any spec:** real touch input (pointer events were DOM-dispatched), real browser zoom, a real device.
+
+Criteria for this spec:
+
+- Edit checks and Sign with two devices at 320, 375 and 320@200%: no horizontal overflow (the only wider element is the footer's deliberate `-mx-4`); Cancel / Save changes in the sticky footer in view at 320 and 375; at 320@200% the footer buttons are reachable by scrolling within the screen. Sign with two devices has no footer: its two role buttons (55 px high) are in view at 320/375 and reachable by scroll at 320@200%. MET.
+- Add wallet at 320: sticky "Create wallet" footer in view at scroll 0 (top 456 of 568). MET. At 320@200% it is NOT in view at scroll 0 (top 745 of a 568 viewport); it sticks into view only after the content scrolls about 500 px, because the footer's sticky container starts below the fold. Reachable, but this is the "~3-screen scroll" the spec feared in a milder form. NOT MET for "in view without a scroll", MET for reachable.
+- Let another wallet sign at 320, 375, 1280: no overflow, Cancel / Set Regular Key in view. At 320@200% the alert's legend chip overflows its plate by 10 px (scrollWidth 184 vs clientWidth 174) and Set Regular Key wraps to three lines (151 px high); both still reachable. PARTIAL.
+- Back-arrow Settings button returns to Settings on all three screens. MET.
+- Defect seen on these screens: at 320@200% the header wallet selector collapses to a 56 px empty box (its label is not visible); the header is outside S2's diff but is on every routed screen.
+

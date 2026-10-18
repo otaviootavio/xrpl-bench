@@ -13,8 +13,9 @@ function Switch({ className, ...props }: React.ComponentProps<typeof SwitchPrimi
   return (
     <SwitchPrimitive.Root
       className={cn(
-        'peer inline-flex h-5 w-9 shrink-0 items-center rounded-sm border border-input p-px',
+        'peer relative inline-flex h-5 w-9 shrink-0 items-center rounded-sm border border-input p-px',
         'shadow-[inset_0_1px_2px_0_rgb(0_0_0/0.22)] transition-colors',
+        'pointer-coarse:after:absolute pointer-coarse:after:-inset-3',
         'disabled:cursor-not-allowed disabled:opacity-55',
         'data-[state=checked]:border-primary data-[state=checked]:bg-primary data-[state=unchecked]:bg-muted',
         className,

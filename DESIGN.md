@@ -362,6 +362,7 @@ The panel's keys. Every variant is a physical cap: a light top edge, a shadow un
 - **Outline / Secondary:** plate or recess ground with a strong inner highlight; the neutral choices on a plate.
 - **Ghost / Link:** no cap at all — a bare legend cut into the panel. `link` drops the uppercase and tracking and hovers to caution amber.
 - **Focus:** nothing. The browser's own two-tone ring is the indicator, in every variant.
+- **Coarse pointer:** under `(pointer: coarse)` every size is 2.75rem tall with 1rem text (below 16px iOS zooms the page on focus). The sizing lives in the primitive, never at a call site.
 
 ### Chips
 
@@ -400,6 +401,7 @@ Engraved legend plates.
 - **Style:** genuinely cut into the plate — chassis-coloured ground, 1px control-edge boundary at a measured 3:1, field-recess inset shadow, machined corners, 2.25rem tall.
 - **Face:** the data face by default, since nearly every field here receives an address, amount, currency code, or seed. Placeholders switch to the legend face at normal tracking.
 - **Focus:** untouched. The UA ring is the indicator; `outline-none` is banned repo-wide.
+- **Coarse pointer:** 2.75rem tall with 1rem text in `Input`, the textareas and the select trigger. Field labels are 0.75rem on every pointer, never 11px. Checkbox, switch, dialog Close and the native radio labels reach 44px of hit area.
 - **Error / Disabled:** `aria-invalid` swaps the edge to the destructive fill colour; disabled drops to 55% opacity with `not-allowed`.
 - **Select trigger:** the same recessed field in the legend face, with a small muted chevron; its menu is a plate on the control edge.
 

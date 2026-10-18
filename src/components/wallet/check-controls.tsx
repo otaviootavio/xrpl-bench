@@ -26,7 +26,7 @@ export function Choice({
   const hasText = !state.available || !!state.note || !!detail
   return (
     <div className="flex flex-col gap-0.5">
-      <label className="flex items-start gap-2 text-sm">
+      <label className="flex items-start gap-2 text-sm pointer-coarse:min-h-11 pointer-coarse:items-center">
         <input
           type="radio"
           name={name}
@@ -39,7 +39,7 @@ export function Choice({
           onClick={(event) => {
             if (!state.available) event.preventDefault()
           }}
-          className="mt-1"
+          className="mt-1 pointer-coarse:mt-0"
         />
         <span>{label}</span>
       </label>

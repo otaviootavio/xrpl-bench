@@ -59,12 +59,12 @@ function DialogContent({
         )}
         {...props}
       >
-        <div data-slot="dialog-body" className="grid min-h-0 gap-4 overflow-y-auto overscroll-contain p-4">
+        <div data-slot="dialog-body" className="grid min-h-0 gap-4 overflow-y-auto overscroll-contain p-4 [&_.panel-legend]:text-xs">
           {children}
         </div>
         <DialogPrimitive.Close
           className={cn(
-            'absolute right-3 top-3 inline-flex size-7 items-center justify-center rounded-sm',
+            'absolute right-3 top-3 inline-flex size-7 pointer-coarse:right-1 pointer-coarse:top-1 pointer-coarse:size-11 items-center justify-center rounded-sm',
             'text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground',
           )}
         >
@@ -77,7 +77,7 @@ function DialogContent({
 }
 
 function DialogHeader({ className, ...props }: React.ComponentProps<'div'>) {
-  return <div className={cn('flex flex-col gap-1 pr-8', className)} {...props} />
+  return <div className={cn('flex flex-col gap-1 pr-8 pointer-coarse:pr-12', className)} {...props} />
 }
 /** In a sheet below `sm` the footer sticks to the bottom of the scrolling body,
  * with a rule and a shadow above it: the shadow is the cue that content runs on

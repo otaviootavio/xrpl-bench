@@ -19,8 +19,8 @@ function SelectTrigger({ className, children, ...props }: React.ComponentProps<t
   return (
     <SelectPrimitive.Trigger
       className={cn(
-        'flex h-9 w-full items-center justify-between gap-2 whitespace-nowrap rounded-md border border-input bg-background px-2.5 py-2',
-        'font-legend text-[0.8125rem] font-medium',
+        'flex h-9 w-full pointer-coarse:h-11 items-center justify-between gap-2 whitespace-nowrap rounded-md border border-input bg-background px-2.5 py-2',
+        'font-legend text-[0.8125rem] pointer-coarse:text-base font-medium',
         'shadow-[inset_0_1px_2px_0_rgb(0_0_0/0.14)] transition-colors',
         'disabled:cursor-not-allowed disabled:opacity-55',
         '[&>span]:truncate',

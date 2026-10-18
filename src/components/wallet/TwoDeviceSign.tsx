@@ -134,7 +134,7 @@ function CopyText({ text, label }: { text: string; label: string }) {
         rows={3}
         value={text}
         aria-label={`Text of ${label}`}
-        className="w-full rounded-md border border-input bg-background px-2.5 py-1 font-data text-[0.8125rem]"
+        className="w-full rounded-md border border-input bg-background px-2.5 py-1 font-data text-[0.8125rem] pointer-coarse:text-base"
       />
     </div>
   )

@@ -1,5 +1,6 @@
 import { ChevronDownIcon, ChevronUpIcon } from 'lucide-react'
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -49,9 +50,11 @@ export interface CreateWalletFlowProps {
    * a host dialog should not close in between. */
   onInProgressChange?: (inProgress: boolean) => void
   defaultLabel?: string
-  /** Put Create wallet in a `ScreenFooter` stuck to the bottom of a routed
-   * screen, so it stays in reach however long the questions run. */
-  stickyAction?: boolean
+  /** Render Create wallet in a `ScreenFooter` portalled into this element, a
+   * direct child of the routed screen. A sticky footer cannot leave the box of
+   * its parent, so left inside the form it stayed below the fold until the
+   * form itself scrolled into view. */
+  actionHost?: HTMLElement | null
 }
 
 /** `confirm-seed`: the Seed is shown and three groups of it typed back, BEFORE
@@ -104,7 +107,7 @@ export function CreateWalletFlow(props: CreateWalletFlowProps) {
   return <CreateWalletForm capability={capability} {...props} />
 }
 
-function CreateWalletForm({ capability, onDone, onInProgressChange, defaultLabel = 'My Wallet', stickyAction = false }: CreateWalletFlowProps & { capability: PasskeyCapability }) {
+function CreateWalletForm({ capability, onDone, onInProgressChange, defaultLabel = 'My Wallet', actionHost = null }: CreateWalletFlowProps & { capability: PasskeyCapability }) {
   const group = useId()
   const [step, setStep] = useState<Step>('questions')
   // Layout only: every answer lives in the state below, so closing Customise resets none.
@@ -773,7 +776,7 @@ function CreateWalletForm({ capability, onDone, onInProgressChange, defaultLabel
         </p>
       )}
 
-      {stickyAction ? <ScreenFooter>{createButton}</ScreenFooter> : createButton}
+      {actionHost ? createPortal(<ScreenFooter>{createButton}</ScreenFooter>, actionHost) : createButton}
     </div>
   )
 }

@@ -68,7 +68,7 @@ function StatusLegend({
   return (
     <span
       className={cn(
-        'inline-flex items-center gap-1.5 font-legend text-[0.6875rem] font-semibold uppercase tracking-[0.1em]',
+        'inline-flex max-w-full items-center gap-1.5 font-legend text-[0.6875rem] font-semibold uppercase tracking-[0.1em]',
         TONE[tone],
         className,
       )}

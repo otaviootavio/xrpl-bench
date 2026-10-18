@@ -1,3 +1,4 @@
+import { ChevronDownIcon, ChevronUpIcon } from 'lucide-react'
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
@@ -22,7 +23,7 @@ import {
 } from '@/lib/crypto/policy'
 import { detectPrfSupport, getRpId } from '@/lib/crypto/webauthn'
 import { verifyNode } from '@/lib/xrpl/client'
-import { builtInNodes, type NetworkId } from '@/lib/xrpl/networks'
+import { builtInNodes, NETWORKS, type NetworkId } from '@/lib/xrpl/networks'
 import { useAppStore } from '@/store/app-store'
 
 /**
@@ -106,6 +107,8 @@ export function CreateWalletFlow(props: CreateWalletFlowProps) {
 function CreateWalletForm({ capability, onDone, onInProgressChange, defaultLabel = 'My Wallet', stickyAction = false }: CreateWalletFlowProps & { capability: PasskeyCapability }) {
   const group = useId()
   const [step, setStep] = useState<Step>('questions')
+  // Layout only: every answer lives in the state below, so closing Customise resets none.
+  const [customiseOpen, setCustomiseOpen] = useState(false)
   const [label, setLabel] = useState(defaultLabel)
   const [network, setNewWalletNetwork] = useState<NetworkId>('testnet')
   const [nodeMode, setNodeMode] = useState<'builtin' | 'custom'>('builtin')
@@ -493,6 +496,23 @@ function CreateWalletForm({ capability, onDone, onInProgressChange, defaultLabel
 
   const nodes = builtInNodes(network)
   const verdict = options.combination
+  const isRecommended =
+    nodeMode === 'builtin' &&
+    algorithm === 'ed25519' &&
+    openCheck === (capability === 'yes' ? 'passkey' : 'pin') &&
+    autoLockMinutes === 5 &&
+    signing === (seedMethod === 'passkey-derived' ? 'passkey' : defaultSigning(network, capability))
+  // What fixes a blocked combination or a failed Node test lives in Customise: show it then.
+  const customiseShown = customiseOpen || !verdict.ok || nodeReason !== null
+  const summaryRows: [string, string][] = [
+    ['Network', NETWORKS[network].label],
+    ['Node', nodeMode === 'builtin' ? 'Built-in Nodes' : verifiedNode ? `${verifiedNode} (tested)` : 'Your own Node (not tested yet)'],
+    ['Seed Method', seedMethod === 'stored' ? 'Stored Seed' : 'Passkey-Derived Seed'],
+    ['Signature type', algorithm === 'ed25519' ? 'Ed25519' : 'secp256k1'],
+    ['Open Check', openCheck === 'pin' ? 'App PIN' : openCheck === 'passkey' ? 'Passkey' : 'No Open Check'],
+    ['Auto-lock', minutesLabel(autoLockMinutes)],
+    ['Signing Check', signing === 'standard' ? 'Standard' : signing === 'passkey' ? 'Passkey only' : 'App PIN only'],
+  ]
 
   const createButton = (
     <Button type="button" aria-disabled={!verdict.ok || (needsPin && pinReadFailed) ? true : undefined} aria-describedby={!verdict.ok ? `${group}-blocked` : undefined} disabled={busy} onClick={() => void handleCreate()}>
@@ -508,53 +528,6 @@ function CreateWalletForm({ capability, onDone, onInProgressChange, defaultLabel
       </div>
 
       <NetworkChoice value={network} onChange={changeNetwork} disabled={busy || nodeBusy} />
-
-      <Axis legend="Node">
-        <Choice
-          name={`${group}-node`}
-          checked={nodeMode === 'builtin'}
-          label="Built-in Nodes"
-          state={{ available: true }}
-          detail={nodes.join(', ')}
-          onSelect={() => setNodeMode('builtin')}
-        />
-        <Choice
-          name={`${group}-node`}
-          checked={nodeMode === 'custom'}
-          label="A Node you choose"
-          state={{ available: true }}
-          onSelect={() => setNodeMode('custom')}
-        />
-        {nodeMode === 'custom' && (
-          <div className="grid gap-1.5 text-xs">
-            <Label htmlFor={`${group}-node-url`}>Node address (wss://)</Label>
-            <div className="flex flex-wrap gap-2">
-              <Input
-                id={`${group}-node-url`}
-                value={nodeDraft}
-                onChange={(e) => {
-                  setNodeDraft(e.target.value)
-                  setVerifiedNode(null)
-                }}
-                placeholder="wss://node.example.com"
-                autoComplete="off"
-                spellCheck={false}
-                disabled={nodeBusy || busy}
-                className="min-w-0 flex-1"
-              />
-              <Button type="button" size="sm" variant="outline" onClick={() => void testNode()} disabled={nodeBusy || busy || nodeDraft.trim() === ''}>
-                {nodeBusy ? 'Checking…' : 'Test this Node'}
-              </Button>
-            </div>
-            {verifiedNode && <p className="text-muted-foreground">This Node answers for this network and will be used.</p>}
-          </div>
-        )}
-        {nodeReason && (
-          <p role="alert" className="text-xs text-text-destructive">
-            Not used. {nodeReason} The built-in Nodes stay selected.
-          </p>
-        )}
-      </Axis>
 
       <Axis legend="Seed Method">
         <Choice
@@ -614,71 +587,149 @@ function CreateWalletForm({ capability, onDone, onInProgressChange, defaultLabel
         </>
       )}
 
-      <Axis legend="Signature type">
-        <Choice name={`${group}-algo`} checked={algorithm === 'ed25519'} label="Ed25519" state={{ available: true }} onSelect={() => setAlgorithm('ed25519')} />
-        <Choice name={`${group}-algo`} checked={algorithm === 'secp256k1'} label="secp256k1" state={{ available: true }} onSelect={() => setAlgorithm('secp256k1')} />
-      </Axis>
+      <section aria-labelledby={`${group}-recommended`} className="panel-well grid gap-2 px-3 py-2">
+        <h2 id={`${group}-recommended`} className="font-legend text-xs uppercase text-muted-foreground">
+          {isRecommended ? 'Recommended' : 'Your choices'}
+        </h2>
+        <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-sm">
+          {summaryRows.map(([term, value]) => (
+            <div key={term} className="contents">
+              <dt className="text-muted-foreground">{term}</dt>
+              <dd className="min-w-0 break-all">{value}</dd>
+            </div>
+          ))}
+        </dl>
+      </section>
 
-      <Axis legend="Open Check">
-        <Choice name={`${group}-open`} checked={openCheck === 'pin'} label="App PIN" state={options.openCheck.pin} onSelect={() => setOpenCheck('pin')} />
-        <Choice name={`${group}-open`} checked={openCheck === 'passkey'} label="Passkey" state={options.openCheck.passkey} onSelect={() => setOpenCheck('passkey')} />
-        <Choice
-          name={`${group}-open`}
-          checked={openCheck === 'none'}
-          label="No Open Check"
-          state={options.openCheck.none}
-          onSelect={() => setOpenCheck('none')}
-        />
-      </Axis>
+      <div className="grid gap-3">
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          className="w-fit"
+          aria-expanded={customiseShown}
+          aria-controls={`${group}-customise`}
+          onClick={() => setCustomiseOpen(!customiseShown)}
+        >
+          Customise
+          {customiseShown ? <ChevronUpIcon className="size-3.5" aria-hidden /> : <ChevronDownIcon className="size-3.5" aria-hidden />}
+        </Button>
+        <div id={`${group}-customise`} hidden={!customiseShown} className="flex flex-col gap-5">
+          <Axis legend="Node">
+            <Choice
+              name={`${group}-node`}
+              checked={nodeMode === 'builtin'}
+              label="Built-in Nodes"
+              state={{ available: true }}
+              detail={nodes.join(', ')}
+              onSelect={() => setNodeMode('builtin')}
+            />
+            <Choice
+              name={`${group}-node`}
+              checked={nodeMode === 'custom'}
+              label="A Node you choose"
+              state={{ available: true }}
+              onSelect={() => setNodeMode('custom')}
+            />
+            {nodeMode === 'custom' && (
+              <div className="grid gap-1.5 text-xs">
+                <Label htmlFor={`${group}-node-url`}>Node address (wss://)</Label>
+                <div className="flex flex-wrap gap-2">
+                  <Input
+                    id={`${group}-node-url`}
+                    value={nodeDraft}
+                    onChange={(e) => {
+                      setNodeDraft(e.target.value)
+                      setVerifiedNode(null)
+                    }}
+                    placeholder="wss://node.example.com"
+                    autoComplete="off"
+                    spellCheck={false}
+                    disabled={nodeBusy || busy}
+                    className="min-w-0 flex-1"
+                  />
+                  <Button type="button" size="sm" variant="outline" onClick={() => void testNode()} disabled={nodeBusy || busy || nodeDraft.trim() === ''}>
+                    {nodeBusy ? 'Checking…' : 'Test this Node'}
+                  </Button>
+                </div>
+                {verifiedNode && <p className="text-muted-foreground">This Node answers for this network and will be used.</p>}
+              </div>
+            )}
+          </Axis>
 
-      <Axis legend="Auto-lock after inactivity">
-        {options.autoLock.map((choice) => (
-          <Choice
-            key={choice.minutes}
-            name={`${group}-lock`}
-            checked={autoLockMinutes === choice.minutes}
-            label={minutesLabel(choice.minutes)}
-            state={choice}
-            onSelect={() => setAutoLockMinutes(choice.minutes)}
-          />
-        ))}
-      </Axis>
+          <Axis legend="Signature type">
+            <Choice name={`${group}-algo`} checked={algorithm === 'ed25519'} label="Ed25519" state={{ available: true }} onSelect={() => setAlgorithm('ed25519')} />
+            <Choice name={`${group}-algo`} checked={algorithm === 'secp256k1'} label="secp256k1" state={{ available: true }} onSelect={() => setAlgorithm('secp256k1')} />
+          </Axis>
 
-      <Axis legend="Signing Check">
-        <Choice
-          name={`${group}-sign`}
-          checked={signing === 'standard'}
-          label="Standard"
-          detail="Signs once the wallet is open, with no further check."
-          state={options.signing.standard}
-          onSelect={() => {
-            setSigningTouched(true)
-            setSigning('standard')
-          }}
-        />
-        <Choice
-          name={`${group}-sign`}
-          checked={signing === 'passkey'}
-          label="Passkey only"
-          detail="A passkey prompt for every signature."
-          state={options.signing.passkey}
-          onSelect={() => {
-            setSigningTouched(true)
-            setSigning('passkey')
-          }}
-        />
-        <Choice
-          name={`${group}-sign`}
-          checked={signing === 'pin'}
-          label="App PIN only"
-          detail="The App PIN for every signature."
-          state={options.signing.pin}
-          onSelect={() => {
-            setSigningTouched(true)
-            setSigning('pin')
-          }}
-        />
-      </Axis>
+          <Axis legend="Open Check">
+            <Choice name={`${group}-open`} checked={openCheck === 'pin'} label="App PIN" state={options.openCheck.pin} onSelect={() => setOpenCheck('pin')} />
+            <Choice name={`${group}-open`} checked={openCheck === 'passkey'} label="Passkey" state={options.openCheck.passkey} onSelect={() => setOpenCheck('passkey')} />
+            <Choice
+              name={`${group}-open`}
+              checked={openCheck === 'none'}
+              label="No Open Check"
+              state={options.openCheck.none}
+              onSelect={() => setOpenCheck('none')}
+            />
+          </Axis>
+
+          <Axis legend="Auto-lock after inactivity">
+            {options.autoLock.map((choice) => (
+              <Choice
+                key={choice.minutes}
+                name={`${group}-lock`}
+                checked={autoLockMinutes === choice.minutes}
+                label={minutesLabel(choice.minutes)}
+                state={choice}
+                onSelect={() => setAutoLockMinutes(choice.minutes)}
+              />
+            ))}
+          </Axis>
+
+          <Axis legend="Signing Check">
+            <Choice
+              name={`${group}-sign`}
+              checked={signing === 'standard'}
+              label="Standard"
+              detail="Signs once the wallet is open, with no further check."
+              state={options.signing.standard}
+              onSelect={() => {
+                setSigningTouched(true)
+                setSigning('standard')
+              }}
+            />
+            <Choice
+              name={`${group}-sign`}
+              checked={signing === 'passkey'}
+              label="Passkey only"
+              detail="A passkey prompt for every signature."
+              state={options.signing.passkey}
+              onSelect={() => {
+                setSigningTouched(true)
+                setSigning('passkey')
+              }}
+            />
+            <Choice
+              name={`${group}-sign`}
+              checked={signing === 'pin'}
+              label="App PIN only"
+              detail="The App PIN for every signature."
+              state={options.signing.pin}
+              onSelect={() => {
+                setSigningTouched(true)
+                setSigning('pin')
+              }}
+            />
+          </Axis>
+        </div>
+      </div>
+
+      {nodeReason && (
+        <p role="alert" className="text-xs text-text-destructive">
+          Not used. {nodeReason} The built-in Nodes stay selected.
+        </p>
+      )}
 
       {needsPin && pinReadFailed && (
         <div role="alert" className="grid gap-1.5 text-sm">

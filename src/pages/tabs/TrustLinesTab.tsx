@@ -14,7 +14,7 @@ import { useServerReserves } from '@/hooks/useServerReserves'
 import { useSpendableBalance } from '@/hooks/useSpendableBalance'
 import { submitTrustSet } from '@/lib/xrpl/writes'
 import { signingHandleFor } from '@/lib/crypto/keystore'
-import { usePrompts } from '@/hooks/usePrompts'
+import { useYieldingPrompts } from '@/hooks/usePrompts'
 import { formatXrp, displayCurrencyCode, coversOwnerReserve } from '@/lib/xrpl/money'
 import { describeResultCode } from '@/lib/xrpl/result-codes'
 import { invalidateAccountScoped } from '@/lib/xrpl/query-keys'
@@ -28,7 +28,7 @@ export function TrustLinesTab() {
   // The Open Key of THIS Wallet's lock, never another's (AD-21).
   const vaultKey = useWalletOpenKey(wallet?.id)
   // The PIN dialog, for a Wallet whose Signing Check is the App PIN.
-  const prompts = usePrompts()
+  const { prompts, promptOpen } = useYieldingPrompts()
   const trustLines = useTrustLines(network, wallet?.address ?? null, node)
   const reserves = useServerReserves(network, node)
   const { spendableDrops } = useSpendableBalance(network, wallet?.address ?? null, node)
@@ -86,11 +86,11 @@ export function TrustLinesTab() {
           <CardTitle>Trust Lines</CardTitle>
           <CardDescription>Required to hold tokens other than XRP.</CardDescription>
         </div>
-        <Dialog open={open} onOpenChange={setOpen}>
+        <Dialog open={open && !promptOpen} onOpenChange={setOpen}>
           <DialogTrigger asChild>
             <Button>Add trust line</Button>
           </DialogTrigger>
-          <DialogContent>
+          <DialogContent variant="sheet">
             <DialogHeader>
               <DialogTitle>Add trust line</DialogTitle>
               <DialogDescription>
@@ -207,8 +207,8 @@ export function TrustLinesTab() {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={!!editing} onOpenChange={(o) => !o && setEditing(null)}>
-        <DialogContent>
+      <Dialog open={!!editing && !promptOpen} onOpenChange={(o) => !o && setEditing(null)}>
+        <DialogContent variant="sheet">
           <DialogHeader>
             <DialogTitle>Edit trust line limit</DialogTitle>
           </DialogHeader>

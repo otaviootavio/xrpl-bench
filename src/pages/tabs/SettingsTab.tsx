@@ -722,7 +722,7 @@ export function SettingsTab() {
       </Dialog>
 
       <Dialog open={!!importWarning} onOpenChange={(o) => !o && !busy && cancelImportWarning()}>
-        <DialogContent>
+        <DialogContent variant="sheet">
           <DialogHeader>
             <DialogTitle>Heads up</DialogTitle>
             <DialogDescription>Check this before the seed is saved to this device.</DialogDescription>

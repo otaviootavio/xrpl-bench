@@ -133,9 +133,14 @@ describe('Trust Lines signing behind a PIN Signing Check', () => {
 })
 
 describe('no screen that signs or reveals uses the dismissing prompts', () => {
-  it.each(['SendTab.tsx', 'TrustLinesTab.tsx', 'SettingsTab.tsx'])('%s asks the PIN dialog', (file) => {
+  // A screen whose sheet signs must yield to the PIN prompt: one overlay at a time.
+  it.each([
+    ['SendTab.tsx', 'useYieldingPrompts()'],
+    ['TrustLinesTab.tsx', 'useYieldingPrompts()'],
+    ['SettingsTab.tsx', 'usePrompts()'],
+  ])('%s asks the PIN dialog', (file, hook) => {
     const source = readFileSync(join(__dirname, '..', file), 'utf8')
-    expect(source).toContain('usePrompts()')
+    expect(source).toContain(hook)
     expect(source).not.toContain('unavailablePrompts')
   })
 })

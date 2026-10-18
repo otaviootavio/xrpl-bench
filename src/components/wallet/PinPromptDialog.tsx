@@ -37,8 +37,8 @@ export function PinPromptDialog({
 
   return (
     <Dialog open onOpenChange={(open) => !open && onCancel()}>
-      <DialogContent>
-        <form onSubmit={handleSubmit} className="grid gap-4">
+      <DialogContent variant="sheet">
+        <form onSubmit={handleSubmit} className="contents">
           <DialogHeader>
             <DialogTitle>Enter your App PIN</DialogTitle>
             <DialogDescription>This wallet asks for the App PIN each time it signs or shows its seed.</DialogDescription>

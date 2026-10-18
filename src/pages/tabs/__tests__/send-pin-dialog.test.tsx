@@ -138,6 +138,8 @@ describe('SendTab with a PIN Signing Check', () => {
 
     // Reachable by role: not hidden behind the confirm dialog.
     expect(await screen.findByText('6 tries remaining.')).toBeTruthy()
+    // One overlay at a time: the confirm sheet is gone while the PIN prompt is up.
+    expect(screen.queryByRole('button', { name: 'Confirm and send' })).toBeNull()
     fireEvent.change(screen.getByLabelText('App PIN'), { target: { value: '123456' } })
     await act(async () => void fireEvent.click(screen.getByRole('button', { name: 'Continue' })))
     expect(answered).toBe('123456')
@@ -167,6 +169,8 @@ describe('SendTab with a PIN Signing Check', () => {
     await act(async () => void fireEvent.click(screen.getByRole('button', { name: 'Cancel', hidden: false })))
     expect(answered).toBeNull()
     expect(screen.queryByText('8 tries remaining.')).toBeNull()
+    // A cancelled attempt withdraws the confirm: nothing is left open.
+    expect(screen.queryByRole('button', { name: 'Confirm and send' })).toBeNull()
     expect(submitXrpPayment).toHaveBeenCalledOnce() // it asked, and the open() threw: nothing signed
   })
 })

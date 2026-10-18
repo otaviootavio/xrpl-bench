@@ -1,5 +1,6 @@
 import { useId, type ReactNode } from 'react'
 import type { OptionState } from '@/lib/crypto/policy'
+import { Radio } from '@/components/ui/radio'
 
 /** The radio and fieldset the creation flow and the edit dialog both render a
  * policy answer with. An unavailable answer stays in the reading order:
@@ -27,8 +28,7 @@ export function Choice({
   return (
     <div className="flex flex-col gap-0.5">
       <label className="flex items-start gap-2 text-sm pointer-coarse:min-h-11 pointer-coarse:items-center">
-        <input
-          type="radio"
+        <Radio
           name={name}
           checked={checked}
           aria-disabled={state.available ? undefined : true}
@@ -39,7 +39,6 @@ export function Choice({
           onClick={(event) => {
             if (!state.available) event.preventDefault()
           }}
-          className="mt-1 pointer-coarse:mt-0"
         />
         <span>{label}</span>
       </label>
@@ -57,7 +56,7 @@ export function Choice({
 export function Axis({ legend, children }: { legend: string; children: ReactNode }) {
   return (
     <fieldset className="flex min-w-0 flex-col gap-1.5">
-      <legend className="mb-1 text-sm font-medium">{legend}</legend>
+      <legend className="panel-legend mb-1">{legend}</legend>
       {children}
     </fieldset>
   )

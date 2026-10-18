@@ -61,7 +61,7 @@ export function WrittenSeedConfirm({
   return (
     <div className="flex flex-col gap-4">
       <div>
-        <h2 className="text-sm font-medium">Write down your Seed</h2>
+        <h2 className="panel-legend">Write down your Seed</h2>
         <p className="text-sm text-muted-foreground">
           {network === 'mainnet' ? 'This is a Mainnet wallet: it holds real funds. ' : ''}
           {reason} Write it on paper and keep it offline. Nothing is saved until you have typed three parts of it back.

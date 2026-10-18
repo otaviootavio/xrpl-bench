@@ -8,8 +8,8 @@ import { cn } from '@/lib/utils'
  *
  * Every variant is a physical key on the instrument's face: a raised cap with a
  * light top edge and a shadow under it, an engraved legend cut into the cap,
- * and real travel when pressed. Nothing here styles `:focus` or sets
- * `outline-none` — the browser's own two-tone ring is the focus indicator
+ * and real travel when pressed. Nothing here styles the focus state or
+ * removes the outline — the browser's own two-tone ring is the focus indicator
  * (docs/decisions.md §6.3).
  *
  * `destructive` is the saturated red fill and, like `commit`, is reserved for

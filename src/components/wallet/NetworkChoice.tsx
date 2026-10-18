@@ -1,5 +1,6 @@
 import { useId } from 'react'
 import { NETWORK_IDS, NETWORKS, type NetworkId } from '@/lib/xrpl/networks'
+import { Radio } from '@/components/ui/radio'
 import { DEVNET_NOTICE } from '@/components/wallet/DevnetNotice'
 
 /**
@@ -24,17 +25,15 @@ export function NetworkChoice({
   const name = useId()
   return (
     <fieldset className="flex flex-col gap-1.5">
-      <legend className="mb-1 text-sm font-medium">Network</legend>
+      <legend className="panel-legend mb-1">Network</legend>
       {NETWORK_IDS.map((id) => (
         <label key={id} className="flex items-start gap-2 text-sm pointer-coarse:min-h-11 pointer-coarse:items-center">
-          <input
-            type="radio"
+          <Radio
             name={name}
             value={id}
             checked={value === id}
             disabled={disabled || disabledNetworks.includes(id)}
             onChange={() => onChange(id)}
-            className="mt-1 pointer-coarse:mt-0"
           />
           <span>
             {NETWORKS[id].label}

@@ -17,10 +17,10 @@ import { useAppStore, useWalletOpenKey } from '@/store/app-store'
 const OFF_PHRASE = 'turn off'
 const normalise = (t: string) => t.trim().replace(/\s+/g, ' ').toLowerCase()
 
-const WORDS: Record<MasterKeyStatus, { tone: 'live' | 'caution' | 'neutral'; text: string }> = {
-  on: { tone: 'live', text: 'Master key: on. The ledger shows it can sign for this account' },
-  off: { tone: 'caution', text: 'Master key: off. The ledger shows only the Regular Key can sign for this account' },
-  unknown: { tone: 'neutral', text: 'Master key: unknown. The ledger could not be read, or the account is not on it' },
+const WORDS: Record<MasterKeyStatus, { tone: 'live' | 'caution' | 'neutral'; text: string; sentence: string }> = {
+  on: { tone: 'live', text: 'Master key on', sentence: 'The ledger shows it can sign for this account.' },
+  off: { tone: 'caution', text: 'Master key off', sentence: 'The ledger shows only the Regular Key can sign for this account.' },
+  unknown: { tone: 'neutral', text: 'Master key unknown', sentence: 'The ledger could not be read, or the account is not on it.' },
 }
 
 /**
@@ -92,6 +92,7 @@ export function MasterKeyControl({ wallet }: { wallet: WalletMeta }) {
   return (
     <div className="mt-1 flex flex-col gap-1 text-xs text-muted-foreground" data-testid="master-key-control">
       <StatusLegend tone={words.tone}>{words.text}</StatusLegend>
+      <p>{words.sentence}</p>
       <div className="flex flex-wrap items-center gap-2">
         <Button
           variant={turningOff ? 'danger' : 'outline'}

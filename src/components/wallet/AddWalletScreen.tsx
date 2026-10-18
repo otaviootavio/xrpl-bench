@@ -136,6 +136,7 @@ export function AddWalletScreen({ onClose }: { onClose: () => void }) {
           // the flow asks each, and commits itself after the seed backup.
           <CreateWalletFlow
             defaultLabel=""
+            stickyAction
             onInProgressChange={setCreating}
             onDone={() => {
               toast.success('Wallet added.')

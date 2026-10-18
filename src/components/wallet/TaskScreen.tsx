@@ -32,7 +32,7 @@ export function TaskScreen({
   return (
     <section aria-labelledby={headingId} data-slot="task-screen" className="panel-plate mx-auto flex w-full max-w-lg flex-col gap-4 rounded-md p-4">
       <div className="flex flex-col gap-2">
-        <Button type="button" variant="outline" size="sm" className="w-fit" onClick={onBack} disabled={locked}>
+        <Button type="button" variant="outline" size="sm" className="h-auto min-h-8 w-fit max-w-full whitespace-normal py-1" onClick={onBack} disabled={locked}>
           <ArrowLeftIcon aria-hidden="true" />
           {backLabel}
         </Button>

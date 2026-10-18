@@ -107,4 +107,14 @@ Pathname, not hash: the spec names `/wallets/new`. Whether the static host serve
 
 **Not run:** boot at `/wallets/new` with an empty vault; onboarding at 320, 1280 and dark (no second clean origin was used); Back during an in-flight Edit checks write; submitting Set regular key or Save changes against the ledger; the Let another wallet sign form after a wallet is chosen; real iOS/Android, the on-screen keyboard and the camera scanner; the prod host's first load at `/wallets/new`. Seen but out of this slice: at 320 and 200% the header's wallet selector collapses to a blank box, and the header plus the status slot leave the screen about 300px of 568.
 
-**Status:** stays `in-review` on the two Not met rows.
+### Fixes after the second pass (2026-10-17)
+
+Fixed, then re-checked **only by gates** (`bun run lint`, `build`, `test`, `check:contrast` all passed). **Not re-browsed:** none of the three is confirmed visually or by measurement.
+
+- Add wallet, Generate: `CreateWalletFlow` takes a `stickyAction` prop and `AddWalletScreen` sets it, so Create wallet sits in a `ScreenFooter` like Import's Add. Onboarding does not set it and is unchanged.
+- Let another wallet sign: the select is `w-full min-w-0` and its wrapper a `minmax(0,1fr)` grid column, so it cannot outgrow the plate at 320 and 200%.
+- Back in `TaskScreen`: `max-w-full`, wrapping label, `h-auto`, so it stays inside the panel's content box.
+
+Out of this slice and untouched: the header wallet selector collapsing to a blank box at 320 and 200%, and the header plus status slot leaving about 300px of 568.
+
+**Status:** stays `in-review` until the three fixes are re-browsed at 320x568, 375x667 and 320 at 200%.

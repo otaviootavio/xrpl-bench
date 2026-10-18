@@ -184,7 +184,7 @@ function ControlWalletBody({
         </div>
       ) : (
         <>
-          <div className="grid gap-1.5">
+          <div className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-1.5">
             <Label htmlFor="control-target">Wallet that will sign</Label>
             {targets.length === 0 ? (
               <p className="text-sm text-muted-foreground" id="control-target">
@@ -193,7 +193,7 @@ function ControlWalletBody({
             ) : (
               <select
                 id="control-target"
-                className="h-9 rounded-md border bg-card px-2 text-sm"
+                className="h-9 w-full min-w-0 rounded-md border bg-card px-2 text-sm"
                 value={targetId}
                 disabled={busy || done}
                 onChange={(e) => {

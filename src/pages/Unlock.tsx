@@ -218,7 +218,7 @@ export function Unlock({ wallet }: { wallet: WalletMeta }) {
       </p>
 
       <Dialog open={confirmReset} onOpenChange={setConfirmReset}>
-        <DialogContent>
+        <DialogContent dismissOnOutsidePress>
           <DialogHeader>
             <DialogTitle>Reset this device?</DialogTitle>
             <DialogDescription>

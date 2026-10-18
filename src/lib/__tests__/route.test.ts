@@ -1,6 +1,6 @@
 /** @vitest-environment jsdom */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { ADD_WALLET_PATH, blockLeaving, leaveScreen, navigate, parseRoute, resetToHome, subscribeRoute, walletScreenPath } from '../route'
+import { ADD_WALLET_PATH, blockLeaving, leaveScreen, navigate, parseRoute, pushOverlay, resetToHome, subscribeRoute, walletScreenPath } from '../route'
 
 describe('parseRoute', () => {
   it('knows the four screens and nothing else', () => {
@@ -44,6 +44,27 @@ describe('history', () => {
     leaveScreen()
     await settle()
     expect(window.location.pathname).toBe('/')
+  })
+
+  it('an overlay entry keeps the screen flag, and leaveScreen pops both entries', async () => {
+    navigate(ADD_WALLET_PATH)
+    const release = pushOverlay(() => undefined)
+    expect(window.history.state).toEqual({ screen: true, overlay: true })
+    leaveScreen()
+    await settle()
+    expect(window.location.pathname).toBe('/')
+    release()
+    await settle()
+    expect(window.location.pathname).toBe('/')
+  })
+
+  it('leaveScreen from a booted screen with an overlay open ends on the shell', async () => {
+    window.history.replaceState(null, '', '/wallets/new')
+    const release = pushOverlay(() => undefined)
+    leaveScreen()
+    await settle()
+    expect(window.location.pathname).toBe('/')
+    release()
   })
 
   it('leaveScreen replaces a screen entered by a boot at its path', () => {

@@ -54,3 +54,23 @@ deferred: []
 ## Auto Run Result
 
 Status: done
+
+## Verification: independent browser pass (2026-10-17)
+
+**Build under test:** commit 1082b44 (the stamp in the app footer read 1082b44), `bun run dev -- --port 5182 --strictPort` from this worktree, fresh origin. Product code not touched.
+
+**How driven:** Playwright MCP (Chromium, mouse pointer, not touch emulation), CDP virtual authenticator (ctap2, internal, resident key, UV, PRF, automatic presence). Three throwaway Testnet wallets, all funded from the in-app faucet: "My Wallet" and "Second" (Passkey, Standard signing), "Third" (Signing Check App PIN only, PIN set in the Add wallet screen). A Regular Key was set on Second (signed by My Wallet) so the master-key sheet could be opened; a USD trust line (issuer My Wallet) was created for Edit limit and Close. Back was driven with `history.back()`, outside tap with a mouse click at (4,4), the overlay's history entry read from `history.state` and `navigation.currentEntry.index`. Import warning forced by switching the browser context offline so the pre-import check returns `unchecked`; a throwaway generated seed was used.
+
+**Widths and themes:** all 12 overlays at 375x667 (default scheme). Remove all wallets and Add trust line additionally at 320x568 and 1280x800 in light and dark. Screenshots under `/home/otavio/xxx/xrpl-wallet/.playwright-mcp/` (`s4-*.png`), each opened before citing: masterkey, walletseed, addtrust, editlimit, sendreview, closetrust, reset, importwarn, pin (375); removeall and addtrust at 320 and 1280, light and dark.
+
+Surfaces, 12 in code (the spec says 11): Reset device, Import warning, App PIN prompt, Reveal confirm, Wallet seed, Remove wallet, Remove all, Master key (off), Add trust line, Edit limit, Close trust line, Send review.
+
+**CAP-4 criteria**
+
+1. Closing returns focus to the opener: NOT MET. Met for Reset, Reveal confirm, Remove, Remove all, Master key, Add trust line, Edit limit, Close trust line, Send review (Back, Escape, X, Cancel). Not met: (a) Wallet seed, which opens from the Reveal confirm: on any close focus lands on `<body>`, not "Reveal seed" (the remembered opener is the "Show my seed" button inside the confirm, which has unmounted); (b) Import warning: focus lands on `<body>`, not "Add" (the Add button is disabled while the check runs, so the opener is recorded as nothing). After a successful Send with App PIN, focus is also on `<body>` (the form was reset; not counted as a defect). App PIN prompt: focus not verifiable (see 2).
+2. Back closes the open overlay and the path is unchanged: NOT MET for one surface. Met for 10 overlays (path unchanged, history entry popped, `history.state` back to null), for the Import warning on the routed `/wallets/new` screen (stays on the screen), and for a routed screen with no overlay (Let another wallet sign returns to Settings). Not met: the App PIN prompt opened from Send review. Back, and also the PIN prompt's own Cancel button, leave the app (page went to `about:blank`; reproduced three times). The console trace shows two `history.back()` calls from the `pushOverlay` release timer (`route.ts`) after the prompt closes, one more than the single entry it pushed. Escape on the PIN prompt was not run separately.
+3. Outside tap spares a working overlay and typed text: MET. Add trust line (issuer and currency kept), Edit limit (1234 kept), Send review (destination and amount kept), Import warning, Master key, App PIN prompt (typed digits kept) all stayed open. Confirms with nothing typed closed on outside tap: Reset, Reveal confirm, Wallet seed, Remove, Remove all, Close trust line, each with focus on the opener except Wallet seed. Same result at 320, 375, 1280, both themes (Remove all, Add trust line).
+
+Observation, not a criterion: after an outside tap on a kept-open sheet, `document.activeElement` is `<body>` (focus not pulled back into the sheet).
+
+**Not run:** touch/coarse-pointer emulation; 390px (375 used); light/dark and 320/1280 for the ten overlays not listed above; Master key "turn on" variant; PIN prompt focus return and a successful PIN-prompt Escape; Back on a routed screen with an overlay other than the Import warning; Mainnet; real iOS/Android hardware Back; executing any destructive confirm.

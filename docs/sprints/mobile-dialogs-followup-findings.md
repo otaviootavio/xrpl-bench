@@ -61,3 +61,17 @@ Verification (real Chrome, 320x568 same-origin iframe, `html{font-size:200%}`, T
 | `bun run lint`, `build`, `test` (1386), `check:contrast` | All green |
 
 Not covered: the window could not be resized to 320px, so the iframe stands in for the viewport; real zoom and touch are still unchecked. The sticky footer takes about half of the 333px scroll area at this extreme (the shell's header and tab bar take the rest); that is the shell's doing and is not changed here. Uncommitted.
+
+## S2 — built and verified (issue 2)
+
+Fix: the header's right-hand row (`AppHeader.tsx`) now wraps below `sm`, and the wallet picker has `min-w-[min(9rem,100%)] basis-36`. It had `flex-1` with no basis, so the network plate and lock key squeezed it to 56px; now it takes its own row when it cannot have 9rem.
+
+Verification (real Chrome, 320x568 same-origin iframe, two Testnet wallets, No Open Check):
+
+| Check | Result |
+|---|---|
+| Picker at 200% text | 254px wide, label "Second · Testnet" fully shown; header and page scrollWidth equal clientWidth (318) |
+| Picker at 100% text | 230px, one row beside the title row as before; no overflow |
+| Gates | `lint`, `build`, `test` (1386), `check:contrast` all green |
+
+Seen, not fixed (outside this slice): at 200% text the tab labels BALANCES / SEND / RECEIVE visibly overlap in the tab bar, and the header takes 204px of the 566px viewport. Not measured beyond a screenshot.

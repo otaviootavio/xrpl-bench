@@ -11,7 +11,9 @@ import { NETWORKS } from '@/lib/xrpl/networks'
  * Below `sm` the controls take their own row rather than compressing: with a
  * second wallet present the row is title + 160px + 112px + 36px, which does not
  * fit 320px, and the selects were previously crushed together with the lock key
- * clipped off the right edge (docs/decisions.md §6.12).
+ * clipped off the right edge (docs/decisions.md §6.12). The Wallet picker has a
+ * 9rem floor, capped at the row, so at 200% text it takes its own row instead of
+ * being squeezed to a blank box beside the network and the lock key.
  */
 export function AppHeader() {
   const wallets = useAppStore((s) => s.wallets)
@@ -34,10 +36,10 @@ export function AppHeader() {
             screen's own <h1> lives in the active panel. */}
         <span className="panel-legend text-[0.75rem] tracking-[0.22em] text-foreground">XRPL Bench</span>
       </div>
-      <div className="flex w-full items-center justify-end gap-2 sm:w-auto">
+      <div className="flex w-full flex-wrap items-center justify-end gap-2 sm:w-auto sm:flex-nowrap">
         {wallets.length > 1 && (
           <Select value={activeWalletId ?? undefined} onValueChange={setActiveWalletId}>
-            <SelectTrigger className="min-w-0 flex-1 sm:w-40 sm:flex-none" aria-label="Active wallet">
+            <SelectTrigger className="min-w-[min(9rem,100%)] flex-1 basis-36 sm:w-40 sm:flex-none sm:basis-auto" aria-label="Active wallet">
               <SelectValue placeholder="Wallet" />
             </SelectTrigger>
             <SelectContent>

@@ -51,6 +51,19 @@ deferred: []
 
 **Browser pass (Chromium via Playwright, `bun run dev` on 5183, 375x667, touch, mobile, virtual authenticator, one fresh Testnet wallet):** Remove all wallets confirm: Back closed it, path `/`, history length unchanged, focus on "Remove all wallets" button; Cancel button and gutter tap each closed it and returned focus to the button; history state back to null after each. Add trust line sheet: gutter tap left it open with "abc" still in the Issuer field (screenshot /tmp/s4-sheet.png, opened); Back closed it and focus returned to "Add trust line". Not exercised: the other nine overlays individually (shared code path; unit tests cover the primitive), PIN prompt handover, Back with an overlay open on a routed screen in a browser (route unit tests only), real iOS/Android hardware Back (manual check in SPEC), light theme (no visual change). Outside-tap is not unit-testable in jsdom (Radix's pointer event never arrives), so the browser pass is its only evidence.
 
+### Batched browser pass (2026-10-18)
+
+**Tree and commit:** worktree `mobile-dialogs-s2-s5`, HEAD c5bcd54 (`bun run dev -- --port 5190 --strictPort`, fresh origin, stopped afterwards by PID).
+**Driven by:** Playwright MCP Chromium with a CDP virtual authenticator (ctap2, internal, UV, PRF, presence simulation); two throwaway Testnet wallets (Alpha funded from the in-app faucet, Beta unfunded; Beta also given a Mainnet *view* only, never funded); `emulateMedia` for light/dark; coarse pointer by CDP `Emulation.setTouchEmulationEnabled` (`pointer: coarse` true) with measurements and DOM clicks only; 200% text zoom emulated as `html { font-size: 200% }` at a 320 px viewport (not browser zoom). Widths 320, 375, 1280. Screenshots in `.playwright-mcp/` (uncommitted), each opened before being cited.
+**Not run for any spec:** real touch input (pointer events were DOM-dispatched), real browser zoom, a real device.
+
+Criteria for this spec:
+
+- Back closes overlays and does not leave the app: Add trust line sheet, master-key sheet, Remove wallet dialog (history stays on `/`). MET.
+- Focus returns to the opener when a dialog closes: Remove wallet (Cancel, Escape and Back all land on Remove), Add trust line (Back and Escape land on Add trust line), master-key sheet (Back lands on Turn master key off). MET.
+- Use on Mainnet confirm (S5c dialog): after Cancel, focus landed on "Reveal seed" in the same row, not on the "Use on Mainnet" opener, which was still present. NOT MET for focus return on that dialog. After Confirm the opener is gone (the row gains its Mainnet view) and focus lands on "Reveal seed", which is acceptable.
+
+
 ## Auto Run Result
 
 Status: done

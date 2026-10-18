@@ -90,6 +90,18 @@ deferred: []
   - `[low]` `[reject]` Initial focus target unspecified (blind) — unchanged by this slice.
   - `[false]` `[reject]` Stale spec says blocked (blind, edge, gap) — about this artifact, and the finalize step rewrites it.
 
+### Batched browser pass (2026-10-18)
+
+**Tree and commit:** worktree `mobile-dialogs-s2-s5`, HEAD c5bcd54 (`bun run dev -- --port 5190 --strictPort`, fresh origin, stopped afterwards by PID).
+**Driven by:** Playwright MCP Chromium with a CDP virtual authenticator (ctap2, internal, UV, PRF, presence simulation); two throwaway Testnet wallets (Alpha funded from the in-app faucet, Beta unfunded; Beta also given a Mainnet *view* only, never funded); `emulateMedia` for light/dark; coarse pointer by CDP `Emulation.setTouchEmulationEnabled` (`pointer: coarse` true) with measurements and DOM clicks only; 200% text zoom emulated as `html { font-size: 200% }` at a 320 px viewport (not browser zoom). Widths 320, 375, 1280. Screenshots in `.playwright-mcp/` (uncommitted), each opened before being cited.
+**Not run for any spec:** real touch input (pointer events were DOM-dispatched), real browser zoom, a real device.
+
+Criteria for this spec:
+
+- Master-key-off sheet on Testnet with a real Regular Key (set from Beta via Let another wallet sign): destructive styling, Regular Key shown in an alert plate, no typed phrase on Testnet, 320 px no overflow, both buttons in view. MET.
+- Typed phrase on Mainnet: NOT RUN (would need a Mainnet wallet with a Regular Key; refused to touch Mainnet).
+
+
 ## Auto Run Result
 
 Status: in-review (done pending the browser pass)

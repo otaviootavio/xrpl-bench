@@ -81,6 +81,24 @@ deferred: []
 **Manual checks:**
 - A real-browser pass is required (see `docs/agents/verifying-your-work.md`): onboarding and `/wallets/new` at 320px and desktop, light and dark, keyboard-only through Customise, Mainnet floors, passkey-capable and PIN-fallback cases. Gates alone do not prove the layout.
 
+### Batched browser pass (2026-10-18)
+
+**Tree and commit:** worktree `mobile-dialogs-s2-s5`, HEAD c5bcd54 (`bun run dev -- --port 5190 --strictPort`, fresh origin, stopped afterwards by PID).
+**Driven by:** Playwright MCP Chromium with a CDP virtual authenticator (ctap2, internal, UV, PRF, presence simulation); two throwaway Testnet wallets (Alpha funded from the in-app faucet, Beta unfunded; Beta also given a Mainnet *view* only, never funded); `emulateMedia` for light/dark; coarse pointer by CDP `Emulation.setTouchEmulationEnabled` (`pointer: coarse` true) with measurements and DOM clicks only; 200% text zoom emulated as `html { font-size: 200% }` at a 320 px viewport (not browser zoom). Widths 320, 375, 1280. Screenshots in `.playwright-mcp/` (uncommitted), each opened before being cited.
+**Not run for any spec:** real touch input (pointer events were DOM-dispatched), real browser zoom, a real device.
+
+Criteria for this spec:
+
+- Onboarding Generate and /wallets/new Generate open with Label, Network, Seed Method, then a section headed "Recommended" and a Customise button. MET.
+- Customise closed: the container's computed `display` is `none` (hidden attribute true); open: `flex`. Node, Signature type, Open Check, Auto-lock and Signing Check legends are inside it. MET.
+- Changing an answer (secp256k1, then closing Customise) turns the heading to "Your choices". MET.
+- A blocked combination (Mainnet with No Open Check) opens Customise by itself and shows "This wallet cannot be created yet". MET (Customise was closed by hand first and opened on its own when Mainnet was chosen).
+- Summary at 320 and 375: section scrollWidth equals clientWidth (271/271, 277/277). MET at 100%.
+- Summary at 320@200%: NOT MET. The `dl` grid resolves to `120.9px 0px`; every `dd` is 0 px wide and 280 to 520 px high (the `section` is 2530 px high), so values wrap one character per line. Cause: `grid-cols-[auto_1fr]` with `break-all` in `CreateWalletFlow.tsx` (summary `dl`).
+- Create reachable: onboarding Create wallet is in the scroll flow and in view at 375; Add wallet sticky footer in view at 320 (see S2 for the 320@200% scroll-position caveat). MET / see S2.
+- 1280 light and dark Add wallet: footer Create button in view, no overflow. MET.
+
+
 ## Review Triage Log
 
 ### 2026-10-17 — Review pass

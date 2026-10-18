@@ -80,3 +80,19 @@ Implemented before the spec was written (workflow was skipped past step 2); spec
 | Add trust line sheet | 320×568, 320×300, 375×667, 1280×800 (measured); screenshots opened: 320×300 dark, 1280×800 light | Met: submit in view at 320×300; desktop is the centred dialog |
 
 **Not met / not run:** a real on-screen keyboard (emulated by shrinking the viewport height, which is what `interactive-widget=resizes-content` produces on Android Chrome; iOS Safari unverified, deferred); master-key sheet, Edit trust line limit and import-warning sheet were not opened in the browser; only one wallet was used; light and dark were not run for every surface at every size. Status therefore stays `in-review`.
+
+### Batched browser pass (2026-10-18)
+
+**Tree and commit:** worktree `mobile-dialogs-s2-s5`, HEAD c5bcd54 (`bun run dev -- --port 5190 --strictPort`, fresh origin, stopped afterwards by PID).
+**Driven by:** Playwright MCP Chromium with a CDP virtual authenticator (ctap2, internal, UV, PRF, presence simulation); two throwaway Testnet wallets (Alpha funded from the in-app faucet, Beta unfunded; Beta also given a Mainnet *view* only, never funded); `emulateMedia` for light/dark; coarse pointer by CDP `Emulation.setTouchEmulationEnabled` (`pointer: coarse` true) with measurements and DOM clicks only; 200% text zoom emulated as `html { font-size: 200% }` at a 320 px viewport (not browser zoom). Widths 320, 375, 1280. Screenshots in `.playwright-mcp/` (uncommitted), each opened before being cited.
+**Not run for any spec:** real touch input (pointer events were DOM-dispatched), real browser zoom, a real device.
+
+Criteria for this spec:
+
+- Add trust line sheet at 375: bottom sheet, 375 px wide, fields and Create trust line in view, no overflow. MET.
+- Browser Back with the sheet open closes it and stays in the app (URL unchanged); Escape also closes; focus returns to the "Add trust line" opener both ways. MET.
+- Coarse pointer: sheet inputs, Create trust line and Close all 44 px high. MET.
+- Master-key sheet (Alpha given a Regular Key, Testnet): opens as a sheet at 320, alert plate shows the Regular Key, Turn master key off / Cancel in view, no overflow (only the Close icon's inner span flagged, 28 px, not a defect), no typed-phrase field on Testnet (Mainnet phrase not exercised). Back closes it and focus returns to "Turn master key off". MET. Not confirmed (nothing was turned off).
+- Edit trust line limit sheet: NOT RUN (no trust line was created; Beta cannot afford one and none was set up on Alpha).
+- Import warning sheet: NOT RUN (no seed with a master-key warning available).
+

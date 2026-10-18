@@ -62,6 +62,19 @@ deferred: []
 
 **Gates:** lint, build, test (97 files, 1354 tests), check:contrast -- all passed.
 
+### Batched browser pass (2026-10-18)
+
+**Tree and commit:** worktree `mobile-dialogs-s2-s5`, HEAD c5bcd54 (`bun run dev -- --port 5190 --strictPort`, fresh origin, stopped afterwards by PID).
+**Driven by:** Playwright MCP Chromium with a CDP virtual authenticator (ctap2, internal, UV, PRF, presence simulation); two throwaway Testnet wallets (Alpha funded from the in-app faucet, Beta unfunded; Beta also given a Mainnet *view* only, never funded); `emulateMedia` for light/dark; coarse pointer by CDP `Emulation.setTouchEmulationEnabled` (`pointer: coarse` true) with measurements and DOM clicks only; 200% text zoom emulated as `html { font-size: 200% }` at a 320 px viewport (not browser zoom). Widths 320, 375, 1280. Screenshots in `.playwright-mcp/` (uncommitted), each opened before being cited.
+**Not run for any spec:** real touch input (pointer events were DOM-dispatched), real browser zoom, a real device.
+
+Criteria for this spec:
+
+- Coarse pointer (`pointer: coarse` emulated): Tabs 114x44 (all six); TaskScreen footer buttons 44 px; Add trust line sheet fields and buttons 44 px; Settings buttons: all 38 `main` buttons >= 44 px high; wallet Select trigger 44 px at 16 px text, Select option 44 px; seed-backup checkbox row 44 px (the 16 px checkbox sits inside it). MET.
+- Radix Select highlight and options verified with a keyboard-opened list. MET.
+- Caveat: Playwright mouse input hangs under CDP touch emulation (a 30 minute stall), so these are measurements plus DOM clicks, not real taps.
+
+
 ## Auto Run Result
 
 Status: done

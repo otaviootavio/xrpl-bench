@@ -490,7 +490,7 @@ export function SettingsTab() {
       </Card>
 
       <Dialog open={!!confirmRevealFor} onOpenChange={(o) => !o && setConfirmRevealFor(null)}>
-        <DialogContent>
+        <DialogContent dismissOnOutsidePress>
           <DialogHeader>
             <DialogTitle>Reveal this wallet's seed?</DialogTitle>
             <DialogDescription>
@@ -511,7 +511,7 @@ export function SettingsTab() {
       </Dialog>
 
       <Dialog open={!!seedVisibleFor} onOpenChange={(o) => !o && closeSeedDialog()}>
-        <DialogContent>
+        <DialogContent dismissOnOutsidePress>
           <DialogHeader>
             <DialogTitle>Wallet seed</DialogTitle>
           </DialogHeader>
@@ -520,7 +520,7 @@ export function SettingsTab() {
       </Dialog>
 
       <Dialog open={!!confirmRemove} onOpenChange={(o) => !o && setConfirmRemove(null)}>
-        <DialogContent>
+        <DialogContent dismissOnOutsidePress>
           <DialogHeader>
             <DialogTitle>Remove this wallet?</DialogTitle>
             <DialogDescription>
@@ -543,7 +543,7 @@ export function SettingsTab() {
       </Dialog>
 
       <Dialog open={confirmResetAll} onOpenChange={setConfirmResetAll}>
-        <DialogContent>
+        <DialogContent dismissOnOutsidePress>
           <DialogHeader>
             <DialogTitle>Remove all wallets from this device?</DialogTitle>
             <DialogDescription>

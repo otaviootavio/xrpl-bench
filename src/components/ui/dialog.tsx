@@ -2,8 +2,45 @@ import * as React from 'react'
 import * as DialogPrimitive from '@radix-ui/react-dialog'
 import { XIcon } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { pushOverlay } from '@/lib/route'
 
-const Dialog = DialogPrimitive.Root
+/** Where focus returns when a dialog closes: the control that was focused as it
+ * opened. Kept by `Dialog`, which outlives its content, so a sheet that closes
+ * for a PIN prompt and reopens still returns to the control that first opened it. */
+type OpenerStore = { remember: (el: HTMLElement) => void; recall: () => HTMLElement | null }
+const OpenerContext = React.createContext<OpenerStore | null>(null)
+
+/**
+ * The dialog root. Beyond Radix: while open it holds a history entry (see
+ * `pushOverlay`) so Back closes it, and it remembers the opener for focus return.
+ * Calls `onOpenChange(false)` on Back, so a dialog that refuses to close while
+ * working (`!busy && ...`) refuses Back the same way.
+ */
+function Dialog({ open, onOpenChange, ...props }: React.ComponentProps<typeof DialogPrimitive.Root>) {
+  const openerRef = React.useRef<HTMLElement | null>(null)
+  const opener = React.useMemo<OpenerStore>(
+    () => ({
+      remember: (el) => {
+        openerRef.current = el
+      },
+      recall: () => openerRef.current,
+    }),
+    [],
+  )
+  const latest = React.useRef(onOpenChange)
+  React.useEffect(() => {
+    latest.current = onOpenChange
+  })
+  React.useEffect(() => {
+    if (!open) return undefined
+    return pushOverlay(() => latest.current?.(false))
+  }, [open])
+  return (
+    <OpenerContext.Provider value={opener}>
+      <DialogPrimitive.Root open={open} onOpenChange={onOpenChange} {...props} />
+    </OpenerContext.Provider>
+  )
+}
 const DialogTrigger = DialogPrimitive.Trigger
 const DialogPortal = DialogPrimitive.Portal
 const DialogClose = DialogPrimitive.Close
@@ -41,8 +78,19 @@ function DialogContent({
   className,
   children,
   variant = 'dialog',
+  dismissOnOutsidePress = false,
+  onOpenAutoFocus,
+  onCloseAutoFocus,
+  onPointerDownOutside,
   ...props
-}: React.ComponentProps<typeof DialogPrimitive.Content> & { variant?: 'dialog' | 'sheet' }) {
+}: React.ComponentProps<typeof DialogPrimitive.Content> & {
+  variant?: 'dialog' | 'sheet'
+  /** A tap outside closes only a confirm with nothing typed. Everything else
+   * ignores it: a stray tap on the gutter must not discard work. Escape, Back
+   * and the buttons still close. */
+  dismissOnOutsidePress?: boolean
+}) {
+  const opener = React.useContext(OpenerContext)
   return (
     <DialogPortal>
       <DialogOverlay />
@@ -57,6 +105,32 @@ function DialogContent({
             'max-sm:inset-x-0 max-sm:bottom-0 max-sm:top-auto max-sm:w-full max-sm:max-w-none max-sm:translate-x-0 max-sm:translate-y-0 max-sm:max-h-[calc(100dvh-env(safe-area-inset-top)-0.5rem)] max-sm:rounded-b-none',
           className,
         )}
+        onOpenAutoFocus={(event) => {
+          onOpenAutoFocus?.(event)
+          // Radix has not moved focus yet: it is still on the opener. If it is on
+          // nothing (a sheet reopening after a PIN prompt), keep the earlier one.
+          const active = document.activeElement
+          if (opener && active instanceof HTMLElement && active !== document.body) opener.remember(active)
+        }}
+        onCloseAutoFocus={(event) => {
+          onCloseAutoFocus?.(event)
+          if (event.defaultPrevented) return
+          const target = opener?.recall()
+          // Another overlay already open means this one closed to hand over to it:
+          // focus belongs to that one.
+          if (document.querySelector('[data-slot="dialog-content"]')) {
+            event.preventDefault()
+            return
+          }
+          if (target?.isConnected) {
+            event.preventDefault()
+            target.focus()
+          }
+        }}
+        onPointerDownOutside={(event) => {
+          onPointerDownOutside?.(event)
+          if (!dismissOnOutsidePress) event.preventDefault()
+        }}
         {...props}
       >
         <div data-slot="dialog-body" className="grid min-h-0 gap-4 overflow-y-auto overscroll-contain p-4 [&_.panel-legend]:text-xs">

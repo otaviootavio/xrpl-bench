@@ -183,7 +183,7 @@ export function TrustLinesTab() {
       {/* Closing a trust line is irreversible from the app's point of view and
           changes on-ledger state, so it needs an explicit confirm (§4). */}
       <Dialog open={!!confirmClose} onOpenChange={(o) => !o && setConfirmClose(null)}>
-        <DialogContent>
+        <DialogContent dismissOnOutsidePress>
           <DialogHeader>
             <DialogTitle>Close this trust line?</DialogTitle>
             <DialogDescription>

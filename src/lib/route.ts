@@ -53,7 +53,22 @@ const listeners = new Set<() => void>()
 let blockers = 0
 let blockedPath = HOME_PATH
 let bypassNext = false
+let afterBypass: (() => void) | null = null
 let installed = false
+
+/** The open dialogs and sheets, oldest first. They share ONE history entry (below). */
+const overlays: Array<{ close: () => void }> = []
+
+function hasOverlayEntry(): boolean {
+  return (window.history.state as { overlay?: boolean } | null)?.overlay === true
+}
+
+/** The marker keeps the screen flag of the entry beneath it, and nothing else:
+ * no secret, no form data, the same rule as every other state this app writes. */
+function pushOverlayEntry() {
+  const screen = (window.history.state as { screen?: boolean } | null)?.screen === true
+  window.history.pushState(screen ? { screen: true, overlay: true } : { overlay: true }, '', undefined)
+}
 
 function notify() {
   for (const l of listeners) l()
@@ -62,7 +77,20 @@ function notify() {
 function onPopState() {
   if (bypassNext) {
     bypassNext = false
+    const after = afterBypass
+    afterBypass = null
+    after?.()
     notify()
+    return
+  }
+  // Back popped the entry an open dialog or sheet pushed: it closes the newest
+  // overlay and the app stays where it was. If that overlay refuses to close (it
+  // is mid-write), the entry is put back so the next Back still has one to pop.
+  if (overlays.length > 0 && !hasOverlayEntry()) {
+    overlays[overlays.length - 1].close()
+    setTimeout(() => {
+      if (overlays.length > 0 && !hasOverlayEntry()) pushOverlayEntry()
+    }, 0)
     return
   }
   // A key-changing write or a Seed backup is running on the screen: the browser's
@@ -74,11 +102,15 @@ function onPopState() {
   notify()
 }
 
-export function subscribeRoute(listener: () => void): () => void {
+function install() {
   if (!installed) {
     window.addEventListener('popstate', onPopState)
     installed = true
   }
+}
+
+export function subscribeRoute(listener: () => void): () => void {
+  install()
   listeners.add(listener)
   return () => {
     listeners.delete(listener)
@@ -103,8 +135,16 @@ export function navigate(path: string): void {
  */
 export function leaveScreen(): void {
   const pushedHere = (window.history.state as { screen?: boolean } | null)?.screen === true
+  // An overlay's entry sits on top of the screen's: pop both.
+  const overlayEntry = hasOverlayEntry()
   if (pushedHere) {
     bypassNext = true
+    window.history.go(overlayEntry ? -2 : -1)
+    return
+  }
+  if (overlayEntry) {
+    bypassNext = true
+    afterBypass = () => window.history.replaceState(null, '', HOME_PATH)
     window.history.back()
     return
   }
@@ -128,5 +168,34 @@ export function blockLeaving(): () => void {
     if (released) return
     released = true
     blockers -= 1
+  }
+}
+
+/**
+ * Registers an open dialog or sheet so the browser's (and the phone's hardware)
+ * Back closes it instead of leaving the app. The first open overlay pushes one
+ * history entry carrying only `{ overlay: true }`; further overlays share it. Back
+ * pops it and calls the newest overlay's `close`. When the last overlay closes
+ * by any other route, the entry is popped again, so Back is not left with a dead
+ * step. The release is deferred a tick so a sheet handing over to a PIN prompt
+ * keeps the one entry rather than popping and re-pushing it.
+ */
+export function pushOverlay(close: () => void): () => void {
+  install()
+  const overlay = { close }
+  overlays.push(overlay)
+  if (!hasOverlayEntry()) pushOverlayEntry()
+  let released = false
+  return () => {
+    if (released) return
+    released = true
+    const at = overlays.indexOf(overlay)
+    if (at !== -1) overlays.splice(at, 1)
+    setTimeout(() => {
+      if (overlays.length === 0 && hasOverlayEntry()) {
+        bypassNext = true
+        window.history.back()
+      }
+    }, 0)
   }
 }

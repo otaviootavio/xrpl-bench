@@ -26,7 +26,7 @@ export function NetworkChoice({
     <fieldset className="flex flex-col gap-1.5">
       <legend className="mb-1 text-sm font-medium">Network</legend>
       {NETWORK_IDS.map((id) => (
-        <label key={id} className="flex items-start gap-2 text-sm">
+        <label key={id} className="flex items-start gap-2 text-sm pointer-coarse:min-h-11 pointer-coarse:items-center">
           <input
             type="radio"
             name={name}
@@ -34,7 +34,7 @@ export function NetworkChoice({
             checked={value === id}
             disabled={disabled || disabledNetworks.includes(id)}
             onChange={() => onChange(id)}
-            className="mt-1"
+            className="mt-1 pointer-coarse:mt-0"
           />
           <span>
             {NETWORKS[id].label}

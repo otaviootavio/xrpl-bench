@@ -137,7 +137,7 @@ export function QrScanner({ onPayload, label }: { onPayload: (text: string) => v
         autoComplete="off"
         aria-invalid={pasteError ? true : undefined}
         aria-describedby={pasteError ? 'qr-paste-error' : undefined}
-        className="w-full rounded-md border border-input bg-background px-2.5 py-1 font-data text-[0.8125rem] shadow-[inset_0_1px_2px_0_rgb(0_0_0/0.14)] aria-invalid:border-destructive"
+        className="w-full rounded-md border border-input bg-background px-2.5 py-1 font-data text-[0.8125rem] pointer-coarse:text-base shadow-[inset_0_1px_2px_0_rgb(0_0_0/0.14)] aria-invalid:border-destructive"
       />
       {pasteError && <p id="qr-paste-error" className="text-xs">Paste the text first.</p>}
       <Button variant="outline" size="sm" onClick={usePasted}>

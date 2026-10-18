@@ -108,6 +108,59 @@ describe('MasterKeyControl', () => {
     expect(h.setMasterKey).not.toHaveBeenCalled()
   })
 
+  it('Mainnet holds the confirm key until the phrase is typed, then commits with confirmed: true', async () => {
+    h.setMasterKey.mockResolvedValue({ status: 'validated', state: 'off' })
+    mount(MAINNET_MASTER)
+    await click(action('Turn master key off'))
+    const confirmKey = () => screen.getAllByRole('button', { name: 'Turn master key off' }).at(-1)!
+    expect(confirmKey().getAttribute('aria-disabled')).toBe('true')
+    await click(confirmKey())
+    expect(h.setMasterKey).not.toHaveBeenCalled()
+    const field = screen.getByLabelText(/Type “turn off”/)
+    fireEvent.change(field, { target: { value: 'turn' } })
+    expect(confirmKey().getAttribute('aria-disabled')).toBe('true')
+    await click(confirmKey())
+    expect(h.setMasterKey).not.toHaveBeenCalled()
+    fireEvent.change(field, { target: { value: 'turn off now' } })
+    expect(confirmKey().getAttribute('aria-disabled')).toBe('true')
+    fireEvent.change(field, { target: { value: '  Turn   OFF ' } })
+    expect(confirmKey().getAttribute('aria-disabled')).toBeNull()
+    await click(confirmKey())
+    await waitFor(() => expect(h.setMasterKey).toHaveBeenCalledTimes(1))
+    expect(h.setMasterKey.mock.calls[0][2]).toMatchObject({ confirmed: true })
+  })
+
+  it('Mainnet turn-on is unchanged: no plate, no phrase field, confirm enabled, commits with confirmed: true', async () => {
+    h.account = { isError: false, data: state({ regularKey: 'rKey', disableMasterKey: true }) }
+    h.setMasterKey.mockResolvedValue({ status: 'validated', state: 'on' })
+    mount({ ...(REGULAR as object), id: 'rm', network: 'mainnet' })
+    await click(action('Turn master key on'))
+    expect(screen.queryByLabelText(/Type “turn off”/)).toBeNull()
+    expect(screen.queryByRole('alert')).toBeNull()
+    const confirmKey = screen.getAllByRole('button', { name: 'Turn master key on' }).at(-1)!
+    expect(confirmKey.getAttribute('aria-disabled')).toBeNull()
+    await click(confirmKey)
+    await waitFor(() => expect(h.setMasterKey).toHaveBeenCalledWith('rm', true, expect.objectContaining({ confirmed: true })))
+  })
+
+  it('Mainnet clears the phrase when the sheet reopens', async () => {
+    mount(MAINNET_MASTER)
+    await click(action('Turn master key off'))
+    fireEvent.change(screen.getByLabelText(/Type “turn off”/), { target: { value: 'turn off' } })
+    await click(screen.getByRole('button', { name: 'Cancel' }))
+    await click(action('Turn master key off'))
+    expect((screen.getByLabelText(/Type “turn off”/) as HTMLInputElement).value).toBe('')
+    expect(screen.getAllByRole('button', { name: 'Turn master key off' }).at(-1)!.getAttribute('aria-disabled')).toBe('true')
+  })
+
+  it('Testnet has no phrase field and the confirm key is enabled at once; the alert plate shows the address', async () => {
+    mount(MASTER)
+    await click(action('Turn master key off'))
+    expect(screen.queryByLabelText(/Type “turn off”/)).toBeNull()
+    expect(screen.getByRole('alert').textContent).toContain('rKey')
+    expect(screen.getAllByRole('button', { name: 'Turn master key off' }).at(-1)!.getAttribute('aria-disabled')).toBeNull()
+  })
+
   it('turns it off with confirmed: true and reports the re-read state', async () => {
     h.setMasterKey.mockResolvedValue({ status: 'validated', state: 'off' })
     mount(MASTER)

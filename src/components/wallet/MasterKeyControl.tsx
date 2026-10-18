@@ -1,7 +1,10 @@
 import { useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
 import { StatusLegend } from '@/components/ui/lamp'
 import { useAccountState } from '@/hooks/useAccountState'
 import { useYieldingPrompts } from '@/hooks/usePrompts'
@@ -9,6 +12,10 @@ import type { WalletMeta } from '@/lib/crypto/keystore'
 import { masterKeyAction, masterKeyStatus, setMasterKey, type MasterKeyResult, type MasterKeyStatus } from '@/lib/master-key'
 import { NETWORKS } from '@/lib/xrpl/networks'
 import { useAppStore, useWalletOpenKey } from '@/store/app-store'
+
+/** The acknowledgement Mainnet asks for. Not a secret; held only in this component while the sheet is open. */
+const OFF_PHRASE = 'turn off'
+const normalise = (t: string) => t.trim().replace(/\s+/g, ' ').toLowerCase()
 
 const WORDS: Record<MasterKeyStatus, { tone: 'live' | 'caution' | 'neutral'; text: string }> = {
   on: { tone: 'live', text: 'Master key: on. The ledger shows it can sign for this account' },
@@ -30,6 +37,7 @@ export function MasterKeyControl({ wallet }: { wallet: WalletMeta }) {
   const wallets = useAppStore((s) => s.wallets)
   const [confirming, setConfirming] = useState(false)
   const [busy, setBusy] = useState(false)
+  const [phrase, setPhrase] = useState('')
   const [result, setResult] = useState<MasterKeyResult | null>(null)
 
   const readFailed = account.isError
@@ -42,11 +50,15 @@ export function MasterKeyControl({ wallet }: { wallet: WalletMeta }) {
   const words = WORDS[status]
   const regularKey = state?.exists ? state.regularKey : undefined
   const mainnet = wallet.network === 'mainnet'
+  const phraseId = `master-key-phrase-${wallet.id}`
+  // Mainnet turn-off only: the confirm key is held until the phrase is typed.
+  const held = turningOff && mainnet && normalise(phrase) !== OFF_PHRASE
   const reasonId = `master-key-reason-${wallet.id}`
 
   function open() {
     if (busy || reason) return
     setResult(null)
+    setPhrase('')
     setConfirming(true)
   }
 
@@ -62,7 +74,7 @@ export function MasterKeyControl({ wallet }: { wallet: WalletMeta }) {
   }
 
   async function confirm() {
-    if (busy) return
+    if (busy || held) return
     setBusy(true)
     try {
       const r = await setMasterKey(wallet.id, !turningOff, { queryClient, openKey: openKey ?? undefined, prompts, confirmed: true })
@@ -82,7 +94,7 @@ export function MasterKeyControl({ wallet }: { wallet: WalletMeta }) {
       <StatusLegend tone={words.tone}>{words.text}</StatusLegend>
       <div className="flex flex-wrap items-center gap-2">
         <Button
-          variant="outline"
+          variant={turningOff ? 'danger' : 'outline'}
           size="sm"
           aria-disabled={busy || reason ? true : undefined}
           aria-describedby={reason ? reasonId : undefined}
@@ -113,14 +125,34 @@ export function MasterKeyControl({ wallet }: { wallet: WalletMeta }) {
           </DialogHeader>
           {turningOff ? (
             <div className="flex flex-col gap-2 text-sm">
-              <p>
-                After this, the master key, and any Controlling Wallet that holds it, can no longer sign for this account. Only the
-                Regular Key can{regularKey && <>: <span className="break-all font-mono">{regularKey}</span></>}.
-              </p>
+              <Alert variant="destructive">
+                <AlertTitle>Master key off</AlertTitle>
+                <AlertDescription>
+                  <p>
+                    After this, the master key, and any Controlling Wallet that holds it, can no longer sign for this account. Only the
+                    Regular Key can{regularKey ? ':' : '.'}
+                  </p>
+                  {regularKey && <p className="mt-1 break-all font-mono">{regularKey}</p>}
+                </AlertDescription>
+              </Alert>
               <p>
                 If you lose the Regular Key (for a passkey, losing the passkey), you lose the funds in this account: nothing else can
                 sign. You can turn the master key back on, but only from the wallet that signs as the Regular Key.
               </p>
+              {mainnet && (
+                <div className="flex flex-col gap-1">
+                  <Label htmlFor={phraseId}>Type “{OFF_PHRASE}” to confirm</Label>
+                  <Input
+                    id={phraseId}
+                    value={phrase}
+                    onChange={(e) => setPhrase(e.target.value)}
+                    autoComplete="off"
+                    autoCapitalize="off"
+                    autoCorrect="off"
+                    spellCheck={false}
+                  />
+                </div>
+              )}
             </div>
           ) : (
             <p className="text-sm">
@@ -131,7 +163,12 @@ export function MasterKeyControl({ wallet }: { wallet: WalletMeta }) {
             <Button variant="outline" onClick={() => setConfirming(false)} disabled={busy}>
               Cancel
             </Button>
-            <Button variant={turningOff ? 'danger' : 'default'} onClick={() => void confirm()} aria-disabled={busy ? true : undefined}>
+            <Button
+              variant={turningOff ? 'destructive' : 'default'}
+              onClick={() => void confirm()}
+              aria-disabled={busy || held ? true : undefined}
+              aria-describedby={held ? phraseId : undefined}
+            >
               {busy ? 'Working…' : turningOff ? 'Turn master key off' : 'Turn master key on'}
             </Button>
           </DialogFooter>

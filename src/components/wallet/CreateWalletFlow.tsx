@@ -7,6 +7,7 @@ import { Label } from '@/components/ui/label'
 import { Axis, Choice } from '@/components/wallet/check-controls'
 import { minutesLabel } from '@/lib/minutes-label'
 import { NetworkChoice } from '@/components/wallet/NetworkChoice'
+import { ScreenFooter } from '@/components/wallet/TaskScreen'
 import { SeedReveal } from '@/components/wallet/SeedReveal'
 import { WrittenSeedConfirm } from '@/components/wallet/WrittenSeedConfirm'
 import { createDerivedWallet, createStoredWallet, describeCheckFailure, listWallets, type WalletMeta } from '@/lib/crypto/keystore'
@@ -47,6 +48,9 @@ export interface CreateWalletFlowProps {
    * a host dialog should not close in between. */
   onInProgressChange?: (inProgress: boolean) => void
   defaultLabel?: string
+  /** Put Create wallet in a `ScreenFooter` stuck to the bottom of a routed
+   * screen, so it stays in reach however long the questions run. */
+  stickyAction?: boolean
 }
 
 /** `confirm-seed`: the Seed is shown and three groups of it typed back, BEFORE
@@ -99,7 +103,7 @@ export function CreateWalletFlow(props: CreateWalletFlowProps) {
   return <CreateWalletForm capability={capability} {...props} />
 }
 
-function CreateWalletForm({ capability, onDone, onInProgressChange, defaultLabel = 'My Wallet' }: CreateWalletFlowProps & { capability: PasskeyCapability }) {
+function CreateWalletForm({ capability, onDone, onInProgressChange, defaultLabel = 'My Wallet', stickyAction = false }: CreateWalletFlowProps & { capability: PasskeyCapability }) {
   const group = useId()
   const [step, setStep] = useState<Step>('questions')
   const [label, setLabel] = useState(defaultLabel)
@@ -490,6 +494,12 @@ function CreateWalletForm({ capability, onDone, onInProgressChange, defaultLabel
   const nodes = builtInNodes(network)
   const verdict = options.combination
 
+  const createButton = (
+    <Button type="button" aria-disabled={!verdict.ok || (needsPin && pinReadFailed) ? true : undefined} aria-describedby={!verdict.ok ? `${group}-blocked` : undefined} disabled={busy} onClick={() => void handleCreate()}>
+      {busy ? 'Creating…' : 'Create wallet'}
+    </Button>
+  )
+
   return (
     <div className="flex flex-col gap-5">
       <div className="grid gap-1.5">
@@ -712,9 +722,7 @@ function CreateWalletForm({ capability, onDone, onInProgressChange, defaultLabel
         </p>
       )}
 
-      <Button type="button" aria-disabled={!verdict.ok || (needsPin && pinReadFailed) ? true : undefined} aria-describedby={!verdict.ok ? `${group}-blocked` : undefined} disabled={busy} onClick={() => void handleCreate()}>
-        {busy ? 'Creating…' : 'Create wallet'}
-      </Button>
+      {stickyAction ? <ScreenFooter>{createButton}</ScreenFooter> : createButton}
     </div>
   )
 }

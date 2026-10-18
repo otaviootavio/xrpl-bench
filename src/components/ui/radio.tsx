@@ -20,6 +20,10 @@ function Radio({ className, ...props }: Omit<React.ComponentProps<'input'>, 'typ
           'm-0 size-4 shrink-0 appearance-none rounded-full border border-input bg-background',
           'shadow-[inset_0_1px_2px_0_rgb(0_0_0/0.14)]',
           'checked:border-foreground checked:bg-[radial-gradient(circle,var(--foreground)_0_38%,transparent_44%)]',
+          // Forced colours replace the authored palette; the dot is a gradient
+          // drawn in --foreground, so name a system colour that is guaranteed to
+          // contrast with the forced Canvas behind it.
+          'forced-colors:checked:border-[Highlight] forced-colors:checked:bg-[radial-gradient(circle,CanvasText_0_38%,transparent_44%)]',
           'disabled:cursor-not-allowed disabled:opacity-55',
           className,
         )}

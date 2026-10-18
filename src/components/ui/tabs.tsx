@@ -34,8 +34,12 @@ function TabsList({
         'items-stretch border-b border-border text-muted-foreground',
         // Two rows of three below `sm`, six columns from `sm` up. Every
         // function is present at 320px: nothing scrolls out of view and no
-        // label is shortened (docs/decisions.md §6.13, superseding §6.8).
-        variant === 'nav' && 'grid w-full grid-cols-3 sm:grid-cols-6',
+        // label is shortened (docs/decisions.md §6.13, superseding §6.8). Below
+        // `sm` the row is a wrapping flex of third-width triggers that cannot
+        // shrink under their own word, so at 200% text it falls to fewer per
+        // row instead of overprinting: a grid's `minmax(0,1fr)` columns cannot.
+        variant === 'nav' &&
+          'flex w-full flex-wrap sm:grid sm:grid-cols-6 [&>*]:grow [&>*]:basis-1/3 [&>*]:min-w-fit sm:[&>*]:basis-auto sm:[&>*]:min-w-0',
         variant === 'inline' && 'inline-flex',
         className,
       )}

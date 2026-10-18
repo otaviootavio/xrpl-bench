@@ -75,3 +75,17 @@ Verification (real Chrome, 320x568 same-origin iframe, two Testnet wallets, No O
 | Gates | `lint`, `build`, `test` (1386), `check:contrast` all green |
 
 Seen, not fixed (outside this slice): at 200% text the tab labels BALANCES / SEND / RECEIVE visibly overlap in the tab bar, and the header takes 204px of the 566px viewport. Not measured beyond a screenshot.
+
+## S3 and the tab-bar overlap — built, partly verified
+
+Issue 4 (radio dot, `ui/radio.tsx`): added `forced-colors:checked:border-[Highlight]` and a `forced-colors:` dot gradient drawn in the `CanvasText` system colour. **Not verified in forced-colors**: this machine cannot toggle it, so whether the old dot failed was never observed. The new rule is confirmed to compile into the served CSS. Check with Chrome DevTools, Rendering, "Emulate CSS media feature forced-colors: active", or Windows High Contrast, on Add wallet's Network choice.
+
+Tab-bar overlap (found in S2, not in the audit; `ui/tabs.tsx`): the nav list was a `grid-cols-3` of `minmax(0,1fr)` columns, which cannot grow past a word, so BALANCES / SEND / RECEIVE overprinted at 200% text. Below `sm` it is now a wrapping flex of third-width triggers with `min-w-fit`.
+
+| Check (320x568 iframe) | Result |
+|---|---|
+| 100% text | Two rows of three, 90px each (16-106, 106-197, 197-287): same as before; no overflow |
+| 200% text | No overprinting or overflow; one trigger per row (a word is about 165px against a 256px row), list 367px tall |
+| Gates | `lint`, `build`, `test` (1386), `check:contrast` green |
+
+Open: at 200% the six stacked tabs (367px) plus the header (204px) fill the 566px viewport, so content starts below the fold. Making that smaller means a different navigation pattern, and docs/decisions.md §6.13 ruled out scrolling the tabs out of view; that is a product decision, not done here.

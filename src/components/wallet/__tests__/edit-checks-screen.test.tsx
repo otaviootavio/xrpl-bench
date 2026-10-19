@@ -111,7 +111,7 @@ describe('Edit checks screen', () => {
 
   it('No Open Check explains itself only where it is available, and every Signing Check option says who it asks', async () => {
     await mount()
-    expect(screen.getAllByText('Opens without asking. Testnet and Devnet only.').length).toBe(1)
+    expect(screen.getAllByText('Nothing is asked to open the wallet. Testnet and Devnet only.').length).toBe(1)
     expect(screen.getByText('Asks for your App PIN on every signature.')).toBeTruthy()
     expect(screen.getByText(/^Asks for your passkey on every signature\./)).toBeTruthy()
     cleanup()
@@ -120,7 +120,7 @@ describe('Edit checks screen', () => {
     expect(screen.getByText('Nothing is asked for signing.')).toBeTruthy()
     cleanup()
     await mount({ ...META, network: 'mainnet' })
-    expect(screen.queryByText('Opens without asking. Testnet and Devnet only.')).toBeNull()
+    expect(screen.queryByText('Nothing is asked to open the wallet. Testnet and Devnet only.')).toBeNull()
   })
 
   it('a Passkey-Derived Wallet: every Signing Check answer is aria-disabled with the reason; Open Check is editable', async () => {

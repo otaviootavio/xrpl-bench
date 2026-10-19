@@ -25,10 +25,10 @@ A pain. The wallet holds real Mainnet funds, and the Signing Check options are w
   - **success:** In create-wallet and Edit checks, the Standard detail reads "Nothing is asked for signing." and the passkey and App PIN details read "Asks for your passkey on every signature." and "Asks for your App PIN on every signature."; the Edit checks passkey detail adds "The passkey is named after this wallet."; the passkey label when the current check is a passkey reads "Passkey only: a new passkey". No Signing Check detail contains "no further check".
 - **CAP-2** (8e)
   - **intent:** The seed-reveal sentence for a lock with no Open Check matches its sibling sentences.
-  - **success:** The sentence reads "After you confirm, the Seed is shown with no further prompt."; "Seed" is capitalised; no sentence in `revealCheckSentence` describes an absence as a check.
+  - **success:** The sentence reads "After you confirm, nothing more will be asked and the Seed is shown."; "Seed" is capitalised; no sentence in `revealCheckSentence` describes an absence as a check.
 - **CAP-3** (8g)
   - **intent:** "No Open Check" explains itself as the Signing Check options do, without repeating its own policy reason.
-  - **success:** Where the option is available, it shows the detail "Opens without asking. Testnet and Devnet only." in create-wallet and Edit checks; where it is unavailable (Mainnet), it shows only its policy reason.
+  - **success:** Where the option is available, it shows the detail "Nothing is asked to open the wallet. Testnet and Devnet only." in create-wallet and Edit checks; where it is unavailable (Mainnet), it shows only its policy reason.
 - **CAP-4** (8h, 8i)
   - **intent:** The Open Check passkey options are worded as their Signing Check counterparts.
   - **success:** The Open Check passkey detail reads "The passkey is named after this wallet." in create-wallet and Edit checks, and the Edit checks label when the current Open Check is a passkey reads "Passkey: a new passkey".

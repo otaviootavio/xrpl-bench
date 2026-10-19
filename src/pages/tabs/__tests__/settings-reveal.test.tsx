@@ -89,7 +89,7 @@ describe('SettingsTab reveal seed: the dialog names the check', () => {
     ['the legacy lock, whichever check it uses', {}, /passkey or App PIN will be asked, whichever this wallet's lock uses/],
     ['a passkey Open Check', { lockId: 'lock-1', openCheck: 'passkey' }, /passkey will be asked/],
     ['an either lock off the legacy id', { lockId: 'lock-1', openCheck: 'either' }, /passkey will be asked, or your App PIN/],
-    ['no Open Check', { lockId: 'lock-1', openCheck: 'none' }, /the Seed is shown with no further prompt/],
+    ['no Open Check', { lockId: 'lock-1', openCheck: 'none' }, /nothing more will be asked and the Seed is shown/],
     ['a PIN Signing Check', { openCheck: 'passkey', signingCheck: 'pin' }, /App PIN will be asked/],
     ['a passkey Signing Check', { signingCheck: 'passkey' }, /passkey will be asked/],
     ['a Passkey-Derived Seed', { seedMethod: 'passkey-derived', signingCheck: 'passkey' }, /passkey will be asked/],

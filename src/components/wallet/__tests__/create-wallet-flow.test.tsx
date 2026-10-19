@@ -311,9 +311,9 @@ describe('unavailable answers', () => {
     expect(screen.getByText('Nothing is asked for signing.')).toBeTruthy()
     expect(screen.getByText('Asks for your passkey on every signature.')).toBeTruthy()
     expect(screen.getByText('Asks for your App PIN on every signature.')).toBeTruthy()
-    expect(screen.getByText('Opens without asking. Testnet and Devnet only.')).toBeTruthy()
+    expect(screen.getByText('Nothing is asked to open the wallet. Testnet and Devnet only.')).toBeTruthy()
     await click(radioNamed(/^Mainnet/))
-    expect(screen.queryByText('Opens without asking. Testnet and Devnet only.')).toBeNull()
+    expect(screen.queryByText('Nothing is asked to open the wallet. Testnet and Devnet only.')).toBeNull()
   })
 
   it('Testnet may use no Open Check; switching to Mainnet then blocks it with the reason', async () => {

@@ -17,9 +17,9 @@ The three Signing Check options and the seed-reveal sentence were each written o
 | 8b | P2 (MEDIUM) | Passkey only detail is a fragment, not parallel | `CreateWalletFlow.tsx:653` | "Asks for your passkey on every signature." |
 | 8c | P2 (MEDIUM) | App PIN only detail has no verb | `CreateWalletFlow.tsx:664`, `EditChecksDialog.tsx:452` | "Asks for your App PIN on every signature." |
 | 8d | P2 (MEDIUM) | Passkey detail, second sentence is a fragment | `EditChecksDialog.tsx:461` | "Asks for your passkey on every signature. The passkey is named after this wallet." |
-| 8e | P2 (MEDIUM) | Seed-reveal sentence describes an absence, lowercase "seed", off-pattern with its siblings ("After you confirm, …") | `SettingsTab.tsx:60` (test `settings-reveal.test.tsx:92`, regex `/no further check/`) | "After you confirm, the Seed is shown with no further prompt." |
+| 8e | P2 (MEDIUM) | Seed-reveal sentence describes an absence, lowercase "seed", off-pattern with its siblings ("After you confirm, …") | `SettingsTab.tsx:60` (test `settings-reveal.test.tsx:92`, regex `/no further check/`) | "After you confirm, nothing more will be asked and the Seed is shown." |
 | 8f | P3 (LOW) | Label drops "Passkey only" when the current check is a passkey | `EditChecksDialog.tsx:460` | "Passkey only: a new passkey" |
-| 8g | P3 (LOW) | "No Open Check" has no description while Signing Check options do | `CreateWalletFlow.tsx:618`, `EditChecksDialog.tsx:415` | detail: "Opens without asking. Testnet and Devnet only." Shown only when the option is available. |
+| 8g | P3 (LOW) | "No Open Check" has no description while Signing Check options do | `CreateWalletFlow.tsx:618`, `EditChecksDialog.tsx:415` | detail: "Nothing is asked to open the wallet. Testnet and Devnet only." Shown only when the option is available. |
 | 8h | P3 (LOW) | Open Check passkey detail worded differently from its Signing Check twin | `CreateWalletFlow.tsx:584`, `EditChecksDialog.tsx:403` | "The passkey is named after this wallet." |
 | 8i | P3 (LOW) | Open Check label drops "Passkey" when the current check is a passkey | `EditChecksDialog.tsx:402` | "Passkey: a new passkey" |
 

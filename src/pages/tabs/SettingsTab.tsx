@@ -52,7 +52,7 @@ function revealCheckSentence(wallet: WalletMeta | undefined): string {
     case 'either':
       return 'After you confirm, your passkey will be asked, or your App PIN if this device cannot use one.'
     default:
-      return 'This wallet has no further check: confirming here shows the seed.'
+      return 'After you confirm, the Seed is shown with no further prompt.'
   }
 }
 

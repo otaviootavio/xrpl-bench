@@ -109,9 +109,23 @@ describe('Edit checks screen', () => {
     expect(screen.getByText('Real funds')).toBeTruthy()
   })
 
+  it('No Open Check explains itself only where it is available, and every Signing Check option says who it asks', async () => {
+    await mount()
+    expect(screen.getAllByText('Opens without asking. Testnet and Devnet only.').length).toBe(1)
+    expect(screen.getByText('Asks for your App PIN on every signature.')).toBeTruthy()
+    expect(screen.getByText(/^Asks for your passkey on every signature\./)).toBeTruthy()
+    cleanup()
+    // the current answer is offered as "keep", so Standard shows from a wallet that is not on it
+    await mount({ ...META, signingCheck: 'pin' })
+    expect(screen.getByText('Signs without asking again once the wallet is open.')).toBeTruthy()
+    cleanup()
+    await mount({ ...META, network: 'mainnet' })
+    expect(screen.queryByText('Opens without asking. Testnet and Devnet only.')).toBeNull()
+  })
+
   it('a Passkey-Derived Wallet: every Signing Check answer is aria-disabled with the reason; Open Check is editable', async () => {
     await mount({ ...META, seedMethod: 'passkey-derived', signingCheck: 'passkey' })
-    for (const name of ['Standard', 'App PIN only', /A new passkey/, /use one already on this device/]) {
+    for (const name of ['Standard', 'App PIN only', /^Passkey only: a new passkey/, /use one already on this device/]) {
       // the Open Check axis also offers a passkey: look only in the Signing Check fieldset
       const fieldset = screen.getByText('Signing Check').closest('fieldset') as HTMLElement
       const inside = Array.from(fieldset.querySelectorAll('input[type=radio]')) as HTMLInputElement[]

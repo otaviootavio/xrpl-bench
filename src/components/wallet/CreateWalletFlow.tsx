@@ -567,7 +567,7 @@ function CreateWalletForm({ capability, onDone, onInProgressChange, defaultLabel
               name={`${group}-passkey`}
               checked={passkeyChoice === 'new'}
               label="Create a new passkey"
-              detail="Named after this wallet."
+              detail="The passkey is named after this wallet."
               state={{ available: true }}
               onSelect={() => setPasskeyChoice('new')}
             />
@@ -672,6 +672,7 @@ function CreateWalletForm({ capability, onDone, onInProgressChange, defaultLabel
               name={`${group}-open`}
               checked={openCheck === 'none'}
               label="No Open Check"
+              detail={options.openCheck.none.available ? 'Opens without asking. Testnet and Devnet only.' : undefined}
               state={options.openCheck.none}
               onSelect={() => setOpenCheck('none')}
             />
@@ -695,7 +696,7 @@ function CreateWalletForm({ capability, onDone, onInProgressChange, defaultLabel
               name={`${group}-sign`}
               checked={signing === 'standard'}
               label="Standard"
-              detail="Signs once the wallet is open, with no further check."
+              detail="Signs without asking again once the wallet is open."
               state={options.signing.standard}
               onSelect={() => {
                 setSigningTouched(true)
@@ -706,7 +707,7 @@ function CreateWalletForm({ capability, onDone, onInProgressChange, defaultLabel
               name={`${group}-sign`}
               checked={signing === 'passkey'}
               label="Passkey only"
-              detail="A passkey prompt for every signature."
+              detail="Asks for your passkey on every signature."
               state={options.signing.passkey}
               onSelect={() => {
                 setSigningTouched(true)
@@ -717,7 +718,7 @@ function CreateWalletForm({ capability, onDone, onInProgressChange, defaultLabel
               name={`${group}-sign`}
               checked={signing === 'pin'}
               label="App PIN only"
-              detail="The App PIN for every signature."
+              detail="Asks for your App PIN on every signature."
               state={options.signing.pin}
               onSelect={() => {
                 setSigningTouched(true)

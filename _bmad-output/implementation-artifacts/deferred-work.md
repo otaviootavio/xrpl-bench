@@ -436,3 +436,9 @@ Item 8 shipped as a refactor that preserves behaviour (`spec-sendtab-split.md`).
 - source_spec: `_bmad-output/specs/spec-ui-audit-2026-10/stories/2-delete-the-unused-switch.md`
   summary: Remove the now-unused `@radix-ui/react-switch` dependency from `package.json` and `bun.lock`.
   evidence: Nothing in `src` imports it since the switch was deleted (`package.json:34`, `bun.lock:13,368`); removing it changes the lockfile, so it needs its own deliberate change.
+
+## Deferred from: review of `_bmad-output/specs/spec-signing-check-copy/stories/1-signing-check-copy.md` (2026-10-19)
+
+- source_spec: `_bmad-output/specs/spec-signing-check-copy/stories/1-signing-check-copy.md`
+  summary: Decide whether the "No Open Check" detail should name the consequence (anyone holding the device can open the wallet), and whether "Opens without asking", "Signs without asking again" and "shown with no further prompt" should share one phrase.
+  evidence: Reviewer observation, maybe-false; the current wording is the owner-approved verdict of issues 8e and 8g, so changing it is a spec change. Settled by an owner decision on the wording.

@@ -391,8 +391,8 @@ function EditChecksBody({
           <Choice
             name={`${group}-open`}
             checked={openSel === 'passkey-new'}
-            label={lock.openCheck === 'passkey' ? 'A new passkey' : 'Passkey: create a new one'}
-            detail="Named after this wallet."
+            label={lock.openCheck === 'passkey' ? 'Passkey: a new passkey' : 'Passkey: create a new one'}
+            detail="The passkey is named after this wallet."
             state={options.openCheck.passkey}
             onSelect={() => setOpenSel('passkey-new')}
           />
@@ -404,7 +404,14 @@ function EditChecksBody({
             onSelect={() => setOpenSel('passkey-existing')}
           />
           {lock.openCheck !== 'none' && (
-            <Choice name={`${group}-open`} checked={openSel === 'none'} label="No Open Check" state={options.openCheck.none} onSelect={() => setOpenSel('none')} />
+            <Choice
+              name={`${group}-open`}
+              checked={openSel === 'none'}
+              label="No Open Check"
+              detail={options.openCheck.none.available ? 'Opens without asking. Testnet and Devnet only.' : undefined}
+              state={options.openCheck.none}
+              onSelect={() => setOpenSel('none')}
+            />
           )}
         </Axis>
 
@@ -431,7 +438,7 @@ function EditChecksBody({
               name={`${group}-sign`}
               checked={signSel === 'standard'}
               label="Standard"
-              detail="Signs once the wallet is open, with no further check."
+              detail="Signs without asking again once the wallet is open."
               state={options.signing.standard}
               onSelect={() => setSignSel('standard')}
             />
@@ -441,7 +448,7 @@ function EditChecksBody({
               name={`${group}-sign`}
               checked={signSel === 'pin'}
               label="App PIN only"
-              detail="The App PIN for every signature."
+              detail="Asks for your App PIN on every signature."
               state={options.signing.pin}
               onSelect={() => setSignSel('pin')}
             />
@@ -449,8 +456,8 @@ function EditChecksBody({
           <Choice
             name={`${group}-sign`}
             checked={signSel === 'passkey-new'}
-            label={current.signing === 'passkey' ? 'A new passkey' : 'Passkey only: create a new one'}
-            detail="A passkey prompt for every signature. Named after this wallet."
+            label={current.signing === 'passkey' ? 'Passkey only: a new passkey' : 'Passkey only: create a new one'}
+            detail="Asks for your passkey on every signature. The passkey is named after this wallet."
             state={options.signing.passkey}
             onSelect={() => setSignSel('passkey-new')}
           />

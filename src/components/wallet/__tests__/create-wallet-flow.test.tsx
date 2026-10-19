@@ -306,6 +306,16 @@ describe('unavailable answers', () => {
     expect(createButton().getAttribute('aria-disabled')).toBeNull()
   })
 
+  it('every Signing Check option says who it asks, and No Open Check explains itself only where it is available', async () => {
+    await mount()
+    expect(screen.getByText('Signs without asking again once the wallet is open.')).toBeTruthy()
+    expect(screen.getByText('Asks for your passkey on every signature.')).toBeTruthy()
+    expect(screen.getByText('Asks for your App PIN on every signature.')).toBeTruthy()
+    expect(screen.getByText('Opens without asking. Testnet and Devnet only.')).toBeTruthy()
+    await click(radioNamed(/^Mainnet/))
+    expect(screen.queryByText('Opens without asking. Testnet and Devnet only.')).toBeNull()
+  })
+
   it('Testnet may use no Open Check; switching to Mainnet then blocks it with the reason', async () => {
     await mount()
     await click(radioNamed(/^No Open Check/))

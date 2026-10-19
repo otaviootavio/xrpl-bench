@@ -16,7 +16,7 @@ The shared primitives in `src/components/ui` were sized for a dense, instrument-
 | 1 | P1 | Buttons are under 44px tall (default `h-9` = 36px, `sm` `h-8` = 32px, `icon` `h-9 w-9`); tab triggers measure about 30px | `src/components/ui/button.tsx:76-79`, `src/components/ui/tabs.tsx:51` | |
 | 2 | P1 | Checkbox is 16px with no enlarged hit area; its only larger target is the wrapping label | `src/components/ui/checkbox.tsx:11`, used at `src/components/wallet/CreateWalletFlow.tsx:451` and `:475` | |
 | 3 | P2 | Switch is 20×36px; it has no caller outside `ui/` | `src/components/ui/switch.tsx:16` | remove |
-| 4 | P3 | Raw `rgb(...)` shadow literals in 7 files of `src/components/ui` (also one in `QrScanner.tsx:140`), outside the token set | `src/components/ui/button.tsx:40` (example) | |
+| 4 | P3 | Raw `rgb(...)` shadow literals in 7 files of `src/components/ui` (also one in `QrScanner.tsx:140`), outside the token set | `src/components/ui/button.tsx:40` (example) | declined |
 
 Line references were re-checked against the current code. Two moved from the audit text: the tab trigger is at `tabs.tsx:51` (not 50), and the checkbox is used at two sites, not one.
 
@@ -25,7 +25,7 @@ Line references were re-checked against the current code. Two moved from the aud
 - **1.** At a 390px-wide viewport, every button and tab trigger measures at least 44×44px.
 - **2.** At 390px, a tap within 22px of the checkbox centre toggles it, and the tap area is at least 44px tall.
 - **3.** `switch.tsx` is deleted and nothing in `src` imports it (decided: remove).
-- **4.** No `rgb(` literal remains in `src/components/ui` or `QrScanner.tsx`.
+- **4.** Declined, not built: `DESIGN.md`'s Shadow Vocabulary (lines 325-336) names these `rgb(0 0 0 / x)` and `rgb(255 255 255 / x)` values as the intended shadows, and `index.css` uses them too. The audit's "outside the token set" was mistaken.
 
 ## Fix order
 
@@ -33,7 +33,7 @@ Line references were re-checked against the current code. Two moved from the aud
 |---|---|---|
 | S1 | 1, 2 | Touch-sized buttons, tab triggers and checkbox hit area; one build, since all three live in the primitives |
 | S2 | 3 | Delete the unused switch. Depends on nothing |
-| S3 | 4 | Shadow literals moved to tokens. Do after S1, which edits the same files |
+| S3 | 4 | Declined; not built |
 
 ## Not verified by the audit — manual checks
 

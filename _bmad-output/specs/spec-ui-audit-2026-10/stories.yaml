@@ -1,29 +1,13 @@
 - id: "1"
   title: Touch-sized buttons, tab triggers and checkbox
   description: >-
-    CAP-1 and CAP-2 (issues 1 and 2, both P1): every button and tab trigger
-    measures at least 44x44px at 390px wide, and the checkbox gets a 44px hit
-    area.
+    CAP-1 and CAP-2 (issues 1 and 2, both P1): every button, tab trigger and Annunciator control measures at least 44px on touch screens (390px with touch emulation; mouse sizes unchanged), and the backup-checkbox labels get a 44px row.
   spec_checkpoint: true
   invoke_dev_with: >-
-    Read PRODUCT.md, DESIGN.md and docs/agents/verifying-your-work.md first.
-    Finish with a browser check at 390px and at desktop width; check the
-    desktop panel density has not been broken.
+    Read PRODUCT.md, DESIGN.md and docs/agents/verifying-your-work.md first. Finish with a browser check at 390px and at desktop width; check the desktop panel density has not been broken.
 - id: "2"
   title: Delete the unused switch
   description: >-
-    CAP-3 (issue 3, P2): delete src/components/ui/switch.tsx once nothing in
-    src imports it.
+    CAP-3 (issue 3, P2): delete src/components/ui/switch.tsx once nothing in src imports it.
   invoke_dev_with: >-
-    Read PRODUCT.md, DESIGN.md and docs/agents/verifying-your-work.md first.
-    Confirm nothing imports the switch, run the four gates, and finish with a
-    browser check at 390px and at desktop width.
-- id: "3"
-  title: Move shadow literals to tokens
-  description: >-
-    CAP-4 (issue 4, P3): no rgb( literal remains in src/components/ui or
-    QrScanner.tsx. Runs after story 1, which edits the same files.
-  invoke_dev_with: >-
-    Read PRODUCT.md, DESIGN.md and docs/agents/verifying-your-work.md first.
-    bun run check:contrast must still pass. Finish with a browser check at
-    390px and at desktop width.
+    Read PRODUCT.md, DESIGN.md and docs/agents/verifying-your-work.md first. Confirm nothing imports the switch, run the four gates, and finish with a browser check at 390px and at desktop width.

@@ -13,7 +13,7 @@ The three Signing Check options and the seed-reveal sentence were each written o
 
 | # | Sev | Issue | file:line | Verdict |
 |---|---|---|---|---|
-| 8a | P2 (HIGH) | Standard describes an absence and reads as "no checking exists" | `CreateWalletFlow.tsx:642`, `EditChecksDialog.tsx:442` | "Signs without asking again once the wallet is open." |
+| 8a | P2 (HIGH) | Standard describes an absence and reads as "no checking exists" | `CreateWalletFlow.tsx:642`, `EditChecksDialog.tsx:442` | "Nothing is asked for signing." |
 | 8b | P2 (MEDIUM) | Passkey only detail is a fragment, not parallel | `CreateWalletFlow.tsx:653` | "Asks for your passkey on every signature." |
 | 8c | P2 (MEDIUM) | App PIN only detail has no verb | `CreateWalletFlow.tsx:664`, `EditChecksDialog.tsx:452` | "Asks for your App PIN on every signature." |
 | 8d | P2 (MEDIUM) | Passkey detail, second sentence is a fragment | `EditChecksDialog.tsx:461` | "Asks for your passkey on every signature. The passkey is named after this wallet." |

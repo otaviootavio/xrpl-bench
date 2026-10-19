@@ -696,7 +696,7 @@ function CreateWalletForm({ capability, onDone, onInProgressChange, defaultLabel
               name={`${group}-sign`}
               checked={signing === 'standard'}
               label="Standard"
-              detail="Signs without asking again once the wallet is open."
+              detail="Nothing is asked for signing."
               state={options.signing.standard}
               onSelect={() => {
                 setSigningTouched(true)

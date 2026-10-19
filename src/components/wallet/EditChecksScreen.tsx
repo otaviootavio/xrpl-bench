@@ -438,7 +438,7 @@ function EditChecksBody({
               name={`${group}-sign`}
               checked={signSel === 'standard'}
               label="Standard"
-              detail="Signs without asking again once the wallet is open."
+              detail="Nothing is asked for signing."
               state={options.signing.standard}
               onSelect={() => setSignSel('standard')}
             />

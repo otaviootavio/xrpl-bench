@@ -117,7 +117,7 @@ describe('Edit checks screen', () => {
     cleanup()
     // the current answer is offered as "keep", so Standard shows from a wallet that is not on it
     await mount({ ...META, signingCheck: 'pin' })
-    expect(screen.getByText('Signs without asking again once the wallet is open.')).toBeTruthy()
+    expect(screen.getByText('Nothing is asked for signing.')).toBeTruthy()
     cleanup()
     await mount({ ...META, network: 'mainnet' })
     expect(screen.queryByText('Opens without asking. Testnet and Devnet only.')).toBeNull()

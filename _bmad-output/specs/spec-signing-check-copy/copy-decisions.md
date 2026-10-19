@@ -8,9 +8,9 @@ Issue IDs 8a–8g and the wording are decided (source: `docs/sprints/signing-che
 | 8b | MEDIUM | `CreateWalletFlow.tsx:653` | A passkey prompt for every signature. | Asks for your passkey on every signature. |
 | 8c | MEDIUM | `CreateWalletFlow.tsx:664`, `EditChecksDialog.tsx:452` | The App PIN for every signature. | Asks for your App PIN on every signature. |
 | 8d | MEDIUM | `EditChecksDialog.tsx:461` | A passkey prompt for every signature. Named after this wallet. | Asks for your passkey on every signature. The passkey is named after this wallet. |
-| 8e | MEDIUM | `SettingsTab.tsx:60` | This wallet has no further check: confirming here shows the seed. | After you confirm, the Seed is shown with no further prompt. |
+| 8e | MEDIUM | `SettingsTab.tsx:60` | This wallet has no further check: confirming here shows the seed. | After you confirm, nothing more will be asked and the Seed is shown. |
 | 8f | LOW | `EditChecksDialog.tsx:460` | A new passkey (label, when the current Signing Check is a passkey) | Passkey only: a new passkey |
-| 8g | LOW | `CreateWalletFlow.tsx:618`, `EditChecksDialog.tsx:415` | No Open Check (no detail) | detail: Opens without asking. Testnet and Devnet only. Passed only when `state.available`; unavailable shows its policy reason alone. |
+| 8g | LOW | `CreateWalletFlow.tsx:618`, `EditChecksDialog.tsx:415` | No Open Check (no detail) | detail: Nothing is asked to open the wallet. Testnet and Devnet only. Passed only when `state.available`; unavailable shows its policy reason alone. |
 | 8h | LOW | `CreateWalletFlow.tsx:584`, `EditChecksDialog.tsx:403` | Named after this wallet. | The passkey is named after this wallet. |
 | 8i | LOW | `EditChecksDialog.tsx:402` | A new passkey (Open Check label, when the current Open Check is a passkey) | Passkey: a new passkey |
 

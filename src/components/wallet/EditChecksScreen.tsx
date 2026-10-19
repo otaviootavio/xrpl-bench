@@ -408,7 +408,7 @@ function EditChecksBody({
               name={`${group}-open`}
               checked={openSel === 'none'}
               label="No Open Check"
-              detail={options.openCheck.none.available ? 'Opens without asking. Testnet and Devnet only.' : undefined}
+              detail={options.openCheck.none.available ? 'Nothing is asked to open the wallet. Testnet and Devnet only.' : undefined}
               state={options.openCheck.none}
               onSelect={() => setOpenSel('none')}
             />

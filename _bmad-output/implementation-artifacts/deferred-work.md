@@ -430,3 +430,9 @@ Item 8 shipped as a refactor that preserves behaviour (`spec-sendtab-split.md`).
 - source_spec: `_bmad-output/specs/spec-ui-audit-2026-10/stories/1-touch-sized-controls.md`
   summary: The Settings "Remove all wallets from this device" button overhangs a 320px viewport by about 1.6px.
   evidence: Pre-existing; measured by the build agent; the fix is in `SettingsTab.tsx`, an uncommitted file.
+
+## Deferred from: review of `_bmad-output/specs/spec-ui-audit-2026-10/stories/2-delete-the-unused-switch.md` (2026-10-18)
+
+- source_spec: `_bmad-output/specs/spec-ui-audit-2026-10/stories/2-delete-the-unused-switch.md`
+  summary: Remove the now-unused `@radix-ui/react-switch` dependency from `package.json` and `bun.lock`.
+  evidence: Nothing in `src` imports it since the switch was deleted (`package.json:34`, `bun.lock:13,368`); removing it changes the lockfile, so it needs its own deliberate change.

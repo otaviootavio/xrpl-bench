@@ -30,7 +30,7 @@ function NoticeRow({ notice, onDismiss }: { notice: Notice; onDismiss: () => voi
   return (
     <div
       className={cn(
-        'panel-plate relative flex items-start gap-2.5 rounded-md px-3 pb-2.5 pt-2 font-legend text-sm',
+        'panel-plate relative flex items-start gap-2.5 rounded-md px-3 pb-2.5 pt-2 pointer-coarse:pt-3 font-legend text-sm',
         'bg-card',
         NOTICE_TONE[notice.tone],
       )}
@@ -53,9 +53,11 @@ function NoticeRow({ notice, onDismiss }: { notice: Notice; onDismiss: () => voi
         type="button"
         onClick={onDismiss}
         aria-label={`Dismiss ${notice.legend.toLowerCase()} notice: ${notice.message}`}
-        className="flex size-5 shrink-0 items-center justify-center rounded-sm border border-border bg-card text-muted-foreground transition-colors hover:text-foreground"
+        className="group flex size-5 shrink-0 items-center justify-center pointer-coarse:-m-3 pointer-coarse:size-11"
       >
-        <X className="size-3" aria-hidden="true" />
+        <span className="flex size-5 items-center justify-center rounded-sm border border-border bg-card text-muted-foreground transition-colors group-hover:text-foreground">
+          <X className="size-3" aria-hidden="true" />
+        </span>
       </button>
     </div>
   )
@@ -95,7 +97,7 @@ export function Annunciator() {
           <button
             type="button"
             onClick={() => setExpanded(true)}
-            className="self-start font-legend text-[0.6875rem] font-semibold uppercase tracking-[0.1em] text-muted-foreground hover:text-foreground"
+            className="self-start pointer-coarse:min-h-11 font-legend text-[0.6875rem] font-semibold uppercase tracking-[0.1em] text-muted-foreground hover:text-foreground"
           >
             +{rest.length} more
           </button>
@@ -108,7 +110,7 @@ export function Annunciator() {
             <button
               type="button"
               onClick={() => setExpanded(false)}
-              className="self-start font-legend text-[0.6875rem] font-semibold uppercase tracking-[0.1em] text-muted-foreground hover:text-foreground"
+              className="self-start pointer-coarse:min-h-11 font-legend text-[0.6875rem] font-semibold uppercase tracking-[0.1em] text-muted-foreground hover:text-foreground"
             >
               Show less
             </button>

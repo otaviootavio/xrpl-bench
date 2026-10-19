@@ -415,3 +415,18 @@ Item 8 shipped as a refactor that preserves behaviour (`spec-sendtab-split.md`).
 - source_spec: `_bmad-output/implementation-artifacts/spec-mobile-dialogs-s1-sheet.md`
   summary: Edit trust line limit sheet, import-warning sheet, the Mainnet typed phrase and the Mainnet "Use on Mainnet" confirm with funds were never opened in a browser; real touch input and real browser zoom were emulated only.
   evidence: No trust line, no seed with a master-key warning, and Mainnet is off limits for throwaway tests; Playwright mouse input hangs under coarse-pointer emulation.
+
+## Deferred from: review of `_bmad-output/specs/spec-ui-audit-2026-10/stories/1-touch-sized-controls.md` (2026-10-18)
+
+- source_spec: `_bmad-output/specs/spec-ui-audit-2026-10/stories/1-touch-sized-controls.md`
+  summary: Record the touch-target rule (44px on coarse pointers, via `pointer-coarse:`) in DESIGN.md.
+  evidence: The story adds a sizing rule with no home in DESIGN.md, so a later hand-made control will be built at `h-9` unnoticed.
+- source_spec: `_bmad-output/specs/spec-ui-audit-2026-10/stories/1-touch-sized-controls.md`
+  summary: Selects, inputs and the hand-made select (`select.tsx`, `input.tsx`, `ControlWalletDialog.tsx:194`) stay 36px on touch.
+  evidence: Pre-existing; the story covers buttons, tab triggers, the checkbox and the Annunciator dismiss only.
+- source_spec: `_bmad-output/specs/spec-ui-audit-2026-10/stories/1-touch-sized-controls.md`
+  summary: The browser pass did not reach the header lock button, TwoDeviceSign, TrustLineRow, dark theme, a funded account or a second wallet.
+  evidence: Unverified (maybe-false, medium if true): the 44px buttons may overflow dense rows at 320px; needs a pass that reaches those screens.
+- source_spec: `_bmad-output/specs/spec-ui-audit-2026-10/stories/1-touch-sized-controls.md`
+  summary: The Settings "Remove all wallets from this device" button overhangs a 320px viewport by about 1.6px.
+  evidence: Pre-existing; measured by the build agent; the fix is in `SettingsTab.tsx`, an uncommitted file.

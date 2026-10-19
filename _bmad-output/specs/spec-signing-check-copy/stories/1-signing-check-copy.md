@@ -2,7 +2,7 @@
 title: 'Signing Check and Open Check copy'
 type: 'chore'
 created: '2026-10-19'
-status: 'in-review'
+status: 'done'
 route: 'oneshot'
 review_loop_iteration: 0
 baseline_commit: 'cd7d455b6681ff37424872247ca1cbf9ce8c7842'
@@ -55,5 +55,8 @@ Files changed: `CreateWalletFlow.tsx` (8a, 8b, 8c, 8g, 8h), `EditChecksDialog.ts
 
 **Not run:** a real Mainnet wallet (no Mainnet action taken); the Mainnet Edit checks view (only the create flow was checked on Mainnet); 390px.
 
-**Open on a touched surface:** ledger issue 5 (P1): the radio `Choice` label in `check-controls.tsx` has no 44px touch row. It predates this change and is not part of it, but the build workflow does not call a UI story done while a P1 on a touched surface is open, and the Impeccable re-audit was not run. Status therefore stays `in-review`.
+**Touch rows (ledger issue 5, P1), closed in this story's follow-up (2026-10-19):** the radio rows in `check-controls.tsx` and the Network radios in `NetworkChoice.tsx` (shared by the create flow, Settings > Add wallet and Onboarding) gained `pointer-coarse:min-h-11 pointer-coarse:items-center` and `pointer-coarse:mt-0` on the radio. A verifier measured at 390×844 with touch emulation (`pointer: coarse` true in the page): every radio label in Edit checks (13) and the create flow (22) is 44px, the three Network rows too (also in Onboarding), dots centred within 0.4px; at 1280×800 with a mouse every row stays 20px; no horizontal overflow. Screenshots opened by the main session: Edit checks Signing Check 390 light, create flow 390 light (before the Network fix, showing the 20px rows) and dark (after), Onboarding 390 dark.
 
+**Re-audit** (`/impeccable audit`, scoped to `check-controls.tsx`, `NetworkChoice.tsx`, `CreateWalletFlow.tsx`, `EditChecksDialog.tsx`, the seed-reveal confirm in `SettingsTab.tsx`): detector run, empty result. Score 15/20, unchanged from the last re-audit: the P1 is closed, but P2 touch gaps remain on these surfaces (Input and select trigger 36px on touch, ledger issue 6; dialog close button 28px, mobile-dialogs S3), so Responsive stays 3. No P0 or P1 open on a touched surface. Not measured: dark theme numerically (screenshots only), a Mainnet wallet, 200% text zoom.
+
+Status: done.

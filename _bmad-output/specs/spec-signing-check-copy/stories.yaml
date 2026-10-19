@@ -1,0 +1,6 @@
+- id: "1"
+  title: Signing Check and Open Check copy
+  description: >-
+    CAP-1 to CAP-4 (issues 8a to 8i): the Signing Check and Open Check option wording, the seed-reveal sentence and the No Open Check description, as set out in copy-decisions.md. Copy only; the tests that name the old text change with it.
+  invoke_dev_with: >-
+    Read PRODUCT.md, DESIGN.md and docs/agents/verifying-your-work.md first. Change only the lines in copy-decisions.md, with the tests that name them. Run the four gates, then check the create-wallet flow and Edit checks in a browser at 320px, both themes, because the detail lines get longer. Stage by explicit path: the fix/dialogs-mobile working tree must not be swept into the commit.

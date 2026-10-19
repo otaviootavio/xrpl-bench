@@ -22,7 +22,7 @@ A pain. The wallet holds real Mainnet funds, and the Signing Check options are w
 
 - **CAP-1** (8a, 8b, 8c, 8d, 8f)
   - **intent:** Each Signing Check option states what the app does, in one parallel form.
-  - **success:** In create-wallet and Edit checks, the Standard detail reads "Signs without asking again once the wallet is open." and the passkey and App PIN details read "Asks for your passkey on every signature." and "Asks for your App PIN on every signature."; the Edit checks passkey detail adds "The passkey is named after this wallet."; the passkey label when the current check is a passkey reads "Passkey only: a new passkey". No Signing Check detail contains "no further check".
+  - **success:** In create-wallet and Edit checks, the Standard detail reads "Nothing is asked for signing." and the passkey and App PIN details read "Asks for your passkey on every signature." and "Asks for your App PIN on every signature."; the Edit checks passkey detail adds "The passkey is named after this wallet."; the passkey label when the current check is a passkey reads "Passkey only: a new passkey". No Signing Check detail contains "no further check".
 - **CAP-2** (8e)
   - **intent:** The seed-reveal sentence for a lock with no Open Check matches its sibling sentences.
   - **success:** The sentence reads "After you confirm, the Seed is shown with no further prompt."; "Seed" is capitalised; no sentence in `revealCheckSentence` describes an absence as a check.

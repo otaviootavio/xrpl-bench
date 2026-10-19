@@ -4,7 +4,7 @@ Issue IDs 8a–8g and the wording are decided (source: `docs/sprints/signing-che
 
 | ID | Sev | Location | Before | After |
 |---|---|---|---|---|
-| 8a | HIGH | `CreateWalletFlow.tsx:642`, `EditChecksDialog.tsx:442` | Signs once the wallet is open, with no further check. | Signs without asking again once the wallet is open. |
+| 8a | HIGH | `CreateWalletFlow.tsx:642`, `EditChecksDialog.tsx:442` | Signs once the wallet is open, with no further check. | Nothing is asked for signing. |
 | 8b | MEDIUM | `CreateWalletFlow.tsx:653` | A passkey prompt for every signature. | Asks for your passkey on every signature. |
 | 8c | MEDIUM | `CreateWalletFlow.tsx:664`, `EditChecksDialog.tsx:452` | The App PIN for every signature. | Asks for your App PIN on every signature. |
 | 8d | MEDIUM | `EditChecksDialog.tsx:461` | A passkey prompt for every signature. Named after this wallet. | Asks for your passkey on every signature. The passkey is named after this wallet. |

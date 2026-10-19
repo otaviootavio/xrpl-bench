@@ -308,7 +308,7 @@ describe('unavailable answers', () => {
 
   it('every Signing Check option says who it asks, and No Open Check explains itself only where it is available', async () => {
     await mount()
-    expect(screen.getByText('Signs without asking again once the wallet is open.')).toBeTruthy()
+    expect(screen.getByText('Nothing is asked for signing.')).toBeTruthy()
     expect(screen.getByText('Asks for your passkey on every signature.')).toBeTruthy()
     expect(screen.getByText('Asks for your App PIN on every signature.')).toBeTruthy()
     expect(screen.getByText('Opens without asking. Testnet and Devnet only.')).toBeTruthy()

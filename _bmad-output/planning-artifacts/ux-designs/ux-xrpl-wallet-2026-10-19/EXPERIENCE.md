@@ -1,6 +1,6 @@
 ---
 name: XRPL Wallet — Wallet Chooser and Per-Wallet Configuration
-status: draft
+status: adopted
 updated: 2026-10-19
 sources:
   - _bmad-output/planning-artifacts/ux-designs/ux-xrpl-wallet-2026-10-19/.memlog.md   # owner decisions, authoritative

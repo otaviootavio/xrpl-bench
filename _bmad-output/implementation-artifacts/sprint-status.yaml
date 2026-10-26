@@ -29,7 +29,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 # - Retrospective appends its action items to action_items; the status view surfaces open ones
 generated: 09-15-2026 21:01
-last_updated: '10-26-2026 12:00'
+last_updated: '10-26-2026 15:00'
 project: xrpl-wallet
 project_key: NOKEY
 tracking_system: file-system
@@ -128,24 +128,30 @@ development_status:
   epic-16-retrospective: done
 
   epic-17: backlog
-  17-1-gate-error-empty-ready: backlog
-  17-2-route-module-chooser-route-and-unwind: backlog
-  17-3-app-shell-and-activity-scoping: backlog
-  17-4-seed-grouping-selector: backlog
-  17-5-chooser-screen-and-open: backlog
-  17-6-wallet-header-wallets-key-picker-removed: backlog
-  17-7-chooser-settings-key-settings-update-marker: backlog
-  17-8-lock-key-on-open-cards: backlog
-  17-9-rename: backlog
-  17-10-remove-from-the-chooser: backlog
-  17-11-add-wallet-at-the-app-shell-generate: backlog
-  17-12-keystore-importstoredwallet-and-policy: backlog
-  17-13-add-wallet-import-ui: backlog
-  17-14-configure-screen-shell-checks-and-seed-plates: backlog
-  17-15-configure-remaining-plates: backlog
-  17-16-auto-lock-on-the-checks-plate: backlog
-  17-17-settings-reduced-to-app-level: backlog
+  17-1-a-failed-read-of-my-wallets-says-so-and-offers-retry: backlog
+  17-2-every-launch-lands-on-the-chooser-and-back-behaves: backlog
+  17-3-only-the-wallet-i-am-in-counts-my-activity-and-locks-expire: backlog
+  17-4-one-card-per-seed-a-locked-card-typed-to-hold-a-name-only: backlog
+  17-5-the-chooser-and-opening-a-wallet-from-it: backlog
+  17-6-the-wallets-key-and-the-picker-is-gone: backlog
+  17-7-a-settings-key-on-the-chooser-and-the-update-marker: backlog
+  17-8-lock-a-wallet-from-its-card: backlog
   epic-17-retrospective: optional
+
+  epic-18: backlog
+  18-1-rename-a-wallet: backlog
+  18-2-remove-a-wallet-from-the-chooser-and-the-last-removal-delete: backlog
+  18-3-add-a-wallet-by-generate-with-every-lock-closed: backlog
+  18-4-import-goes-through-the-keystore-under-its-own-lock-and-the: backlog
+  18-5-add-a-wallet-by-import-from-the-chooser: backlog
+  epic-18-retrospective: optional
+
+  epic-19: backlog
+  19-1-a-configure-screen-with-the-checks-and-seed-plates: backlog
+  19-2-the-remaining-configure-plates: backlog
+  19-3-auto-lock-on-the-checks-plate: backlog
+  19-4-settings-holds-only-what-belongs-to-the-app: backlog
+  epic-19-retrospective: optional
 action_items:
   - id: "epic-5-retro-item-1-make-send-s-token-path-fail-closed-on-a"
     epic: 5

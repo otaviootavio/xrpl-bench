@@ -12,7 +12,7 @@ inputDocuments:
   - _bmad-output/planning-artifacts/ux-designs/ux-xrpl-wallet-2026-10-19/EXPERIENCE.md
 ---
 
-# Test Design: Epic 17 - Open, name, add and configure wallets from a chooser
+# Test Design: Epics 17 to 19 - The Wallet Chooser
 
 **Date:** 2026-10-26
 **Author:** Otavio
@@ -22,7 +22,7 @@ inputDocuments:
 
 ## Executive Summary
 
-**Scope:** Epic-level test design for Epic 17 (Wallet Chooser, 17 stories, CAP-1 to CAP-14).
+**Scope:** Epic-level test design for the Wallet Chooser: Epics 17, 18 and 19 (17 stories, CAP-1 to CAP-14). Story numbers: 17.1-17.8 (read-only chooser), 18.1-18.5 (rename, remove, add, import), 19.1-19.4 (Configure and Settings).
 
 **Stack and tooling:** React 19 PWA, no backend. Tests are vitest + React Testing Library in jsdom, plus the lint guards in `scripts/check-*.mjs`. There is no Playwright suite, so real-browser checks are manual checkpoints. Playwright-utils and Pact do not apply.
 
@@ -63,15 +63,15 @@ inputDocuments:
 | R1 | SEC | Chooser activity extends an open lock, so a lock outlives its timer (AD-35, 17.3) | 2 | 3 | 6 | `touchLock(null)` unit and screen tests; prove they fail with the null guard removed | dev | Story 17.3 |
 | R2 | SEC | Expiry and background-lock hooks not mounted while the chooser shows (AD-31, 17.3) | 2 | 3 | 6 | Screen test mounts the chooser route and asserts both hooks run once and the lock closes on expiry and on background | dev | Story 17.3 |
 | R3 | SEC | A locked card shows an address, network or Mainnet hint (AD-26, AD-43; 17.4, 17.5) | 2 | 3 | 6 | Shape test on the locked variant plus a DOM test that a locked Mainnet card matches a locked Testnet card | dev | Stories 17.4, 17.5 |
-| R4 | SEC | Chooser mounts a ledger read, NetworkPlate or account-scoped key (AD-36; 17.5, 17.7, 17.11) | 2 | 3 | 6 | Screen test: cache empty and `getXrplClient` not called, with several open locks; repeat for `/settings` and add-wallet | dev | Stories 17.5, 17.7, 17.11 |
+| R4 | SEC | Chooser mounts a ledger read, NetworkPlate or account-scoped key (AD-36; 17.5, 17.7, 18.3) | 2 | 3 | 6 | Screen test: cache empty and `getXrplClient` not called, with several open locks; repeat for `/settings` and add-wallet | dev | Stories 17.5, 17.7, 18.3 |
 | R5 | DATA | A failed wallet-list read renders Onboarding or an empty chooser, and a setter then overwrites persisted state (AD-37; 17.1) | 2 | 3 | 6 | Gate tests for rejecting read and hydration failure; assert no setter call and Address Book intact | dev | Story 17.1 |
-| R6 | SEC | Import yields a weaker lock: Open Check `none`, shared lock, no Mainnet floor, no written-Seed confirm, or duplicate address accepted (AD-39, AD-28; 17.12, 17.13) | 2 | 3 | 6 | Keystore unit tests for each refusal; source scan that no chooser file calls `importAndStoreWallet` | dev | Story 17.12 |
-| R7 | SEC | Seed lingers in state, URL or storage, or reaches the ledger or another module during Import (AD-39, AD-3; 17.12, 17.13) | 2 | 3 | 6 | Ref-lifetime test on success, failure and unmount; duplicate refusal asserted before any prompt or read | dev | Stories 17.12, 17.13 |
-| R8 | DATA | Remove proceeds on a locked wallet when `aria-disabled` is bypassed (AD-46; 17.10) | 2 | 3 | 6 | Handler test invokes Remove with the lock closed and asserts refusal | dev | Story 17.10 |
-| R9 | DATA | `removeWalletData` closes the legacy lock or the wrong lock, or `activeWalletId` names a removed wallet (AD-46, AD-34; 17.10) | 2 | 3 | 6 | Unit tests on teardown scope and on the pure re-pick function | dev | Story 17.10 |
-| R10 | SEC | Auto-lock set below the Mainnet floor, or without re-proving the Open Check, on a lock shared by several Seeds (AD-44, AD-28; 17.16) | 2 | 3 | 6 | `setLockAutoLock` tests for floor over every wallet on the lock and for the re-proof | dev | Story 17.16 |
+| R6 | SEC | Import yields a weaker lock: Open Check `none`, shared lock, no Mainnet floor, no written-Seed confirm, or duplicate address accepted (AD-39, AD-28; 18.4, 18.5) | 2 | 3 | 6 | Keystore unit tests for each refusal; source scan that no chooser file calls `importAndStoreWallet` | dev | Story 18.4 |
+| R7 | SEC | Seed lingers in state, URL or storage, or reaches the ledger or another module during Import (AD-39, AD-3; 18.4, 18.5) | 2 | 3 | 6 | Ref-lifetime test on success, failure and unmount; duplicate refusal asserted before any prompt or read | dev | Stories 18.4, 18.5 |
+| R8 | DATA | Remove proceeds on a locked wallet when `aria-disabled` is bypassed (AD-46; 18.2) | 2 | 3 | 6 | Handler test invokes Remove with the lock closed and asserts refusal | dev | Story 18.2 |
+| R9 | DATA | `removeWalletData` closes the legacy lock or the wrong lock, or `activeWalletId` names a removed wallet (AD-46, AD-34; 18.2) | 2 | 3 | 6 | Unit tests on teardown scope and on the pure re-pick function | dev | Story 18.2 |
+| R10 | SEC | Auto-lock set below the Mainnet floor, or without re-proving the Open Check, on a lock shared by several Seeds (AD-44, AD-28; 19.3) | 2 | 3 | 6 | `setLockAutoLock` tests for floor over every wallet on the lock and for the re-proof | dev | Story 19.3 |
 | R11 | TECH | History unwind fails: Back ping-pong, Lock leaves an entry on a locked wallet, boot not rewritten to `/`; chooser shipped without the Wallets key strands a phone user (AD-32, AD-33; 17.2, 17.5, 17.6) | 3 | 2 | 6 | Route unit tests; Wallets key and Back screen tests; 17.5 and 17.6 merge together; manual real-browser check after 17.6 | dev | Stories 17.2, 17.5, 17.6 |
-| R12 | TECH | Story 17.17 removes per-wallet Settings and the `settings-*.test.tsx` assertions that pin them are dropped, not moved (17.14, 17.15, 17.17) | 3 | 2 | 6 | A checklist maps every old assertion to its new Configure test before 17.17 deletes anything | dev + Otavio | Stories 17.14 to 17.17 |
+| R12 | TECH | Story 19.4 removes per-wallet Settings and the `settings-*.test.tsx` assertions that pin them are dropped, not moved (19.1, 19.2, 19.4) | 3 | 2 | 6 | A checklist maps every old assertion to its new Configure test before 19.4 deletes anything | dev + Otavio | Stories 19.1 to 19.4 |
 
 ### Medium-Priority Risks (Score 3-4)
 
@@ -114,7 +114,7 @@ TECH technical, SEC security, PERF performance, DATA integrity, BUS business imp
 
 - [ ] Plan branch work agreed; stories and ACs read (done: `epics-wallet-chooser.md`)
 - [ ] Each story starts from a fetched `origin/dev` (the plan branch is unmerged; build on `docs/chooser-plan-and-glossary`)
-- [ ] The existing `settings-*.test.tsx` assertions are inventoried before Story 17.14 begins (R12)
+- [ ] The existing `settings-*.test.tsx` assertions are inventoried before Story 19.1 begins (R12)
 - [ ] Test doubles for `getXrplClient`, the keystore and the store are confirmed available
 
 ## Exit Criteria
@@ -140,14 +140,14 @@ Levels: **Unit** (pure modules), **Screen** (React Testing Library in jsdom), **
 | Hooks mounted once above the route switch while the chooser shows (17.3) | Screen | R2 | 2 | AD-31 proof test |
 | `touchLock(null)` extends no expiry, timer or persisted session; entered wallet's activity does (17.3) | Unit + Screen | R1 | 4 | AD-35 proof test |
 | Expiry and background close-all run while the chooser shows (17.3) | Screen | R2 | 2 | |
-| Chooser with several open locks: cache empty, `getXrplClient` never called, no balance, no NetworkPlate; same for `/settings` and add-wallet (17.5, 17.7, 17.11) | Screen | R4 | 4 | AD-36 proof test |
+| Chooser with several open locks: cache empty, `getXrplClient` never called, no balance, no NetworkPlate; same for `/settings` and add-wallet (17.5, 17.7, 18.3) | Screen | R4 | 4 | AD-36 proof test |
 | Locked variant carries only seedId, lockId, label, entryWalletId; locked Mainnet card renders like a locked Testnet card (17.4, 17.5) | Unit + Screen | R3 | 4 | AD-43 |
-| `importStoredWallet`: refuses Open Check `none`; Mainnet floor; own lock; duplicate refused before any prompt or read; rollback of lock and App PIN; result carries no Seed (17.12) | Unit | R6, R7 | 7 | AD-39 proof test |
-| Source scan: no chooser-side file calls `importAndStoreWallet` (17.12) | Unit (scan) | R6 | 1 | AD-39 |
-| Import UI: Seed in a ref, cleared in `finally` on success, failure and unmount; never in state, URL or storage (17.13) | Screen | R7 | 3 | |
-| Remove refuses with the lock closed even if `aria-disabled` is bypassed (17.10) | Screen | R8 | 2 | |
-| `removeWalletData` scope: only that wallet's entries, never the legacy lock, closes a lock only with its last view; last wallet runs `tearDownAllLocks`; re-pick keeps, else first, else `null` (17.10) | Unit | R9 | 5 | |
-| `setLockAutoLock`: re-proves the Open Check, rejects below the floor over every wallet on the lock, invalidates `lockInfo` (17.16) | Unit + Screen | R10 | 4 | |
+| `importStoredWallet`: refuses Open Check `none`; Mainnet floor; own lock; duplicate refused before any prompt or read; rollback of lock and App PIN; result carries no Seed (18.4) | Unit | R6, R7 | 7 | AD-39 proof test |
+| Source scan: no chooser-side file calls `importAndStoreWallet` (18.4) | Unit (scan) | R6 | 1 | AD-39 |
+| Import UI: Seed in a ref, cleared in `finally` on success, failure and unmount; never in state, URL or storage (18.5) | Screen | R7 | 3 | |
+| Remove refuses with the lock closed even if `aria-disabled` is bypassed (18.2) | Screen | R8 | 2 | |
+| `removeWalletData` scope: only that wallet's entries, never the legacy lock, closes a lock only with its last view; last wallet runs `tearDownAllLocks`; re-pick keeps, else first, else `null` (18.2) | Unit | R9 | 5 | |
+| `setLockAutoLock`: re-proves the Open Check, rejects below the floor over every wallet on the lock, invalidates `lockInfo` (19.3) | Unit + Screen | R10 | 4 | |
 
 **Total P0:** ~43 test cases (some share setup), ~25-40 hours
 
@@ -162,10 +162,10 @@ Levels: **Unit** (pure modules), **Screen** (React Testing Library in jsdom), **
 | Card Lock flips the card and same-lock siblings in place; polite live region; `No Open Check` line (17.8) | Screen | R13 | 3 | |
 | `groupWalletsBySeed`: one card per Seed, `createdAt` then `seedId`, stable across lock changes, entry-view rule (17.4) | Unit | R15 | 5 | |
 | Open: locked -> Unlock; single-view lands in shell; multi-view returns to chooser with card open; a row opens exactly its view; Mainnet never default (17.5) | Screen | R15 | 5 | |
-| Generate and Import never call `setActiveWalletId` or enter; work with every lock closed; new card focused, `Wallet added.` (17.11, 17.13) | Screen | R20 | 4 | |
-| Rename: name rule (1-40 code points, case-insensitive unique, grandfathering, default-name suffix); no `rev` bump, no lock; concurrent `commitWalletEdit` keeps the name; failure keeps dialog open (17.9) | Unit + Screen | R14 | 7 | |
-| Configure resolves only with an open lock else `resetToHome()`; acts on entry view; Back returns to Configure (17.14, 17.15) | Screen | R16 | 4 | |
-| Settings holds only Address book, Version and updates, Remove all; one component for `/settings` and the tab, never both mounted (17.7, 17.17) | Screen | R12 | 3 | |
+| Generate and Import never call `setActiveWalletId` or enter; work with every lock closed; new card focused, `Wallet added.` (18.3, 18.5) | Screen | R20 | 4 | |
+| Rename: name rule (1-40 code points, case-insensitive unique, grandfathering, default-name suffix); no `rev` bump, no lock; concurrent `commitWalletEdit` keeps the name; failure keeps dialog open (18.1) | Unit + Screen | R14 | 7 | |
+| Configure resolves only with an open lock else `resetToHome()`; acts on entry view; Back returns to Configure (19.1, 19.2) | Screen | R16 | 4 | |
+| Settings holds only Address book, Version and updates, Remove all; one component for `/settings` and the tab, never both mounted (17.7, 19.4) | Screen | R12 | 3 | |
 | Remove all reachable with no wallet, no open lock, and with a hard lock (17.7) | Screen | R17 | 2 | |
 | Move each existing `settings-*.test.tsx` assertion to its new Configure test (14, 15, 17) | Process | R12 | checklist | |
 
@@ -194,8 +194,8 @@ Levels: **Unit** (pure modules), **Screen** (React Testing Library in jsdom), **
 ### Manual browser checkpoints (not automated)
 
 1. After 17.6: chooser, Open, leave, Lock and Back at phone width, both themes.
-2. After 17.13: a Mainnet-style Import flow.
-3. After 17.17: UX Key Flows 1 to 6, full visual and accessibility pass.
+2. After 18.5: a Mainnet-style Import flow.
+3. After 19.4: UX Key Flows 1 to 6, full visual and accessibility pass.
 
 Each follows `docs/agents/verifying-your-work.md`, and the screenshots are opened and looked at.
 
@@ -228,7 +228,7 @@ Each follows `docs/agents/verifying-your-work.md`, and the screenshots are opene
 ## Quality Gate Criteria
 
 - P0 pass rate 100%; P1 >= 95%; P2/P3 informational.
-- R1 to R12 mitigations merged before Story 17.17 (the last story).
+- R1 to R12 mitigations merged before Story 19.4 (the last story).
 - The five AD tests (31, 35, 36, 37, 39) are proven to fail when their rule is removed.
 - Security scenarios 100% covered; business logic >= 70% statements on the new modules (`route.ts`, `wallet-groups.ts`, `wallet-name.ts`, keystore additions, teardown scopes).
 - Four gates green; browser checkpoints done.
@@ -248,7 +248,7 @@ Each follows `docs/agents/verifying-your-work.md`, and the screenshots are opene
 **Strategy:** hooks mount once in the app shell; `touchLock(null)` extends nothing. **Verification:** AD-31 and AD-35 tests fail when either is removed. **Status:** Planned.
 
 ### R12: Settings coverage lost (Score 6)
-**Strategy:** before 17.17, list every assertion in `settings-locks`, `settings-edit-checks`, `settings-reveal`, `settings-network-views` and the per-wallet parts of `settings-full-reset`, and name the Configure test that now holds it. **Verification:** the list is attached to the 17.17 story and every line is ticked. **Status:** Planned.
+**Strategy:** before 19.4, list every assertion in `settings-locks`, `settings-edit-checks`, `settings-reveal`, `settings-network-views` and the per-wallet parts of `settings-full-reset`, and name the Configure test that now holds it. **Verification:** the list is attached to the 19.4 story and every line is ticked. **Status:** Planned.
 
 ---
 
@@ -262,9 +262,9 @@ Each follows `docs/agents/verifying-your-work.md`, and the screenshots are opene
 
 ### Dependencies
 
-1. Story 17.12 (keystore) before 17.13 (Import UI).
+1. Story 18.4 (keystore) before 18.5 (Import UI).
 2. Stories 17.5 and 17.6 merge together.
-3. Story 17.17 last.
+3. Story 19.4 last.
 
 ### Risks to Plan
 
@@ -274,7 +274,7 @@ Each follows `docs/agents/verifying-your-work.md`, and the screenshots are opene
 
 ## Follow-on Workflows (Manual)
 
-- `/bmad-testarch-atdd` to write failing P0 tests before 17.1, 17.3, 17.10 and 17.12 (not auto-run).
+- `/bmad-testarch-atdd` to write failing P0 tests before 17.1, 17.3, 18.2 and 18.4 (not auto-run).
 - `/bmad-testarch-automate` once more of the epic exists.
 
 ---
@@ -296,7 +296,7 @@ Each follows `docs/agents/verifying-your-work.md`, and the screenshots are opene
 
 ### Related Documents
 
-- Epic: `_bmad-output/planning-artifacts/epics-wallet-chooser.md`
+- Epics: `_bmad-output/planning-artifacts/epics-wallet-chooser.md` (Epics 17, 18, 19)
 - Spec: `_bmad-output/specs/spec-wallet-chooser/SPEC.md`
 - Architecture: `_bmad-output/planning-artifacts/architecture/architecture-xrpl-wallet-chooser-2026-10-19/ARCHITECTURE-SPINE.md`
 - UX: `_bmad-output/planning-artifacts/ux-designs/ux-xrpl-wallet-2026-10-19/EXPERIENCE.md`

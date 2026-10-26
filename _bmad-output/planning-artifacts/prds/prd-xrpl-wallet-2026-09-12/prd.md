@@ -1088,7 +1088,7 @@ this PRD previously failed to state.
   phase-blockers, §10 questions 7 to 9, were answered 2026-10-10. FR-74 (existing Wallets carry over
   unchanged) is the precondition for shipping any of it.
 - **§4.3 Wallet Chooser and per-Wallet Configure screen** — FR-79 through FR-90,
-  and changes to FR-10, FR-13, FR-14 and FR-77. Epic 17. Spec:
+  and changes to FR-10, FR-13, FR-14 and FR-77. Epics 17 to 19. Spec:
   `_bmad-output/specs/spec-wallet-chooser/SPEC.md`.
 
 ## 7. Success Metrics
@@ -1337,7 +1337,7 @@ for §4.14. All three were answered by Otavio on 2026-10-10.
     2026-10-09: yes (FR-77), now from the Wallet's Configure screen (FR-88).**
 13. **Should the first-run import (§4.1) give its Wallet its own lock?** FR-87
     says every import does. The first-run flow still uses the shared lock.
-    *Owner: Otavio. Revisit: after Epic 17, as its own story.*
+    *Owner: Otavio. Revisit: after Epics 17 to 19, as its own story.*
 
 **Defects in the authoritative inputs, reported and not repaired.** These are not
 open questions about the product — they are places where a document this PRD

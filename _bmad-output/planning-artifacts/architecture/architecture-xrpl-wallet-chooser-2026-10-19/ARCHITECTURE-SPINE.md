@@ -294,7 +294,7 @@ None of these is applied as an override.
 
 ## Open Questions For The Owner
 
-None. Q5, Q6 and Q7 were answered by the owner on 2026-10-26 and are recorded in AD-44, AD-39 (Deferred) and AD-46. No item is open. Build-time checks for Story 17.10: the exact fields `discardAppPin` clears match `VaultMeta` in `db.ts`, and the single-transaction or single-flight choice is made against the real create and import paths.
+None. Q5, Q6 and Q7 were answered by the owner on 2026-10-26 and are recorded in AD-44, AD-39 (Deferred) and AD-46. No item is open. Build-time checks for Story 18.2: the exact fields `discardAppPin` clears match `VaultMeta` in `db.ts`, and the single-transaction or single-flight choice is made against the real create and import paths.
 
 ## Deferred
 

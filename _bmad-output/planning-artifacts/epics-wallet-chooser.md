@@ -83,7 +83,7 @@ CAP-14: Epic 17 - Story 17.8
 ### Epic 17: Open, name, add and configure wallets from a chooser
 The app opens on a chooser with one card per Seed. A user can open, leave, lock, rename, remove and add wallets from it, and configure each wallet on its own screen, while Settings holds only what belongs to the app. A locked card shows a name and nothing else.
 **Capabilities covered:** CAP-1 to CAP-14
-**Stories (stories.yaml):** 1 to 17. Spec checkpoint on stories 17.1, 17.3, 17.9 and 17.12. Done checkpoint on stories 17.6, 17.13 and 17.17. **Stories 17.5 and 17.6 merge to `dev` together.**
+**Stories (stories.yaml):** 1 to 17. Spec checkpoint on stories 17.1, 17.3, 17.9, 17.10 and 17.12. Done checkpoint on stories 17.6, 17.13 and 17.17. **Stories 17.5 and 17.6 merge to `dev` together.**
 
 ## Epic 17: Open, name, add and configure wallets from a chooser
 

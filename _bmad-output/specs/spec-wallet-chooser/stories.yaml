@@ -59,9 +59,10 @@
 - id: "10"
   title: "Remove from the chooser"
   description: >-
-    CAP-7. removeWalletData teardown scope, call-time lock re-check, three dialog bodies, active re-pick, last wallet to Onboarding (AD-46). Settings' own Remove stays until story 17.
+    CAP-7. removeWalletData teardown scope in finally, call-time lock re-check, three dialog bodies, active re-pick, last wallet to Onboarding (AD-46). Last wallet also deletes the App PIN and failure count through discardAppPin, atomic with the emptiness check, and first-run Onboarding offers Remove all while a PIN or count remains; Settings' own Remove stays until story 17.
+  spec_checkpoint: true
   invoke_dev_with: >-
-    Read CLAUDE.md, DESIGN.md, docs/agents/INDEX.md and docs/agents/verifying-your-work.md first. Fetch origin/dev before starting. Run the four gates: bun run lint, bun run build, bun run test, bun run check:contrast. Where UI changes, do a browser pass at 320, 390 and desktop widths in both themes. Stage by explicit path only.
+    Read CLAUDE.md, DESIGN.md, docs/agents/INDEX.md and docs/agents/verifying-your-work.md first. Fetch origin/dev before starting. Run the four gates: bun run lint, bun run build, bun run test, bun run check:contrast. Where UI changes, do a browser pass at 320, 390 and desktop widths in both themes. Stage by explicit path only. Security-bearing: verify the cleared fields against VaultMeta in db.ts and the real create and import paths before choosing a transaction or a single-flight guard. Vault-meta writes go through the keystore, never the teardown owner.
 - id: "11"
   title: "Add wallet at the app shell, Generate"
   description: >-

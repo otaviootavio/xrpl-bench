@@ -2,7 +2,7 @@
 title: XRPL Bench
 status: draft
 created: 2026-09-12
-updated: 2026-10-09
+updated: 2026-10-26
 ---
 
 # PRD: XRPL Bench
@@ -131,8 +131,14 @@ restated only to the depth an FR needs; the full set lives in
 - **Account** — an address that exists on-ledger. An address becomes an Account
   only on receiving at least the Base Reserve; there is no "create account"
   transaction.
-- **Active Wallet** — the one Wallet, of possibly several, that every read and
-  every write applies to. Exactly one at a time.
+- **Active Wallet** — the one Wallet, of possibly several, that the user last
+  chose to open. Every read and every write applies to it, and only while the
+  user is inside it. Exactly one at a time. *Planned (FR-14, FR-82): the
+  chooser opens on no Wallet.*
+- **Chooser** — *planned (FR-79).* The first screen: one card per Seed, showing
+  names and lock states only.
+- **Configure screen** — *planned (FR-88).* One screen per open Wallet holding
+  everything that belongs to that Wallet alone.
 - **Account Master Key** — an XRPL Account's own master key pair, the one its
   address is derived from. Distinct from the app's **Master Key** below. Where a
   §4.14 FR asks "Will this wallet be controlled by a master key?", it means the
@@ -312,6 +318,11 @@ The app locks after inactivity — default 5 minutes, user-configurable to
 1/5/15/30.
 - *Planned change (FR-65): auto-lock is set per Wallet. On Mainnet it is
   required and never below 1 minute.*
+- *Planned change (FR-83, FR-88): time spent on the chooser counts as
+  inactivity for every Wallet, and auto-lock is set on the Wallet's Configure
+  screen, not in Settings. Wallets that predate per-Wallet locks share one lock
+  and keep the minutes it already has (5 by default); a change to it applies to
+  every Wallet on that lock, which the Configure screen states with the count.*
 
 #### FR-11: Auto-lock on backgrounding
 The app locks immediately on backgrounding on coarse-pointer devices, and after a
@@ -329,9 +340,11 @@ requirement exists to prevent.
   lives in the query cache, which this requirement covers.
 - Removal is different: FR-13 tears down that Wallet's persisted state as well,
   because the device is being handed over rather than locked.
+- *Planned (FR-83): leaving a Wallet for the chooser clears what the Wallet read
+  but does not lock it. Locking stays a separate action.*
 
 ### 4.3 Multi-Wallet Management
-*Detail: `docs/user-stories/multi-wallet-management.md`*
+*Detail: `docs/user-stories/multi-wallet-management.md`. FR-79 to FR-90: `_bmad-output/specs/spec-wallet-chooser/SPEC.md`.*
 
 #### FR-13: Add, list, and remove Wallets
 The user can hold several independent Wallets and remove any of them.
@@ -341,10 +354,18 @@ The user can hold several independent Wallets and remove any of them.
   it**, including locally stored labels. A flow that says everything is gone and
   leaves labelled addresses behind is the shared-device failure this exists to
   prevent.
+- *Planned change (FR-79 to FR-87): adding, renaming and removing a Wallet move
+  to the chooser. Removing the last Wallet also deletes the App PIN, since
+  nothing on the device uses it any more, and the confirm step says so.*
 
 #### FR-14: Exactly one Active Wallet
-Every read and every write applies to the Active Wallet.
+The Active Wallet is the one the user last chose to open. Every read and every
+write applies to the Wallet the user is inside, and to no other.
 - Switching Wallet never leaves data from the previous one on screen.
+- On the chooser no Wallet is read, so no Wallet's data is on screen.
+- *As built: the Active Wallet is also the one shown on every screen, with a
+  picker in the header to switch it. Planned change (FR-79, FR-82, FR-83): the
+  picker is removed. Switching is the Wallets key, then Open.*
 
 #### FR-15: Per-Wallet key isolation
 Each Wallet has independent key material; re-authentication is required only
@@ -352,6 +373,128 @@ when signing needs that Wallet's key.
 - *As built, signing never re-authenticates: the unlocked session key decrypts
   any Seed. Planned change (FR-66, FR-67): a Wallet with a Signing Check
   re-authenticates on every signature, and the session key cannot open its Seed.*
+
+#### FR-79: The app opens on a chooser
+Every launch lands on the chooser, whatever address the app was opened at,
+including a reload inside a Wallet.
+- It shows one card per Seed, in the order the Seeds were created, which never
+  changes with lock state or activity.
+- It reads only what the device already holds. It issues no ledger read and
+  shows no balance.
+- With no Wallet on the device, the first-run flow is shown instead (§4.1).
+- *Planned, not built (§6.3).*
+
+#### FR-80: A failed read of the Wallet list is an error, never first run
+If the Wallets on the device, or the saved app state, cannot be read, the app
+says so, offers Retry, and shows neither the first-run flow nor an empty
+chooser.
+- Nothing is written, and no lock is opened, until a read has succeeded.
+- A read that succeeded and found no Wallet is first run (FR-79). Only that
+  case is.
+- This is FR-59's rule applied to the Wallet list.
+
+#### FR-81: A locked Wallet is a name and nothing else
+On the chooser a Wallet whose lock is closed shows its name, that it is
+locked, and nothing more: no address, no network, no Node, no kind of check.
+- A locked Mainnet Wallet looks like a locked Testnet Wallet. Telling them
+  apart needs the lock open.
+- An open Wallet shows, for each network it is on, the network word, a stamp
+  where one applies (Mainnet "Real funds", Devnet "Not stable") and its address.
+  Meaning is carried by words, never by colour alone (NFR-6).
+- Several networks on one Seed are one card with a row per network (FR-61).
+- This is FR-65's rule ("no ledger read for a locked Wallet") applied to the
+  chooser.
+
+#### FR-82: Open a Wallet
+The user opens a Wallet from its card, or from one network row of its card.
+- A locked Wallet shows its own Open Check first (FR-65). An open one is
+  entered directly.
+- After unlocking a Seed that is on several networks the user is returned to the
+  chooser with the card open, so the network is chosen on purpose. A Mainnet
+  view is never entered by default.
+- Creating or importing a Wallet never selects it and never enters it (FR-87).
+
+#### FR-83: Leave a Wallet without locking it
+The user returns from a Wallet to the chooser with a Wallets key in the header,
+or with the device's Back.
+- The Wallet's lock stays open. What the Wallet read (balances, history,
+  trustlines) is cleared, and nothing for it is read while the chooser shows.
+- Back from a Wallet is the chooser. Back from the chooser leaves the app.
+- A screen that must not be left half-way (a key-changing write, a Seed backup) keeps the Wallets key disabled, with the
+  reason in visible text.
+- Activity on the chooser extends no lock. Auto-lock expiry (FR-10) and
+  backgrounding (FR-11) close locks while the chooser shows.
+- The Lock key inside a Wallet closes its lock and returns to the chooser.
+
+#### FR-84: Lock a Wallet from its card
+The user can lock an open Wallet from the chooser without entering it.
+- Every card on the same lock changes to locked together, with a line naming
+  them, and the change is announced.
+- A Wallet whose Open Check is none shows the reason there is nothing to lock,
+  in visible text.
+
+#### FR-85: Rename a Wallet
+The user can rename a Wallet from the chooser. The name belongs to the Seed, so
+every network row under the card shows it.
+- A name is 1 to 40 characters and cannot match, ignoring case, another
+  Seed's name. Names that already collide on a device are left as they are.
+- Renaming asks for no lock, changes no key and no check, and sends nothing to
+  the ledger. The name is local to the device.
+- If the write fails the user is told nothing changed, and the name they typed
+  is kept.
+
+#### FR-86: Remove a Wallet from the chooser
+The user can remove one Wallet view from the chooser, only while that Wallet's
+own lock is open.
+- A locked card says it must be opened first. The rule holds even if the control
+  is activated anyway.
+- The confirm step (FR-13) says which of three things is about to happen: a
+  sibling network view stays, this was the only view of the Seed, or this is the
+  last Wallet on the device.
+- The Active Wallet is never left naming a removed Wallet. The last Wallet
+  removed returns the app to first run and deletes the App PIN (FR-13).
+
+#### FR-87: Add a Wallet from the chooser
+The user can add a Wallet from the chooser by Generate or by Import, even when
+every lock is closed.
+- Both ask the same per-Wallet questions (FR-60) and neither enters the Wallet.
+  The chooser shows the new card.
+- Import gives the new Wallet its own lock. It refuses an Open Check of none, on
+  every network, applies the Mainnet floor (FR-65) and the written-Seed
+  confirmation (FR-72), and refuses a Seed whose address is already on the
+  device before asking for anything or reading the ledger.
+- A failed import leaves no lock behind. The Seed is never kept past the
+  operation (NFR-2).
+- *Known gap: the first-run import (§4.1) still uses the shared lock until its
+  own change (§10).*
+
+#### FR-88: A Configure screen for each Wallet
+Each open Wallet has one Configure screen for everything that belongs to that
+Wallet alone, reached from its card and from the Wallet's header.
+- It holds, in this order: Checks (with auto-lock, FR-10), Seed (reveal,
+  FR-69), Operating another account (FR-75, FR-77), Other networks (FR-61), Node
+  (FR-61) and Two-device signing (FR-78).
+- It exists only while the Wallet's lock is open. Otherwise the app returns to
+  the chooser.
+- Changing auto-lock asks the lock's Open Check again and cannot go below the
+  Mainnet floor for any Wallet on that lock (FR-65).
+- Each existing flow keeps its own confirm steps, checks and focus return, and
+  its Back returns to Configure.
+
+#### FR-89: Settings holds only what belongs to the app
+Settings contains the Address Book (FR-45), Version and updates (§4.12), and
+Remove all Wallets from this device. It holds no per-Wallet control, no Lock now
+and no auto-lock.
+- It is reachable from the chooser and from inside a Wallet, and shows the same
+  content in both.
+- Remove all works with no Wallet and no open lock, including for a user whose
+  App PIN is hard-locked (FR-68).
+
+#### FR-90: The update marker is visible on the chooser
+When an update is waiting (FR-48), the chooser's Settings key says so in its
+name and in visible text.
+- It is never a modal or a redirect, and an update the user declined does not
+  light it again.
 
 ### 4.4 Sending Payments
 *Detail: `docs/user-stories/sending-payments.md`*
@@ -731,6 +874,8 @@ Each Wallet has its own Open Check (App PIN or passkey) and its own auto-lock.
   address and balances of a Wallet whose Open Check has not passed are not
   shown, and no ledger read is issued for it.
 - When a Wallet auto-locks, FR-12's teardown applies to that Wallet.
+- *Planned (FR-87): an imported Wallet gets its own lock and never an Open Check
+  of none.*
 - An app-wide Open Check is not offered. It would make "no check on Testnet"
   meaningless on any device that also holds a Mainnet Wallet.
 
@@ -848,8 +993,8 @@ A passkey can be added later to an existing Wallet as an additional Regular Key
 for its Account. The Wallet's existing key keeps working.
 - An Account has one Regular Key. If one is already set, adding another replaces it, and the confirm step says in plain words that the old key stops working. *Decided 2026-10-11.*
 
-#### FR-77: Turn off the Account Master Key, from Settings
-From the Settings tab, the user can turn off the Account Master Key of a Wallet
+#### FR-77: Turn off the Account Master Key, from the Wallet's Configure screen
+From the Wallet's Configure screen (FR-88; the Settings tab until then), the user can turn off the Account Master Key of a Wallet
 whose Account has a Regular Key, and turn it back on.
 - It is offered only once a Regular Key is set on the Account and validated
   (FR-22). Otherwise the control is `aria-disabled` with the reason in visible
@@ -942,6 +1087,9 @@ this PRD previously failed to state.
 - **§4.14 Per-Wallet Key Setup and Signing Checks** — FR-60 through FR-78. Its
   phase-blockers, §10 questions 7 to 9, were answered 2026-10-10. FR-74 (existing Wallets carry over
   unchanged) is the precondition for shipping any of it.
+- **§4.3 Wallet Chooser and per-Wallet Configure screen** — FR-79 through FR-90,
+  and changes to FR-10, FR-13, FR-14 and FR-77. Epic 17. Spec:
+  `_bmad-output/specs/spec-wallet-chooser/SPEC.md`.
 
 ## 7. Success Metrics
 
@@ -1186,7 +1334,10 @@ for §4.14. All three were answered by Otavio on 2026-10-10.
 11. **Built-in Node list per Network** (FR-61).
     *Answered 2026-10-11: the list is in FR-61. Live check before build.*
 12. ~~Ever offering "turn off the Account Master Key"~~ — **answered
-    2026-10-09: yes, from Settings (FR-77).**
+    2026-10-09: yes (FR-77), now from the Wallet's Configure screen (FR-88).**
+13. **Should the first-run import (§4.1) give its Wallet its own lock?** FR-87
+    says every import does. The first-run flow still uses the shared lock.
+    *Owner: Otavio. Revisit: after Epic 17, as its own story.*
 
 **Defects in the authoritative inputs, reported and not repaired.** These are not
 open questions about the product — they are places where a document this PRD

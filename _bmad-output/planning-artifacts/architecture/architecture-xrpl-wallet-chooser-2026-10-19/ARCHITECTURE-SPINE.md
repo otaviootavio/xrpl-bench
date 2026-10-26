@@ -7,9 +7,10 @@ paradigm: 'layered, two sealed boundaries (inherited) — an app shell above two
 scope: 'The chooser as the home screen; per-wallet configuration; the Settings split; Import with its own lock; rename; the route table and history; what leaving a wallet does to lock, timer and cache. Inherits the whole-client and passkey-signing spines.'
 status: final
 created: '2026-10-19'
-updated: '2026-10-20'
+updated: '2026-10-26'
 binds: [AD-1, AD-3, AD-4, AD-5, AD-6, AD-8, AD-10, AD-13, AD-14, AD-15, AD-16, AD-18, AD-21, AD-22, AD-25, AD-26, AD-28]
 sources:
+  - _bmad-output/planning-artifacts/prds/prd-xrpl-wallet-2026-09-12/prd.md   # FR-79..FR-90, FR-13, FR-14
   - _bmad-output/planning-artifacts/ux-designs/ux-xrpl-wallet-2026-10-19/EXPERIENCE.md
   - _bmad-output/planning-artifacts/ux-designs/ux-xrpl-wallet-2026-10-19/.memlog.md
   - _bmad-output/planning-artifacts/architecture/architecture-xrpl-wallet-2026-09-12/ARCHITECTURE-SPINE.md
@@ -87,7 +88,7 @@ graph LR
 | AD-18 (Seed record vs Wallet view) | passkey spine | The name, the lock and the checks are properties of the Seed record; the chooser card is the Seed (AD-43). |
 | AD-21 (one Open Key per lock) | passkey spine | An imported Seed gets its own lock (AD-39). |
 | AD-22 (no creation path bypasses keystore and policy) | passkey spine | Import goes through `keystore`; `importAndStoreWallet` is not a path for the chooser (AD-39). |
-| AD-25 (one App PIN, one failure count) | passkey spine | The chooser adds no PIN prompt and reveals nothing about attempts. |
+| AD-25 (one App PIN, one failure count) | passkey spine | The chooser adds no PIN prompt and reveals nothing about attempts. The PIN and its failure count are deleted together, and only when no Wallet remains (AD-46). |
 | AD-26 (per-lock teardown; locked Wallet issues no read) | passkey spine | A locked card is its name and nothing else, enforced by type (AD-43). Leaving a wallet does not close its lock but mounts nothing for it (AD-38). |
 | AD-28 (one policy function, Mainnet floor) | passkey spine | Import, auto-lock edits and every new lock pass `policy.ts` (AD-39, AD-44). |
 | CLAUDE.md, `docs/agents/keys-and-secrets.md`, `ledger-io.md`, `anti-patterns.md`, `docs/decisions.md` §3, §4, §12, §13 | repo | Money as strings; no secret in state, URL or storage; every ledger read through a keyed hook; a failed read is never an empty or current one; the shell survives every lock; nothing styles `:focus`. |
@@ -198,7 +199,7 @@ graph LR
 
 - **Binds:** Configure Checks plate, `EditChecksScreen`, `SettingsTab`, `keystore.setLockAutoLock`; AD-26, AD-28, FR-65
 - **Prevents:** an app-level auto-lock control that edits some lock with no wallet in context; two success paths for a minutes change (one refreshing `lockInfo`, one not); a shared lock changed for sibling wallets without saying so.
-- **Rule:** Settings loses auto-lock and Lock now. The Checks plate edits minutes through `setLockAutoLock`, which goes through `editChecks`: the lock's Open Check is passed again and the policy floor is checked over every Wallet on the lock. The plate and Edit checks share one success handler (`setLockMinutes` plus invalidating `queryKeys.lockInfo(lockId)`). A lock shared by more than one Seed (every legacy Wallet) says so on the plate, with the count from the store, because the change applies to all of them. `app-store.autoLockMinutes` remains the legacy migration input only and is never read or written by a screen.
+- **Rule:** Settings loses auto-lock and Lock now. The Checks plate edits minutes through `setLockAutoLock`, which goes through `editChecks`: the lock's Open Check is passed again and the policy floor is checked over every Wallet on the lock. The plate and Edit checks share one success handler (`setLockMinutes` plus invalidating `queryKeys.lockInfo(lockId)`). A lock shared by more than one Seed (every legacy Wallet) says so on the plate, with the count from the store, because the change applies to all of them `[ADOPTED, owner Q5]`: legacy Wallets keep the minutes their lock already has (the default is 5), the user may change it, and no further feature is built for them. `app-store.autoLockMinutes` remains the legacy migration input only and is never read or written by a screen.
 
 ### AD-45 — The header splits in two, and every lock close goes through the teardown owner
 
@@ -208,9 +209,12 @@ graph LR
 
 ### AD-46 — Remove re-checks its lock at call time and tears down through the owner
 
-- **Binds:** chooser Remove, Remove all, `lib/teardown.ts`, `keystore.removeWallet`; AD-13, AD-16, AD-26
-- **Prevents:** a Remove that proceeds on a locked wallet because `aria-disabled` does not stop activation; a lock closed or a cache cleared inline in a component (`closeLock`, `queryClient.clear()` today); `activeWalletId` pointing at a removed wallet; a closed-by-removal lock whose session lingers.
+- **Binds:** chooser Remove, Remove all, `lib/teardown.ts`, `keystore.removeWallet`, `lock.ts`; FR-13, FR-86; AD-13, AD-16, AD-25, AD-26
+- **Prevents:** a Remove that proceeds on a locked wallet because `aria-disabled` does not stop activation; a lock closed or a cache cleared inline in a component (`closeLock`, `queryClient.clear()` today); `activeWalletId` pointing at a removed wallet; a closed-by-removal lock whose session lingers; an App PIN, its verifier and its failure count outliving the last Wallet on a handed-over device (FR-13).
 - **Rule:** The Remove handler re-reads `lockId in openLocks` at call time and refuses otherwise; the key being `aria-disabled` with its reason is the presentation, not the guard. Removal calls one teardown-owner scope, `removeWalletData(queryClient, removed, remaining)`: it removes the removed wallet's account-scoped entries, closes a lock the keystore deleted with the Seed's last view (never the legacy lock), and, when no Wallet remains, runs `tearDownAllLocks`. The new `activeWalletId` comes from one pure function (keep it if still present, else the first card in chooser order, else `null`). Removing a view removes only that view; the dialog states which of its three bodies applies. Remove all wallets from this device stays `tearDownAllLocalState` from app-level Settings, which depends on no wallet and no open lock, so a hard-locked user can reach it from the chooser's Settings key. Removing the last wallet returns the app to Onboarding through Gate's empty outcome.
+  - **The App PIN goes with the last Wallet `[ADOPTED]`.** In `keystore.removeWallet`, when no stored Wallet and no lock record remain, one new `lock.ts` function, `discardAppPin`, runs. In **one** `mutateVaultMeta` transaction it deletes `pinSaltB64`, `pinVerifier`, `wrappedMasterKeyForPin`, `wrappedMasterKeyForPasskey`, `passkeyCredentialIdB64` and `rpId`, and resets `failedAttempts` and `lockedUntil`: the PIN and its count go together (AD-25), and nothing of the legacy master-key wrappers is left to make an empty vault read as a lock. Resetting the count is permitted only inside this function, and only here: with no Wallet left there is nothing a hard lock protects, and Remove all is already reachable from a hard-locked state. It is not `discardUnusedAppPin`, which keeps the count because a passkey shares it and swallows its error.
+  - **The emptiness check and the discard are one unit.** They run in one IndexedDB transaction across the wallet, lock and vault-meta stores, or under a single-flight guard shared with `createStoredWallet` and `importStoredWallet`, so a create or import in flight cannot have its PIN or verifier deleted under it, and cannot silently turn a typed PIN into the new App PIN without the two-entry confirmation.
+  - **A failed discard is reported and recoverable.** The teardown scope runs in `finally`, so `session`, `activeWalletId` and the caches are cleared even when the keystore step throws. If `discardAppPin` fails after the last Wallet is gone, Gate shows Onboarding, where the chooser's Settings key does not exist; so Onboarding offers Remove all wallets from this device whenever a PIN or a non-zero count remains, and the removal reports `The wallet was removed, but the App PIN could not be removed.` The teardown owner calls the keystore and never writes vault meta itself. A crash between the two writes leaves today's state, a PIN with no Wallet, the safe direction. The last-wallet dialog body names the PIN.
 
 ## Lock Lifecycle
 
@@ -263,17 +267,17 @@ Deployment and operations are unchanged (parent AD-17): a static shell, only `/`
 
 ## Capability → Architecture Map
 
-| Area | Lives in | Governed by |
-| --- | --- | --- |
-| Chooser, one card per Seed | `store/wallet-groups.ts`, `pages/Chooser.tsx` | AD-36, AD-43, AD-26 |
-| Open, leave, Back, boot | `lib/route.ts`, `pages/AppShell.tsx` | AD-32, AD-33, AD-34 |
-| Lock stays open on leave; auto-lock | `hooks/useAutoLock.ts`, `lib/teardown.ts` | AD-31, AD-35, AD-38 |
-| Add wallet: Generate and Import | `keystore.importStoredWallet`, `createStoredWallet`, `AddWalletScreen` | AD-39, AD-40, AD-28 |
-| Rename | `keystore.renameWallet`, `lib/wallet-name.ts` | AD-41, AD-42 |
-| Per-wallet configuration and auto-lock | `pages/Configure.tsx`, `setLockAutoLock` | AD-44, AD-28 |
-| Remove, Remove all | `lib/teardown.ts`, chooser, Settings | AD-46, AD-16 |
-| Gate, read-failure states | `App.tsx` | AD-37, AD-13..AD-15 |
-| Header, update marker | `AppHeader` split, shared predicate | AD-45 |
+| Area | Lives in | Governed by | PRD |
+| --- | --- | --- | --- |
+| Chooser, one card per Seed | `store/wallet-groups.ts`, `pages/Chooser.tsx` | AD-36, AD-43, AD-26 | FR-79, FR-81 |
+| Open, leave, Back, boot | `lib/route.ts`, `pages/AppShell.tsx` | AD-32, AD-33, AD-34 | FR-79, FR-82, FR-83 |
+| Lock stays open on leave; auto-lock | `hooks/useAutoLock.ts`, `lib/teardown.ts` | AD-31, AD-35, AD-38 | FR-10, FR-11, FR-12, FR-83, FR-84 |
+| Add wallet: Generate and Import | `keystore.importStoredWallet`, `createStoredWallet`, `AddWalletScreen` | AD-39, AD-40, AD-28 | FR-87, FR-65 |
+| Rename | `keystore.renameWallet`, `lib/wallet-name.ts` | AD-41, AD-42 | FR-85 |
+| Per-wallet configuration and auto-lock | `pages/Configure.tsx`, `setLockAutoLock` | AD-44, AD-28 | FR-88, FR-10, FR-77 |
+| Remove, Remove all | `lib/teardown.ts`, chooser, Settings | AD-46, AD-16 | FR-13, FR-86, FR-89 |
+| Gate, read-failure states | `App.tsx` | AD-37, AD-13..AD-15 | FR-80 |
+| Header, update marker | `AppHeader` split, shared predicate | AD-45 | FR-84, FR-89, FR-90 |
 
 ## Conflicts For The Owner
 
@@ -290,20 +294,15 @@ None of these is applied as an override.
 
 ## Open Questions For The Owner
 
-Non-blocking; each is also under Deferred.
-
-- **Q5.** Changing auto-lock on a wallet that shares the legacy lock changes it for every wallet on that lock (AD-44 discloses it). Acceptable?
-- **Q6.** Should first-run Onboarding import get its own lock, as Add wallet does?
-- **Q7.** Removing the last wallet leaves the App PIN on the device. Acceptable?
+None. Q5, Q6 and Q7 were answered by the owner on 2026-10-26 and are recorded in AD-44, AD-39 (Deferred) and AD-46. No item is open. Build-time checks for Story 17.10: the exact fields `discardAppPin` clears match `VaultMeta` in `db.ts`, and the single-transaction or single-flight choice is made against the real create and import paths.
 
 ## Deferred
 
-- **Q5, shared-lock auto-lock.** Ships as disclosed in AD-44. Revisit on the owner's answer, or if a Mainnet wallet is found sharing a lock with one the user wants left alone.
-- **Q6 and Onboarding import on the keystore path.** Onboarding keeps `importAndStoreWallet` under the legacy lock; two import lock models coexist until it moves. Revisit when first-run is next changed, or before any owner asks that first-run import match Add wallet. Then delete `importAndStoreWallet`.
+- **Shared-lock auto-lock (was Q5, answered).** Ships as disclosed in AD-44. Revisit if a Mainnet wallet is found sharing a lock with one the user wants left alone.
+- **Onboarding import on the keystore path (was Q6, answered: every import gets its own lock).** Onboarding keeps `importAndStoreWallet` under the legacy lock; two import lock models coexist until it moves, as its own story after Epic 17 (PRD open question 13). Then delete `importAndStoreWallet`.
 - **The AD-25 rewrite of the hard-lock reset in `Unlock.tsx`.** Pre-existing; revisit with the passkey plan's reset story. The chooser adds no new path into it.
 - **Incoming-payment notices while on the chooser.** None fire, because the subscription lives in the wallet shell (AD-38). Revisit if the owner wants background notices: it needs a subscription owner outside the shell and a per-lock read budget decision under AD-26.
 - **A per-row Configure key on a multi-view card** (UX OQ-14). Revisit when a Seed with two views shows the single Configure key to be ambiguous in use.
 - **Balances on the chooser** (UX OQ-7). Needs an account-scoped read for an unentered wallet, which AD-36 forbids; revisit only with an owner decision on that read.
 - **Duplicate-name enforcement for wallets created before this change** (UX OQ-8). Grandfathered by AD-42; revisit if a collision is reported.
-- **Q7, the App PIN after the last wallet is removed.** Today it stays with the legacy vault records; Onboarding then runs as shipped. Revisit on the owner's answer.
 - **A lint gate for AD-36.** A screen-level test pins it now; a scan like `check-query-keys.mjs` over the chooser files is possible once the file layout settles.

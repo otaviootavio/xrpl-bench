@@ -508,11 +508,11 @@ export async function putLockRecord(record: LockRecord): Promise<void> {
  *
  * Wrapped, in `keystore.ts` and `auth.ts` (a test checks every name below):
  *  - keystore: `createStoredWallet`, `createDerivedWallet`, `importAndStoreWallet`,
- *    `generateAndStoreWallet`, `editChecks`, `removeWallet`
+ *    `generateAndStoreWallet`, `importStoredWallet`, `editChecks`, `removeWallet`
  *  - auth: `setUpVaultAuth` (Onboarding's first-run setup)
  * Not wrapped, because each reaches a wrapped one: `restorePasskeyWallet`
- * (`createDerivedWallet`), `setLockAutoLock` (`editChecks`). Story 12 replaces
- * `importAndStoreWallet` and MUST wrap its replacement here too.
+ * (`createDerivedWallet`), `setLockAutoLock` (`editChecks`). `importAndStoreWallet`
+ * is Onboarding's until it migrates to `importStoredWallet`.
  */
 let vaultWriteTail: Promise<unknown> = Promise.resolve()
 export function exclusiveVaultWrite<T>(work: () => Promise<T>): Promise<T> {

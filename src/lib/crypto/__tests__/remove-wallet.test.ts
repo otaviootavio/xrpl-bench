@@ -286,7 +286,7 @@ describe('the vault-write guard (AD-46)', () => {
       expect(start, `${name} is an exported one-line wrapper`).toBeGreaterThan(-1)
       return text.slice(start, text.indexOf('\n}\n', start))
     }
-    for (const name of ['createStoredWallet', 'createDerivedWallet', 'importAndStoreWallet', 'generateAndStoreWallet', 'editChecks', 'removeWallet']) {
+    for (const name of ['createStoredWallet', 'createDerivedWallet', 'importAndStoreWallet', 'importStoredWallet', 'generateAndStoreWallet', 'editChecks', 'removeWallet']) {
       expect(body(keystore, name), name).toMatch(/exclusiveVaultWrite\(\(\) => \w+Unguarded\(/)
       expect(db, `${name} is listed in the guard comment`).toContain(name)
     }

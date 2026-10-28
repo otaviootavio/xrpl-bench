@@ -65,6 +65,20 @@ describe('the written-Seed rule (FR-72)', () => {
   })
 })
 
+describe('an imported Seed is held to at least Mainnet strength (AD-39)', () => {
+  it.each(['testnet', 'devnet', 'mainnet'] as const)('refuses an Open Check of none on %s', (network) => {
+    const verdict = checkWalletRequest({ ...request, network, openCheck: 'none', imported: true })
+    expect(verdict).toEqual({ ok: false, reason: expect.any(String) })
+  })
+  it('the same request is allowed on Testnet when it is not an import, and an import with a check is allowed', () => {
+    expect(checkWalletRequest({ ...request, network: 'testnet', openCheck: 'none' })).toEqual({ ok: true })
+    expect(checkWalletRequest({ ...request, network: 'testnet', openCheck: 'pin', imported: true })).toEqual({ ok: true })
+  })
+  it('the Mainnet floor still applies to an import', () => {
+    expect(checkWalletRequest({ ...request, network: 'mainnet', openCheck: 'pin', autoLockMinutes: 0.5, imported: true }).ok).toBe(false)
+  })
+})
+
 describe('checkWalletRequest', () => {
   it('accepts the Testnet defaults', () => {
     expect(checkWalletRequest(request)).toEqual({ ok: true })

@@ -52,6 +52,14 @@ export function isWalletScreen(route: Route): route is Extract<Route, { walletId
   )
 }
 
+/**
+ * The wallet the user is inside (AD-34): `activeWalletId` on an in-wallet screen,
+ * `null` on a chooser-side one. A pure derivation — never held in a store or state.
+ */
+export function enteredWalletId(route: Route, activeWalletId: string | null): string | null {
+  return isWalletScreen(route) ? activeWalletId : null
+}
+
 /** The routed task screens `WalletScreens` renders in place of the shell. */
 export type TaskRoute = Extract<Route, { screen: 'add-wallet' | 'edit-checks' | 'two-device' | 'control' }>
 

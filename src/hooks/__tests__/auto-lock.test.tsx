@@ -23,9 +23,9 @@ const KEY = {} as CryptoKey
 const ids = () => Object.keys(useAppStore.getState().openLocks).sort()
 
 let qc: QueryClient
-function mount() {
+function mount(entered: string | null = 'a') {
   const wrapper = ({ children }: { children: ReactNode }) => <QueryClientProvider client={qc}>{children}</QueryClientProvider>
-  return renderHook(() => useAutoLock(), { wrapper })
+  return renderHook(() => useAutoLock(entered), { wrapper })
 }
 
 function setVisibility(state: 'hidden' | 'visible') {
@@ -164,5 +164,48 @@ describe('useAutoLock — one timer per lock (AD-26)', () => {
     act(() => useAppStore.getState().setLockMinutes('X', 1))
     act(() => void vi.advanceTimersByTime(61_000))
     expect(ids()).toEqual([])
+  })
+
+  // AD-35: removing the null guard (extending the last-used wallet's lock from the
+  // chooser) makes these fail.
+  it('with no wallet entered, activity extends no expiry, re-arms no timer and extends no persisted session', () => {
+    useAppStore.getState().openLock('X', KEY, 1)
+    mount(null)
+    act(() => void vi.advanceTimersByTime(50_000))
+    act(() => void window.dispatchEvent(new Event('mousedown')))
+    expect(h.extended).toEqual([])
+    expect(lockRemainingMs('X')).toBe(10_000)
+    act(() => void vi.advanceTimersByTime(11_000))
+    expect(ids()).toEqual([]) // ran down from its opening, as if nothing had happened
+  })
+
+  it('with no wallet entered, an expired lock is still swept on activity', () => {
+    useAppStore.getState().openLock('X', KEY, 1)
+    mount(null)
+    vi.setSystemTime(Date.now() + 120_000)
+    act(() => void window.dispatchEvent(new Event('keydown')))
+    expect(ids()).toEqual([])
+  })
+
+  it('a route change (new entered id) does not re-arm the effect or give a lock a fresh window', () => {
+    useAppStore.getState().openLock('X', KEY, 1)
+    const wrapper = ({ children }: { children: ReactNode }) => <QueryClientProvider client={qc}>{children}</QueryClientProvider>
+    const { rerender } = renderHook(({ id }: { id: string | null }) => useAutoLock(id), { wrapper, initialProps: { id: 'a' as string | null } })
+    act(() => void vi.advanceTimersByTime(40_000))
+    rerender({ id: null })
+    act(() => void vi.advanceTimersByTime(21_000))
+    expect(ids()).toEqual([])
+  })
+
+  it('activity after the entered id changes is counted for the new id only', () => {
+    useAppStore.setState({ wallets: [{ ...useAppStore.getState().wallets[0] }] } as never)
+    useAppStore.getState().openLock('X', KEY, 1)
+    const wrapper = ({ children }: { children: ReactNode }) => <QueryClientProvider client={qc}>{children}</QueryClientProvider>
+    const { rerender } = renderHook(({ id }: { id: string | null }) => useAutoLock(id), { wrapper, initialProps: { id: 'a' as string | null } })
+    act(() => void vi.advanceTimersByTime(50_000))
+    rerender({ id: null })
+    act(() => void window.dispatchEvent(new Event('mousedown')))
+    expect(lockRemainingMs('X')).toBe(10_000) // the old id no longer counts the activity
+    expect(h.extended).toEqual([])
   })
 })

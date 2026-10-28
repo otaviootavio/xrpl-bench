@@ -32,7 +32,7 @@ vi.mock('idb-keyval', () => {
 
 vi.mock('@/pages/Onboarding', () => ({ Onboarding: () => null }))
 vi.mock('@/pages/Unlock', () => ({ Unlock: () => null }))
-vi.mock('@/pages/Main', () => ({ Main: () => null }))
+vi.mock('@/components/AppShell', () => ({ AppShell: () => null, walletInView: (_r: unknown, id: string | null) => id }))
 
 // A stand-in signer rather than a real `Wallet`: under jsdom, `@noble`'s
 // Uint8Array realm check rejects a key derived there, and nothing in this

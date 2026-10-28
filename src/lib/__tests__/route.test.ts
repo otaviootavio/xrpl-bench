@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   ADD_WALLET_PATH,
   blockLeaving,
+  enteredWalletId,
   isTaskRoute,
   isWalletScreen,
   leaveScreen,
@@ -254,5 +255,24 @@ describe('history', () => {
     expect(window.location.pathname).toBe(walletScreenPath('edit-checks', 'w'))
     expect(window.history.state).toEqual({ screen: true, depth: 2 })
     release()
+  })
+})
+
+describe('enteredWalletId (AD-34)', () => {
+  it.each([
+    [{ screen: 'wallet', walletId: 'a' }, 'a'],
+    [{ screen: 'configure', walletId: 'a' }, 'a'],
+    [{ screen: 'edit-checks', walletId: 'a' }, 'a'],
+    [{ screen: 'two-device', walletId: 'a' }, 'a'],
+    [{ screen: 'control', walletId: 'a' }, 'a'],
+    [{ screen: 'chooser' }, null],
+    [{ screen: 'settings' }, null],
+    [{ screen: 'add-wallet' }, null],
+  ] as Array<[Route, string | null]>)('%j -> %s', (route, expected) => {
+    expect(enteredWalletId(route, 'a')).toBe(expected)
+  })
+
+  it('is null on a wallet screen only when there is no active wallet', () => {
+    expect(enteredWalletId({ screen: 'wallet', walletId: 'a' }, null)).toBeNull()
   })
 })

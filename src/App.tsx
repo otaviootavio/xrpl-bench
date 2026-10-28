@@ -3,11 +3,11 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { PinPromptProvider } from '@/components/wallet/PinPromptDialog'
 import { Onboarding } from '@/pages/Onboarding'
-import { Main } from '@/pages/Main'
+import { AppShell, walletInView } from '@/components/AppShell'
 import { GateError } from '@/components/wallet/GateError'
 import { appStateHydrationFailed, appStateSettled, useAppStore } from '@/store/app-store'
 import { listWallets, migrateLegacyVault } from '@/lib/crypto/keystore'
-import { resetToHome } from '@/lib/route'
+import { currentPathname, parseRoute, resetToHome, subscribeRoute } from '@/lib/route'
 import { restoreOpenLocks } from '@/lib/crypto/lock'
 import { notify, setNoticeWalletReader } from '@/lib/notify'
 import { setTxInFlightReporter } from '@/lib/xrpl/writes'
@@ -24,12 +24,15 @@ import { setTxInFlightReporter } from '@/lib/xrpl/writes'
  */
 setTxInFlightReporter((inFlight) => useAppStore.getState().setTxInFlight(inFlight))
 
-// A notice belongs to the Wallet that was active when it was raised, and goes when
-// another becomes active: an error about Wallet A must not sit over Wallet B.
-setNoticeWalletReader(() => useAppStore.getState().activeWalletId)
+// A notice belongs to the Wallet in view when it was raised, and goes when
+// another is in view: an error about Wallet A must not sit over Wallet B.
+const walletInViewNow = () => walletInView(parseRoute(currentPathname()), useAppStore.getState().activeWalletId)
+setNoticeWalletReader(walletInViewNow)
+const rescope = () => notify.scopeToWallet(walletInViewNow())
 useAppStore.subscribe((state, previous) => {
-  if (state.activeWalletId !== previous.activeWalletId) notify.scopeToWallet(state.activeWalletId)
+  if (state.activeWalletId !== previous.activeWalletId) rescope()
 })
+subscribeRoute(rescope)
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -129,7 +132,7 @@ function Gate() {
     return <GateError onRetry={retry} />
   }
   if (wallets.length === 0) return <Onboarding />
-  return <Main />
+  return <AppShell />
 }
 
 function App() {

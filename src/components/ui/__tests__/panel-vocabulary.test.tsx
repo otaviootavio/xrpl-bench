@@ -59,13 +59,13 @@ describe('panel vocabulary (mobile dialogs S5c)', () => {
   })
 
   it('the skip link reveals itself but authors no ring or outline', () => {
-    const src = readFileSync('src/pages/Main.tsx', 'utf8')
+    const src = readFileSync('src/components/AppShell.tsx', 'utf8')
     const classes = /href="#main-content"\s+className="([^"]+)"/.exec(src)?.[1] ?? ''
     expect(classes).toContain('sr-only')
     expect(classes).not.toMatch(/ring|outline/)
   })
 
-  it('only the documented skip link in Main.tsx matches the focus-style and outline-removal grep', () => {
+  it('only the documented skip link in AppShell.tsx matches the focus-style and outline-removal grep', () => {
     const walk = (dir: string): string[] =>
       readdirSync(dir, { withFileTypes: true }).flatMap((e) => {
         const path = `${dir}/${e.name}`
@@ -74,6 +74,6 @@ describe('panel vocabulary (mobile dialogs S5c)', () => {
       })
     const pattern = new RegExp(['focus', ':|outline', '-none'].join(''))
     const hits = walk('src').filter((f) => pattern.test(readFileSync(f, 'utf8')))
-    expect(hits).toEqual(['src/pages/Main.tsx'])
+    expect(hits).toEqual(['src/components/AppShell.tsx'])
   })
 })

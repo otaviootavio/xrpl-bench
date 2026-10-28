@@ -8,7 +8,7 @@ interface NotifyOptions {
 }
 
 /**
- * Which Wallet is active, read when a notice is raised. Installed by the app at
+ * Which Wallet is in view, read when a notice is raised. Installed by the app at
  * module scope (`App.tsx`) rather than imported, the same inversion as the
  * in-flight reporter in `lib/xrpl/writes.ts`: `lib` reports upward, it does not
  * reach into the store (AD-1).

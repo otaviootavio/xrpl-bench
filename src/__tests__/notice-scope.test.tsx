@@ -4,6 +4,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 vi.mock('idb-keyval', () => ({ get: async () => undefined, set: async () => {}, del: async () => {} }))
 vi.mock('@/lib/crypto/lock', () => ({ restoreOpenLocks: async () => [], endLockSession: async () => {}, endAllLockSessions: async () => {} }))
 vi.mock('@/pages/Onboarding', () => ({ Onboarding: () => null }))
+vi.mock('@/hooks/useAppUpdate', () => ({ useAppUpdate: () => ({ updateReady: false, declined: false }) }))
+vi.mock('@/lib/build-info', () => ({ BUILD: { version: '0.0.0', commitSha: 'x', builtAt: '' }, shortSha: 'x', sourceUrl: 'https://example.invalid', formatBuiltAt: () => '' }))
 vi.mock('@/pages/Main', () => ({ Main: () => null }))
 vi.mock('@/components/AppHeader', () => ({ AppHeader: () => null }))
 

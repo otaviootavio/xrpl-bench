@@ -13,7 +13,7 @@ import { isTaskRoute } from '@/lib/route'
 import { useActiveWallet, useActiveNetwork, useActiveNode, useWalletIsOpen } from '@/store/app-store'
 import { useIncomingPaymentNotifications } from '@/hooks/useIncomingPaymentNotifications'
 import { useAccountLiveUpdates } from '@/hooks/useAccountLiveUpdates'
-import { useAppUpdate } from '@/hooks/useAppUpdate'
+import { useUpdateMarker } from '@/hooks/useUpdateMarker'
 import { Lamp } from '@/components/ui/lamp'
 
 /**
@@ -85,8 +85,7 @@ export function Main() {
   // available update is discoverable without opening Settings first — but
   // never a modal, never a redirect. Declined releases (US-4) don't relight
   // it, only a newer one does.
-  const { updateReady, declined } = useAppUpdate()
-  const showUpdateMarker = updateReady && !declined
+  const showUpdateMarker = useUpdateMarker()
 
   if (!wallet) return null
   return open ? <OpenWallet showUpdateMarker={showUpdateMarker} /> : <Unlock key={wallet.id} wallet={wallet} />

@@ -3,7 +3,8 @@ import { act, cleanup, fireEvent, render, screen, within } from '@testing-librar
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-const h = vi.hoisted(() => ({ getXrplClient: vi.fn(), plate: vi.fn(), activeWallet: vi.fn(), activeNode: vi.fn() }))
+const h = vi.hoisted(() => ({ getXrplClient: vi.fn(), plate: vi.fn(), activeWallet: vi.fn(), activeNode: vi.fn(), wipeVault: vi.fn(async () => {}) }))
+vi.mock('@/lib/crypto/auth', async (orig) => ({ ...(await orig<typeof import('@/lib/crypto/auth')>()), wipeVault: h.wipeVault }))
 vi.mock('idb-keyval', () => ({ get: async () => undefined, set: async () => {}, del: async () => {} }))
 vi.mock('@/lib/xrpl/client', () => ({ getXrplClient: h.getXrplClient, holdXrplClient: vi.fn() }))
 vi.mock('@/components/wallet/NetworkPlate', () => ({ NetworkPlate: () => (h.plate(), <div data-testid="network-plate" />) }))
@@ -736,6 +737,41 @@ describe('Remove (AD-46)', () => {
     expect(Object.keys(state().openLocks)).toEqual(['LC'])
     expect(state().activeWalletId).toBe('c')
     expect(within(card('Gamma')).queryByRole('button', { name: 'Open Gamma on Devnet' })).toBeNull()
+  })
+
+  // Story 17 (R12): the counterpart of the Settings "Remove one wallet" test (6.2 AC4, epic 6 retro item 12).
+  it('removing one wallet leaves the precache and the service-worker registration alone, and does not reload', async () => {
+    const live = new Set(['workbox-precache-v2-https://wallet.example/'])
+    const cacheStorage = { keys: vi.fn(async () => [...live]), delete: vi.fn(async (key: string) => live.delete(key)) }
+    vi.stubGlobal('caches', cacheStorage)
+    const registration = { unregister: vi.fn(async () => true) }
+    const sw = { getRegistrations: vi.fn(async () => [registration]) }
+    Object.defineProperty(window.navigator, 'serviceWorker', { value: sw, configurable: true })
+    const reload = vi.fn()
+    const real = window.location
+    vi.stubGlobal('location', { get pathname() { return real.pathname }, get search() { return real.search }, get hash() { return real.hash }, reload })
+    try {
+      open('LA', 'LB')
+      vaultWithout('b')
+      mount()
+      fireEvent.click(screen.getByRole('button', { name: 'Remove Beta on Testnet' }))
+      fireEvent.click(confirm())
+      await waitFor(() => expect(k.remove).toHaveBeenCalledWith('b'))
+      await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+      await new Promise((r) => setTimeout(r, 0))
+      expect(cacheStorage.keys).not.toHaveBeenCalled()
+      expect(cacheStorage.delete).not.toHaveBeenCalled()
+      expect(live.size).toBe(1)
+      expect(sw.getRegistrations).not.toHaveBeenCalled()
+      expect(registration.unregister).not.toHaveBeenCalled()
+      expect(reload).not.toHaveBeenCalled()
+      // One wallet goes; the vault holding the others is never wiped, and the Active Wallet is a survivor.
+      expect(h.wipeVault).not.toHaveBeenCalled()
+      expect(['a']).toContain(state().activeWalletId)
+    } finally {
+      vi.unstubAllGlobals()
+      delete (window.navigator as { serviceWorker?: unknown }).serviceWorker
+    }
   })
 
   it('the last wallet: every lock closes, the list empties, the Active Wallet is null, the cache is empty', async () => {

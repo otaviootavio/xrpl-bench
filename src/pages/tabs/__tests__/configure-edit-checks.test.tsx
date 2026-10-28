@@ -7,8 +7,8 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
  * The Configure counterpart of `settings-edit-checks.test.tsx` (test design R12):
  * Edit checks is offered by the Checks plate, the committed edit swaps the lock the
  * same way, and Back from the task screen says `Back to Configure` and returns to
- * Configure; opened from the Settings tab the label stays `Settings`.
- * The auto-lock Select scenario of that file moves with auto-lock itself (Story 16).
+ * Configure. The Settings tab no longer opens it (Story 17): `Back to Configure` is the only label.
+ * The auto-lock Select scenario of that file moved with auto-lock itself (Story 16).
  */
 const h = vi.hoisted(() => ({
   startLockSession: vi.fn(async () => {}),
@@ -62,7 +62,6 @@ vi.mock('@/lib/build-info', () => ({
   formatBuiltAt: () => '',
 }))
 
-import { SettingsTab } from '../SettingsTab'
 import { WalletScreens } from '../../WalletScreens'
 import { ConfigureScreen } from '@/components/wallet/ConfigureScreen'
 import { useRoute } from '@/hooks/useRoute'
@@ -77,21 +76,21 @@ const B = { ...base, id: 'b', seedId: 'b', lockId: 'Y', label: 'Beta', address: 
 const OPEN = { key: {} as CryptoKey, autoLockMinutes: 5 }
 const PROMPTS = { pin: async () => '123456' }
 
-/** Configure, the Settings tab, or the routed task screen their keys navigate to (what the shell and `Main` do). */
-function Host({ at }: { at: 'configure' | 'settings' }) {
+/** Configure, or the routed task screen its keys navigate to (what the shell does). */
+function Host() {
   const route = useRoute()
   if (isTaskRoute(route)) return <WalletScreens route={route} />
   const wallet = useAppStore.getState().wallets.find((w) => w.id === 'a')
-  return at === 'configure' ? <ConfigureScreen wallet={wallet as never} /> : <SettingsTab />
+  return <ConfigureScreen wallet={wallet as never} />
 }
 
-function renderAt(at: 'configure' | 'settings') {
+function renderAt(_at: 'configure') {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   render(
     <QueryClientProvider client={qc}>
       <PromptsContext.Provider value={PROMPTS}>
         <TooltipProvider>
-          <Host at={at} />
+          <Host />
         </TooltipProvider>
       </PromptsContext.Provider>
     </QueryClientProvider>,
@@ -181,32 +180,5 @@ describe('Configure: Edit checks', () => {
     openEditChecks()
     fireEvent.click(await screen.findByRole('button', { name: /commit edit for a/ }))
     await waitFor(() => expect(useAppStore.getState().openLocks.X).toBeUndefined())
-  })
-})
-
-describe('Edit checks opened from the Settings tab (still possible until Story 19.4)', () => {
-  it('keeps the label `Settings` and Back returns to the tab', async () => {
-    navigate('/')
-    renderAt('settings')
-    fireEvent.click(screen.getByRole('button', { name: /^Edit checks for / }))
-    const back = await screen.findByRole('button', { name: /Settings/ })
-    expect(back.textContent).toBe('Settings')
-    expect(screen.queryByText('Back to Configure')).toBeNull()
-    fireEvent.click(back)
-    await waitFor(() => expect(window.location.pathname).toBe('/'))
-    expect(await screen.findAllByRole('button', { name: /^Edit checks for / })).toHaveLength(1)
-  })
-
-  it('a Configure launch does not leak into a later Settings launch', async () => {
-    navigate('/wallets/a/configure')
-    renderAt('configure')
-    openEditChecks()
-    fireEvent.click(await screen.findByRole('button', { name: /Back to Configure/ }))
-    await waitFor(() => expect(window.location.pathname).toBe('/wallets/a/configure'))
-    cleanup()
-    navigate('/')
-    renderAt('settings')
-    fireEvent.click(screen.getByRole('button', { name: /^Edit checks for / }))
-    expect((await screen.findByRole('button', { name: /Settings/ })).textContent).toBe('Settings')
   })
 })

@@ -59,21 +59,23 @@ vi.mock('@/lib/teardown', () => ({ tearDownAllLocalState: vi.fn(), clearCachedAc
 vi.mock('@/components/wallet/AddressLink', () => ({ AddressLink: () => <span /> }))
 
 import { Onboarding } from '../Onboarding'
-import { SettingsTab } from '../tabs/SettingsTab'
 import { WalletScreens } from '../WalletScreens'
 import { AddWalletScreen } from '@/components/wallet/AddWalletScreen'
 import { useRoute } from '@/hooks/useRoute'
-import { isTaskRoute, leaveScreen } from '@/lib/route'
+import { ADD_WALLET_PATH, isTaskRoute, leaveScreen, navigate } from '@/lib/route'
 import { consumeAdded } from '@/lib/chooser-signals'
 import { toast } from '@/lib/notify'
 import { useAppStore } from '@/store/app-store'
 
-/** Settings, or the routed screen its buttons navigate to (what `Main` and the app shell do). */
+/** The routed screen the chooser's Add wallet key navigates to, else a stand-in for the chooser (what the app shell does). */
 function Host() {
   const route = useRoute()
   if (route.screen === 'add-wallet') return <AddWalletScreen onClose={leaveScreen} />
-  return isTaskRoute(route) ? <WalletScreens route={route} /> : <SettingsTab />
+  return isTaskRoute(route) ? <WalletScreens route={route} /> : <p>the chooser</p>
 }
+
+/** The chooser's Add wallet key is covered in `chooser.test.tsx`; here the route is entered the way that key does. */
+const addWallet = async () => act(async () => void navigate(ADD_WALLET_PATH))
 
 const click = async (name: string | RegExp) => act(async () => void fireEvent.click(screen.getByRole('button', { name })))
 
@@ -135,10 +137,10 @@ describe('first run after a removal whose App PIN discard failed (AD-46)', () =>
   })
 })
 
-describe('Settings > Add wallet', () => {
+describe('Add wallet from the chooser: the routed screen', () => {
   it('Generate shows the flow; it commits itself, so the screen has no Add button for it', async () => {
     render(<Host />)
-    await click('Add wallet')
+    await addWallet()
     expect(screen.getByText('the creation flow')).toBeTruthy()
     expect(screen.queryByRole('button', { name: 'Add' })).toBeNull()
     expect(h.generateAndStoreWallet).not.toHaveBeenCalled()
@@ -147,7 +149,7 @@ describe('Settings > Add wallet', () => {
 
   it('Import is the same flow in import mode, with the Seed field supplied by the screen', async () => {
     render(<Host />)
-    await click('Add wallet')
+    await addWallet()
     expect(window.location.pathname).toBe('/wallets/new')
     await click('Import')
     expect(screen.getByText('the creation flow')).toBeTruthy()
@@ -155,9 +157,9 @@ describe('Settings > Add wallet', () => {
     expect(props.importSource).toBeTruthy()
   })
 
-  it('the screen cannot be left while a Wallet is being written or backed up, then returns to Settings when done', async () => {
+  it('the screen cannot be left while a Wallet is being written or backed up, then returns to the chooser when done', async () => {
     render(<Host />)
-    await click('Add wallet')
+    await addWallet()
     const props = h.flowProps.at(-1) as { onInProgressChange: (b: boolean) => void; onDone: (meta: { seedId: string }) => void }
     await act(async () => props.onInProgressChange(true))
     expect((screen.getByRole('button', { name: 'Wallets' }) as HTMLButtonElement).disabled).toBe(true)
@@ -202,7 +204,7 @@ describe('Add wallet at the app shell (chooser story 11)', () => {
 
   it('the route carries only the screen name', async () => {
     render(<Host />)
-    await click('Add wallet')
+    await addWallet()
     expect(window.location.pathname).toBe('/wallets/new')
     expect(window.location.search + window.location.hash).toBe('')
   })

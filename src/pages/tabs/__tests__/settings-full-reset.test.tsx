@@ -9,7 +9,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
  * Address Book entry behind after its reload, and must not reload as though it
  * had when a clear failed. Unlike the Unlock reset, it locks on both outcomes.
  *
- * Real: the Settings tab, `lib/teardown.ts`, the app store. Faked: the
+ * Real: `AppSettings`, `lib/teardown.ts`, the app store. Faked: the
  * persistence sink, the vault and keystore modules, the socket pool, the
  * update hook and the build stamp (compile-time globals this runner does not
  * define).
@@ -60,7 +60,7 @@ vi.mock('@/lib/build-info', () => ({
   formatBuiltAt: () => '',
 }))
 
-import { SettingsTab } from '../SettingsTab'
+import { AppSettings } from '@/pages/AppSettings'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { APP_STATE_STORAGE_KEY, useAppStore } from '@/store/app-store'
 import { useNoticeStore } from '@/store/notice-store'
@@ -99,7 +99,7 @@ function renderSettings() {
   render(
     <QueryClientProvider client={qc}>
       <TooltipProvider>
-        <SettingsTab />
+        <AppSettings />
       </TooltipProvider>
     </QueryClientProvider>,
   )
@@ -164,36 +164,5 @@ describe('Settings — Erase everything', () => {
     await waitFor(() => expect(reload).toHaveBeenCalledTimes(1))
     expect(registration.unregister).toHaveBeenCalledTimes(1)
     expect(live.size).toBe(0)
-  })
-})
-
-/**
- * Single-wallet removal (6.2 AC4, epic 6 retro item 12): the shell — precache
- * and registration — stays, and the device is not reset (no vault wipe, no
- * reload).
- */
-describe('Settings — Remove one wallet', () => {
-  it('leaves the precache and the service-worker registration alone, and does not reset the device', async () => {
-    const { cacheStorage, live, sw, registration } = installShell()
-    const keep = { id: 'w2', seedId: 'w2', lockId: 'legacy', network: 'testnet', label: 'Spending', address: 'rCarolSecondWalletAddress' }
-    useAppStore.getState().setWallets([{ id: 'w1', seedId: 'w1', lockId: 'legacy', network: 'testnet', label: 'Savings', address: 'rAliceAddressLabelThatMustNotSurvive' }, keep] as never)
-    useAppStore.getState().setActiveWalletId('w1')
-    useAppStore.setState({ openLocks: { legacy: { key: {} as CryptoKey, autoLockMinutes: 5 } } } as never)
-    h.listWallets.mockResolvedValue([keep])
-    renderSettings()
-
-    fireEvent.click((await screen.findAllByRole('button', { name: /^remove (?!all wallets)/i }))[0])
-    fireEvent.click(await screen.findByRole('button', { name: /remove wallet/i }))
-    await waitFor(() => expect(h.removeWallet).toHaveBeenCalledWith('w1'))
-    await waitFor(() => expect(useAppStore.getState().activeWalletId).toBe('w2'))
-    await flush()
-
-    expect(cacheStorage.keys).not.toHaveBeenCalled()
-    expect(cacheStorage.delete).not.toHaveBeenCalled()
-    expect(live.has(PRECACHE)).toBe(true)
-    expect(sw.getRegistrations).not.toHaveBeenCalled()
-    expect(registration.unregister).not.toHaveBeenCalled()
-    expect(h.wipeVault).not.toHaveBeenCalled()
-    expect(reload).not.toHaveBeenCalled()
   })
 })

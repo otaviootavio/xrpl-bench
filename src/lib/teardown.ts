@@ -6,7 +6,8 @@ import { clearPersistedAppState, useAppStore } from '@/store/app-store'
 
 /**
  * The one owner of local teardown — AD-16, amended by AD-26. It has **three**
- * scopes, and a lock only ever uses the first:
+ * scopes, and a lock only ever uses the first (leaving a Wallet for the chooser,
+ * `leaveWallet`, removes its query data and closes nothing — AD-38):
  *
  *  - **Per-lock** (`tearDownLock`): drop that lock's key and persisted session
  *    and remove the account-scoped query data of the Wallets on it — unless
@@ -132,6 +133,22 @@ export function removeLockedAccountData(queryClient: QueryClient, lockIds: reado
   // counterparty-keyed entries (destination checks, reserves, fee) go too — the
   // old app-wide lock cleared everything, and so does the last one now.
   if (Object.keys(openLocks).length === 0) clearCachedAccountData(queryClient)
+}
+
+/**
+ * Leave scope (AD-38): the user left a Wallet for the chooser. Removes that
+ * Wallet's account-scoped query data — unless another Wallet on an OPEN lock
+ * holds the same `(network, address)` — and never closes a lock.
+ */
+export function leaveWallet(queryClient: QueryClient, walletId: string): void {
+  const { wallets, openLocks } = useAppStore.getState()
+  const left = wallets.find((w) => w.id === walletId)
+  if (!left) return
+  const shared = wallets.some(
+    (w) => w.id !== left.id && w.lockId in openLocks && w.network === left.network && w.address === left.address,
+  )
+  if (shared) return
+  removeAccountScoped(queryClient, left.network, left.address)
 }
 
 /** Per-lock scope: closes ONE lock and removes its Wallets' account data. */

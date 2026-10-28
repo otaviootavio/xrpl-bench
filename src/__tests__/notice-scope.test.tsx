@@ -22,6 +22,8 @@ describe('notice scoping', () => {
     const { toast } = await import('@/lib/notify')
     const messages = () => useNoticeStore.getState().notices.map((n) => n.message)
 
+    // On a wallet route the wallet in view is the active one; on the chooser it is none (AD-34).
+    window.history.replaceState(null, '', '/wallets/a')
     useAppStore.setState({ activeWalletId: 'a' })
     toast.error('About A.')
     useAppStore.setState({ activeWalletId: null })

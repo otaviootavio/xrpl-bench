@@ -1,5 +1,5 @@
 /** @vitest-environment jsdom */
-import { act, cleanup, render } from '@testing-library/react'
+import { act, cleanup, render, screen } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { useEffect } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -17,7 +17,7 @@ vi.mock('@/lib/crypto/lock', () => ({
   extendLockSession: async () => {},
 }))
 vi.mock('idb-keyval', () => ({ get: async () => undefined, set: async () => {}, del: async () => {} }))
-vi.mock('@/components/AppHeader', () => ({ AppHeader: () => <header /> }))
+vi.mock('@/components/AppHeader', () => ({ AppHeader: () => <header>wallet-header</header> }))
 vi.mock('@/pages/Main', () => ({ Main: () => <p>content</p> }))
 // Real hooks, wrapped so each mount and unmount is counted.
 vi.mock('@/hooks/useAutoLock', async (orig) => {
@@ -111,13 +111,69 @@ describe('AppShell mounts the lifecycle once, above the route switch (AD-31)', (
     expect(h.endedAll).toBe(1)
   })
 
-  it('interim: activity extends the wallet in view, which is the active one on every route', () => {
-    expect(walletInView({ screen: 'chooser' }, 'a')).toBe('a')
+  it('activity extends only the wallet entered: none on the chooser or settings, the active one in a wallet', () => {
+    expect(walletInView({ screen: 'chooser' }, 'a')).toBeNull()
+    expect(walletInView({ screen: 'settings' }, 'a')).toBeNull()
+    expect(walletInView({ screen: 'wallet', walletId: 'a' }, 'a')).toBe('a')
+    // INTERIM (Story 11): Add wallet is still launched from inside a wallet.
+    expect(walletInView({ screen: 'add-wallet' }, 'a')).toBe('a')
     useAppStore.getState().openLock('X', KEY, 1)
     mount()
-    act(() => navigate('/settings'))
     act(() => void vi.advanceTimersByTime(40_000))
     act(() => void window.dispatchEvent(new Event('mousedown')))
+    expect(lockRemainingMs('X')).toBe(20_000)
+    act(() => navigate('/wallets/a'))
+    act(() => void vi.advanceTimersByTime(10_000))
+    act(() => void window.dispatchEvent(new Event('mousedown')))
     expect(lockRemainingMs('X')).toBe(60_000)
+  })
+})
+
+describe('AppShell route switch and guards (AD-32, AD-36)', () => {
+  it('chooser and settings render the Chooser with no wallet header; the skip link is first', () => {
+    const { container } = mount()
+    expect(screen.getByRole('heading', { level: 1, name: 'Wallets' })).toBeTruthy()
+    expect(screen.queryByText('content')).toBeNull()
+    expect(screen.queryByText('wallet-header')).toBeNull()
+    expect(container.querySelector('a, button')?.textContent).toBe('Skip to content')
+    expect(screen.getByText('XRPL Bench')).toBeTruthy()
+    act(() => navigate('/settings'))
+    expect(screen.getByRole('heading', { level: 1, name: 'Wallets' })).toBeTruthy()
+  })
+
+  it('a wallet route for the active, existing wallet renders the wallet content and header', () => {
+    mount()
+    act(() => navigate('/wallets/a'))
+    expect(screen.getByText('content')).toBeTruthy()
+    expect(screen.getByText('wallet-header')).toBeTruthy()
+    expect(screen.queryByRole('heading', { name: 'Wallets' })).toBeNull()
+  })
+
+  it.each(['/wallets/zzz', '/wallets/b', '/wallets/zzz/configure', '/wallets/b/configure'])(
+    'a mismatched deep link %s is reset to the chooser',
+    (path) => {
+      useAppStore.setState({ wallets: [W('a', 'X'), W('b', 'Y')] } as never)
+      mount()
+      act(() => navigate(path))
+      expect(window.location.pathname).toBe('/')
+      expect(screen.getByRole('heading', { level: 1, name: 'Wallets' })).toBeTruthy()
+      expect(screen.queryByText('content')).toBeNull()
+    },
+  )
+
+  it('an active id that is not a wallet is reset too', () => {
+    useAppStore.setState({ activeWalletId: 'gone' } as never)
+    mount()
+    act(() => navigate('/wallets/gone'))
+    expect(window.location.pathname).toBe('/')
+  })
+
+  it('add-wallet and task screens keep the wallet content and header', () => {
+    mount()
+    act(() => navigate('/wallets/new'))
+    expect(screen.getByText('content')).toBeTruthy()
+    expect(screen.getByText('wallet-header')).toBeTruthy()
+    act(() => navigate('/wallets/a/checks'))
+    expect(screen.getByText('content')).toBeTruthy()
   })
 })

@@ -889,8 +889,91 @@ export interface CreateWalletContext {
 const APP_PIN_GONE = 'The App PIN was removed from this device while you were setting this up. Start again: you will be asked to set a new PIN.'
 
 async function createStoredWalletUnguarded(requested: CreateStoredWalletInput, ctx: CreateWalletContext): Promise<CreateStoredWalletResult> {
+  let seed = ''
+  const result = await writeNewStoredWallet(
+    { ...requested, passkey: requested.passkey ?? 'unknown', origin: 'generated' },
+    ctx,
+    () => {
+      const wallet = Wallet.generate(requested.algorithm === 'ed25519' ? ECDSA.ed25519 : ECDSA.secp256k1)
+      seed = wallet.seed!
+      return { seed, address: wallet.address, algorithm: requested.algorithm }
+    },
+  )
+  if (result.status !== 'ok') return result
+  return { status: 'ok', value: { ...result.value, seed } }
+}
+
+export interface ImportStoredWalletInput {
+  label: string
+  network: NetworkId
+  /** A custom Node the caller already proved for `network` (`verifyNode`). */
+  node?: string
+  openCheck: NewOpenCheck
+  autoLockMinutes: number
+  signing: SigningKind
+  /** The parsed Seed. A parameter only: the caller holds it in a ref and clears it in `finally`. */
+  seed: string
+  passkey?: PasskeyCapability
+}
+
+export type ImportWalletContext = CreateWalletContext
+
+/** The result carries `meta` and the new lock's `openKey`, NEVER the Seed. */
+export type ImportStoredWalletResult = CheckResult<{ meta: WalletMeta; openKey: CryptoKey }> | { status: 'refused'; reason: string }
+
+const IMPORT_MALFORMED_REASON = 'That is not a valid Seed.'
+const IMPORT_DUPLICATE_REASON =
+  'This key is already on this device. To use it on another network, open the wallet and use Configure, Other networks.'
+
+/**
+ * Imports a Seed as a Stored Seed Wallet on a NEW lock of its own (AD-39), held to at
+ * least the strength Generate is: an Open Check of `none` is refused on every network.
+ * Same writer and order as `createStoredWallet`; a duplicate address (any network) is
+ * refused before any prompt, credential or lock. No ledger read. The Seed is never
+ * kept, logged, thrown or returned.
+ */
+export function importStoredWallet(input: ImportStoredWalletInput, ctx: ImportWalletContext = {}): Promise<ImportStoredWalletResult> {
+  return exclusiveVaultWrite(() => importStoredWalletUnguarded(input, ctx))
+}
+
+async function importStoredWalletUnguarded(input: ImportStoredWalletInput, ctx: ImportWalletContext): Promise<ImportStoredWalletResult> {
+  const { seed, ...rest } = input
+  return writeNewStoredWallet({ ...rest, passkey: input.passkey ?? 'unknown', origin: 'imported' }, ctx, () => {
+    let wallet: Wallet
+    let algorithm: 'ed25519' | 'secp256k1'
+    try {
+      wallet = Wallet.fromSeed(seed)
+      algorithm = algorithmOfSeed(seed)
+    } catch {
+      // Never the library's message: it is not ours to promise it holds no Seed.
+      return { refused: IMPORT_MALFORMED_REASON }
+    }
+    return { seed, address: wallet.address, algorithm }
+  })
+}
+
+interface NewWalletSpec {
+  label: string
+  network: NetworkId
+  node?: string
+  openCheck: NewOpenCheck
+  autoLockMinutes: number
+  signing: SigningKind
+  passkey: PasskeyCapability
+  origin: 'generated' | 'imported'
+}
+
+/** The one writer behind Generate and Import (AD-39). Order, so a failure leaves the
+ * vault as it was: name rule, policy, duplicate check (import), written-Seed
+ * confirmation, the Signing Check's credential, the lock, one write of the Wallet. A
+ * failure after the lock is written removes that lock and any App PIN made for it. */
+async function writeNewStoredWallet(
+  spec: NewWalletSpec,
+  ctx: CreateWalletContext,
+  obtainSeed: () => { seed: string; address: string; algorithm: 'ed25519' | 'secp256k1' } | { refused: string },
+): Promise<CheckResult<{ meta: WalletMeta; openKey: CryptoKey }> | { status: 'refused'; reason: string }> {
   // Inside the guard, so the name is checked against the records this write will sit beside (AD-42).
-  const input = { ...requested, label: await nameForNewWallet(requested.label) }
+  const input = { ...spec, label: await nameForNewWallet(spec.label) }
   const verdict = checkWalletRequest({
     canConfirmWrittenSeed: !!ctx.confirmWrittenSeed,
     network: input.network,
@@ -898,26 +981,44 @@ async function createStoredWalletUnguarded(requested: CreateStoredWalletInput, c
     openCheck: input.openCheck,
     autoLockMinutes: input.autoLockMinutes,
     signing: input.signing,
-    passkey: input.passkey ?? 'unknown',
+    passkey: input.passkey,
+    ...(input.origin === 'imported' ? { imported: true } : {}),
   })
   if (!verdict.ok) return { status: 'refused', reason: verdict.reason }
   const node = input.node === undefined ? undefined : (canonicalNodeUrl(input.node) ?? undefined)
   if (input.node !== undefined && !node) {
     return { status: 'refused', reason: 'A custom Node must be a wss:// address with no username, password, query or fragment.' }
   }
-  if ((input.openCheck === 'pin' || input.signing === 'pin') && !ctx.pin) return { status: 'cancelled' }
-
-  const hadAppPin = await hasAppPin()
-  if (ctx.appPinExpected && !hadAppPin && (input.openCheck === 'pin' || input.signing === 'pin')) return { status: 'refused', reason: APP_PIN_GONE }
-  const wallet = Wallet.generate(input.algorithm === 'ed25519' ? ECDSA.ed25519 : ECDSA.secp256k1)
-  const seed = wallet.seed!
+  const needsPin = input.openCheck === 'pin' || input.signing === 'pin'
+  let hadAppPin = false
+  // A Generate checks the PIN before it makes a Seed, so a cancelled or refused request never creates one.
+  // An import already holds its Seed as a parameter, so its duplicate check comes first (AD-39).
+  const pinGate = async (): Promise<{ status: 'cancelled' } | { status: 'refused'; reason: string } | null> => {
+    if (needsPin && !ctx.pin) return { status: 'cancelled' }
+    hadAppPin = await hasAppPin()
+    if (ctx.appPinExpected && !hadAppPin && needsPin) return { status: 'refused', reason: APP_PIN_GONE }
+    return null
+  }
+  if (input.origin === 'generated') {
+    const blocked = await pinGate()
+    if (blocked) return blocked
+  }
+  const obtained = obtainSeed()
+  if ('refused' in obtained) return { status: 'refused', reason: obtained.refused }
+  const { seed, address, algorithm } = obtained
+  if (input.origin === 'imported') {
+    // The same key is the same Account on every network, so it is held once (AD-39).
+    if ((await listStoredWallets()).some((w) => w.address === address)) return { status: 'refused', reason: IMPORT_DUPLICATE_REASON }
+    const blocked = await pinGate()
+    if (blocked) return blocked
+  }
   const walletId = crypto.randomUUID()
   let lockId: string | null = null
   try {
     // FR-72: the Seed is shown and confirmed before any credential, lock or
     // Wallet is written. A refusal here leaves the vault exactly as it was.
     const confirmedAt = await confirmedAtFor(input.network, input.openCheck, input.signing, ctx.confirmWrittenSeed, seed)
-    if (confirmedAt === 'cancelled') return await abandon(hadAppPin, { status: 'cancelled' })
+    if (confirmedAt === 'cancelled') return await abandon(hadAppPin, { status: 'cancelled' as const })
     let sealed: { sealedSeed: { ivB64: string; ciphertextB64: string }; signing: SigningSeal } | null = null
     if (input.signing !== 'standard') {
       const built = await sealUnderNewCredential(seed, {
@@ -940,10 +1041,10 @@ async function createStoredWalletUnguarded(requested: CreateStoredWalletInput, c
     const stored: StoredWallet = {
       id: walletId,
       label: input.label || 'Wallet',
-      address: wallet.address,
+      address,
       createdAt: Date.now(),
       seedMethod: 'stored',
-      algorithm: input.algorithm,
+      algorithm,
       lockId,
       openCheck: input.openCheck,
       signingCheck: input.signing,
@@ -954,7 +1055,7 @@ async function createStoredWalletUnguarded(requested: CreateStoredWalletInput, c
         : { encryptedSeed: await aesEncrypt(lock.value.key, seed) }),
     }
     await putStoredWallet(stored)
-    return { status: 'ok', value: { meta: toMetas(stored)[0], openKey: lock.value.key, seed } }
+    return { status: 'ok', value: { meta: toMetas(stored)[0], openKey: lock.value.key } }
   } catch (err) {
     // Atomic: whatever failed after the lock was written takes the lock with it.
     if (lockId) await deleteLock(lockId).catch(() => {})

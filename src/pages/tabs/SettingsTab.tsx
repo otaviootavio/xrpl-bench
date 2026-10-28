@@ -13,44 +13,20 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from '@/components/ui/dialog'
 import { Separator } from '@/components/ui/separator'
 import { SeedReveal } from '@/components/wallet/SeedReveal'
+import { revealCheckSentence } from '@/components/wallet/reveal-copy'
 import { AddressLink } from '@/components/wallet/AddressLink'
 import { AppSettings } from '@/pages/AppSettings'
 import { usePrompts } from '@/hooks/usePrompts'
 import { useAppStore, useActiveNetwork } from '@/store/app-store'
 import { navigate, ADD_WALLET_PATH, walletScreenPath } from '@/lib/route'
 import { NETWORKS, NETWORK_IDS, type NetworkId } from '@/lib/xrpl/networks'
-import { addNetworkView, listWallets, removeWallet, revealSeed, setLockAutoLock, describeCheckFailure, type WalletMeta } from '@/lib/crypto/keystore'
+import { addNetworkView, listWallets, removeWallet, revealSeed, setLockAutoLock, describeCheckFailure } from '@/lib/crypto/keystore'
 import { getLockInfo } from '@/lib/crypto/lock'
 import { LEGACY_LOCK_ID } from '@/lib/crypto/db'
 import { queryKeys } from '@/lib/xrpl/query-keys'
 import { clearCachedAccountData, tearDownLock } from '@/lib/teardown'
 import { toast } from '@/lib/notify'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-
-/** Which check the reveal will ask next, in plain words (FR-69). Mirrors
- * `keystore.revealSeed`: a sealed Wallet its Signing Check, a Passkey-Derived one
- * its passkey, a Standard one its Open Check (none: nothing more). */
-function revealCheckSentence(wallet: WalletMeta | undefined): string {
-  if (!wallet) return ''
-  if (wallet.seedMethod === 'passkey-derived') return 'After you confirm, your passkey will be asked.'
-  // The legacy lock's real check is read from the lock at reveal time, not from this meta.
-  const standard = !wallet.signingCheck || wallet.signingCheck === 'standard'
-  if (wallet.lockId === LEGACY_LOCK_ID && standard) {
-    return "After you confirm, your passkey or App PIN will be asked, whichever this wallet's lock uses."
-  }
-  if (wallet.signingCheck === 'pin') return 'After you confirm, your App PIN will be asked.'
-  if (wallet.signingCheck === 'passkey') return 'After you confirm, your passkey will be asked.'
-  switch (wallet.openCheck) {
-    case 'pin':
-      return 'After you confirm, your App PIN will be asked.'
-    case 'passkey':
-      return 'After you confirm, your passkey will be asked.'
-    case 'either':
-      return 'After you confirm, your passkey will be asked, or your App PIN if this device cannot use one.'
-    default:
-      return 'After you confirm, nothing more will be asked and the Seed is shown.'
-  }
-}
 
 /** A wallet row keeps one primary key; every other action sits in a labelled
  * group whose keys may wrap their text rather than push the row wider than a

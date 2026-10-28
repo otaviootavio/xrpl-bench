@@ -49,6 +49,43 @@ describe('the wallet header (AD-45)', () => {
     expect(screen.queryByRole('combobox')).toBeNull()
   })
 
+  it('an open lock has a Configure key before Lock; it opens the configure path', () => {
+    useAppStore.setState({ wallets: [W('a', 'X')], activeWalletId: 'a', openLocks: { X: OPEN } } as never)
+    act(() => navigate('/wallets/a'))
+    mount()
+    const names = screen.getAllByRole('button').map((b) => b.getAttribute('aria-label') ?? b.textContent)
+    expect(names).toEqual(['Wallets', 'Configure wallet', 'Lock wallet'])
+    fireEvent.click(screen.getByRole('button', { name: 'Configure wallet' }))
+    expect(window.location.pathname).toBe('/wallets/a/configure')
+  })
+
+  it('Configure is absent on the configure screen itself and on the Unlock view', () => {
+    useAppStore.setState({ wallets: [W('a', 'X')], activeWalletId: 'a', openLocks: { X: OPEN } } as never)
+    act(() => navigate('/wallets/a/configure'))
+    mount()
+    expect(screen.queryByRole('button', { name: 'Configure wallet' })).toBeNull()
+    cleanup()
+    useAppStore.setState({ openLocks: {} } as never)
+    act(() => navigate('/wallets/a'))
+    mount()
+    expect(screen.queryByRole('button', { name: 'Configure wallet' })).toBeNull()
+  })
+
+  it('a blocked Configure key is aria-disabled and goes nowhere', () => {
+    useAppStore.setState({ wallets: [W('a', 'X')], activeWalletId: 'a', openLocks: { X: OPEN } } as never)
+    act(() => navigate('/wallets/a'))
+    mount()
+    let release = () => {}
+    act(() => {
+      release = blockLeaving()
+    })
+    const key = screen.getByRole('button', { name: 'Configure wallet' })
+    expect(key.getAttribute('aria-disabled')).toBe('true')
+    fireEvent.click(key)
+    expect(window.location.pathname).toBe('/wallets/a')
+    act(() => release())
+  })
+
   it('open lock with no Open Check has no Lock key', () => {
     useAppStore.setState({ wallets: [W('a', 'X', 'none')], activeWalletId: 'a', openLocks: { X: OPEN } } as never)
     mount()

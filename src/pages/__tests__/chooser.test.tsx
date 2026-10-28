@@ -113,6 +113,41 @@ describe('the chooser reads nothing from the ledger (AD-36)', () => {
   })
 })
 
+describe('the Configure key (AD-43, Story 14)', () => {
+  const cardOf = (n: string) => screen.getByRole('heading', { level: 2, name: n }).closest('li') as HTMLElement
+
+  it('an open card has Configure with the card name; a locked card has none', () => {
+    act(() => {
+      useAppStore.getState().openLock('LA', KEY, 5)
+    })
+    mount()
+    const key = within(cardOf('Alpha')).getByRole('button', { name: 'Configure Alpha' })
+    expect(key.textContent).toBe('Configure')
+    expect(within(cardOf('Beta')).queryByRole('button', { name: /^Configure/ })).toBeNull()
+  })
+
+  it('acts on the entry view: the active view of a multi-view card, selecting it and opening its configure path', () => {
+    act(() => {
+      useAppStore.getState().openLock('LC', KEY, 5)
+      useAppStore.setState({ activeWalletId: 'c2' } as never)
+    })
+    mount()
+    fireEvent.click(within(cardOf('Gamma')).getByRole('button', { name: 'Configure Gamma' }))
+    expect(useAppStore.getState().activeWalletId).toBe('c2')
+    expect(window.location.pathname).toBe('/wallets/c2/configure')
+  })
+
+  it('with no active view on the card, the first view', () => {
+    act(() => {
+      useAppStore.getState().openLock('LC', KEY, 5)
+    })
+    mount()
+    fireEvent.click(within(cardOf('Gamma')).getByRole('button', { name: 'Configure Gamma' }))
+    expect(useAppStore.getState().activeWalletId).toBe('c')
+    expect(window.location.pathname).toBe('/wallets/c/configure')
+  })
+})
+
 describe('the cards', () => {
   it('is titled Wallets with its description', () => {
     mount()
@@ -375,7 +410,7 @@ describe('the Rename key and dialog', () => {
     useNoticeStore.setState({ notices: [] } as never)
   })
 
-  it('every card has Rename: after Open when locked, between the network rows and Lock when open', () => {
+  it('every card has Rename: after Open when locked, between Configure and Lock when open', () => {
     act(() => useAppStore.getState().openLock('LC', KEY, 5))
     mount()
     const names = (n: string) => within(card(n)).getAllByRole('button').map((b) => b.getAttribute('aria-label'))
@@ -387,6 +422,7 @@ describe('the Rename key and dialog', () => {
       'Remove Gamma on Devnet',
       'Open Gamma on Mainnet',
       'Remove Gamma on Mainnet',
+      'Configure Gamma',
       'Rename Gamma',
       'Lock Gamma',
     ])

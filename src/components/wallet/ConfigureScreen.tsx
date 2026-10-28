@@ -2,10 +2,16 @@ import { useEffect, useRef } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Button } from '@/components/ui/button'
 import { ConfigPlate } from '@/components/wallet/ConfigPlate'
+import { ControlledNote } from '@/components/wallet/ControlledNote'
+import { MasterKeyControl } from '@/components/wallet/MasterKeyControl'
+import { OtherNetworksPlate } from '@/components/wallet/OtherNetworksPlate'
+import { TwoDeviceSign } from '@/components/wallet/TwoDeviceSign'
+import { WalletNodeSection } from '@/components/wallet/WalletNodeSection'
 import { RevealSeedControl } from '@/components/wallet/RevealSeedControl'
 import { NO_OPEN_CHECK_DETAIL, STANDARD_SIGNING_DETAIL, openCheckWords, signingWords } from '@/components/wallet/check-words'
 import { launchFromConfigure, peekConfigureFocusReturn } from '@/lib/configure-launch'
 import type { WalletMeta } from '@/lib/crypto/keystore'
+import { holdsMasterKey } from '@/lib/control'
 import { getLockInfo } from '@/lib/crypto/lock'
 import { walletScreenPath } from '@/lib/route'
 import { queryKeys } from '@/lib/xrpl/query-keys'
@@ -74,11 +80,34 @@ function SeedPlate({ wallet }: { wallet: WalletMeta }) {
   )
 }
 
+const CONTROL_KEY = 'let-another-wallet-sign'
+const TWO_DEVICE_KEY = 'two-device'
+
+function ControlPlate({ wallet }: { wallet: WalletMeta }) {
+  return (
+    <ConfigPlate title="Operating another account">
+      <ControlledNote wallet={wallet} />
+      {holdsMasterKey(wallet) && (
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          className={KEY}
+          data-configure-key={CONTROL_KEY}
+          onClick={() => launchFromConfigure(walletScreenPath('control', wallet.id), CONTROL_KEY)}
+        >
+          Let another wallet sign
+        </Button>
+      )}
+      <MasterKeyControl wallet={wallet} />
+    </ConfigPlate>
+  )
+}
+
 /**
  * Per-wallet configuration (FR-88): one routed screen, a plate per concern in a
  * fixed order. The app shell mounts it only for the active Wallet whose lock is
- * open (AD-32); this component trusts that and reads no other Wallet. The plates
- * after Seed arrive in Story 15, each in its place in the order.
+ * open (AD-32); this component trusts that and reads no other Wallet.
  */
 export function ConfigureScreen({ wallet }: { wallet: WalletMeta }) {
   const headingRef = useRef<HTMLHeadingElement | null>(null)
@@ -100,6 +129,15 @@ export function ConfigureScreen({ wallet }: { wallet: WalletMeta }) {
       </div>
       <ChecksPlate wallet={wallet} />
       <SeedPlate wallet={wallet} />
+      {/* A wallet either operates another account or holds the Account Master Key, so this plate always has something to say. */}
+      <ControlPlate wallet={wallet} />
+      <OtherNetworksPlate wallet={wallet} />
+      <ConfigPlate title="Node">
+        <WalletNodeSection wallet={wallet} />
+      </ConfigPlate>
+      <ConfigPlate title="Two-device signing">
+        <TwoDeviceSign wallet={wallet} configureKey={TWO_DEVICE_KEY} />
+      </ConfigPlate>
     </div>
   )
 }

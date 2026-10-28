@@ -12,8 +12,15 @@ import { describeCheckFailure, type WalletMeta } from '@/lib/crypto/keystore'
 import { queryKeys } from '@/lib/xrpl/query-keys'
 import { RESET_INCOMPLETE_MESSAGE, tearDownAllLocalState } from '@/lib/teardown'
 import { useAppStore } from '@/store/app-store'
+import { leaveToChooser } from '@/lib/route'
 import { toast } from '@/lib/notify'
 import { BUILD, shortSha, sourceUrl } from '@/lib/build-info'
+
+/** A Seed with several views returns to the chooser so a network is chosen on
+ * purpose: Mainnet is never entered by default (FR-82). One view stays in its shell. */
+function returnIfSeveralViews(seedId: string) {
+  if (useAppStore.getState().wallets.filter((w) => w.seedId === seedId).length > 1) leaveToChooser()
+}
 
 /**
  * The locked-Wallet view (CAP-4, AD-26): the active Wallet's NAME and its own
@@ -77,6 +84,7 @@ export function Unlock({ wallet }: { wallet: WalletMeta }) {
       if (result.status === 'ok') {
         setPin('')
         openLock(lockId, result.value.key, result.value.autoLockMinutes)
+        returnIfSeveralViews(wallet.seedId)
         return
       }
       toast.error(
@@ -103,12 +111,14 @@ export function Unlock({ wallet }: { wallet: WalletMeta }) {
     autoOpened.current = true
     openWithCheck(lockId, 'none').then(
       (result) => {
-        if (result.status === 'ok') openLock(lockId, result.value.key, result.value.autoLockMinutes)
-        else setOpenError('This wallet could not be opened.')
+        if (result.status === 'ok') {
+          openLock(lockId, result.value.key, result.value.autoLockMinutes)
+          returnIfSeveralViews(wallet.seedId)
+        } else setOpenError('This wallet could not be opened.')
       },
       () => setOpenError('This wallet could not be opened.'),
     )
-  }, [info?.openCheck, lockId, openLock, attempt])
+  }, [info?.openCheck, lockId, openLock, attempt, wallet.seedId])
 
   /** Retry after a failed auto-open or a failed read of the lock. */
   function retry() {

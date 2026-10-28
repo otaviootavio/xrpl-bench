@@ -1,23 +1,25 @@
+import { useEffect } from 'react'
 import { AppHeader } from '@/components/AppHeader'
 import { ChassisShell } from '@/components/ChassisShell'
+import { Chooser } from '@/pages/Chooser'
 import { Main } from '@/pages/Main'
 import { useRoute } from '@/hooks/useRoute'
 import { useAutoLock } from '@/hooks/useAutoLock'
 import { useClearCacheOnLock } from '@/hooks/useClearCacheOnLock'
 import { useAppStore } from '@/store/app-store'
-import type { Route } from '@/lib/route'
+import { enteredWalletId, isWalletScreen, resetToHome, type Route } from '@/lib/route'
 
 /**
- * The wallet in view on this route.
+ * The wallet in view on this route: the one the user is inside, or none.
  *
- * INTERIM (removed by Story 5): until the chooser screen exists, `/` and every
- * chooser-side route still render the wallet shell, so the wallet in view is the
- * active one on every route. Story 5 replaces this body with
- * `enteredWalletId(route, activeWalletId)` from `@/lib/route`.
+ * INTERIM (Story 11): Add wallet is still launched from inside a wallet's
+ * Settings tab and creates against the active wallet, so it keeps counting that
+ * wallet's activity. The `add-wallet` clause goes when Add wallet moves to the
+ * chooser.
  */
-// oxlint-disable-next-line react/only-export-components -- the spec pins this function to this file until Story 5
-export function walletInView(_route: Route, activeWalletId: string | null): string | null {
-  return activeWalletId
+// oxlint-disable-next-line react/only-export-components -- pinned to this file, beside the route switch that shares it
+export function walletInView(route: Route, activeWalletId: string | null): string | null {
+  return enteredWalletId(route, activeWalletId) ?? (route.screen === 'add-wallet' ? activeWalletId : null)
 }
 
 /**
@@ -28,8 +30,19 @@ export function walletInView(_route: Route, activeWalletId: string | null): stri
 export function AppShell() {
   const route = useRoute()
   const activeWalletId = useAppStore((s) => s.activeWalletId)
+  const activeExists = useAppStore((s) => s.wallets.some((w) => w.id === s.activeWalletId))
   useAutoLock(walletInView(route, activeWalletId))
   useClearCacheOnLock()
+
+  // An in-wallet shell renders only for the wallet that is active and exists
+  // (AD-32); anything else is an unreachable location and lands on the chooser.
+  const shellRoute = route.screen === 'wallet' || route.screen === 'configure'
+  const shellReachable = shellRoute && route.walletId === activeWalletId && activeExists
+  const chooserSide = route.screen === 'chooser' || route.screen === 'settings' || (shellRoute && !shellReachable)
+  const walletSide = isWalletScreen(route) || route.screen === 'add-wallet'
+  useEffect(() => {
+    if (shellRoute && !shellReachable) resetToHome()
+  }, [shellRoute, shellReachable])
 
   return (
     // The chassis shell (docs/decisions.md §9.1, N1) reserves the annunciator
@@ -47,7 +60,14 @@ export function AppShell() {
           >
             Skip to content
           </a>
-          <AppHeader />
+          {walletSide && !chooserSide ? (
+            <AppHeader />
+          ) : (
+            // Chooser side: the skip link and the nameplate, nothing that reads a wallet (AD-36).
+            <header className="flex items-center border-b border-border bg-background px-4 py-2.5">
+              <span className="panel-legend text-[0.75rem] tracking-[0.22em] text-foreground">XRPL Bench</span>
+            </header>
+          )}
         </>
       }
     >
@@ -56,7 +76,7 @@ export function AppShell() {
           target. It stays out of the tab order. Nothing suppresses the ring on
           this landing target: §6.3 admits no carve-out. */}
       <main id="main-content" tabIndex={-1} className="px-4 pb-6 pt-3">
-        <Main />
+        {chooserSide ? <Chooser /> : <Main />}
       </main>
     </ChassisShell>
   )

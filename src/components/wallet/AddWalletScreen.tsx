@@ -1,178 +1,183 @@
-import { useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { CreateWalletFlow } from '@/components/wallet/CreateWalletFlow'
-import { NetworkChoice } from '@/components/wallet/NetworkChoice'
-import { ScreenFooter, TaskScreen } from '@/components/wallet/TaskScreen'
+import { CreateWalletFlow, type ImportSource } from '@/components/wallet/CreateWalletFlow'
+import { TaskScreen } from '@/components/wallet/TaskScreen'
 import { useLeaveBlocker } from '@/hooks/useRoute'
-import { addressFromSeed, importAndStoreWallet, listWallets, parseSeedInput } from '@/lib/crypto/keystore'
+import { addressFromSeed, importDuplicateReason, parseSeedInput } from '@/lib/crypto/keystore'
+import { announceAdded } from '@/lib/chooser-signals'
 import { toast } from '@/lib/notify'
 import { checkBeforeImport, IMPORT_WARNING_COPY, INVALID_SEED_MESSAGE, type ImportWarning } from '@/lib/seed-import'
-import type { NetworkId } from '@/lib/xrpl/networks'
-import { useActiveNetwork, useAppStore, useWalletOpenKey } from '@/store/app-store'
 
 /**
- * Add wallet (`/wallets/new`), a routed screen. Generate is `CreateWalletFlow`,
- * the very component onboarding renders: it makes the Wallet its own lock and
- * commits itself after the Seed backup, so only the exit differs (onboarding
- * continues into the app, this returns to Settings). Import keeps the same
- * order as onboarding (lib/seed-import.ts): parse, check, warn, and only then write.
+ * Add wallet (`/wallets/new`), a chooser-side screen the app shell renders (AD-32,
+ * AD-40): it needs no open wallet. Generate and Import are both `CreateWalletFlow`,
+ * the component onboarding renders: it asks the per-wallet questions, makes the
+ * Wallet its own lock and commits itself, and it never selects or enters the
+ * wallet. On success this returns to where the user came from and announces the
+ * new card so the Chooser can focus it.
+ *
+ * Import (AD-39) supplies the flow with a Seed source. Order, with nothing
+ * written until the last step: parse the typed Seed; the duplicate probe (before
+ * any prompt and before any ledger read); the master-key pre-check and its warning
+ * (lib/seed-import.ts); then `importStoredWallet` under its own new lock.
  *
  * Guardrail #3: the typed Seed is in an uncontrolled input; the parsed one waits
- * in a ref while the master-key warning is open, never in state, the path or the
- * history entry. Mounted only while the active Wallet's lock is open (AD-26): it
- * is the lock a new Wallet is added under.
+ * in a ref only while the master-key warning is open, and is handed to the keystore
+ * as a parameter. The ref and the input are cleared by the flow's `finally` on every
+ * exit, when the sheet is cancelled, and on unmount. The Seed is never in state,
+ * the path, the history entry, an error or a log.
  */
 export function AddWalletScreen({ onClose }: { onClose: () => void }) {
-  // Only the fallback for a record the vault migration has not reached
-  // (`listWallets`); every ledger read takes its network from its own Wallet.
-  const activeNetwork = useActiveNetwork()
-  const activeWalletId = useAppStore((s) => s.activeWalletId)
-  const activeLockId = useAppStore((s) => s.wallets.find((w) => w.id === s.activeWalletId)?.lockId ?? null)
-  const setWallets = useAppStore((s) => s.setWallets)
-  const setActiveWalletId = useAppStore((s) => s.setActiveWalletId)
-  const vaultKey = useWalletOpenKey(activeWalletId)
   const queryClient = useQueryClient()
-
-  // The network a Wallet added here will live on — fixed at creation (AD-19).
-  const [addNetwork, setAddNetwork] = useState<NetworkId>('testnet')
-  const [addMode, setAddMode] = useState<'generate' | 'import'>('generate')
+  const [mode, setMode] = useState<'generate' | 'import'>('generate')
   const [footerHost, setFooterHost] = useState<HTMLElement | null>(null)
-  const [label, setLabel] = useState('')
   const [importWarning, setImportWarning] = useState<ImportWarning | null>(null)
-  const [busy, setBusy] = useState(false)
-  // A new Wallet is being written or backed up inside the flow.
+  // A new Wallet is being checked, written or backed up inside the flow. Not
+  // leavable meanwhile: leaving reads as "stop", and the write would still land.
   const [creating, setCreating] = useState(false)
-  // Not leavable while a check or a write is running: leaving reads as "stop",
-  // and the write would still land behind it.
-  const locked = busy || creating
-  useLeaveBlocker(locked)
+  useLeaveBlocker(creating)
 
-  // Uncontrolled: a controlled input would put the typed seed into React state
-  // on every keystroke (guardrail #3).
+  // Uncontrolled: a controlled input would put the typed Seed into React state on every keystroke.
   const seedInputRef = useRef<HTMLInputElement | null>(null)
-  // Add is disabled while the pre-import check runs, so the warning sheet cannot
-  // record it as its opener; focus returns to it by this ref instead.
-  const addButtonRef = useRef<HTMLButtonElement | null>(null)
-  // The parsed Seed while the master-key warning is open.
-  const pendingImportSeedRef = useRef<string | null>(null)
-  // The network the pre-check ran against: the store uses this one, never the
-  // current radio, so check and write cannot disagree.
-  const pendingImportNetworkRef = useRef<NetworkId>('testnet')
+  // The last input element ever mounted: the field leaves the DOM while the written-Seed step shows.
+  const lastInputRef = useRef<HTMLInputElement | null>(null)
+  // The parsed Seed, only until it is handed to the keystore.
+  const pendingSeedRef = useRef<string | null>(null)
+  const warningResolveRef = useRef<((proceed: boolean) => void) | null>(null)
 
-  async function storeImported(seed: string, key: CryptoKey, net: NetworkId) {
-    const meta = await importAndStoreWallet(label || 'Wallet', seed, key, net, activeLockId ?? undefined)
-    setWallets(await listWallets(activeNetwork))
-    setActiveWalletId(meta.id)
-    pendingImportSeedRef.current = null
+  // A STABLE ref callback: React calls it with null only when the field really leaves the DOM (the
+  // written-Seed step, a mode switch), never on a re-render. What was typed goes with it, so a
+  // detached element does not keep the Seed.
+  const setSeedInput = useCallback((el: HTMLInputElement | null) => {
+    if (!el && seedInputRef.current) seedInputRef.current.value = ''
+    seedInputRef.current = el
+    if (el) lastInputRef.current = el
+  }, [])
+
+  function clearSeed() {
+    pendingSeedRef.current = null
     if (seedInputRef.current) seedInputRef.current.value = ''
-    toast.success('Wallet added.')
-    onClose()
+    if (lastInputRef.current) lastInputRef.current.value = ''
   }
 
-  async function handleAddImport() {
-    if (!vaultKey || busy) return
-    // docs/decisions.md §2 states the disabled-master-key check for import
-    // unconditionally: it comes before the vault write here too.
-    const seed = parseSeedInput(seedInputRef.current?.value ?? '')
-    if (!seed) {
-      toast.error(INVALID_SEED_MESSAGE)
-      return
-    }
-    const net = addNetwork
-    setBusy(true)
-    try {
-      const warning = await checkBeforeImport(queryClient, net, addressFromSeed(seed))
-      if (warning) {
-        pendingImportSeedRef.current = seed
-        pendingImportNetworkRef.current = net
-        setImportWarning(warning)
-        return
-      }
-      await storeImported(seed, vaultKey, net)
-    } catch (err: unknown) {
-      toast.error(err instanceof Error && err.message ? err.message : 'Could not add wallet.')
-    } finally {
-      setBusy(false)
-    }
-  }
+  // False once the screen is left: a probe or a ledger check that finishes after that must not go on.
+  const mountedRef = useRef(true)
 
-  /** "Import anyway": the operator has read the warning and chosen to go on. */
-  async function acceptImportWarning() {
-    const seed = pendingImportSeedRef.current
-    if (!vaultKey || !seed || busy) return
-    setBusy(true)
-    try {
-      await storeImported(seed, vaultKey, pendingImportNetworkRef.current)
-      setImportWarning(null)
-    } catch (err: unknown) {
-      toast.error(err instanceof Error && err.message ? err.message : 'Could not add wallet.')
-    } finally {
-      setBusy(false)
+  useEffect(() => {
+    mountedRef.current = true
+    return () => {
+      mountedRef.current = false
     }
-  }
+  }, [])
 
-  /** Cancel, Escape, the overlay and the close button all land here: the
-   * import is abandoned, nothing is written, and the typed Seed is cleared. */
-  function cancelImportWarning() {
-    pendingImportSeedRef.current = null
-    if (seedInputRef.current) seedInputRef.current.value = ''
+  useEffect(
+    () => () => {
+      // Leaving the screen drops the Seed and abandons an open sheet.
+      pendingSeedRef.current = null
+      if (lastInputRef.current) lastInputRef.current.value = ''
+      warningResolveRef.current?.(false)
+      warningResolveRef.current = null
+    },
+    [],
+  )
+
+  function settleWarning(proceed: boolean) {
+    const resolve = warningResolveRef.current
+    warningResolveRef.current = null
     setImportWarning(null)
+    resolve?.(proceed)
+  }
+
+  function askWarning(warning: ImportWarning): Promise<boolean> {
+    return new Promise<boolean>((resolve) => {
+      warningResolveRef.current = resolve
+      setImportWarning(warning)
+    })
+  }
+
+  const importSource: ImportSource = {
+    field: (busy) => (
+      <div className="grid gap-1.5">
+        <Label htmlFor="wseed">Seed</Label>
+        <Input
+          id="wseed"
+          type="password"
+          autoComplete="off"
+          autoCapitalize="off"
+          autoCorrect="off"
+          spellCheck={false}
+          disabled={busy}
+          ref={setSeedInput}
+        />
+      </div>
+    ),
+    clear: clearSeed,
+    async acquire({ network, node }) {
+      const seed = parseSeedInput(seedInputRef.current?.value ?? '')
+      if (!seed) return { status: 'refused', reason: INVALID_SEED_MESSAGE }
+      pendingSeedRef.current = seed
+      try {
+        // Before any prompt and before any ledger read: a duplicate stops here.
+        const duplicate = await importDuplicateReason(seed)
+        if (duplicate) return { status: 'refused', reason: duplicate }
+        if (!mountedRef.current) return { status: 'cancelled' } // left meanwhile: no ledger read for an abandoned address
+        const warning = await checkBeforeImport(queryClient, network, addressFromSeed(seed), node)
+        if (!mountedRef.current) return { status: 'cancelled' }
+        if (warning && !(await askWarning(warning))) return { status: 'cancelled' }
+      } catch {
+        return { status: 'refused', reason: 'Could not check this key against the wallets on this device. Nothing was imported.' }
+      }
+      // Gone if the screen was left while a check ran.
+      const held = pendingSeedRef.current
+      pendingSeedRef.current = null
+      return held ? { status: 'ok', seed: held } : { status: 'cancelled' }
+    },
   }
 
   return (
-    <TaskScreen title="Add another wallet" description="Generate a new wallet or import one with a seed." onBack={onClose} locked={locked}>
+    <TaskScreen
+      title="Add another wallet"
+      description="Generate a new wallet or import one with a seed."
+      backLabel="Wallets"
+      onBack={onClose}
+      locked={creating}
+    >
       <div className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-3">
         <div className="flex flex-wrap gap-2">
-          <Button variant={addMode === 'generate' ? 'default' : 'outline'} onClick={() => setAddMode('generate')} type="button" disabled={locked}>
+          <Button variant={mode === 'generate' ? 'default' : 'outline'} onClick={() => {
+              clearSeed() // the typed Seed does not wait in a detached field
+              setMode('generate')
+            }} type="button" disabled={creating}>
             Generate
           </Button>
-          <Button variant={addMode === 'import' ? 'default' : 'outline'} onClick={() => setAddMode('import')} type="button" disabled={locked}>
+          <Button variant={mode === 'import' ? 'default' : 'outline'} onClick={() => setMode('import')} type="button" disabled={creating}>
             Import
           </Button>
         </div>
-        {addMode === 'generate' ? (
-          // Network, Node, Seed Method, signature type, Open Check, Signing Check:
-          // the flow asks each, and commits itself after the seed backup.
-          <CreateWalletFlow
-            defaultLabel=""
-            actionHost={footerHost}
-            onInProgressChange={setCreating}
-            onDone={() => {
-              toast.success('Wallet added.')
-              onClose()
-            }}
-          />
-        ) : (
-          <>
-            <div className="grid gap-1.5">
-              <Label htmlFor="wlabel">Label</Label>
-              <Input id="wlabel" value={label} onChange={(e) => setLabel(e.target.value)} placeholder="Savings" disabled={busy} />
-            </div>
-            {/* Frozen while a check or a write runs. */}
-            <NetworkChoice value={addNetwork} onChange={setAddNetwork} disabled={busy} />
-            <div className="grid gap-1.5">
-              <Label htmlFor="wseed">Seed</Label>
-              <Input id="wseed" type="password" autoComplete="off" spellCheck={false} ref={seedInputRef} />
-            </div>
-          </>
-        )}
+        {/* Keyed by mode: each mode starts its own answers, and the Seed field goes with Import. */}
+        <CreateWalletFlow
+          key={mode}
+          defaultLabel=""
+          actionHost={footerHost}
+          onInProgressChange={setCreating}
+          {...(mode === 'import' ? { importSource } : {})}
+          onDone={(meta) => {
+            // Adding selects and enters nothing: the Chooser focuses the new card.
+            announceAdded(meta.seedId)
+            toast.success('Wallet added.')
+            onClose()
+          }}
+        />
       </div>
-      {addMode === 'generate' && <div ref={setFooterHost} className="contents" />}
-      {addMode === 'import' && (
-        <ScreenFooter>
-          <Button ref={addButtonRef} onClick={handleAddImport} disabled={busy}>
-            {busy ? 'Checking…' : 'Add'}
-          </Button>
-        </ScreenFooter>
-      )}
+      <div ref={setFooterHost} className="contents" />
 
-      <Dialog open={!!importWarning} onOpenChange={(o) => !o && !busy && cancelImportWarning()}>
-        <DialogContent variant="sheet" returnFocusTo={() => addButtonRef.current}>
+      <Dialog open={!!importWarning} onOpenChange={(open) => !open && settleWarning(false)}>
+        <DialogContent variant="sheet" returnFocusTo={() => seedInputRef.current}>
           <DialogHeader>
             <DialogTitle>Heads up</DialogTitle>
             <DialogDescription>Check this before the seed is saved to this device.</DialogDescription>
@@ -184,12 +189,10 @@ export function AddWalletScreen({ onClose }: { onClose: () => void }) {
             </Alert>
           )}
           <DialogFooter>
-            <Button variant="outline" onClick={cancelImportWarning} disabled={busy}>
+            <Button variant="outline" onClick={() => settleWarning(false)}>
               Cancel import
             </Button>
-            <Button onClick={acceptImportWarning} disabled={busy}>
-              {busy ? 'Importing…' : 'Import anyway'}
-            </Button>
+            <Button onClick={() => settleWarning(true)}>Import anyway</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

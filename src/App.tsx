@@ -3,10 +3,11 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { PinPromptProvider } from '@/components/wallet/PinPromptDialog'
 import { Onboarding } from '@/pages/Onboarding'
-import { Main } from '@/pages/Main'
+import { AppShell, walletInView } from '@/components/AppShell'
+import { GateError } from '@/components/wallet/GateError'
 import { appStateHydrationFailed, appStateSettled, useAppStore } from '@/store/app-store'
 import { listWallets, migrateLegacyVault } from '@/lib/crypto/keystore'
-import { resetToHome } from '@/lib/route'
+import { currentPathname, parseRoute, resetToHome, subscribeRoute } from '@/lib/route'
 import { restoreOpenLocks } from '@/lib/crypto/lock'
 import { notify, setNoticeWalletReader } from '@/lib/notify'
 import { setTxInFlightReporter } from '@/lib/xrpl/writes'
@@ -23,12 +24,15 @@ import { setTxInFlightReporter } from '@/lib/xrpl/writes'
  */
 setTxInFlightReporter((inFlight) => useAppStore.getState().setTxInFlight(inFlight))
 
-// A notice belongs to the Wallet that was active when it was raised, and goes when
-// another becomes active: an error about Wallet A must not sit over Wallet B.
-setNoticeWalletReader(() => useAppStore.getState().activeWalletId)
+// A notice belongs to the Wallet in view when it was raised, and goes when
+// another is in view: an error about Wallet A must not sit over Wallet B.
+const walletInViewNow = () => walletInView(parseRoute(currentPathname()), useAppStore.getState().activeWalletId)
+setNoticeWalletReader(walletInViewNow)
+const rescope = () => notify.scopeToWallet(walletInViewNow())
 useAppStore.subscribe((state, previous) => {
-  if (state.activeWalletId !== previous.activeWalletId) notify.scopeToWallet(state.activeWalletId)
+  if (state.activeWalletId !== previous.activeWalletId) rescope()
 })
+subscribeRoute(rescope)
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -66,45 +70,69 @@ function Gate() {
   const setWallets = useAppStore((s) => s.setWallets)
   const setActiveWalletId = useAppStore((s) => s.setActiveWalletId)
   const openLock = useAppStore((s) => s.openLock)
-  const [ready, setReady] = useState(false)
+  const [status, setStatus] = useState<'loading' | 'error' | 'ready'>('loading')
+  // Bumped by Retry after a failed vault read; re-runs the effect below.
+  const [attempt, setAttempt] = useState(0)
 
   useEffect(() => {
     // Hydrates the wallet list from IndexedDB on mount — not a ledger read,
     // so it's outside the TanStack Query guardrail. zustand setters are
     // referentially stable, so listing them here is safe and complete
-    // (docs/decisions.md guardrail #2: never disable exhaustive-deps). Runs
-    // once: the selection is read from the store, not from a dependency, so
-    // switching Wallets never re-restores sessions.
+    // (docs/decisions.md guardrail #2: never disable exhaustive-deps). Re-runs
+    // only on Retry: the selection is read from the store, not from a
+    // dependency, so switching Wallets never re-restores sessions.
+    //
+    // AD-37: no store setter runs before a successful read — after a failed
+    // hydration `persist` would write the defaults over the saved state.
     let cancelled = false
-    migrateOnce().then(() => listWallets(useAppStore.getState().network)).then(async (stored) => {
-      if (cancelled) return
-      setWallets(stored)
-      const active = useAppStore.getState().activeWalletId
-      if (stored.length > 0 && !stored.some((w) => w.id === active)) setActiveWalletId(stored[0].id)
-      // Restores each lock's still-valid session so a page refresh within ITS
-      // auto-lock window doesn't force re-entering the PIN/passkey — see
-      // lib/crypto/lock.ts restoreOpenLocks(). Locks without a valid session stay closed.
-      if (stored.length > 0) {
-        for (const restored of await restoreOpenLocks().catch(() => [])) {
-          if (!cancelled) openLock(restored.lockId, restored.key, restored.autoLockMinutes, restored.expiresAt)
+    migrateOnce()
+      .then(async () => {
+        if (appStateHydrationFailed()) {
+          if (!cancelled) setStatus('error')
+          return
         }
-      }
-      if (!cancelled) setReady(true)
-    })
+        const stored = await listWallets(useAppStore.getState().network)
+        if (cancelled) return
+        setWallets(stored)
+        const active = useAppStore.getState().activeWalletId
+        if (stored.length > 0 && !stored.some((w) => w.id === active)) setActiveWalletId(stored[0].id)
+        // Restores each lock's still-valid session so a page refresh within ITS
+        // auto-lock window doesn't force re-entering the PIN/passkey — see
+        // lib/crypto/lock.ts restoreOpenLocks(). Locks without a valid session stay closed.
+        if (stored.length > 0) {
+          for (const restored of await restoreOpenLocks().catch(() => [])) {
+            if (!cancelled) openLock(restored.lockId, restored.key, restored.autoLockMinutes, restored.expiresAt)
+          }
+        }
+        if (!cancelled) setStatus('ready')
+      })
+      .catch(() => {
+        if (!cancelled) setStatus('error')
+      })
     return () => {
       cancelled = true
     }
-  }, [openLock, setActiveWalletId, setWallets])
+  }, [attempt, openLock, setActiveWalletId, setWallets])
 
   // A task screen's path means nothing before there is a Wallet: boot at the shell.
-  const noWallets = ready && wallets.length === 0
+  const noWallets = status === 'ready' && wallets.length === 0
   useEffect(() => {
     if (noWallets) resetToHome()
   }, [noWallets])
 
-  if (!ready) return null
+  if (status === 'loading') return null
+  if (status === 'error') {
+    // Hydration runs once per load, so its failure is retried by reloading. A failed
+    // vault read re-runs the effect, with the error surface kept mounted (and focus
+    // on Retry) until the read answers.
+    const retry = () => {
+      if (appStateHydrationFailed()) window.location.reload()
+      else setAttempt((n) => n + 1)
+    }
+    return <GateError onRetry={retry} />
+  }
   if (wallets.length === 0) return <Onboarding />
-  return <Main />
+  return <AppShell />
 }
 
 function App() {

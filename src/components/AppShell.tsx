@@ -1,0 +1,153 @@
+import { useEffect, useRef } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
+import { AppHeader } from '@/components/AppHeader'
+import { ChassisShell } from '@/components/ChassisShell'
+import { Button } from '@/components/ui/button'
+import { Lamp } from '@/components/ui/lamp'
+import { Chooser } from '@/pages/Chooser'
+import { SettingsScreen } from '@/pages/SettingsScreen'
+import { Main } from '@/pages/Main'
+import { AddWalletScreen } from '@/components/wallet/AddWalletScreen'
+import { ConfigureScreen } from '@/components/wallet/ConfigureScreen'
+import { useRoute } from '@/hooks/useRoute'
+import { useUpdateMarker } from '@/hooks/useUpdateMarker'
+import { useAutoLock } from '@/hooks/useAutoLock'
+import { useClearCacheOnLock } from '@/hooks/useClearCacheOnLock'
+import { useAppStore } from '@/store/app-store'
+import { leaveWallet } from '@/lib/teardown'
+import { clearAdded } from '@/lib/chooser-signals'
+import { enteredWalletId, isWalletScreen, leaveScreen, navigate, resetToHome, SETTINGS_PATH, type Route } from '@/lib/route'
+
+/** The wallet in view on this route: the one the user is inside, or none. */
+// oxlint-disable-next-line react/only-export-components -- pinned to this file, beside the route switch that shares it
+export function walletInView(route: Route, activeWalletId: string | null): string | null {
+  return enteredWalletId(route, activeWalletId)
+}
+
+/**
+ * The chooser-side header: the nameplate and the Settings key, nothing that reads
+ * a wallet (AD-36). The key's name and text carry the update marker (never a
+ * modal, never a redirect); the lamp is aria-hidden and the words carry it.
+ */
+function ChooserHeader({ showSettingsKey }: { showSettingsKey: boolean }) {
+  return (
+    <header className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2 border-b border-border bg-background px-4 py-2.5">
+      <span className="panel-legend text-[0.75rem] tracking-[0.22em] text-foreground">XRPL Bench</span>
+      {showSettingsKey && <SettingsKey />}
+    </header>
+  )
+}
+
+function SettingsKey() {
+  const marked = useUpdateMarker()
+  return (
+    <Button
+      variant="outline"
+      className="h-auto min-h-8 max-w-full whitespace-normal py-1 pointer-coarse:min-h-11"
+      onClick={() => navigate(SETTINGS_PATH)}
+    >
+      {marked ? 'Settings, update available' : 'Settings'}
+      {marked && <Lamp tone="caution" className="ml-1" />}
+    </Button>
+  )
+}
+
+/**
+ * The app shell (AD-31): rendered by Gate whenever a Wallet exists. It mounts
+ * the lifecycle hooks ONCE, above the route switch, so expiry timers and the
+ * background close run on every route and are never remounted by a route change.
+ */
+export function AppShell() {
+  const route = useRoute()
+  const activeWalletId = useAppStore((s) => s.activeWalletId)
+  const activeWallet = useAppStore((s) => s.wallets.find((w) => w.id === s.activeWalletId) ?? null)
+  const activeExists = activeWallet !== null
+  const activeOpen = useAppStore((s) => s.wallets.some((w) => w.id === s.activeWalletId && w.lockId in s.openLocks))
+  const queryClient = useQueryClient()
+  useAutoLock(walletInView(route, activeWalletId))
+  useClearCacheOnLock()
+
+  // An in-wallet shell renders only for the wallet that is active and exists
+  // (AD-32); anything else is an unreachable location and lands on the chooser.
+  // Configure also needs its lock open: unlike the shell it has no Unlock view of its own.
+  const shellRoute = route.screen === 'wallet' || route.screen === 'configure'
+  const shellReachable = shellRoute && route.walletId === activeWalletId && activeExists && (route.screen !== 'configure' || activeOpen)
+  const chooserSide = !isWalletScreen(route) || (shellRoute && !shellReachable)
+  const walletSide = isWalletScreen(route)
+  useEffect(() => {
+    if (shellRoute && !shellReachable) resetToHome()
+  }, [shellRoute, shellReachable])
+
+  // Leaving a wallet-side screen for the chooser (Wallets key, Back, Lock): the
+  // wallet that was left sheds what it read (AD-38) and focus lands on the
+  // chooser's h1 (UX-DR10). A cold start has no previous route and moves nothing.
+  const previous = useRef<{ route: Route; walletId: string | null } | null>(null)
+  useEffect(() => {
+    const before = previous.current
+    // Add wallet is chooser-side, but when it was launched from a wallet's Settings that wallet is still the one to shed on the way out.
+    previous.current = { route, walletId: walletInView(route, activeWalletId) ?? (route.screen === 'add-wallet' ? (before?.walletId ?? null) : null) }
+    if (before?.walletId && route.screen === 'chooser') {
+      leaveWallet(queryClient, before.walletId)
+      // A new card's h2 may already hold focus (a finished add): keep it.
+      if (!document.activeElement?.closest('[data-seed-id]')) document.getElementById('chooser-heading')?.focus()
+    } else if (before?.route.screen === 'settings' && route.screen === 'chooser') {
+      // The Wallets key on /settings unmounted with the screen: land on the h1, not on the document.
+      document.getElementById('chooser-heading')?.focus()
+    } else if (before?.route.screen === 'add-wallet' && route.screen === 'chooser') {
+      // Back or a finished add. A new card's h2 already took focus on the Chooser's mount: keep it.
+      if (!document.activeElement?.closest('[data-seed-id]')) document.getElementById('chooser-heading')?.focus()
+    } else if (before?.route.screen === 'chooser' && route.screen === 'wallet') {
+      // Entering a wallet from the Chooser: the main region, as the skip link's target (UX-DR10).
+      document.getElementById('main-content')?.focus()
+    } else if (before?.route.screen === 'chooser' && route.screen === 'settings') {
+      // The Settings key unmounted with the chooser: the screen names itself.
+      document.getElementById('settings-heading')?.focus()
+    }
+    // An announced add the Chooser never saw (Add wallet was opened from a wallet's Settings) must not move focus later.
+    if (route.screen !== 'chooser' && route.screen !== 'add-wallet') clearAdded()
+  }, [route, activeWalletId, queryClient])
+
+  return (
+    // The chassis shell (docs/decisions.md §9.1, N1) reserves the annunciator
+    // band at the base for every screen, this one included, so blank lower
+    // area reads as panel face and a notice arriving never covers a control.
+    <ChassisShell
+      header={
+        <>
+          {/* First focusable element on the page: the header's network and
+              wallet selects precede the content on every tab
+              (docs/decisions.md §6.4). */}
+          <a
+            href="#main-content"
+            className="sr-only focus:not-sr-only focus:absolute focus:left-2 focus:top-2 focus:z-50 focus:rounded-md focus:border focus:border-input focus:bg-card focus:px-3 focus:py-2 focus:font-legend focus:text-sm focus:font-semibold focus:uppercase focus:tracking-[0.09em] focus:shadow-md"
+          >
+            Skip to content
+          </a>
+          {walletSide && !chooserSide ? (
+            <AppHeader />
+          ) : (
+            <ChooserHeader showSettingsKey={route.screen !== 'settings'} />
+          )}
+        </>
+      }
+    >
+      {/* tabIndex={-1} so the skip link moves FOCUS here, not just the
+          sequential-navigation start point — Safari needs the explicit
+          target. It stays out of the tab order. Nothing suppresses the ring on
+          this landing target: §6.3 admits no carve-out. */}
+      <main id="main-content" tabIndex={-1} className="px-4 pb-6 pt-3">
+        {route.screen === 'settings' ? (
+          <SettingsScreen />
+        ) : route.screen === 'add-wallet' ? (
+          <AddWalletScreen onClose={leaveScreen} />
+        ) : chooserSide ? (
+          <Chooser />
+        ) : route.screen === 'configure' && activeWallet ? (
+          <ConfigureScreen key={activeWallet.id} wallet={activeWallet} />
+        ) : (
+          <Main />
+        )}
+      </main>
+    </ChassisShell>
+  )
+}

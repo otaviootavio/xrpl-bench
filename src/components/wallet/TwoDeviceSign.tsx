@@ -6,7 +6,8 @@ import { Label } from '@/components/ui/label'
 import { QrCode } from '@/components/wallet/QrCode'
 import { TaskScreen } from '@/components/wallet/TaskScreen'
 import { useLeaveBlocker } from '@/hooks/useRoute'
-import { navigate, walletScreenPath } from '@/lib/route'
+import { launchFromConfigure } from '@/lib/configure-launch'
+import { walletScreenPath } from '@/lib/route'
 import { QrScanner } from '@/components/wallet/QrScanner'
 import { useAccountState } from '@/hooks/useAccountState'
 import { usePrompts } from '@/hooks/usePrompts'
@@ -36,11 +37,18 @@ const KINDS: { kind: TwoDeviceKind; label: string }[] = [
   { kind: 'master-key', label: 'Master key' },
 ]
 
-/** The Settings row's entry to the two-device screen. */
-export function TwoDeviceSign({ wallet }: { wallet: WalletMeta }) {
+/** The entry to the two-device screen, mounted by the Configure screen, which passes `configureKey`:
+ * the screen opens through `launchFromConfigure` (label `Back to Configure`, focus returns to this key). */
+export function TwoDeviceSign({ wallet, configureKey }: { wallet: WalletMeta; configureKey: string }) {
+  const path = walletScreenPath('two-device', wallet.id)
   return (
     <div className="mt-1 text-xs text-muted-foreground" data-testid="two-device-sign">
-      <Button variant="outline" size="sm" onClick={() => navigate(walletScreenPath('two-device', wallet.id))}>
+      <Button
+        variant="outline"
+        size="sm"
+        data-configure-key={configureKey}
+        onClick={() => launchFromConfigure(path, configureKey)}
+      >
         Sign with two devices
       </Button>
     </div>
@@ -57,7 +65,7 @@ const ROLE_BUTTON = 'h-auto min-h-9 w-full whitespace-normal py-2 text-center'
  * `lib/two-device.ts`, and nothing here outlives the screen. Mount only for a
  * Wallet whose lock is open (AD-26).
  */
-export function TwoDeviceScreen({ wallet, onClose }: { wallet: WalletMeta; onClose: () => void }) {
+export function TwoDeviceScreen({ wallet, onClose, backLabel }: { wallet: WalletMeta; onClose: () => void; backLabel?: string }) {
   const [role, setRole] = useState<Role | null>(null)
   // True while a build, a Signing Check or a submission is running: leaving then would hide the outcome.
   const [busy, setBusy] = useState(false)
@@ -74,6 +82,7 @@ export function TwoDeviceScreen({ wallet, onClose }: { wallet: WalletMeta; onClo
         </>
       }
       onBack={onClose}
+      backLabel={backLabel}
       locked={busy}
     >
       {role === null && (

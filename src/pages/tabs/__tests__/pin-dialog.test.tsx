@@ -7,7 +7,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 
 /**
  * Story 5: a Wallet sealed under the App PIN can sign and reveal. Every screen
- * that signs (Send, Trust Lines) or reveals a Seed (Settings) hands the keystore
+ * that signs (Send, Trust Lines) or reveals a Seed (Configure) hands the keystore
  * the PIN dialog's prompts, so the dialog opens, states tries remaining, and a
  * dismissed one resolves `null` (cancelled, not counted).
  */
@@ -51,7 +51,7 @@ vi.mock('@/hooks/useAppUpdate', () => ({
 }))
 vi.mock('@/lib/build-info', () => ({ BUILD: { version: '0.0.0', commitSha: 'x', builtAt: '' }, shortSha: 'x', sourceUrl: '#', formatBuiltAt: () => '' }))
 
-import { SettingsTab } from '../SettingsTab'
+import { ConfigureScreen } from '@/components/wallet/ConfigureScreen'
 import { TrustLinesTab } from '../TrustLinesTab'
 import { PinPromptProvider } from '@/components/wallet/PinPromptDialog'
 import { TooltipProvider } from '@/components/ui/tooltip'
@@ -79,8 +79,8 @@ afterEach(cleanup)
 
 describe('reveal behind a PIN Signing Check', () => {
   async function reveal() {
-    renderWithPrompts(<SettingsTab />)
-    fireEvent.click(screen.getByRole('button', { name: /^Reveal seed of / }))
+    renderWithPrompts(<ConfigureScreen wallet={W as never} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Reveal seed' }))
     fireEvent.click(await screen.findByRole('button', { name: 'Show my seed' }))
   }
 
@@ -137,7 +137,7 @@ describe('no screen that signs or reveals uses the dismissing prompts', () => {
   it.each([
     ['SendTab.tsx', 'useYieldingPrompts()'],
     ['TrustLinesTab.tsx', 'useYieldingPrompts()'],
-    ['SettingsTab.tsx', 'usePrompts()'],
+    ['../../components/wallet/RevealSeedControl.tsx', 'usePrompts()'],
   ])('%s asks the PIN dialog', (file, hook) => {
     const source = readFileSync(join(__dirname, '..', file), 'utf8')
     expect(source).toContain(hook)

@@ -1,0 +1,110 @@
+- id: "1"
+  title: "Gate: error, empty, ready"
+  description: >-
+    CAP-2. Gate resolves three outcomes; a failed vault or hydration read shows the error with Retry and mounts no Onboarding or setter (AD-37). Test fails if the rule is removed.
+  spec_checkpoint: true
+  invoke_dev_with: >-
+    Read CLAUDE.md, DESIGN.md, docs/agents/INDEX.md and docs/agents/verifying-your-work.md first. Fetch origin/dev before starting. Run the four gates: bun run lint, bun run build, bun run test, bun run check:contrast. Where UI changes, do a browser pass at 320, 390 and desktop widths in both themes. Stage by explicit path only.
+- id: "2"
+  title: "Route module: chooser route and unwind"
+  description: >-
+    CAP-1, CAP-4. Route type, isWalletScreen, rewriteBootLocation, history depth state, leaveToChooser; home retired (AD-32, AD-33). Pure, unit-tested.
+  invoke_dev_with: >-
+    Read CLAUDE.md, DESIGN.md, docs/agents/INDEX.md and docs/agents/verifying-your-work.md first. Fetch origin/dev before starting. Run the four gates: bun run lint, bun run build, bun run test, bun run check:contrast. Where UI changes, do a browser pass at 320, 390 and desktop widths in both themes. Stage by explicit path only.
+- id: "3"
+  title: "App shell and activity scoping"
+  description: >-
+    CAP-13. AppShell mounts useAutoLock and useClearCacheOnLock above the route switch; enteredWalletId, touchLock(entered), enterWallet; notices scoped to the entered wallet (AD-31, AD-34, AD-35). Tests for AD-31 and AD-35.
+  spec_checkpoint: true
+  invoke_dev_with: >-
+    Read CLAUDE.md, DESIGN.md, docs/agents/INDEX.md and docs/agents/verifying-your-work.md first. Fetch origin/dev before starting. Run the four gates: bun run lint, bun run build, bun run test, bun run check:contrast. Where UI changes, do a browser pass at 320, 390 and desktop widths in both themes. Stage by explicit path only.
+- id: "4"
+  title: "Seed grouping selector"
+  description: >-
+    CAP-5. Pure groupWalletsBySeed with a discriminated union giving locked cards a name only, ordered by createdAt (AD-43). Unit tests only.
+  invoke_dev_with: >-
+    Read CLAUDE.md, DESIGN.md, docs/agents/INDEX.md and docs/agents/verifying-your-work.md first. Fetch origin/dev before starting. Run the four gates: bun run lint, bun run build, bun run test, bun run check:contrast. Where UI changes, do a browser pass at 320, 390 and desktop widths in both themes. Stage by explicit path only.
+- id: "5"
+  title: "Chooser screen and Open"
+  description: >-
+    CAP-1, CAP-3, CAP-5. Read-only cards and network rows, Open via enterWallet, multi-view return to the chooser after unlock, zero-read test (AD-36). Chooser becomes the landing screen.
+  invoke_dev_with: >-
+    Read CLAUDE.md, DESIGN.md, docs/agents/INDEX.md and docs/agents/verifying-your-work.md first. Fetch origin/dev before starting. Run the four gates: bun run lint, bun run build, bun run test, bun run check:contrast. Where UI changes, do a browser pass at 320, 390 and desktop widths in both themes. Stage by explicit path only. Story 5 and story 6 merge to dev together: a phone PWA has no Back, so the chooser must not ship without the Wallets key.
+- id: "6"
+  title: "Wallet header: Wallets key, picker removed"
+  description: >-
+    CAP-4, CAP-12. Header split, Wallets key via leaveToChooser with blocked state, picker Select removed, leaveWallet teardown, Lock key via tearDownLock then leave; update docs/decisions.md 6.12 (AD-33, AD-38, AD-45).
+  done_checkpoint: true
+  invoke_dev_with: >-
+    Read CLAUDE.md, DESIGN.md, docs/agents/INDEX.md and docs/agents/verifying-your-work.md first. Fetch origin/dev before starting. Run the four gates: bun run lint, bun run build, bun run test, bun run check:contrast. Where UI changes, do a browser pass at 320, 390 and desktop widths in both themes. Stage by explicit path only. Story 5 and story 6 merge to dev together. Done checkpoint: real-browser check of chooser, Open, leave and Lock.
+- id: "7"
+  title: "Chooser Settings key, /settings, update marker"
+  description: >-
+    CAP-11, CAP-12. Chooser header Settings key, /settings rendering the existing Settings content unchanged for now, shared update-marker predicate, Remove all reachable with no wallet open (AD-45, AD-46).
+  invoke_dev_with: >-
+    Read CLAUDE.md, DESIGN.md, docs/agents/INDEX.md and docs/agents/verifying-your-work.md first. Fetch origin/dev before starting. Run the four gates: bun run lint, bun run build, bun run test, bun run check:contrast. Where UI changes, do a browser pass at 320, 390 and desktop widths in both themes. Stage by explicit path only.
+- id: "8"
+  title: "Lock key on open cards"
+  description: >-
+    CAP-14. Card Lock via tearDownLock, polite live region, shared-lock note, the No Open Check line (AD-45, AD-38).
+  invoke_dev_with: >-
+    Read CLAUDE.md, DESIGN.md, docs/agents/INDEX.md and docs/agents/verifying-your-work.md first. Fetch origin/dev before starting. Run the four gates: bun run lint, bun run build, bun run test, bun run check:contrast. Where UI changes, do a browser pass at 320, 390 and desktop widths in both themes. Stage by explicit path only.
+- id: "9"
+  title: "Rename"
+  description: >-
+    CAP-6. lib/wallet-name.ts, keystore.renameWallet (no rev bump, no lock), dialog with all strings and focus rules (AD-41, AD-42).
+  spec_checkpoint: true
+  invoke_dev_with: >-
+    Read CLAUDE.md, DESIGN.md, docs/agents/INDEX.md and docs/agents/verifying-your-work.md first. Fetch origin/dev before starting. Run the four gates: bun run lint, bun run build, bun run test, bun run check:contrast. Where UI changes, do a browser pass at 320, 390 and desktop widths in both themes. Stage by explicit path only.
+- id: "10"
+  title: "Remove from the chooser"
+  description: >-
+    CAP-7. removeWalletData teardown scope in finally, call-time lock re-check, three dialog bodies, active re-pick, last wallet to Onboarding (AD-46). Last wallet also deletes the App PIN and failure count through discardAppPin, atomic with the emptiness check, and first-run Onboarding offers Remove all while a PIN or count remains; Settings' own Remove stays until story 17.
+  spec_checkpoint: true
+  invoke_dev_with: >-
+    Read CLAUDE.md, DESIGN.md, docs/agents/INDEX.md and docs/agents/verifying-your-work.md first. Fetch origin/dev before starting. Run the four gates: bun run lint, bun run build, bun run test, bun run check:contrast. Where UI changes, do a browser pass at 320, 390 and desktop widths in both themes. Stage by explicit path only. Security-bearing: verify the cleared fields against VaultMeta in db.ts and the real create and import paths before choosing a transaction or a single-flight guard. Vault-meta writes go through the keystore, never the teardown owner.
+- id: "11"
+  title: "Add wallet at the app shell, Generate"
+  description: >-
+    CAP-8. Per-wallet questions extracted to one component, /wallets/new at the app shell, creation never selects or enters, new card focused with Wallet added., works with every lock closed (AD-40).
+  invoke_dev_with: >-
+    Read CLAUDE.md, DESIGN.md, docs/agents/INDEX.md and docs/agents/verifying-your-work.md first. Fetch origin/dev before starting. Run the four gates: bun run lint, bun run build, bun run test, bun run check:contrast. Where UI changes, do a browser pass at 320, 390 and desktop widths in both themes. Stage by explicit path only.
+- id: "12"
+  title: "Keystore importStoredWallet and policy"
+  description: >-
+    CAP-8. New lock per import, Open Check none refused, Mainnet floor and written-Seed confirm, duplicate-address refusal before any prompt or read, lock rollback on failure, test that no chooser-side code calls importAndStoreWallet (AD-39, AD-28). No UI.
+  spec_checkpoint: true
+  invoke_dev_with: >-
+    Read CLAUDE.md, DESIGN.md, docs/agents/INDEX.md and docs/agents/verifying-your-work.md first. Fetch origin/dev before starting. Run the four gates: bun run lint, bun run build, bun run test, bun run check:contrast. Where UI changes, do a browser pass at 320, 390 and desktop widths in both themes. Stage by explicit path only. Security-bearing: the Seed is a parameter only, held in a ref and cleared in finally.
+- id: "13"
+  title: "Add wallet, Import UI"
+  description: >-
+    CAP-8. Import form wired to importStoredWallet using the shared questions component and written-Seed confirm (AD-39, AD-40).
+  done_checkpoint: true
+  invoke_dev_with: >-
+    Read CLAUDE.md, DESIGN.md, docs/agents/INDEX.md and docs/agents/verifying-your-work.md first. Fetch origin/dev before starting. Run the four gates: bun run lint, bun run build, bun run test, bun run check:contrast. Where UI changes, do a browser pass at 320, 390 and desktop widths in both themes. Stage by explicit path only. Done checkpoint: Import is the highest-risk path; verify a Mainnet-style flow in a real browser.
+- id: "14"
+  title: "Configure screen: shell, Checks and Seed plates"
+  description: >-
+    CAP-9. /wallets/:id/configure, header and card Configure keys, task-screen back labels and Back to Configure, Reveal seed moves here (AD-32, AD-44).
+  invoke_dev_with: >-
+    Read CLAUDE.md, DESIGN.md, docs/agents/INDEX.md and docs/agents/verifying-your-work.md first. Fetch origin/dev before starting. Run the four gates: bun run lint, bun run build, bun run test, bun run check:contrast. Where UI changes, do a browser pass at 320, 390 and desktop widths in both themes. Stage by explicit path only.
+- id: "15"
+  title: "Configure: remaining plates"
+  description: >-
+    CAP-9. Operating another account, Other networks with Use on {Network} and the Mainnet confirm, Node, Two-device signing.
+  invoke_dev_with: >-
+    Read CLAUDE.md, DESIGN.md, docs/agents/INDEX.md and docs/agents/verifying-your-work.md first. Fetch origin/dev before starting. Run the four gates: bun run lint, bun run build, bun run test, bun run check:contrast. Where UI changes, do a browser pass at 320, 390 and desktop widths in both themes. Stage by explicit path only.
+- id: "16"
+  title: "Auto-lock on the Checks plate"
+  description: >-
+    CAP-10. Minutes via setLockAutoLock, shared handler with Edit checks, shared-lock count, Mainnet floor test (AD-44, AD-28).
+  invoke_dev_with: >-
+    Read CLAUDE.md, DESIGN.md, docs/agents/INDEX.md and docs/agents/verifying-your-work.md first. Fetch origin/dev before starting. Run the four gates: bun run lint, bun run build, bun run test, bun run check:contrast. Where UI changes, do a browser pass at 320, 390 and desktop widths in both themes. Stage by explicit path only.
+- id: "17"
+  title: "Settings reduced to app-level"
+  description: >-
+    CAP-11. Remove per-wallet items, Lock now and auto-lock from Settings; keep Address book, Version, Remove all. Last: the only story that deletes a working entry point.
+  done_checkpoint: true
+  invoke_dev_with: >-
+    Read CLAUDE.md, DESIGN.md, docs/agents/INDEX.md and docs/agents/verifying-your-work.md first. Fetch origin/dev before starting. Run the four gates: bun run lint, bun run build, bun run test, bun run check:contrast. Where UI changes, do a browser pass at 320, 390 and desktop widths in both themes. Stage by explicit path only. Done checkpoint: all four gates, full visual and a11y pass, UX Key Flows 1 to 6.

@@ -1,15 +1,17 @@
 import { useEffect } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
-import { AddWalletScreen } from '@/components/wallet/AddWalletScreen'
 import { ControlWalletScreen } from '@/components/wallet/ControlWalletScreen'
 import { EditChecksScreen, type EditedChecks } from '@/components/wallet/EditChecksScreen'
 import { TwoDeviceScreen } from '@/components/wallet/TwoDeviceSign'
-import { leaveScreen, resetToHome, type Route } from '@/lib/route'
+import { leaveScreen, resetToHome, type TaskRoute } from '@/lib/route'
 import { listWallets } from '@/lib/crypto/keystore'
 import { startLockSession } from '@/lib/crypto/lock'
+import { useLockMinutesChanged } from '@/hooks/useLockMinutesChanged'
 import { toast } from '@/lib/notify'
 import { queryKeys } from '@/lib/xrpl/query-keys'
 import { useActiveNetwork, useAppStore } from '@/store/app-store'
+
+const BACK_LABEL = 'Back to Configure'
 
 /**
  * The routed task screens (mobile dialogs S2). Mounted by `Main` only while the
@@ -18,7 +20,7 @@ import { useActiveNetwork, useAppStore } from '@/store/app-store'
  * location is reset to the shell, so nothing account-scoped renders for a lock
  * that is not open.
  */
-export function WalletScreens({ route }: { route: Exclude<Route, { screen: 'home' }> }) {
+export function WalletScreens({ route }: { route: TaskRoute }) {
   const activeNetwork = useActiveNetwork()
   const queryClient = useQueryClient()
   const wallets = useAppStore((s) => s.wallets)
@@ -26,10 +28,13 @@ export function WalletScreens({ route }: { route: Exclude<Route, { screen: 'home
   const openLocks = useAppStore((s) => s.openLocks)
   const openLock = useAppStore((s) => s.openLock)
   const closeLock = useAppStore((s) => s.closeLock)
-  const setLockMinutes = useAppStore((s) => s.setLockMinutes)
+  const lockMinutesChanged = useLockMinutesChanged()
 
-  const target = route.screen === 'add-wallet' ? null : (wallets.find((w) => w.id === route.walletId) ?? null)
-  const reachable = route.screen === 'add-wallet' || (target !== null && target.lockId in openLocks)
+  // A task screen is opened only from Configure and returns there; the label never carries a wallet name.
+  const backLabel = BACK_LABEL
+
+  const target = wallets.find((w) => w.id === route.walletId) ?? null
+  const reachable = target !== null && target.lockId in openLocks
   useEffect(() => {
     if (!reachable) resetToHome()
   }, [reachable])
@@ -50,11 +55,15 @@ export function WalletScreens({ route }: { route: Exclude<Route, { screen: 'home
       if (edited.openKey) {
         await startLockSession(meta.lockId, edited.openKey, edited.autoLockMinutes)
         openLock(meta.lockId, edited.openKey, edited.autoLockMinutes)
+        await queryClient.invalidateQueries({ queryKey: queryKeys.lockInfo(meta.lockId) })
       } else if (edited.changed) {
-        setLockMinutes(meta.lockId, edited.autoLockMinutes)
+        // Same-lock edit: the minutes part is the shared handler the Configure control also uses.
+        await lockMinutesChanged(meta.lockId, edited.autoLockMinutes)
+      } else {
+        // Nothing changed: the read the screens show is still refreshed, as it always was.
+        await queryClient.invalidateQueries({ queryKey: queryKeys.lockInfo(meta.lockId) })
       }
       await refreshWallets()
-      await queryClient.invalidateQueries({ queryKey: queryKeys.lockInfo(meta.lockId) })
       if (previousLockId !== meta.lockId) queryClient.removeQueries({ queryKey: queryKeys.lockInfo(previousLockId) })
       toast.success(edited.changed ? 'Checks updated.' : 'Nothing to change.')
     } finally {
@@ -63,19 +72,19 @@ export function WalletScreens({ route }: { route: Exclude<Route, { screen: 'home
     }
   }
 
-  if (route.screen === 'add-wallet') return <AddWalletScreen onClose={leaveScreen} />
   if (!reachable || !target) return null
   switch (route.screen) {
     case 'edit-checks':
-      return <EditChecksScreen wallet={target} onClose={leaveScreen} onEdited={handleEdited} />
+      return <EditChecksScreen wallet={target} onClose={leaveScreen} onEdited={handleEdited} backLabel={backLabel} />
     case 'two-device':
-      return <TwoDeviceScreen wallet={target} onClose={leaveScreen} />
+      return <TwoDeviceScreen wallet={target} onClose={leaveScreen} backLabel={backLabel} />
     case 'control':
       return (
         <ControlWalletScreen
           controller={target}
           wallets={wallets}
           onClose={leaveScreen}
+          backLabel={backLabel}
           onControlled={async () => {
             await refreshWallets()
             toast.success('The other wallet now operates this account.')

@@ -1,22 +1,19 @@
 import { useState } from 'react'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { AppHeader } from '@/components/AppHeader'
-import { ChassisShell } from '@/components/ChassisShell'
 import { BalancesTab } from './tabs/BalancesTab'
 import { SendTab } from './tabs/SendTab'
 import { ReceiveTab } from './tabs/ReceiveTab'
 import { HistoryTab } from './tabs/HistoryTab'
 import { TrustLinesTab } from './tabs/TrustLinesTab'
-import { SettingsTab } from './tabs/SettingsTab'
+import { AppSettings } from './AppSettings'
 import { Unlock } from './Unlock'
 import { WalletScreens } from './WalletScreens'
 import { useRoute } from '@/hooks/useRoute'
+import { isTaskRoute } from '@/lib/route'
 import { useActiveWallet, useActiveNetwork, useActiveNode, useWalletIsOpen } from '@/store/app-store'
 import { useIncomingPaymentNotifications } from '@/hooks/useIncomingPaymentNotifications'
 import { useAccountLiveUpdates } from '@/hooks/useAccountLiveUpdates'
-import { useAutoLock } from '@/hooks/useAutoLock'
-import { useClearCacheOnLock } from '@/hooks/useClearCacheOnLock'
-import { useAppUpdate } from '@/hooks/useAppUpdate'
+import { useUpdateMarker } from '@/hooks/useUpdateMarker'
 import { Lamp } from '@/components/ui/lamp'
 
 /**
@@ -38,7 +35,7 @@ const PANELS = [
   { value: 'receive', label: 'Receive', heading: 'Receive a payment', Panel: ReceiveTab },
   { value: 'history', label: 'History', heading: 'Transaction history', Panel: HistoryTab },
   { value: 'trustlines', label: 'Tokens', heading: 'Tokens and trust lines', Panel: TrustLinesTab },
-  { value: 'settings', label: 'Settings', heading: 'Settings', Panel: SettingsTab },
+  { value: 'settings', label: 'Settings', heading: 'Settings', Panel: AppSettings },
 ] as const
 
 /** The six panels and every ledger hook behind them. Mounted ONLY while the
@@ -55,7 +52,7 @@ function OpenWallet({ showUpdateMarker }: { showUpdateMarker: boolean }) {
   // screen returns to; the live hooks above stay mounted behind the screen.
   const [tab, setTab] = useState<string>('balances')
   // A task screen takes the whole content area (mobile dialogs S2).
-  if (route.screen !== 'home') return <WalletScreens route={route} />
+  if (isTaskRoute(route)) return <WalletScreens route={route} />
   return (
     <Tabs value={tab} onValueChange={setTab}>
       <TabsList>
@@ -79,45 +76,17 @@ function OpenWallet({ showUpdateMarker }: { showUpdateMarker: boolean }) {
   )
 }
 
+/** The wallet content: the Unlock view or the open wallet. The lifecycle hooks,
+ * chassis, header, skip link and main region live in `AppShell` (AD-31). */
 export function Main() {
   const wallet = useActiveWallet()
   const open = useWalletIsOpen(wallet?.id)
-  useAutoLock()
-  useClearCacheOnLock()
   // US-2's "persistent, quiet marker": a lamp on the Settings tab, so an
   // available update is discoverable without opening Settings first — but
   // never a modal, never a redirect. Declined releases (US-4) don't relight
   // it, only a newer one does.
-  const { updateReady, declined } = useAppUpdate()
-  const showUpdateMarker = updateReady && !declined
+  const showUpdateMarker = useUpdateMarker()
 
-  return (
-    // The chassis shell (docs/decisions.md §9.1, N1) reserves the annunciator
-    // band at the base for every screen, this one included, so blank lower
-    // area reads as panel face and a notice arriving never covers a control.
-    <ChassisShell
-      header={
-        <>
-          {/* First focusable element on the page: the header's network and
-              wallet selects precede the content on every tab
-              (docs/decisions.md §6.4). */}
-          <a
-            href="#main-content"
-            className="sr-only focus:not-sr-only focus:absolute focus:left-2 focus:top-2 focus:z-50 focus:rounded-md focus:border focus:border-input focus:bg-card focus:px-3 focus:py-2 focus:font-legend focus:text-sm focus:font-semibold focus:uppercase focus:tracking-[0.09em] focus:shadow-md"
-          >
-            Skip to content
-          </a>
-          <AppHeader />
-        </>
-      }
-    >
-      {/* tabIndex={-1} so the skip link moves FOCUS here, not just the
-          sequential-navigation start point — Safari needs the explicit
-          target. It stays out of the tab order. Nothing suppresses the ring on
-          this landing target: §6.3 admits no carve-out. */}
-      <main id="main-content" tabIndex={-1} className="px-4 pb-6 pt-3">
-        {wallet && (open ? <OpenWallet showUpdateMarker={showUpdateMarker} /> : <Unlock key={wallet.id} wallet={wallet} />)}
-      </main>
-    </ChassisShell>
-  )
+  if (!wallet) return null
+  return open ? <OpenWallet showUpdateMarker={showUpdateMarker} /> : <Unlock key={wallet.id} wallet={wallet} />
 }

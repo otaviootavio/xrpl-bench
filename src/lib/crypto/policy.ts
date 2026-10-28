@@ -88,6 +88,9 @@ export interface WalletRequest {
    * anything is written (story 7). Without it, or `writtenSeedConfirmed`, a
    * Mainnet passkey-only Wallet is refused. Testnet and Devnet never ask. */
   canConfirmWrittenSeed?: boolean
+  /** The Seed comes from outside (an import): it may already hold funds this
+   * device cannot see, so it is held to at least Mainnet strength on every network. */
+  imported?: boolean
 }
 
 /** A Passkey-Derived Seed is bound to the domain it was made under. The preview
@@ -112,6 +115,8 @@ function derivedBlock(network: NetworkId, passkey: PasskeyCapability, origin: st
   if (network === 'mainnet' && isTemporaryOrigin(origin)) return { ok: false, reason: MAINNET_DERIVED_ORIGIN_REASON }
   return { ok: true }
 }
+export const IMPORT_NEEDS_OPEN_CHECK_REASON =
+  'An imported key may already hold funds this device cannot see, so it needs an Open Check on every network: choose the App PIN or a passkey.'
 export const NO_PRF_REASON = 'This device or browser cannot use a passkey to protect a wallet.'
 export const PRF_CHECKED_LATER_NOTE = 'Checked when the passkey is created.'
 export const WRITTEN_SEED_REASON =
@@ -152,6 +157,7 @@ export function checkWalletRequest(req: WalletRequest): PolicyVerdict {
   }
   const signing = checkSigningCheck(req.seedMethod, req.signing)
   if (!signing.ok) return signing
+  if (req.imported && req.openCheck === 'none') return { ok: false, reason: IMPORT_NEEDS_OPEN_CHECK_REASON }
   const lock = checkLockRequest(req)
   if (!lock.ok) return lock
   if (usesPasskey(req.openCheck, req.signing) && req.passkey === 'no') return { ok: false, reason: NO_PRF_REASON }
@@ -186,6 +192,8 @@ export interface OptionsContext {
   /** The networks of every Wallet on the lock the auto-lock answers apply to, when
    * that is more than `network` (a lock shared by legacy Wallets). */
   lockNetworks?: readonly NetworkId[]
+  /** The Seed comes from outside (an import): Open Check `none` is unavailable on every network. */
+  imported?: boolean
 }
 
 export interface DescribedOptions {
@@ -230,7 +238,9 @@ export function describeOptions(ctx: OptionsContext): DescribedOptions {
   const openCheck: Record<NewOpenCheck, OptionState> = {
     pin: { available: true },
     passkey: passkeyState(ctx.passkey),
-    none: fromVerdict(checkLockRequest({ network: ctx.network, openCheck: 'none', autoLockMinutes: MAINNET_MIN_AUTO_LOCK_MINUTES })),
+    none: ctx.imported
+      ? { available: false, reason: IMPORT_NEEDS_OPEN_CHECK_REASON }
+      : fromVerdict(checkLockRequest({ network: ctx.network, openCheck: 'none', autoLockMinutes: MAINNET_MIN_AUTO_LOCK_MINUTES })),
   }
   const signingFor = (kind: SigningKind): OptionState => {
     const allowed = checkSigningCheck(ctx.seedMethod, kind)

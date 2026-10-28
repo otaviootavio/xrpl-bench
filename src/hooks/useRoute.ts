@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useSyncExternalStore } from 'react'
-import { blockLeaving, currentPathname, parseRoute, subscribeRoute, type Route } from '@/lib/route'
+import { blockLeaving, currentPathname, isLeaveBlocked, parseRoute, subscribeLeaveBlockers, subscribeRoute, type Route } from '@/lib/route'
 
 /** The current screen, from the location. */
 export function useRoute(): Route {
@@ -14,4 +14,9 @@ export function useLeaveBlocker(active: boolean): void {
     if (!active) return undefined
     return blockLeaving()
   }, [active])
+}
+
+/** Whether a screen is currently blocking leaving; re-renders when that changes. */
+export function useLeaveBlocked(): boolean {
+  return useSyncExternalStore(subscribeLeaveBlockers, isLeaveBlocked, () => false)
 }

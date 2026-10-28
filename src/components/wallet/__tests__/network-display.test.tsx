@@ -22,6 +22,14 @@ afterEach(() => {
   vi.clearAllMocks()
 })
 
+function renderHeader() {
+  return render(
+    <QueryClientProvider client={new QueryClient()}>
+      <AppHeader />
+    </QueryClientProvider>,
+  )
+}
+
 const OPEN = { legacy: { key: {} as CryptoKey, autoLockMinutes: 5 } }
 const base = { seedId: 's', lockId: 'legacy', label: 'W', address: 'rA', createdAt: 1, algorithm: 'ed25519', openCheck: 'pin', signingCheck: 'standard' }
 const W = (id: string, network: string) => ({ ...base, id, network }) as never
@@ -30,7 +38,7 @@ const WM = (id: string, network: string) => ({ ...base, id, network })
 describe('the header names the active Wallet\'s network in words', () => {
   it('Mainnet says "Real funds" beside the name; Testnet and Devnet do not', () => {
     useAppStore.setState({ wallets: [W('m', 'mainnet'), W('t', 'testnet'), W('d', 'devnet')], activeWalletId: 'm', openLocks: OPEN })
-    render(<AppHeader />)
+    renderHeader()
     expect(screen.getByText('Mainnet')).toBeTruthy()
     expect(screen.getByText('Real funds')).toBeTruthy()
 
@@ -50,34 +58,31 @@ describe('the header names the active Wallet\'s network in words', () => {
 
   it('renders no network at all when there is no active Wallet', () => {
     useAppStore.setState({ wallets: [W('m', 'mainnet')], activeWalletId: null, network: 'mainnet' })
-    render(<AppHeader />)
+    renderHeader()
     expect(screen.queryByText('Mainnet')).toBeNull()
     expect(screen.queryByText('Real funds')).toBeNull()
   })
 
-  it('the picker labels each Wallet with its network, and there is no network switch', () => {
+  it('there is no wallet picker and no network switch, even with several wallets (AD-45)', () => {
     useAppStore.setState({ wallets: [W('m', 'mainnet'), W('t', 'testnet')], activeWalletId: 'm', openLocks: OPEN })
-    render(<AppHeader />)
+    renderHeader()
     expect(screen.queryByRole('radiogroup', { name: 'Network' })).toBeNull()
-    expect(screen.getByRole('combobox', { name: 'Active wallet' }).textContent).toContain('Mainnet')
+    expect(screen.queryByRole('combobox')).toBeNull()
+    expect(screen.getByText('Mainnet')).toBeTruthy()
   })
 })
 
 describe('a locked Wallet is its name and nothing else (AD-26)', () => {
-  it('the picker names every Wallet but gives a network only for an open one, and the plate is withheld', () => {
+  it('a locked Wallet\'s header is the Wallets key alone: no plate, no lock key', () => {
     useAppStore.setState({
       wallets: [{ ...WM('m', 'mainnet'), lockId: 'X', label: 'Open one' }, { ...WM('t', 'testnet'), lockId: 'Y', label: 'Locked one' }] as never,
       activeWalletId: 't',
       openLocks: { X: OPEN.legacy },
     })
-    render(<AppHeader />)
-    // The active Wallet is locked: no network plate, no lock button, and its picker entry is a name.
+    renderHeader()
     expect(screen.queryByText('Testnet')).toBeNull()
     expect(screen.queryByRole('button', { name: 'Lock wallet' })).toBeNull()
-    expect(screen.getByRole('combobox', { name: 'Active wallet' }).textContent).toBe('Locked one')
-    fireEvent.click(screen.getByRole('combobox', { name: 'Active wallet' }))
-    expect(screen.getByRole('option', { name: 'Open one · Mainnet' })).toBeTruthy()
-    expect(screen.getByRole('option', { name: 'Locked one' })).toBeTruthy()
+    expect(screen.getAllByRole('button').map((b) => b.textContent)).toEqual(['Wallets'])
   })
 
   it('a lock with no Open Check has no lock button: it would reopen itself at once', () => {
@@ -86,7 +91,7 @@ describe('a locked Wallet is its name and nothing else (AD-26)', () => {
       activeWalletId: 't',
       openLocks: { X: OPEN.legacy },
     })
-    render(<AppHeader />)
+    renderHeader()
     expect(screen.getByText('Testnet')).toBeTruthy()
     expect(screen.queryByRole('button', { name: 'Lock wallet' })).toBeNull()
   })
@@ -97,7 +102,7 @@ describe('a locked Wallet is its name and nothing else (AD-26)', () => {
       activeWalletId: 'm',
       openLocks: { X: OPEN.legacy, Y: OPEN.legacy },
     })
-    render(<AppHeader />)
+    renderHeader()
     fireEvent.click(screen.getByRole('button', { name: 'Lock wallet' }))
     expect(Object.keys(useAppStore.getState().openLocks)).toEqual(['Y'])
   })

@@ -493,12 +493,60 @@ export async function putLockRecord(record: LockRecord): Promise<void> {
   await db.put('vault', record)
 }
 
+/**
+ * AD-46: the ONE single-flight guard over every vault write that can create or
+ * discard the App PIN or a lock record. `createLock`/`withAppPin` write the App PIN
+ * in a transaction of its own BEFORE the lock record and the Wallet, so no one
+ * transaction can see a create in flight; a last-Wallet removal that checked
+ * "nothing left" in that window would delete the fresh PIN and the create would
+ * then wrap a lock under a PIN that no longer exists. Serialising the writers is
+ * what closes that window.
+ *
+ * Web Locks (`xrpl-vault-write`, cross-tab) when the browser has them, otherwise a
+ * module-level promise chain (one tab). It is NOT re-entrant: a function inside
+ * the guard must never call another guarded one, or it waits on itself.
+ *
+ * Wrapped, in `keystore.ts` and `auth.ts` (a test checks every name below):
+ *  - keystore: `createStoredWallet`, `createDerivedWallet`, `importAndStoreWallet`,
+ *    `generateAndStoreWallet`, `importStoredWallet`, `editChecks`, `removeWallet`
+ *  - auth: `setUpVaultAuth` (Onboarding's first-run setup)
+ * Not wrapped, because each reaches a wrapped one: `restorePasskeyWallet`
+ * (`createDerivedWallet`), `setLockAutoLock` (`editChecks`). `importAndStoreWallet`
+ * is Onboarding's until it migrates to `importStoredWallet`.
+ */
+let vaultWriteTail: Promise<unknown> = Promise.resolve()
+export function exclusiveVaultWrite<T>(work: () => Promise<T>): Promise<T> {
+  const locks = typeof navigator === 'undefined' ? undefined : navigator.locks
+  if (locks && typeof locks.request === 'function') return locks.request('xrpl-vault-write', work)
+  const run = vaultWriteTail.then(work, work)
+  // The stored tail swallows a failure, so one rejected write never poisons the next.
+  vaultWriteTail = run.then(
+    () => undefined,
+    () => undefined,
+  )
+  return run
+}
+
 /** Removes one `lock:<id>` record. Never the legacy lock's, whose wrappers
  * live in the vault meta. */
 export async function deleteLockRecord(lockId: string): Promise<void> {
   if (lockId === LEGACY_LOCK_ID) throw new Error('The legacy lock cannot be deleted.')
   const db = await getDb()
   await db.delete('vault', lockKey(lockId))
+}
+
+/** Deletes EVERY `lock:<id>` record, the legacy lock's included, in one transaction.
+ * Only for a vault that holds no Wallet (AD-46): `deleteLockRecord` refuses the
+ * legacy id on purpose, and an emptied vault must hold nothing that reads as a
+ * lock. Call it under `exclusiveVaultWrite`, after the emptiness check. */
+export async function deleteAllLockRecords(): Promise<void> {
+  const db = await getDb()
+  const tx = db.transaction('vault', 'readwrite')
+  const done = tx.done
+  done.catch(() => {})
+  const all = (await tx.store.getAll()) as Array<VaultMeta | LockRecord>
+  for (const r of all) if (r.key.startsWith('lock:')) await tx.store.delete(r.key)
+  await done
 }
 
 /** Every `lock:<id>` record. */

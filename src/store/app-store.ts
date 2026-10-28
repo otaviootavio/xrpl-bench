@@ -5,6 +5,8 @@ import { canonicalNodeUrl, isNetworkId, type NetworkId } from '@/lib/xrpl/networ
 import type { WalletMeta } from '@/lib/crypto/keystore'
 import { endAllLockSessions, endLockSession } from '@/lib/crypto/lock'
 import { LEGACY_LOCK_ID } from '@/lib/crypto/db'
+import { navigate, walletScreenPath } from '@/lib/route'
+import { resetConfigureFocusReturn } from '@/lib/configure-launch'
 import { migrateAddressBook, upsertAddressBookEntry, type AddressBookEntry } from '@/store/address-book'
 
 interface AppState {
@@ -75,15 +77,40 @@ interface OpenLock {
 // lock expired.
 const expiries = new Map<string, number>()
 
-/** Restarts the expiry of the ACTIVE Wallet's lock only — activity in one
- * Wallet is not activity in another (AD-26). Returns its id, if open. */
-export function touchActiveLock(now = Date.now()): string | null {
-  const { openLocks, wallets, activeWalletId } = useAppStore.getState()
-  const lockId = wallets.find((w) => w.id === activeWalletId)?.lockId
+/** Restarts the expiry of ONE wallet's lock — the wallet the user is inside —
+ * and nothing else: activity in one Wallet is not activity in another (AD-26).
+ * `null` (no wallet entered) extends nothing (AD-35). Returns the lock id, if open. */
+export function touchLock(walletId: string | null, now = Date.now()): string | null {
+  if (walletId === null) return null
+  const { openLocks, wallets } = useAppStore.getState()
+  const lockId = wallets.find((w) => w.id === walletId)?.lockId
   const lock = lockId ? openLocks[lockId] : undefined
   if (!lockId || !lock) return null
   expiries.set(lockId, now + lock.autoLockMinutes * 60_000)
   return lockId
+}
+
+/** The one function that selects a wallet and navigates into it (AD-34). */
+export function enterWallet(walletId: string): void {
+  // An id that is not a Wallet here selects nothing and goes nowhere.
+  if (!useAppStore.getState().wallets.some((w) => w.id === walletId)) return
+  useAppStore.getState().setActiveWalletId(walletId)
+  navigate(walletScreenPath('wallet', walletId))
+}
+
+/**
+ * The one function that selects a wallet and navigates to its Configure screen
+ * (AD-43): the card key hands it the card's entry view, so Configure always acts on
+ * one walletId. Same guard as `enterWallet`: an id that is not a Wallet here goes nowhere.
+ */
+export function configureWallet(walletId: string): void {
+  const { wallets, openLocks } = useAppStore.getState()
+  const wallet = wallets.find((w) => w.id === walletId)
+  // Configure needs an open lock: a closed one would be reset on arrival, leaving a stray history entry.
+  if (!wallet || !(wallet.lockId in openLocks)) return
+  resetConfigureFocusReturn()
+  useAppStore.getState().setActiveWalletId(walletId)
+  navigate(walletScreenPath('configure', walletId))
 }
 
 /** Milliseconds until an open lock expires (0 if past), or null if not open. */

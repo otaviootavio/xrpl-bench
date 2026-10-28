@@ -29,7 +29,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 # - Retrospective appends its action items to action_items; the status view surfaces open ones
 generated: 09-15-2026 21:01
-last_updated: '10-17-2026 18:00'
+last_updated: '10-26-2026 15:00'
 project: xrpl-wallet
 project_key: NOKEY
 tracking_system: file-system
@@ -126,6 +126,32 @@ development_status:
   epic-16: done
   16-1-build-a-transaction-online-and-sign-it-offline-by-qr: done
   epic-16-retrospective: done
+
+  epic-17: done
+  17-1-a-failed-read-of-my-wallets-says-so-and-offers-retry: done
+  17-2-every-launch-lands-on-the-chooser-and-back-behaves: done
+  17-3-only-the-wallet-i-am-in-counts-my-activity-and-locks-expire: done
+  17-4-one-card-per-seed-a-locked-card-typed-to-hold-a-name-only: done
+  17-5-the-chooser-and-opening-a-wallet-from-it: done
+  17-6-the-wallets-key-and-the-picker-is-gone: done
+  17-7-a-settings-key-on-the-chooser-and-the-update-marker: done
+  17-8-lock-a-wallet-from-its-card: done
+  epic-17-retrospective: optional
+
+  epic-18: done
+  18-1-rename-a-wallet: done
+  18-2-remove-a-wallet-from-the-chooser-and-the-last-removal-delete: done
+  18-3-add-a-wallet-by-generate-with-every-lock-closed: done
+  18-4-import-goes-through-the-keystore-under-its-own-lock-and-the: done
+  18-5-add-a-wallet-by-import-from-the-chooser: done
+  epic-18-retrospective: optional
+
+  epic-19: done
+  19-1-a-configure-screen-with-the-checks-and-seed-plates: done
+  19-2-the-remaining-configure-plates: done
+  19-3-auto-lock-on-the-checks-plate: done
+  19-4-settings-holds-only-what-belongs-to-the-app: done
+  epic-19-retrospective: optional
 action_items:
   - id: "epic-5-retro-item-1-make-send-s-token-path-fail-closed-on-a"
     epic: 5

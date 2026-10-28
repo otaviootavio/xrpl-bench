@@ -1,5 +1,5 @@
 /** @vitest-environment jsdom */
-import { cleanup, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 /**
@@ -22,12 +22,13 @@ vi.mock('@/pages/Unlock', () => ({ Unlock: ({ wallet }: { wallet: { label: strin
 vi.mock('@/hooks/useIncomingPaymentNotifications', () => ({ useIncomingPaymentNotifications: (...a: unknown[]) => h.hookArgs('notify', ...a) }))
 vi.mock('@/hooks/useAccountLiveUpdates', () => ({ useAccountLiveUpdates: (...a: unknown[]) => h.hookArgs('live', ...a) }))
 vi.mock('@/hooks/useAppUpdate', () => ({ useAppUpdate: () => ({ updateReady: false, declined: false }) }))
+vi.mock('@/lib/build-info', () => ({ BUILD: { version: '0.0.0', commitSha: 'x', builtAt: '' }, shortSha: 'x', sourceUrl: 'https://example.invalid', formatBuiltAt: () => '' }))
 vi.mock('@/pages/tabs/BalancesTab', () => ({ BalancesTab: () => (h.tabRendered(), <div>tab</div>) }))
 vi.mock('@/pages/tabs/SendTab', () => ({ SendTab: () => (h.tabRendered(), <div>tab</div>) }))
 vi.mock('@/pages/tabs/ReceiveTab', () => ({ ReceiveTab: () => (h.tabRendered(), <div>tab</div>) }))
 vi.mock('@/pages/tabs/HistoryTab', () => ({ HistoryTab: () => (h.tabRendered(), <div>tab</div>) }))
 vi.mock('@/pages/tabs/TrustLinesTab', () => ({ TrustLinesTab: () => (h.tabRendered(), <div>tab</div>) }))
-vi.mock('@/pages/tabs/SettingsTab', () => ({ SettingsTab: () => (h.tabRendered(), <div>tab</div>) }))
+vi.mock('@/pages/AppSettings', () => ({ AppSettings: () => (h.tabRendered(), <div>tab</div>) }))
 vi.mock('@/lib/crypto/lock', () => ({
   endLockSession: async () => {},
   endAllLockSessions: async () => {},
@@ -44,12 +45,14 @@ vi.mock('@/lib/crypto/keystore', () => ({
 }))
 
 import App from '../App'
-import { useAppStore } from '@/store/app-store'
+import { enterWallet, useAppStore } from '@/store/app-store'
 import { useNoticeStore } from '@/store/notice-store'
 import { toast } from '@/lib/notify'
 
 beforeEach(() => {
   h.restored = []
+  // The shell renders on a wallet route; `/` is the chooser (AD-32).
+  window.history.replaceState(null, '', '/wallets/w1')
   useAppStore.setState({ openLocks: {}, wallets: [], activeWalletId: null })
 })
 afterEach(() => {
@@ -58,12 +61,9 @@ afterEach(() => {
 })
 
 describe('a locked app issues no ledger request', () => {
-  it('opens to the shell with every Wallet name, shows the active one locked, and never asks the pool for a client', async () => {
+  it('opens a wallet route, shows the active one locked, and never asks the pool for a client', async () => {
     render(<App />)
     await waitFor(() => expect(screen.getByText('locked:Alpha')).toBeTruthy())
-    // Picker lists every name; a locked Wallet's entry is its name and no network.
-    const picker = screen.getByRole('combobox', { name: 'Active wallet' })
-    expect(picker.textContent).toBe('Alpha')
     expect(h.getXrplClient).not.toHaveBeenCalled()
     // No ledger hook was mounted, so none was handed an address; no tab rendered.
     expect(h.hookArgs).not.toHaveBeenCalled()
@@ -76,8 +76,9 @@ describe('a locked app issues no ledger request', () => {
   it('mounts the ledger hooks only once that Wallet\'s own lock is open — and not for the other', async () => {
     render(<App />)
     await waitFor(() => expect(screen.getByText('locked:Alpha')).toBeTruthy())
-    useAppStore.getState().openLock('Y', {} as CryptoKey, 5) // the OTHER Wallet's lock
-    await waitFor(() => expect(screen.getByRole('combobox', { name: 'Active wallet' }).textContent).toBe('Alpha'))
+    await act(async () => {
+      useAppStore.getState().openLock('Y', {} as CryptoKey, 5) // the OTHER Wallet's lock
+    })
     expect(screen.getByText('locked:Alpha')).toBeTruthy()
     expect(h.hookArgs).not.toHaveBeenCalled()
 
@@ -102,6 +103,7 @@ describe('a locked app issues no ledger request', () => {
   })
 
   it('keeps a persisted active Wallet that is not the first one', async () => {
+    window.history.replaceState(null, '', '/wallets/w2')
     useAppStore.setState({ activeWalletId: 'w2' })
     render(<App />)
     await waitFor(() => expect(screen.getByText('locked:Beta')).toBeTruthy())
@@ -122,7 +124,7 @@ describe('a locked app issues no ledger request', () => {
     toast.error('Incorrect PIN. 7 tries remaining.', { action: 'unlock' })
     expect(useNoticeStore.getState().notices).toHaveLength(1)
 
-    useAppStore.getState().setActiveWalletId('w2')
+    act(() => enterWallet('w2'))
     await waitFor(() => expect(screen.getByText('locked:Beta')).toBeTruthy())
     expect(useNoticeStore.getState().notices).toHaveLength(0)
   })

@@ -457,6 +457,26 @@ control — and a single-wallet, unfunded test account renders none of them.
 `docs/sprints/interface-sprints.md` now carries this as a standing verification
 prerequisite.
 
+**Amended (chooser story 6, AD-45).** The wallet picker `Select` is removed from
+the header, so the multi-wallet crush above can no longer occur there:
+switching wallets is the **Wallets** key (back to the chooser), then Open. The
+header now carries the nameplate, the Wallets key and, for an open lock only,
+the network plate and the Lock key, and still wraps onto its own row below `sm`.
+
+**Amended (chooser story 17, AD-32, AD-45).** The Settings wallet rows are gone
+with the rest of the per-wallet Settings content: the Wallets plate (Use this
+wallet, Reveal seed, Edit checks, Use on a network, Let another wallet sign,
+the master key, two-device signing, Node, Remove, Add wallet) and the Security
+plate (auto-lock, Lock now). Each lives once elsewhere — the chooser card (Open,
+Rename, Lock, Remove, Add wallet) or the Configure screen (checks and auto-lock,
+Seed, operating another account, other networks, Node, two-device signing) —
+and Settings, from the chooser (`/settings`) and from inside a wallet (the
+Settings tab), is the one `AppSettings` component: Address book, Version and
+updates, Remove all wallets from this device. The wrapping rule survives in
+Configure's keys. Story 17 deleted these entry points only after each Settings
+test was mapped to a Configure or chooser test (the mapping is attached to
+`_bmad-output/specs/spec-wallet-chooser/stories/17-settings-reduced-to-app-level.md`).
+
 ---
 
 ## 7. Decisions made during the 2026-09-01 visual-world replacement
@@ -1160,6 +1180,12 @@ required extracting `virtual:pwa-register` — a Vite-plugin-only specifier the
 test runner cannot resolve at all, mockable or not — behind a one-line
 indirection, `src/lib/sw-register.ts`; the hook now imports `registerSW` from
 there instead of the virtual module directly.
+
+**Amended (chooser story 17, AD-45).** `SettingsTab` no longer exists: the Settings
+tab is `AppSettings` (Address book, Version and updates, Remove all), the same
+component `/settings` serves, never both mounted. `useAppUpdate` is now called
+from `useUpdateMarker` and `AppSettings`; the per-release module-scoped notice
+guard and the pre-unlock build stamp (§10.2) are unchanged.
 
 ### 10.3 A fourth thing found, not a story gap but a promotion-pipeline bug
 

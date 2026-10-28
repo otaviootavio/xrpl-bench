@@ -1,6 +1,6 @@
 /** @vitest-environment jsdom */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { cleanup, render, waitFor } from '@testing-library/react'
+import { cleanup, render, screen, waitFor } from '@testing-library/react'
 
 /**
  * Story 12.1 / AD-27: the legacy-vault migration runs from the Gate, after the
@@ -33,7 +33,7 @@ vi.mock('@/lib/crypto/keystore', () => ({
 }))
 vi.mock('@/lib/crypto/lock', () => ({ restoreOpenLocks: async () => [], endLockSession: async () => {}, endAllLockSessions: async () => {} }))
 vi.mock('@/pages/Onboarding', () => ({ Onboarding: () => null }))
-vi.mock('@/pages/Main', () => ({ Main: () => null }))
+vi.mock('@/components/AppShell', () => ({ AppShell: () => null, walletInView: (_r: unknown, id: string | null) => id }))
 
 async function mountApp() {
   vi.resetModules()
@@ -73,14 +73,15 @@ describe('Gate — legacy vault migration at app start', () => {
 
   it('does not hang when the persisted store cannot be read', async () => {
     // zustand fires onFinishHydration only on success; a failed read must
-    // still let the Wallet list run, but NOT the migration: it would write the
-    // store's default network into every legacy Wallet for good.
+    // settle (not hang) and run neither the migration (it would write the
+    // store's default network into every legacy Wallet for good) nor the list.
     h.getImpl = async () => {
       throw new Error('storage unavailable')
     }
     await mountApp()
-    await waitFor(() => expect(h.list).toHaveBeenCalled())
+    await waitFor(() => expect(screen.getByRole('alert').textContent).toBe('The wallets on this device could not be read. Nothing was changed.'))
     expect(h.migrate).not.toHaveBeenCalled()
+    expect(h.list).not.toHaveBeenCalled()
   })
 
   it('logs a failed migration and still lists the Wallets', async () => {

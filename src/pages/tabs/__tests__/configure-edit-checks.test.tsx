@@ -1,17 +1,16 @@
 /** @vitest-environment jsdom */
-import { createContext, useContext, type ReactNode } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 
 /**
- * Story 8 in Settings: "Edit checks" is offered only for a Wallet whose lock is
- * open; the auto-lock edit goes through the keystore with the prompts (so the
- * Open Check is re-passed); and after a committed edit that moved the Wallet to a
- * new lock, Settings closes the old lock, opens the new one and starts its session.
+ * The Configure counterpart of `settings-edit-checks.test.tsx` (test design R12):
+ * Edit checks is offered by the Checks plate, the committed edit swaps the lock the
+ * same way, and Back from the task screen says `Back to Configure` and returns to
+ * Configure. The Settings tab no longer opens it (Story 17): `Back to Configure` is the only label.
+ * The auto-lock Select scenario of that file moved with auto-lock itself (Story 16).
  */
 const h = vi.hoisted(() => ({
-  setLockAutoLock: vi.fn(),
   startLockSession: vi.fn(async () => {}),
   listed: [] as unknown[],
   edited: null as unknown,
@@ -34,14 +33,19 @@ vi.mock('@/lib/crypto/keystore', () => ({
   addNetworkView: async () => ({}),
   unavailablePrompts: { pin: async () => null },
   describeCheckFailure: () => 'x',
-  setLockAutoLock: (...a: unknown[]) => h.setLockAutoLock(...a),
+  setLockAutoLock: async () => ({ ok: true }),
 }))
-// The screen has its own test: here it is a stand-in that reports the committed edit.
-vi.mock('@/components/wallet/EditChecksScreen', () => ({
-  EditChecksScreen: ({ wallet, onEdited }: { wallet: { id: string }; onEdited: (e: unknown) => void }) => (
-    <button onClick={() => void Promise.resolve(onEdited(h.edited)).catch(() => {})}>commit edit for {wallet.id}</button>
-  ),
-}))
+// The screen has its own test: here it is a stand-in on the real TaskScreen that reports the committed edit.
+vi.mock('@/components/wallet/EditChecksScreen', async () => {
+  const { TaskScreen } = await import('@/components/wallet/TaskScreen')
+  return {
+    EditChecksScreen: ({ wallet, onEdited, onClose, backLabel }: { wallet: { id: string }; onEdited: (e: unknown) => void; onClose: () => void; backLabel?: string }) => (
+      <TaskScreen title="Edit checks" backLabel={backLabel} onBack={onClose}>
+        <button onClick={() => void Promise.resolve(onEdited(h.edited)).catch(() => {})}>commit edit for {wallet.id}</button>
+      </TaskScreen>
+    ),
+  }
+})
 vi.mock('@/lib/notify', () => ({ toast: { success: vi.fn(), error: vi.fn(), warning: vi.fn() } }))
 vi.mock('@/lib/xrpl/client', () => ({ disconnectAllClients: async () => {} }))
 vi.mock('@/lib/xrpl/query-reads', () => ({ fetchAccountStateOnce: async () => null }))
@@ -57,23 +61,11 @@ vi.mock('@/lib/build-info', () => ({
   sourceUrl: 'https://example.invalid',
   formatBuiltAt: () => '',
 }))
-const Ctx = createContext<(v: string) => void>(() => {})
-vi.mock('@/components/ui/select', () => ({
-  Select: ({ onValueChange, children }: { onValueChange?: (v: string) => void; children: ReactNode }) => (
-    <Ctx.Provider value={onValueChange ?? (() => {})}>{children}</Ctx.Provider>
-  ),
-  SelectTrigger: ({ children }: { children: ReactNode }) => <div>{children}</div>,
-  SelectValue: () => null,
-  SelectContent: ({ children }: { children: ReactNode }) => <div>{children}</div>,
-  SelectItem: ({ value, children }: { value: string; children: ReactNode }) => {
-    const on = useContext(Ctx)
-    return <button onClick={() => on(value)}>{children}</button>
-  },
-}))
 
-import { SettingsTab } from '../SettingsTab'
 import { WalletScreens } from '../../WalletScreens'
+import { ConfigureScreen } from '@/components/wallet/ConfigureScreen'
 import { useRoute } from '@/hooks/useRoute'
+import { isTaskRoute, navigate } from '@/lib/route'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { PromptsContext } from '@/hooks/usePrompts'
 import { useAppStore } from '@/store/app-store'
@@ -84,13 +76,15 @@ const B = { ...base, id: 'b', seedId: 'b', lockId: 'Y', label: 'Beta', address: 
 const OPEN = { key: {} as CryptoKey, autoLockMinutes: 5 }
 const PROMPTS = { pin: async () => '123456' }
 
-/** Settings, or the routed screen its buttons navigate to (what `Main` does). */
+/** Configure, or the routed task screen its keys navigate to (what the shell does). */
 function Host() {
   const route = useRoute()
-  return route.screen === 'home' ? <SettingsTab /> : <WalletScreens route={route} />
+  if (isTaskRoute(route)) return <WalletScreens route={route} />
+  const wallet = useAppStore.getState().wallets.find((w) => w.id === 'a')
+  return <ConfigureScreen wallet={wallet as never} />
 }
 
-function renderSettings() {
+function renderAt(_at: 'configure') {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   render(
     <QueryClientProvider client={qc}>
@@ -105,7 +99,6 @@ function renderSettings() {
 
 beforeEach(() => {
   window.history.replaceState(null, '', '/')
-  h.setLockAutoLock.mockReset().mockResolvedValue({ ok: true })
   h.startLockSession.mockClear()
   h.listed = []
   h.edited = null
@@ -113,18 +106,31 @@ beforeEach(() => {
 })
 afterEach(cleanup)
 
-describe('Settings: Edit checks', () => {
-  it('is offered only for a Wallet whose lock is open', () => {
-    renderSettings()
-    expect(screen.getAllByRole('button', { name: /^Edit checks for / })).toHaveLength(1)
+const openEditChecks = () => fireEvent.click(screen.getByRole('button', { name: 'Edit checks' }))
+
+describe('Configure: Edit checks', () => {
+  it('the Checks plate has one Edit checks key, for this wallet only', () => {
+    renderAt('configure')
+    expect(screen.getAllByRole('button', { name: 'Edit checks' })).toHaveLength(1)
   })
 
-  it('the auto-lock edit passes the prompts, so the Open Check can be re-passed', async () => {
-    renderSettings()
-    fireEvent.click(await screen.findByRole('button', { name: '15 minutes' }))
-    await waitFor(() => expect(h.setLockAutoLock).toHaveBeenCalled())
-    expect(h.setLockAutoLock.mock.calls[0].slice(0, 2)).toEqual(['X', 15])
-    expect(h.setLockAutoLock.mock.calls[0][2]).toEqual({ prompts: PROMPTS })
+  it('opens the shipped screen at its path, with the label `Back to Configure`', async () => {
+    navigate('/wallets/a/configure')
+    renderAt('configure')
+    openEditChecks()
+    expect(window.location.pathname).toBe('/wallets/a/checks')
+    const back = await screen.findByRole('button', { name: /Back to Configure/ })
+    expect(back.textContent).toBe('Back to Configure')
+  })
+
+  it('Back returns to Configure and focus lands on the Edit checks key', async () => {
+    navigate('/wallets/a/configure')
+    renderAt('configure')
+    openEditChecks()
+    fireEvent.click(await screen.findByRole('button', { name: /Back to Configure/ }))
+    await waitFor(() => expect(window.location.pathname).toBe('/wallets/a/configure'))
+    const key = await screen.findByRole('button', { name: 'Edit checks' })
+    await waitFor(() => expect(document.activeElement).toBe(key))
   })
 
   it('after a lock change: the new lock opens with its session, the old one closes', async () => {
@@ -132,8 +138,8 @@ describe('Settings: Edit checks', () => {
     const moved = { ...A, lockId: 'Z', openCheck: 'passkey' }
     h.listed = [moved, B]
     h.edited = { meta: moved, changed: true, previousLockId: 'X', openKey: KEY, autoLockMinutes: 5, previousLockRemoved: true }
-    renderSettings()
-    fireEvent.click(screen.getByRole('button', { name: /^Edit checks for / }))
+    renderAt('configure')
+    openEditChecks()
     fireEvent.click(await screen.findByRole('button', { name: /commit edit for a/ }))
     await waitFor(() => expect(Object.keys(useAppStore.getState().openLocks)).toEqual(['Z']))
     expect(h.startLockSession).toHaveBeenCalledWith('Z', KEY, 5)
@@ -148,8 +154,8 @@ describe('Settings: Edit checks', () => {
     useAppStore.setState({ wallets: [legacyA, B], openLocks: { legacy: OPEN } } as never)
     h.listed = [moved, B]
     h.edited = { meta: moved, changed: true, previousLockId: 'legacy', openKey: KEY, autoLockMinutes: 5, previousLockRemoved: false }
-    renderSettings()
-    fireEvent.click(screen.getByRole('button', { name: /^Edit checks for / }))
+    renderAt('configure')
+    openEditChecks()
     fireEvent.click(await screen.findByRole('button', { name: /commit edit for a/ }))
     await waitFor(() => expect(Object.keys(useAppStore.getState().openLocks).sort()).toEqual(['Z', 'legacy']))
   })
@@ -158,8 +164,8 @@ describe('Settings: Edit checks', () => {
     useAppStore.setState({ openLocks: { X: OPEN, Y: OPEN } } as never)
     h.edited = { meta: A, changed: true, previousLockId: 'X', autoLockMinutes: 15, previousLockRemoved: false }
     h.listed = [A, B]
-    renderSettings()
-    fireEvent.click(screen.getAllByRole('button', { name: /^Edit checks for / })[0])
+    renderAt('configure')
+    openEditChecks()
     fireEvent.click(await screen.findByRole('button', { name: /commit edit for a/ }))
     await waitFor(() => expect(useAppStore.getState().openLocks.X.autoLockMinutes).toBe(15))
     expect(h.startLockSession).not.toHaveBeenCalled()
@@ -170,8 +176,8 @@ describe('Settings: Edit checks', () => {
     const KEY = { type: 'new-key' } as unknown as CryptoKey
     h.startLockSession.mockRejectedValueOnce(new Error('idb down'))
     h.edited = { meta: { ...A, lockId: 'Z' }, changed: true, previousLockId: 'X', openKey: KEY, autoLockMinutes: 5, previousLockRemoved: true }
-    renderSettings()
-    fireEvent.click(screen.getByRole('button', { name: /^Edit checks for / }))
+    renderAt('configure')
+    openEditChecks()
     fireEvent.click(await screen.findByRole('button', { name: /commit edit for a/ }))
     await waitFor(() => expect(useAppStore.getState().openLocks.X).toBeUndefined())
   })

@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -9,7 +9,8 @@ import { ChassisShell } from '@/components/ChassisShell'
 import { setUpVaultAuth, hasPasskeyRegistered } from '@/lib/crypto/auth'
 import { DEFAULT_AUTO_LOCK_MINUTES } from '@/lib/crypto/lock'
 import { LEGACY_LOCK_ID } from '@/lib/crypto/db'
-import { addressFromSeed, parseSeedInput, importAndStoreWallet, listWallets, type WalletMeta } from '@/lib/crypto/keystore'
+import { RemoveAllPlate } from '@/components/wallet/RemoveAllPlate'
+import { addressFromSeed, appPinResidue, parseSeedInput, importAndStoreWallet, listWallets, type WalletMeta } from '@/lib/crypto/keystore'
 import { checkBeforeImport, IMPORT_WARNING_COPY, INVALID_SEED_MESSAGE, type ImportWarning } from '@/lib/seed-import'
 import { useAppStore } from '@/store/app-store'
 import { NetworkChoice } from '@/components/wallet/NetworkChoice'
@@ -61,6 +62,22 @@ export function Onboarding() {
   const pendingImportSeedRef = useRef<string | null>(null)
   // The network the import was started for; check and write both use it.
   const pendingImportNetworkRef = useRef<NetworkId>('testnet')
+
+  // An App PIN or a failure count that outlived the last Wallet (a removal whose
+  // discard failed, AD-46). Read through the keystore each time this step shows.
+  const [pinResidue, setPinResidue] = useState(false)
+  useEffect(() => {
+    if (step !== 'choice') return undefined
+    let cancelled = false
+    appPinResidue().then(
+      (found) => !cancelled && setPinResidue(found),
+      // An unreadable vault is not proof of a clean one: keep the way out on offer.
+      () => !cancelled && setPinResidue(true),
+    )
+    return () => {
+      cancelled = true
+    }
+  }, [step])
 
   const queryClient = useQueryClient()
   // The new Wallet's network, chosen here and fixed on its record (AD-19).
@@ -188,6 +205,15 @@ export function Onboarding() {
             </CardContent>
           </Card>
 
+          {pinResidue && (
+            <RemoveAllPlate>
+              <p className="text-sm leading-snug text-muted-foreground">
+                An App PIN or its failed-attempt count is still stored on this device, left over from a wallet that was removed.
+                Removing everything clears it, so setup asks for a new PIN.
+              </p>
+            </RemoveAllPlate>
+          )}
+
           {/* app-versioning-and-updates.md US-1: reachable before there is
               even a vault to unlock, not only after one exists. */}
           <p className="text-center text-xs text-muted-foreground">
@@ -274,7 +300,7 @@ export function Onboarding() {
             </CardHeader>
             <CardContent className="flex flex-col gap-3">
               {/* Commits to the store itself, after the seed backup. */}
-              <CreateWalletFlow onInProgressChange={setCreating} />
+              <CreateWalletFlow onInProgressChange={setCreating} onDone={(meta) => setActiveWalletId(meta.id)} />
               <Button variant="outline" onClick={() => setStep('choice')} disabled={creating}>
                 Back
               </Button>

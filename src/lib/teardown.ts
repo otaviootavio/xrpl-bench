@@ -1,12 +1,15 @@
 import type { QueryClient } from '@tanstack/react-query'
 import { wipeVault } from '@/lib/crypto/auth'
+import { LEGACY_LOCK_ID } from '@/lib/crypto/db'
+import type { WalletMeta } from '@/lib/crypto/keystore'
 import { disconnectAllClients } from '@/lib/xrpl/client'
 import { removeAccountScoped } from '@/lib/xrpl/query-keys'
 import { clearPersistedAppState, useAppStore } from '@/store/app-store'
 
 /**
  * The one owner of local teardown — AD-16, amended by AD-26. It has **three**
- * scopes, and a lock only ever uses the first:
+ * scopes, and a lock only ever uses the first (leaving a Wallet for the chooser,
+ * `leaveWallet`, removes its query data and closes nothing — AD-38):
  *
  *  - **Per-lock** (`tearDownLock`): drop that lock's key and persisted session
  *    and remove the account-scoped query data of the Wallets on it — unless
@@ -132,6 +135,50 @@ export function removeLockedAccountData(queryClient: QueryClient, lockIds: reado
   // counterparty-keyed entries (destination checks, reserves, fee) go too — the
   // old app-wide lock cleared everything, and so does the last one now.
   if (Object.keys(openLocks).length === 0) clearCachedAccountData(queryClient)
+}
+
+/**
+ * Leave scope (AD-38): the user left a Wallet for the chooser. Removes that
+ * Wallet's account-scoped query data — unless another Wallet on an OPEN lock
+ * holds the same `(network, address)` — and never closes a lock.
+ */
+export function leaveWallet(queryClient: QueryClient, walletId: string): void {
+  const { wallets, openLocks } = useAppStore.getState()
+  const left = wallets.find((w) => w.id === walletId)
+  if (!left) return
+  const shared = wallets.some(
+    (w) => w.id !== left.id && w.lockId in openLocks && w.network === left.network && w.address === left.address,
+  )
+  if (shared) return
+  removeAccountScoped(queryClient, left.network, left.address)
+}
+
+/**
+ * Remove scope (AD-46): one Wallet was removed from the vault. In memory only; the
+ * vault was written by the keystore, and this never writes vault meta.
+ *
+ *  - Removes the removed Wallet's account-scoped query data, keeping a
+ *    `(network, address)` that a remaining Wallet on an OPEN lock still holds.
+ *  - Closes the removed Wallet's lock when no remaining Wallet is on it (the keystore
+ *    deleted it with the Seed's last view). Never the legacy lock here: its record
+ *    and wrappers are the vault's own.
+ *  - When no Wallet remains, `tearDownAllLocks`: every lock, session and cached
+ *    entry goes, the legacy lock's key included.
+ *
+ * `remaining` is what the vault holds now, not the store's `wallets`, and never
+ * contains `removed` (a keystore step that threw may have left it in the vault; its
+ * in-memory session and data are closed anyway, which fails closed). The caller
+ * runs this from `finally`, so it must not throw on a half-finished removal.
+ */
+export function removeWalletData(queryClient: QueryClient, removed: WalletMeta, remaining: readonly WalletMeta[]): void {
+  const others = remaining.filter((w) => w.id !== removed.id)
+  const { openLocks } = useAppStore.getState()
+  const stillHeld = others.some((w) => w.lockId in openLocks && w.network === removed.network && w.address === removed.address)
+  if (!stillHeld) removeAccountScoped(queryClient, removed.network, removed.address)
+  if (removed.lockId !== LEGACY_LOCK_ID && !others.some((w) => w.lockId === removed.lockId)) {
+    useAppStore.getState().closeLock(removed.lockId)
+  }
+  if (others.length === 0) tearDownAllLocks(queryClient)
 }
 
 /** Per-lock scope: closes ONE lock and removes its Wallets' account data. */

@@ -276,13 +276,13 @@ describe('TwoDeviceSign, offline side', () => {
   })
 })
 
-describe('TwoDeviceSign, the Settings row', () => {
+describe('TwoDeviceSign, the Configure plate entry', () => {
   it('opens the screen by navigating to its path, and carries nothing but the Wallet id', async () => {
     window.history.replaceState(null, '', '/')
-    render(<TwoDeviceSign wallet={WALLET} />)
+    render(<TwoDeviceSign wallet={WALLET} configureKey="two-device" />)
     await click(btn('Sign with two devices'))
     expect(window.location.pathname).toBe('/wallets/w/two-device')
-    expect(window.history.state).toEqual({ screen: true })
+    expect(window.history.state).toEqual({ screen: true, depth: 1 })
   })
 
   it('wraps the two role buttons instead of letting them run sideways', async () => {

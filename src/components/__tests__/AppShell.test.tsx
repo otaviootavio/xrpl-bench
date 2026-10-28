@@ -157,6 +157,12 @@ describe('AppShell route switch and guards (AD-32, AD-36)', () => {
     expect(screen.queryByRole('heading', { name: 'Wallets' })).toBeNull()
   })
 
+  it('entering a wallet from the chooser moves focus to the main region (UX-DR10)', () => {
+    mount()
+    act(() => navigate('/wallets/a'))
+    expect(document.activeElement).toBe(document.getElementById('main-content'))
+  })
+
   it.each(['/wallets/zzz', '/wallets/b', '/wallets/zzz/configure', '/wallets/b/configure'])(
     'a mismatched deep link %s is reset to the chooser',
     (path) => {

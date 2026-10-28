@@ -1,6 +1,8 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useId, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Button } from '@/components/ui/button'
+import { Label } from '@/components/ui/label'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { ConfigPlate } from '@/components/wallet/ConfigPlate'
 import { ControlledNote } from '@/components/wallet/ControlledNote'
 import { MasterKeyControl } from '@/components/wallet/MasterKeyControl'
@@ -10,7 +12,12 @@ import { WalletNodeSection } from '@/components/wallet/WalletNodeSection'
 import { RevealSeedControl } from '@/components/wallet/RevealSeedControl'
 import { NO_OPEN_CHECK_DETAIL, STANDARD_SIGNING_DETAIL, openCheckWords, signingWords } from '@/components/wallet/check-words'
 import { launchFromConfigure, peekConfigureFocusReturn } from '@/lib/configure-launch'
-import type { WalletMeta } from '@/lib/crypto/keystore'
+import { useLockMinutesChanged } from '@/hooks/useLockMinutesChanged'
+import { usePrompts } from '@/hooks/usePrompts'
+import { setLockAutoLock, type WalletMeta } from '@/lib/crypto/keystore'
+import { AUTO_LOCK_CHOICES } from '@/lib/crypto/policy'
+import { minutesLabel } from '@/lib/minutes-label'
+import { useAppStore } from '@/store/app-store'
 import { holdsMasterKey } from '@/lib/control'
 import { getLockInfo } from '@/lib/crypto/lock'
 import { walletScreenPath } from '@/lib/route'
@@ -21,6 +28,82 @@ const KEY = 'h-auto min-h-8 w-fit max-w-full whitespace-normal py-1 pointer-coar
 
 /** The data-attribute a task screen's return lands on. */
 const EDIT_CHECKS_KEY = 'edit-checks'
+
+/**
+ * The lock's auto-lock minutes (AD-44). The keystore re-proves the lock's Open Check
+ * and applies the Mainnet floor over every Wallet on the lock; nothing here decides
+ * a rule. The shown value is always the `lockInfo` read, so a refusal reverts it.
+ */
+function AutoLockRow({ lockId, minutes }: { lockId: string; minutes: number | null }) {
+  const prompts = usePrompts()
+  const lockMinutesChanged = useLockMinutesChanged()
+  const wallets = useAppStore((s) => s.wallets)
+  const [busy, setBusy] = useState(false)
+  const [problem, setProblem] = useState<string | null>(null)
+  const id = useId()
+  const problemId = `${id}-problem`
+  const sharedBy = new Set(wallets.filter((w) => w.lockId === lockId).map((w) => w.seedId)).size
+  const choices: number[] = [...AUTO_LOCK_CHOICES]
+  // A lock whose minutes are not a choice (legacy) still shows what it really has.
+  if (minutes !== null && !choices.includes(minutes)) choices.push(minutes)
+  choices.sort((a, b) => a - b)
+
+  async function change(next: number) {
+    setProblem(null)
+    setBusy(true)
+    try {
+      const verdict = await setLockAutoLock(lockId, next, { prompts })
+      if (!verdict.ok) {
+        setProblem(verdict.reason)
+        return
+      }
+      try {
+        await lockMinutesChanged(lockId, next)
+      } catch {
+        // The keystore already wrote the change: a refresh that failed is not a change that failed.
+        setProblem('The auto-lock was changed, but this screen could not refresh. Reopen it to see the new value.')
+      }
+    } catch (err: unknown) {
+      setProblem(err instanceof Error && err.message ? err.message : 'Could not change the auto-lock.')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div className="flex min-w-0 flex-col gap-1.5">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <Label htmlFor={id}>Auto-lock after inactivity</Label>
+        <Select value={minutes === null ? '' : String(minutes)} onValueChange={(v) => void change(Number(v))} disabled={minutes === null || busy}>
+          <SelectTrigger id={id} className="w-36" aria-describedby={problem ? problemId : undefined}>
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {choices.map((m) => (
+              <SelectItem key={m} value={String(m)}>
+                {minutesLabel(m)}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+      {minutes === null && <p className="text-xs text-muted-foreground">Available once this wallet's checks are read.</p>}
+      {busy && (
+        <p role="status" className="text-xs text-muted-foreground">
+          Changing the auto-lock…
+        </p>
+      )}
+      {problem && (
+        <p id={problemId} role="alert" className="break-words text-sm text-text-destructive">
+          {problem}
+        </p>
+      )}
+      {sharedBy > 1 && (
+        <p className="text-xs text-muted-foreground">This lock is shared by {sharedBy} wallets. A change applies to all of them.</p>
+      )}
+    </div>
+  )
+}
 
 function ChecksPlate({ wallet }: { wallet: WalletMeta }) {
   // The same read Edit checks makes, from the same key: one cache entry per lock.
@@ -57,6 +140,7 @@ function ChecksPlate({ wallet }: { wallet: WalletMeta }) {
           </div>
         </dl>
       )}
+      <AutoLockRow key={wallet.lockId} lockId={wallet.lockId} minutes={lock.isError || !lock.data ? null : lock.data.autoLockMinutes} />
       <Button
         type="button"
         variant="outline"

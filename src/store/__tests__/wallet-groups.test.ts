@@ -1,5 +1,5 @@
 import { describe, expect, expectTypeOf, it } from 'vitest'
-import { groupWalletsBySeed, type LockedGroup } from '../wallet-groups'
+import { groupWalletsBySeed, nextActiveWalletId, walletIdsInChooserOrder, type LockedGroup } from '../wallet-groups'
 
 type Meta = Parameters<typeof groupWalletsBySeed>[0][number]
 const W = (id: string, o: Partial<Meta> = {}): Meta =>
@@ -100,5 +100,33 @@ describe('groupWalletsBySeed (AD-43)', () => {
   it('an empty node string is not a custom node', () => {
     const [g] = groupWalletsBySeed([W('a', { node: '' })], OPEN('L-a'), null)
     expect((g as { views: { hasNode: boolean }[] }).views[0].hasNode).toBe(false)
+  })
+})
+
+describe('nextActiveWalletId (AD-46)', () => {
+  it.each([
+    ['active is still there: kept', 'x', 'b', ['a', 'b', 'c'], 'b'],
+    ['active was the removed one: the first in chooser order', 'b', 'b', ['a', 'c'], 'a'],
+    ['active is another that is gone too: the first', 'x', 'gone', ['a', 'c'], 'a'],
+    ['no active: the first', 'x', null, ['a', 'c'], 'a'],
+    ['nothing remains: null', 'x', 'x', [], null],
+    ['the removed id is never picked, whatever the list holds', 'a', 'a', ['a', 'c'], 'c'],
+    ['only the removed id listed: null', 'a', null, ['a'], null],
+  ] as const)('%s', (_name, removed, active, remaining, expected) => {
+    expect(nextActiveWalletId(removed, active, remaining)).toBe(expected)
+  })
+})
+
+describe('walletIdsInChooserOrder', () => {
+  it('lists every view, Seeds by createdAt then id, views by createdAt then id: the order the cards use', () => {
+    const wallets = [
+      W('c2', { seedId: 'c', createdAt: 4 }),
+      W('b', { createdAt: 2 }),
+      W('c', { createdAt: 3 }),
+      W('a', { createdAt: 1 }),
+    ]
+    expect(walletIdsInChooserOrder(wallets)).toEqual(['a', 'b', 'c', 'c2'])
+    expect(groupWalletsBySeed(wallets, {}, null).map((g) => g.seedId)).toEqual(['a', 'b', 'c'])
+    expect(walletIdsInChooserOrder([])).toEqual([])
   })
 })

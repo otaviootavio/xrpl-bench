@@ -22,13 +22,20 @@ vi.mock('@/lib/teardown', async (orig) => {
   return { ...real, tearDownLock: vi.fn((...a: Parameters<typeof real.tearDownLock>) => { if (t.fail) throw new Error('boom'); return real.tearDownLock(...a) }) }
 })
 
-const k = vi.hoisted(() => ({ rename: vi.fn() }))
-vi.mock('@/lib/crypto/keystore', async (orig) => ({ ...(await orig<typeof import('@/lib/crypto/keystore')>()), renameWallet: k.rename }))
+const k = vi.hoisted(() => ({ rename: vi.fn(), remove: vi.fn(), list: vi.fn() }))
+vi.mock('@/lib/crypto/keystore', async (orig) => ({
+  ...(await orig<typeof import('@/lib/crypto/keystore')>()),
+  renameWallet: k.rename,
+  removeWallet: k.remove,
+  listWallets: k.list,
+}))
 
 import { readFileSync } from 'node:fs'
 import { waitFor } from '@testing-library/react'
 import { useNoticeStore } from '@/store/notice-store'
 import { RENAME_ERRORS, RENAME_HELP, RENAME_WRITE_FAILED } from '@/components/wallet/rename-copy'
+import { REMOVE_BACKUP, REMOVE_DONE, REMOVE_FAILED, REMOVE_LAST, REMOVE_LOCKED_REASON, REMOVE_PIN_NOT_DISCARDED, REMOVE_SIBLING, REMOVE_SOLE } from '@/components/wallet/remove-copy'
+import { queryKeys } from '@/lib/xrpl/query-keys'
 import { tearDownLock } from '@/lib/teardown'
 import { Chooser } from '../Chooser'
 import { TooltipProvider } from '@/components/ui/tooltip'
@@ -122,7 +129,7 @@ describe('the cards', () => {
     expect(card.textContent).not.toMatch(/mainnet|testnet|devnet|real funds|not stable/i)
     expect(card.textContent).not.toContain('ADDRESS') // the fixture address of every wallet carries it
     expect(card.querySelector('a')).toBeNull()
-    expect(within(card).getAllByRole('button').map((b) => b.textContent)).toEqual(['Open', 'Rename'])
+    expect(within(card).getAllByRole('button').map((b) => b.textContent)).toEqual(['Open', 'Rename', 'Remove'])
   })
 
   it('a locked Mainnet card renders exactly like a locked Testnet card', () => {
@@ -371,8 +378,17 @@ describe('the Rename key and dialog', () => {
     act(() => useAppStore.getState().openLock('LC', KEY, 5))
     mount()
     const names = (n: string) => within(card(n)).getAllByRole('button').map((b) => b.getAttribute('aria-label'))
-    expect(names('Alpha')).toEqual(['Open Alpha', 'Rename Alpha'])
-    expect(names('Gamma')).toEqual(['Open Gamma on Testnet', 'Open Gamma on Devnet', 'Open Gamma on Mainnet', 'Rename Gamma', 'Lock Gamma'])
+    expect(names('Alpha')).toEqual(['Open Alpha', 'Rename Alpha', 'Remove Alpha'])
+    expect(names('Gamma')).toEqual([
+      'Open Gamma on Testnet',
+      'Remove Gamma on Testnet',
+      'Open Gamma on Devnet',
+      'Remove Gamma on Devnet',
+      'Open Gamma on Mainnet',
+      'Remove Gamma on Mainnet',
+      'Rename Gamma',
+      'Lock Gamma',
+    ])
     expect(within(card('Alpha')).getByRole('button', { name: 'Rename Alpha' }).textContent).toBe('Rename')
   })
 
@@ -520,5 +536,291 @@ describe('the Rename key and dialog', () => {
     expect(keystore).toMatch(/validateWalletName\(/)
     expect(store).not.toMatch(/label:/)
     expect(dialog + store).not.toMatch(/outline-none|:focus\b/)
+  })
+})
+
+
+describe('Remove (AD-46)', () => {
+  const card = (n: string) => screen.getByRole('heading', { level: 2, name: n }).closest('li') as HTMLElement
+  const state = () => useAppStore.getState()
+  const OK = { emptied: false, appPin: 'kept' }
+  const BADDR = `rBADDRESS${'x'.repeat(12)}` // Beta's address in the fixture
+  const everyWallet = () => state().wallets
+  const dialog = () => screen.getByRole('dialog', { name: 'Remove this wallet?' })
+  const confirm = () => within(dialog()).getByRole('button', { name: 'Remove wallet' })
+  const open = (...locks: string[]) =>
+    act(() => {
+      for (const l of locks) useAppStore.getState().openLock(l, KEY, 5)
+    })
+  // The vault after removing `ids`, as the keystore would list it.
+  const vaultWithout = (...ids: string[]) => k.list.mockImplementation(async () => everyWallet().filter((w) => !ids.includes(w.id)))
+  beforeEach(() => {
+    k.remove.mockReset().mockResolvedValue(OK)
+    k.list.mockReset()
+    useNoticeStore.setState({ notices: [] } as never)
+  })
+
+  it('a locked card: Remove is aria-disabled, not disabled, with the reason visible; activating it does nothing', () => {
+    mount()
+    const key = within(card('Alpha')).getByRole('button', { name: 'Remove Alpha' })
+    expect(key.getAttribute('aria-disabled')).toBe('true')
+    expect(key.hasAttribute('disabled')).toBe(false)
+    expect(key.textContent).toBe('Remove')
+    expect(within(card('Alpha')).getByText(REMOVE_LOCKED_REASON).textContent).toBe('Open this wallet to remove it.')
+    expect(key.getAttribute('aria-describedby')).toBe(within(card('Alpha')).getByText(REMOVE_LOCKED_REASON).id)
+    fireEvent.click(key)
+    fireEvent.keyDown(key, { key: 'Enter' })
+    expect(screen.queryByRole('dialog')).toBeNull()
+    expect(k.remove).not.toHaveBeenCalled()
+  })
+
+  it('an open card: one Remove key per network row, danger, named for its network; the card has no other', () => {
+    open('LC')
+    mount()
+    const gamma = card('Gamma')
+    for (const label of ['Testnet', 'Devnet', 'Mainnet']) {
+      const key = within(gamma).getByRole('button', { name: `Remove Gamma on ${label}` })
+      expect(key.textContent).toBe('Remove')
+      expect(key.className).toMatch(/border-destructive\/55/)
+      expect(key.className).not.toMatch(/(^|\s)bg-destructive(\s|$)/)
+      expect(key.hasAttribute('aria-disabled')).toBe(false)
+    }
+    expect(within(gamma).queryByRole('button', { name: 'Remove Gamma' })).toBeNull()
+    expect(within(gamma).queryByText(REMOVE_LOCKED_REASON)).toBeNull()
+  })
+
+  it.each([
+    ['a sibling view remains', 'Remove Gamma on Devnet', 'LC', [REMOVE_SIBLING, REMOVE_BACKUP], 'c2'],
+    ['the only view of the Seed', 'Remove Beta on Testnet', 'LB', [REMOVE_SOLE, REMOVE_BACKUP], 'b'],
+  ])('the dialog body when %s', (_n, keyName, lock, sentences, id) => {
+    open(lock)
+    mount()
+    fireEvent.click(screen.getByRole('button', { name: keyName }))
+    expect(dialog().textContent).toContain(sentences.join(' '))
+    expect(within(dialog()).getAllByRole('button').map((b) => b.textContent)).toEqual(expect.arrayContaining(['Cancel', 'Remove wallet']))
+    expect(confirm().className).toMatch(/bg-destructive/)
+    expect(k.remove).not.toHaveBeenCalled()
+    void id
+  })
+
+  it('the last wallet on the device: the last-wallet sentence, then the sole-view one, then the backup line', () => {
+    useAppStore.setState({ wallets: [W('a', 'a', 'LA', 'Alpha', 'mainnet', 1)], activeWalletId: 'a' })
+    open('LA')
+    mount()
+    fireEvent.click(screen.getByRole('button', { name: 'Remove Alpha on Mainnet' }))
+    expect(REMOVE_LAST).toBe('This is the last wallet on this device. Removing it returns the app to setup, and the App PIN is removed too.')
+    expect(dialog().textContent).toContain([REMOVE_LAST, REMOVE_SOLE, REMOVE_BACKUP].join(' '))
+    expect(dialog().textContent).not.toContain(REMOVE_SIBLING)
+  })
+
+  it('Escape, Cancel and an overlay press close it with no write; Back closes it and stays on the chooser', async () => {
+    open('LB')
+    mount()
+    const key = () => screen.getByRole('button', { name: 'Remove Beta on Testnet' })
+    fireEvent.click(key())
+    fireEvent.keyDown(dialog(), { key: 'Escape' })
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+    fireEvent.click(key())
+    fireEvent.click(within(dialog()).getByRole('button', { name: 'Cancel' }))
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+    fireEvent.click(key())
+    fireEvent.pointerDown(document.querySelector('[data-slot="dialog-overlay"]') as HTMLElement)
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+    fireEvent.click(key())
+    expect(window.history.state?.overlay).toBe(true)
+    act(() => {
+      window.history.back()
+    })
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+    expect(window.location.pathname).toBe('/')
+    expect(k.remove).not.toHaveBeenCalled()
+  })
+
+  it('call-time guard at open: a lock that closed after the card rendered is refused', () => {
+    open('LB')
+    mount()
+    const key = screen.getByRole('button', { name: 'Remove Beta on Testnet' })
+    act(() => {
+      useAppStore.getState().closeLock('LB')
+    }) // the old key element is detached, but a handler captured earlier still fires
+    fireEvent.click(key)
+    expect(screen.queryByRole('dialog')).toBeNull()
+    expect(k.remove).not.toHaveBeenCalled()
+  })
+
+  it('call-time guard at confirm: the lock auto-locks while the dialog is open, so nothing is removed', async () => {
+    open('LB')
+    mount()
+    fireEvent.click(screen.getByRole('button', { name: 'Remove Beta on Testnet' }))
+    const confirmKey = confirm()
+    act(() => {
+      useAppStore.getState().closeLock('LB')
+    })
+    fireEvent.click(confirmKey)
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+    expect(k.remove).not.toHaveBeenCalled()
+    expect(state().wallets.some((w) => w.id === 'b')).toBe(true)
+    expect(within(card('Beta')).getByText(REMOVE_LOCKED_REASON)).toBeTruthy()
+  })
+
+  it('confirm: removeWallet, the lock the keystore deleted closes, the cache loses it, the list refreshes, the Active Wallet re-picks, the h1 takes focus, one notice', async () => {
+    open('LA', 'LB')
+    act(() => {
+      state().setActiveWalletId('b')
+    })
+    vaultWithout('b')
+    const { queryClient } = mount()
+    queryClient.setQueryData(queryKeys.accountState('testnet', BADDR), 1)
+    fireEvent.click(screen.getByRole('button', { name: 'Remove Beta on Testnet' }))
+    fireEvent.click(confirm())
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+    expect(k.remove).toHaveBeenCalledTimes(1)
+    expect(k.remove).toHaveBeenCalledWith('b')
+    expect(state().wallets.map((w) => w.id)).toEqual(['a', 'c', 'c2', 'c3'])
+    expect(Object.keys(state().openLocks)).toEqual(['LA'])
+    expect(queryClient.getQueryData(queryKeys.accountState('testnet', BADDR))).toBeUndefined()
+    expect(state().activeWalletId).toBe('a')
+    expect(names()).toEqual(['Alpha', 'Gamma'])
+    await waitFor(() => expect(document.activeElement).toBe(screen.getByRole('heading', { level: 1 })))
+    expect(useNoticeStore.getState().notices.map((n) => n.message)).toEqual([REMOVE_DONE])
+    expect(REMOVE_DONE).toBe('Wallet removed from this device.')
+  })
+
+  it('a sibling view: the Seed\'s card stays, its lock stays open, the Active Wallet stays unless it was removed', async () => {
+    open('LC')
+    act(() => {
+      state().setActiveWalletId('c')
+    })
+    vaultWithout('c2')
+    mount()
+    fireEvent.click(screen.getByRole('button', { name: 'Remove Gamma on Devnet' }))
+    fireEvent.click(confirm())
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+    expect(Object.keys(state().openLocks)).toEqual(['LC'])
+    expect(state().activeWalletId).toBe('c')
+    expect(within(card('Gamma')).queryByRole('button', { name: 'Open Gamma on Devnet' })).toBeNull()
+  })
+
+  it('the last wallet: every lock closes, the list empties, the Active Wallet is null, the cache is empty', async () => {
+    useAppStore.setState({ wallets: [W('a', 'a', 'LA', 'Alpha', 'mainnet', 1)], activeWalletId: 'a' })
+    open('LA')
+    k.remove.mockResolvedValue({ emptied: true, appPin: 'discarded' })
+    k.list.mockResolvedValue([])
+    const { queryClient } = mount()
+    queryClient.setQueryData(queryKeys.recommendedFee('mainnet'), 1)
+    fireEvent.click(screen.getByRole('button', { name: 'Remove Alpha on Mainnet' }))
+    fireEvent.click(confirm())
+    await waitFor(() => expect(state().wallets).toEqual([]))
+    expect(state().openLocks).toEqual({})
+    expect(state().activeWalletId).toBeNull()
+    expect(queryClient.getQueryCache().getAll()).toEqual([])
+  })
+
+  it('removeWallet throws: the finally still closes its lock, clears its cache and re-picks, and an error is shown', async () => {
+    open('LA', 'LB')
+    act(() => {
+      state().setActiveWalletId('b')
+    })
+    k.remove.mockRejectedValue(new Error('keystore broke'))
+    k.list.mockImplementation(async () => everyWallet()) // the vault still lists it
+    const { queryClient } = mount()
+    queryClient.setQueryData(queryKeys.accountState('testnet', BADDR), 1)
+    fireEvent.click(screen.getByRole('button', { name: 'Remove Beta on Testnet' }))
+    fireEvent.click(confirm())
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+    expect(Object.keys(state().openLocks)).toEqual(['LA'])
+    expect(state().activeWalletId).toBe('a')
+    expect(queryClient.getQueryData(queryKeys.accountState('testnet', BADDR))).toBeUndefined()
+    expect(useNoticeStore.getState().notices.map((n) => n.message)).toEqual([REMOVE_FAILED])
+    expect(useNoticeStore.getState().notices[0].persistent).toBe(true)
+  })
+
+  it('a listWallets failure falls back to the store minus the removed Wallet', async () => {
+    open('LB')
+    k.list.mockRejectedValue(new Error('read failed'))
+    mount()
+    fireEvent.click(screen.getByRole('button', { name: 'Remove Beta on Testnet' }))
+    fireEvent.click(confirm())
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+    expect(state().wallets.some((w) => w.id === 'b')).toBe(false)
+  })
+
+  it('removeWallet throws and the vault cannot be read: the wallet stays in the list, with an error', async () => {
+    open('LA', 'LB')
+    k.remove.mockRejectedValue(new Error('keystore broke'))
+    k.list.mockRejectedValue(new Error('read failed'))
+    mount()
+    fireEvent.click(screen.getByRole('button', { name: 'Remove Beta on Testnet' }))
+    fireEvent.click(confirm())
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+    expect(state().wallets.some((w) => w.id === 'b')).toBe(true)
+    expect(Object.keys(state().openLocks)).toEqual(['LA']) // its own lock closes (fails closed); the other lock is not torn down
+    expect(useNoticeStore.getState().notices.map((n) => n.message)).toEqual([REMOVE_FAILED])
+  })
+
+  it('a lock that closed while the dialog was open refuses at confirm and says so', async () => {
+    open('LA', 'LB')
+    mount()
+    fireEvent.click(screen.getByRole('button', { name: 'Remove Beta on Testnet' }))
+    act(() => {
+      state().closeLock('LB')
+    })
+    fireEvent.click(confirm())
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+    expect(k.remove).not.toHaveBeenCalled()
+    expect(useNoticeStore.getState().notices.map((n) => n.message)).toEqual(['This wallet is locked. Open it to remove it.'])
+  })
+
+  it('the wallets changing under the dialog refuse at confirm: the stated consequence no longer holds', async () => {
+    open('LA', 'LB')
+    mount()
+    fireEvent.click(screen.getByRole('button', { name: 'Remove Beta on Testnet' }))
+    act(() => {
+      // another wallet disappears: Beta is now the last one on the device, which the dialog did not say
+      useAppStore.setState({ wallets: state().wallets.filter((w) => w.id === 'b') })
+    })
+    fireEvent.click(confirm())
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+    expect(k.remove).not.toHaveBeenCalled()
+    expect(useNoticeStore.getState().notices[0].message).toMatch(/changed/)
+  })
+
+  it('a failed App PIN discard after the last wallet shows the persistent message instead of the success one', async () => {
+    useAppStore.setState({ wallets: [W('a', 'a', 'LA', 'Alpha', 'mainnet', 1)], activeWalletId: 'a' })
+    open('LA')
+    k.remove.mockResolvedValue({ emptied: true, appPin: 'failed' })
+    k.list.mockResolvedValue([])
+    mount()
+    fireEvent.click(screen.getByRole('button', { name: 'Remove Alpha on Mainnet' }))
+    fireEvent.click(confirm())
+    await waitFor(() => expect(useNoticeStore.getState().notices.length).toBe(1))
+    const [notice] = useNoticeStore.getState().notices
+    expect(notice.message).toBe(REMOVE_PIN_NOT_DISCARDED)
+    expect(REMOVE_PIN_NOT_DISCARDED).toBe('The wallet was removed, but the App PIN could not be removed.')
+    expect(notice.persistent).toBe(true)
+  })
+
+  it('the dialog\'s keys are busy while the removal runs, and a second press does not remove twice', async () => {
+    open('LB')
+    let finish!: (v: unknown) => void
+    k.remove.mockReturnValue(new Promise((resolve) => (finish = resolve)))
+    vaultWithout('b')
+    mount()
+    fireEvent.click(screen.getByRole('button', { name: 'Remove Beta on Testnet' }))
+    const key = confirm()
+    fireEvent.click(key)
+    fireEvent.click(key)
+    expect(k.remove).toHaveBeenCalledTimes(1)
+    expect((screen.getByRole('button', { name: 'Removing…' }) as HTMLButtonElement).disabled).toBe(true)
+    await act(async () => finish(OK))
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+  })
+
+  it('the chooser closes no lock and clears no cache inline; the teardown owner does, from a finally', () => {
+    const files = ['src/pages/Chooser.tsx', 'src/components/wallet/WalletCard.tsx', 'src/components/wallet/RemoveDialog.tsx', 'src/components/wallet/remove-copy.ts']
+    for (const f of files) expect(readFileSync(f, 'utf8'), f).not.toMatch(/closeLock|queryClient\.clear|\.clear\(|outline-none|:focus\b/)
+    const chooser = readFileSync('src/pages/Chooser.tsx', 'utf8')
+    expect(chooser).toMatch(/finally\s*{[\s\S]*removeWalletData\(/)
+    expect(chooser).not.toMatch(/importAndStoreWallet|generateAndStoreWallet/)
   })
 })

@@ -36,6 +36,7 @@ vi.mock('@/lib/crypto/keystore', () => ({
   generateAndStoreWallet: (...args: unknown[]) => generateAndStoreWallet(...args),
   listWallets: async () => [{ id: 'w-new', label: 'Wallet', address: ADDRESS, createdAt: 0 }],
   removeWallet: vi.fn(),
+  appPinResidue: async () => false,
   revealSeed: vi.fn(),
 }))
 vi.mock('@/lib/crypto/auth', () => ({ setUpVaultAuth: async () => ({}) as CryptoKey, hasPasskeyRegistered: async () => false }))

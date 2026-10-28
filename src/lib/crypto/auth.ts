@@ -1,4 +1,4 @@
-import { getVaultMeta, LEGACY_LOCK_ID, putLockSession, putVaultMeta, wipeVaultDatabase } from './db'
+import { exclusiveVaultWrite, getVaultMeta, LEGACY_LOCK_ID, putLockSession, putVaultMeta, wipeVaultDatabase } from './db'
 import { deriveAesKeyFromBits, HKDF_INFO } from './derive'
 import { DEFAULT_AUTO_LOCK_MINUTES, writeLegacyLock } from './lock'
 import { assertPasskeyAndDeriveBits, isWebAuthnSupported, registerPasskey } from './webauthn'
@@ -40,7 +40,13 @@ async function wrapMasterKey(masterKey: CryptoKey, methodKey: CryptoKey) {
  * one master key and wraps it under each configured method, then returns
  * the master key so the caller can immediately encrypt the first wallet's
  * seed with it. */
-export async function setUpVaultAuth(userLabel: string, pin: string, autoLockMinutes = DEFAULT_AUTO_LOCK_MINUTES): Promise<CryptoKey> {
+export function setUpVaultAuth(userLabel: string, pin: string, autoLockMinutes = DEFAULT_AUTO_LOCK_MINUTES): Promise<CryptoKey> {
+  // Under the vault-write guard (AD-46): this builds the whole vault meta, so a
+  // last-Wallet removal must not interleave with it.
+  return exclusiveVaultWrite(() => setUpVaultAuthUnguarded(userLabel, pin, autoLockMinutes))
+}
+
+async function setUpVaultAuthUnguarded(userLabel: string, pin: string, autoLockMinutes: number): Promise<CryptoKey> {
   const masterKey = await generateMasterKey()
 
   const pinSaltB64 = generateSalt()

@@ -1,9 +1,7 @@
-import { useState } from 'react'
-import { useQueryClient } from '@tanstack/react-query'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from '@/components/ui/dialog'
+import { RemoveAllPlate } from '@/components/wallet/RemoveAllPlate'
 import { ExternalLinkIcon } from 'lucide-react'
 import { AddressLink } from '@/components/wallet/AddressLink'
 import { BUILD, shortSha, sourceUrl, formatBuiltAt } from '@/lib/build-info'
@@ -11,8 +9,6 @@ import { useAppUpdate } from '@/hooks/useAppUpdate'
 import { useAppStore } from '@/store/app-store'
 import { counterpartyKey, tagNotRecorded } from '@/store/address-book'
 import { NETWORKS } from '@/lib/xrpl/networks'
-import { RESET_INCOMPLETE_MESSAGE, tearDownAllLocalState } from '@/lib/teardown'
-import { toast } from '@/lib/notify'
 
 /**
  * The app-level Settings plates: Address book, Version and updates, and Remove
@@ -23,27 +19,8 @@ import { toast } from '@/lib/notify'
  */
 export function AppSettings() {
   const addressBook = useAppStore((s) => s.addressBook)
-  const closeAllLocks = useAppStore((s) => s.closeAllLocks)
   const { updateReady, applying, applyUpdate, checking, checkError, checkForUpdate, pendingRelease, blockedReason, declined, declineCurrent } =
     useAppUpdate()
-  const queryClient = useQueryClient()
-  const [confirmResetAll, setConfirmResetAll] = useState(false)
-
-  async function handleFullReset() {
-    // `tearDownAllLocalState` owns the whole clear set (AD-16), including the
-    // persisted app store — wallets, Address Book, auto-lock and declined
-    // updates — so no field is cleared here.
-    try {
-      await tearDownAllLocalState(queryClient)
-    } catch {
-      // Do not reload as though the device were clean when it is not.
-      toast.error(RESET_INCOMPLETE_MESSAGE)
-      return
-    } finally {
-      closeAllLocks()
-    }
-    window.location.reload()
-  }
 
   return (
     <div className="flex flex-col gap-4">
@@ -107,16 +84,7 @@ export function AppSettings() {
       </Card>
 
 
-      <Card>
-        <CardHeader>
-          <CardTitle>This device</CardTitle>
-        </CardHeader>
-        <CardContent className="flex flex-col gap-4">
-          <Button variant="danger" className="h-auto min-h-9 w-fit max-w-full whitespace-normal py-2 text-left pointer-coarse:min-h-11" onClick={() => setConfirmResetAll(true)}>
-            Remove all wallets from this device
-          </Button>
-        </CardContent>
-      </Card>
+      <RemoveAllPlate />
 
       {/* Which build is running, and the only control that changes it.
           app-versioning-and-updates.md US-1 / US-2 / US-3 / US-4 / US-5 / US-6 / US-8. */}
@@ -241,27 +209,6 @@ export function AppSettings() {
           </details>
         </CardContent>
       </Card>
-
-      <Dialog open={confirmResetAll} onOpenChange={setConfirmResetAll}>
-        <DialogContent dismissOnOutsidePress>
-          <DialogHeader>
-            <DialogTitle>Remove all wallets from this device?</DialogTitle>
-            <DialogDescription>
-              This erases every wallet stored here, including their encrypted seeds, along with the address book and settings,
-              and clears all cached balance and history data. Any wallet you have not backed up elsewhere will be permanently
-              lost — this cannot be undone.
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setConfirmResetAll(false)}>
-              Cancel
-            </Button>
-            <Button variant="destructive" onClick={handleFullReset}>
-              Erase everything
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </div>
   )
 }

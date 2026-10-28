@@ -16,6 +16,14 @@ vi.mock('@/store/app-store', async (orig) => {
   }
 })
 
+const t = vi.hoisted(() => ({ fail: false }))
+vi.mock('@/lib/teardown', async (orig) => {
+  const real = await orig<typeof import('@/lib/teardown')>()
+  return { ...real, tearDownLock: vi.fn((...a: Parameters<typeof real.tearDownLock>) => { if (t.fail) throw new Error('boom'); return real.tearDownLock(...a) }) }
+})
+
+import { readFileSync } from 'node:fs'
+import { tearDownLock } from '@/lib/teardown'
 import { Chooser } from '../Chooser'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { useAppStore } from '@/store/app-store'
@@ -211,5 +219,127 @@ describe('Open', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Open Gamma on Devnet' }))
     expect(useAppStore.getState().activeWalletId).toBe('c2')
     expect(window.location.pathname).toBe('/wallets/c2')
+  })
+})
+
+
+describe('the Lock key', () => {
+  const card = (n: string) => screen.getByRole('heading', { level: 2, name: n }).closest('li') as HTMLElement
+  const status = () => screen.getByRole('status').textContent
+  beforeEach(() => {
+    t.fail = false
+    vi.mocked(tearDownLock).mockClear()
+  })
+
+  it('goes through tearDownLock with the group lockId, flips the card, announces, focuses the h1', () => {
+    act(() => useAppStore.getState().openLock('LA', KEY, 5))
+    mount()
+    expect(status()).toBe('')
+    const key = within(card('Alpha')).getByRole('button', { name: 'Lock Alpha' })
+    expect(key.textContent).toBe('Lock')
+    fireEvent.click(key)
+    expect(tearDownLock).toHaveBeenCalledWith(expect.anything(), 'LA')
+    expect(within(card('Alpha')).getByText('Locked.')).toBeTruthy()
+    expect(within(card('Alpha')).queryByRole('button', { name: /^Lock / })).toBeNull()
+    expect(status()).toBe('Alpha: Locked.')
+    expect(document.activeElement).toBe(screen.getByRole('heading', { level: 1 }))
+    expect(names()).toEqual(['Alpha', 'Beta', 'Gamma'])
+  })
+
+  it('the Chooser never closes a lock or clears the cache inline', () => {
+    const src = readFileSync('src/pages/Chooser.tsx', 'utf8') + readFileSync('src/components/wallet/WalletCard.tsx', 'utf8')
+    expect(src).toMatch(/tearDownLock\(/)
+    expect(src).not.toMatch(/closeLock|queryClient\.clear|\.clear\(/)
+    expect(src).not.toMatch(/aria-live="polite">\s*(Open|Locked)/)
+  })
+
+  it('a shared lock flips both cards and names the other', () => {
+    useAppStore.setState({ wallets: [W('a', 'a', 'LS', 'Alpha', 'mainnet', 1), W('b', 'b', 'LS', 'Beta', 'testnet', 2)] })
+    act(() => useAppStore.getState().openLock('LS', KEY, 5))
+    mount()
+    fireEvent.click(within(card('Alpha')).getByRole('button', { name: 'Lock Alpha' }))
+    expect(within(card('Beta')).getByText('Locked.')).toBeTruthy()
+    expect(screen.getByText('Locking Alpha also locked Beta: they share one lock.')).toBeTruthy()
+    expect(status()).toBe('Alpha: Locked. Beta: Locked.')
+  })
+
+  it('no Open Check: no key, the reason is shown; a locked card shows neither', () => {
+    useAppStore.setState({ wallets: [W('a', 'a', 'LA', 'Alpha', 'mainnet', 1, { openCheck: 'none' }), W('b', 'b', 'LB', 'Beta', 'testnet', 2)] })
+    act(() => useAppStore.getState().openLock('LA', KEY, 5))
+    mount()
+    expect(within(card('Alpha')).queryByRole('button', { name: /^Lock / })).toBeNull()
+    expect(within(card('Alpha')).getByText('No Open Check: this wallet opens itself, so there is nothing to lock.')).toBeTruthy()
+    expect(within(card('Beta')).queryByText(/No Open Check/)).toBeNull()
+  })
+
+  it('a failed teardown keeps the card open with persistent text', () => {
+    act(() => {
+      useAppStore.getState().openLock('LA', KEY, 5)
+      useAppStore.getState().openLock('LB', KEY, 5)
+    })
+    mount()
+    t.fail = true
+    fireEvent.click(within(card('Alpha')).getByRole('button', { name: 'Lock Alpha' }))
+    expect(within(card('Alpha')).getByRole('alert').textContent).toBe('Could not lock this wallet. It is still open.')
+    expect(within(card('Beta')).queryByRole('alert')).toBeNull()
+    expect(within(card('Alpha')).getByRole('button', { name: 'Lock Alpha' })).toBeTruthy()
+    expect(status()).toBe('')
+  })
+
+  it('a failed Lock clears when the Lock is retried and succeeds', () => {
+    act(() => useAppStore.getState().openLock('LA', KEY, 5))
+    mount()
+    t.fail = true
+    fireEvent.click(within(card('Alpha')).getByRole('button', { name: 'Lock Alpha' }))
+    expect(within(card('Alpha')).getByRole('alert')).toBeTruthy()
+    t.fail = false
+    fireEvent.click(within(card('Alpha')).getByRole('button', { name: 'Lock Alpha' }))
+    expect(screen.queryByRole('alert')).toBeNull()
+  })
+
+  it('a failure does not come back when its card flips and is opened again', () => {
+    act(() => useAppStore.getState().openLock('LA', KEY, 5))
+    mount()
+    t.fail = true
+    fireEvent.click(within(card('Alpha')).getByRole('button', { name: 'Lock Alpha' }))
+    expect(within(card('Alpha')).getByRole('alert')).toBeTruthy()
+    act(() => useAppStore.getState().closeLock('LA'))
+    act(() => useAppStore.getState().openLock('LA', KEY, 5))
+    expect(screen.queryByRole('alert')).toBeNull()
+  })
+
+  it('a failed Lock on a shared lock names nobody and does not take focus', () => {
+    useAppStore.setState({ wallets: [W('a', 'a', 'LS', 'Alpha', 'mainnet', 1), W('b', 'b', 'LS', 'Beta', 'testnet', 2)] })
+    act(() => useAppStore.getState().openLock('LS', KEY, 5))
+    mount()
+    t.fail = true
+    fireEvent.click(within(card('Alpha')).getByRole('button', { name: 'Lock Alpha' }))
+    expect(screen.queryByText(/also locked/)).toBeNull()
+    expect(document.activeElement).not.toBe(screen.getByRole('heading', { level: 1 }))
+  })
+
+  it('the shared-lock line is replaced by the next Lock', () => {
+    useAppStore.setState({
+      wallets: [W('a', 'a', 'LS', 'Alpha', 'mainnet', 1), W('b', 'b', 'LS', 'Beta', 'testnet', 2), W('c', 'c', 'LC', 'Gamma', 'testnet', 3)],
+    })
+    act(() => {
+      useAppStore.getState().openLock('LS', KEY, 5)
+      useAppStore.getState().openLock('LC', KEY, 5)
+    })
+    mount()
+    fireEvent.click(within(card('Alpha')).getByRole('button', { name: 'Lock Alpha' }))
+    expect(screen.getByText(/Locking Alpha also locked Beta/)).toBeTruthy()
+    fireEvent.click(within(card('Gamma')).getByRole('button', { name: 'Lock Gamma' }))
+    expect(screen.queryByText(/also locked/)).toBeNull()
+  })
+
+  it('announces an auto-lock style close with no note line', () => {
+    act(() => useAppStore.getState().openLock('LA', KEY, 5))
+    mount()
+    act(() => useAppStore.getState().closeLock('LA'))
+    expect(status()).toBe('Alpha: Locked.')
+    expect(screen.queryByText(/also locked/)).toBeNull()
+    act(() => useAppStore.getState().openLock('LA', KEY, 5))
+    expect(status()).toBe('Alpha: Open.')
   })
 })

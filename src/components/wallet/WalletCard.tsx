@@ -50,7 +50,7 @@ function LockedCard({ group, active }: { group: LockedGroup; active: boolean }) 
     <>
       <div className="flex flex-wrap items-start justify-between gap-x-3 gap-y-1">
         <CardName>{group.label}</CardName>
-        <StatusLegend tone="neutral" aria-live="polite">
+        <StatusLegend tone="neutral">
           Locked
         </StatusLegend>
       </div>
@@ -77,13 +77,23 @@ function ActiveLegend() {
   return <span className="font-legend text-[0.6875rem] font-semibold uppercase tracking-[0.1em] text-muted-foreground">Active</span>
 }
 
-function OpenCard({ group, activeWalletId }: { group: OpenGroup; activeWalletId: string | null }) {
+function OpenCard({
+  group,
+  activeWalletId,
+  lockFailed,
+  onLock,
+}: {
+  group: OpenGroup
+  activeWalletId: string | null
+  lockFailed: boolean
+  onLock: (group: OpenGroup) => void
+}) {
   const active = group.views.some((v) => v.walletId === activeWalletId)
   return (
     <>
       <div className="flex flex-wrap items-start justify-between gap-x-3 gap-y-1">
         <CardName>{group.label}</CardName>
-        <StatusLegend tone="live" aria-live="polite">
+        <StatusLegend tone="live">
           Open
         </StatusLegend>
       </div>
@@ -93,18 +103,42 @@ function OpenCard({ group, activeWalletId }: { group: OpenGroup; activeWalletId:
           <NetworkRow key={row.walletId} name={group.label} row={row} active={row.walletId === activeWalletId} />
         ))}
       </ul>
+      {group.allowsLock ? (
+        <div className="flex flex-wrap gap-2">
+          <Button type="button" variant="outline" size="sm" className={KEY} aria-label={`Lock ${group.label}`} onClick={() => onLock(group)}>
+            Lock
+          </Button>
+        </div>
+      ) : (
+        <p className="text-sm text-muted-foreground">No Open Check: this wallet opens itself, so there is nothing to lock.</p>
+      )}
+      {lockFailed && (
+        <p role="alert" className="text-sm font-medium text-text-destructive">
+          Could not lock this wallet. It is still open.
+        </p>
+      )}
     </>
   )
 }
 
 /** One plate per Seed (AD-43). Reads nothing: everything it shows arrives in `group`. */
-export function WalletCard({ group, activeWalletId }: { group: WalletGroup; activeWalletId: string | null }) {
+export function WalletCard({
+  group,
+  activeWalletId,
+  lockFailed = false,
+  onLock,
+}: {
+  group: WalletGroup
+  activeWalletId: string | null
+  lockFailed?: boolean
+  onLock: (group: OpenGroup) => void
+}) {
   return (
     <li className="panel-plate flex flex-col gap-3 rounded-md px-4 pb-4 pt-3">
       {group.state === 'locked' ? (
         <LockedCard group={group} active={group.entryWalletId === activeWalletId} />
       ) : (
-        <OpenCard group={group} activeWalletId={activeWalletId} />
+        <OpenCard group={group} activeWalletId={activeWalletId} lockFailed={lockFailed} onLock={onLock} />
       )}
     </li>
   )

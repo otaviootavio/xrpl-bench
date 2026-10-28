@@ -7,6 +7,7 @@ import { clearConfigureLaunch, peekConfigureLaunch } from '@/lib/configure-launc
 import { leaveScreen, resetToHome, type TaskRoute } from '@/lib/route'
 import { listWallets } from '@/lib/crypto/keystore'
 import { startLockSession } from '@/lib/crypto/lock'
+import { useLockMinutesChanged } from '@/hooks/useLockMinutesChanged'
 import { toast } from '@/lib/notify'
 import { queryKeys } from '@/lib/xrpl/query-keys'
 import { useActiveNetwork, useAppStore } from '@/store/app-store'
@@ -26,7 +27,7 @@ export function WalletScreens({ route }: { route: TaskRoute }) {
   const openLocks = useAppStore((s) => s.openLocks)
   const openLock = useAppStore((s) => s.openLock)
   const closeLock = useAppStore((s) => s.closeLock)
-  const setLockMinutes = useAppStore((s) => s.setLockMinutes)
+  const lockMinutesChanged = useLockMinutesChanged()
 
   // Opened from Configure or from the Settings tab? Decided once, at mount, by the launch
   // marker the Configure keys set (never the URL or history state), so the Back label
@@ -60,11 +61,15 @@ export function WalletScreens({ route }: { route: TaskRoute }) {
       if (edited.openKey) {
         await startLockSession(meta.lockId, edited.openKey, edited.autoLockMinutes)
         openLock(meta.lockId, edited.openKey, edited.autoLockMinutes)
+        await queryClient.invalidateQueries({ queryKey: queryKeys.lockInfo(meta.lockId) })
       } else if (edited.changed) {
-        setLockMinutes(meta.lockId, edited.autoLockMinutes)
+        // Same-lock edit: the minutes part is the shared handler the Configure control also uses.
+        await lockMinutesChanged(meta.lockId, edited.autoLockMinutes)
+      } else {
+        // Nothing changed: the read the screens show is still refreshed, as it always was.
+        await queryClient.invalidateQueries({ queryKey: queryKeys.lockInfo(meta.lockId) })
       }
       await refreshWallets()
-      await queryClient.invalidateQueries({ queryKey: queryKeys.lockInfo(meta.lockId) })
       if (previousLockId !== meta.lockId) queryClient.removeQueries({ queryKey: queryKeys.lockInfo(previousLockId) })
       toast.success(edited.changed ? 'Checks updated.' : 'Nothing to change.')
     } finally {

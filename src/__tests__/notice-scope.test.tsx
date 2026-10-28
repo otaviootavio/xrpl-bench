@@ -34,4 +34,18 @@ describe('notice scoping', () => {
     useAppStore.setState({ activeWalletId: 'b' })
     expect(messages()).toEqual(['About the app.'])
   })
+
+  it('a notice about the wallet left goes when the route returns to the chooser', async () => {
+    await import('@/App')
+    const { useAppStore } = await import('@/store/app-store')
+    const { useNoticeStore } = await import('@/store/notice-store')
+    const { toast } = await import('@/lib/notify')
+    const { leaveToChooser } = await import('@/lib/route')
+    window.history.replaceState(null, '', '/wallets/a')
+    useAppStore.setState({ activeWalletId: 'a' })
+    toast.error('About A.')
+    expect(useNoticeStore.getState().notices).toHaveLength(1)
+    leaveToChooser()
+    expect(useNoticeStore.getState().notices).toHaveLength(0)
+  })
 })

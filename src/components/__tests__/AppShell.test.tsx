@@ -1,5 +1,5 @@
 /** @vitest-environment jsdom */
-import { act, cleanup, render, screen } from '@testing-library/react'
+import { act, cleanup, render, screen, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { useEffect } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -47,16 +47,18 @@ vi.mock('@/hooks/useClearCacheOnLock', async (orig) => {
 
 import { AppShell, walletInView } from '../AppShell'
 import { useAppStore, lockRemainingMs } from '@/store/app-store'
-import { navigate, resetToHome } from '@/lib/route'
+import { navigate, resetToHome, leaveToChooser } from '@/lib/route'
+import { queryKeys } from '@/lib/xrpl/query-keys'
 
 const W = (id: string, lockId: string) =>
   ({ id, seedId: id, lockId, label: id, address: `r${id}`, createdAt: 1, network: 'testnet', algorithm: 'ed25519', openCheck: 'pin', signingCheck: 'standard' }) as never
 const KEY = {} as CryptoKey
 const ids = () => Object.keys(useAppStore.getState().openLocks).sort()
 
+let qc = new QueryClient()
 function mount() {
   return render(
-    <QueryClientProvider client={new QueryClient()}>
+    <QueryClientProvider client={qc}>
       <AppShell />
     </QueryClientProvider>,
   )
@@ -67,6 +69,7 @@ beforeEach(() => {
   h.mounts.auto = h.mounts.clear = h.unmounts.auto = h.unmounts.clear = 0
   h.ended.length = 0
   h.endedAll = 0
+  qc = new QueryClient()
   window.history.replaceState(null, '', '/')
   useAppStore.setState({ wallets: [W('a', 'X')], activeWalletId: 'a', openLocks: {} } as never)
 })
@@ -175,5 +178,53 @@ describe('AppShell route switch and guards (AD-32, AD-36)', () => {
     expect(screen.getByText('wallet-header')).toBeTruthy()
     act(() => navigate('/wallets/a/checks'))
     expect(screen.getByText('content')).toBeTruthy()
+  })
+})
+
+describe('leaving a wallet for the chooser (AD-38, UX-DR10)', () => {
+  const seed = () => qc.setQueryData(queryKeys.accountState('testnet', 'ra'), { v: 1 })
+  const cached = () => qc.getQueryData(queryKeys.accountState('testnet', 'ra'))
+
+  it('removes the left wallet\'s account data, keeps its lock open, and focuses the Wallets h1', () => {
+    useAppStore.getState().openLock('X', KEY, 5)
+    mount()
+    act(() => navigate('/wallets/a'))
+    seed()
+    act(() => leaveToChooser())
+    act(() => void vi.advanceTimersByTime(50))
+    expect(cached()).toBeUndefined()
+    expect(ids()).toEqual(['X'])
+    expect(document.activeElement).toBe(screen.getByRole('heading', { level: 1, name: 'Wallets' }))
+  })
+
+  it('Back (history.go) does the same', async () => {
+    useAppStore.getState().openLock('X', KEY, 5)
+    mount()
+    act(() => navigate('/wallets/a'))
+    seed()
+    vi.useRealTimers()
+    act(() => window.history.back())
+    await waitFor(() => expect(window.location.pathname).toBe('/'))
+    expect(cached()).toBeUndefined()
+  })
+
+  it('keeps the entries another open lock\'s wallet still holds for the same account', () => {
+    useAppStore.setState({ wallets: [W('a', 'X'), { ...(W('b', 'Y') as object), address: 'ra' }] } as never)
+    useAppStore.getState().openLock('X', KEY, 5)
+    useAppStore.getState().openLock('Y', KEY, 5)
+    mount()
+    act(() => navigate('/wallets/a'))
+    seed()
+    act(() => leaveToChooser())
+    act(() => void vi.advanceTimersByTime(50))
+    expect(window.location.pathname).toBe('/')
+    expect(cached()).toEqual({ v: 1 })
+  })
+
+  it('a cold start at the chooser moves no focus and removes nothing', () => {
+    seed()
+    mount()
+    expect(document.activeElement).toBe(document.body)
+    expect(cached()).toEqual({ v: 1 })
   })
 })

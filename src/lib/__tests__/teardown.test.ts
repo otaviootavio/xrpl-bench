@@ -32,7 +32,7 @@ vi.mock('@/lib/crypto/auth', () => ({ wipeVault: () => h.wipeVault() }))
 vi.mock('@/lib/crypto/lock', () => ({ endLockSession: async () => {}, endAllLockSessions: async () => {} }))
 vi.mock('@/lib/xrpl/client', () => ({ disconnectAllClients: () => h.disconnectAllClients() }))
 
-import { clearCachedAccountData, PERSISTED_ACCOUNT_DATA, tearDownAllLocalState } from '../teardown'
+import { clearCachedAccountData, leaveWallet, PERSISTED_ACCOUNT_DATA, tearDownAllLocalState } from '../teardown'
 import { APP_STATE_STORAGE_KEY, useAppStore } from '@/store/app-store'
 import { queryKeys } from '@/lib/xrpl/query-keys'
 
@@ -256,6 +256,34 @@ describe('clearCachedAccountData — lock and single-wallet removal (G-14)', () 
     expect(h.wipeVault).not.toHaveBeenCalled()
     expect(h.disconnectAllClients).not.toHaveBeenCalled()
     expect(h.idb.get(APP_STATE_STORAGE_KEY)).toContain('Bob — landlord')
+  })
+})
+
+describe('leaveWallet (AD-38)', () => {
+  const W = (id: string, lockId: string, address: string) =>
+    ({ id, seedId: id, lockId, label: id, address, createdAt: 1, network: 'testnet', algorithm: 'ed25519', openCheck: 'pin', signingCheck: 'standard' }) as never
+  const OPEN = { key: {} as CryptoKey, autoLockMinutes: 5 }
+
+  it('removes the wallet\'s account-scoped data and closes no lock', () => {
+    const qc = new QueryClient()
+    useAppStore.setState({ wallets: [W('a', 'X', 'rA')], activeWalletId: 'a', openLocks: { X: OPEN } } as never)
+    qc.setQueryData(queryKeys.accountState('testnet', 'rA'), 1)
+    qc.setQueryData(queryKeys.recommendedFee('testnet'), 2)
+    leaveWallet(qc, 'a')
+    expect(qc.getQueryData(queryKeys.accountState('testnet', 'rA'))).toBeUndefined()
+    expect(qc.getQueryData(queryKeys.recommendedFee('testnet'))).toBe(2)
+    expect(Object.keys(useAppStore.getState().openLocks)).toEqual(['X'])
+  })
+
+  it('keeps an account another open lock\'s wallet still holds, but not a closed lock\'s', () => {
+    const qc = new QueryClient()
+    qc.setQueryData(queryKeys.accountState('testnet', 'rA'), 1)
+    useAppStore.setState({ wallets: [W('a', 'X', 'rA'), W('b', 'Y', 'rA')], openLocks: { X: OPEN, Y: OPEN } } as never)
+    leaveWallet(qc, 'a')
+    expect(qc.getQueryData(queryKeys.accountState('testnet', 'rA'))).toBe(1)
+    useAppStore.setState({ openLocks: { X: OPEN } } as never)
+    leaveWallet(qc, 'a')
+    expect(qc.getQueryData(queryKeys.accountState('testnet', 'rA'))).toBeUndefined()
   })
 })
 

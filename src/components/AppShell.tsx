@@ -1,4 +1,5 @@
-import { useEffect } from 'react'
+import { useEffect, useRef } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
 import { AppHeader } from '@/components/AppHeader'
 import { ChassisShell } from '@/components/ChassisShell'
 import { Chooser } from '@/pages/Chooser'
@@ -7,6 +8,7 @@ import { useRoute } from '@/hooks/useRoute'
 import { useAutoLock } from '@/hooks/useAutoLock'
 import { useClearCacheOnLock } from '@/hooks/useClearCacheOnLock'
 import { useAppStore } from '@/store/app-store'
+import { leaveWallet } from '@/lib/teardown'
 import { enteredWalletId, isWalletScreen, resetToHome, type Route } from '@/lib/route'
 
 /**
@@ -31,6 +33,7 @@ export function AppShell() {
   const route = useRoute()
   const activeWalletId = useAppStore((s) => s.activeWalletId)
   const activeExists = useAppStore((s) => s.wallets.some((w) => w.id === s.activeWalletId))
+  const queryClient = useQueryClient()
   useAutoLock(walletInView(route, activeWalletId))
   useClearCacheOnLock()
 
@@ -43,6 +46,19 @@ export function AppShell() {
   useEffect(() => {
     if (shellRoute && !shellReachable) resetToHome()
   }, [shellRoute, shellReachable])
+
+  // Leaving a wallet-side screen for the chooser (Wallets key, Back, Lock): the
+  // wallet that was left sheds what it read (AD-38) and focus lands on the
+  // chooser's h1 (UX-DR10). A cold start has no previous route and moves nothing.
+  const previous = useRef<{ route: Route; walletId: string | null } | null>(null)
+  useEffect(() => {
+    const before = previous.current
+    previous.current = { route, walletId: walletInView(route, activeWalletId) }
+    if (before?.walletId && route.screen === 'chooser') {
+      leaveWallet(queryClient, before.walletId)
+      document.getElementById('chooser-heading')?.focus()
+    }
+  }, [route, activeWalletId, queryClient])
 
   return (
     // The chassis shell (docs/decisions.md §9.1, N1) reserves the annunciator

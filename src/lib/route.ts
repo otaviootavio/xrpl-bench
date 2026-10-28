@@ -258,6 +258,25 @@ export function resetToHome(): void {
   notify()
 }
 
+const blockerListeners = new Set<() => void>()
+
+function notifyBlockers() {
+  for (const l of blockerListeners) l()
+}
+
+/** Whether an open screen currently cannot be left (a `useSyncExternalStore` snapshot). */
+export function isLeaveBlocked(): boolean {
+  return blockers > 0
+}
+
+/** Subscribes to changes of `isLeaveBlocked`; returns the unsubscribe. */
+export function subscribeLeaveBlockers(listener: () => void): () => void {
+  blockerListeners.add(listener)
+  return () => {
+    blockerListeners.delete(listener)
+  }
+}
+
 /** Registers that the open screen cannot be left; returns the release. */
 export function blockLeaving(): () => void {
   if (blockers === 0) {
@@ -265,11 +284,13 @@ export function blockLeaving(): () => void {
     blockedDepth = currentDepth()
   }
   blockers += 1
+  notifyBlockers()
   let released = false
   return () => {
     if (released) return
     released = true
     blockers -= 1
+    notifyBlockers()
   }
 }
 

@@ -18,7 +18,7 @@ export function Chooser() {
   return (
     <section aria-labelledby="chooser-heading" className="mx-auto flex w-full flex-col gap-4">
       <div className="flex flex-col gap-2">
-        <h1 id="chooser-heading" className="font-legend text-base font-semibold uppercase leading-tight tracking-[0.08em]">
+        <h1 id="chooser-heading" tabIndex={-1} className="font-legend text-base font-semibold uppercase leading-tight tracking-[0.08em]">
           Wallets
         </h1>
         <p className="text-sm leading-snug text-muted-foreground">Choose a wallet to open. Each one has its own lock.</p>

@@ -457,6 +457,12 @@ control — and a single-wallet, unfunded test account renders none of them.
 `docs/sprints/interface-sprints.md` now carries this as a standing verification
 prerequisite.
 
+**Amended (chooser story 6, AD-45).** The wallet picker `Select` is removed from
+the header, so the multi-wallet crush above can no longer occur there:
+switching wallets is the **Wallets** key (back to the chooser), then Open. The
+header now carries the nameplate, the Wallets key and, for an open lock only,
+the network plate and the Lock key, and still wraps onto its own row below `sm`.
+
 ---
 
 ## 7. Decisions made during the 2026-09-01 visual-world replacement

@@ -119,7 +119,7 @@ import { readFileSync } from 'node:fs'
 import { execSync } from 'node:child_process'
 import { ECDSA, Wallet } from 'xrpl'
 import { aesDecrypt } from '../aes'
-import { createStoredWallet, importStoredWallet, type ImportStoredWalletInput } from '../keystore'
+import { createStoredWallet, importDuplicateReason, importStoredWallet, type ImportStoredWalletInput } from '../keystore'
 import * as lockModule from '../lock'
 
 const PIN = '123456'
@@ -230,6 +230,19 @@ describe('importStoredWallet', () => {
     expect(lockRecords()).toHaveLength(1)
   })
 
+  it('the duplicate probe reads only, and says exactly what the writer says', async () => {
+    expect(await importDuplicateReason(SEED)).toBeNull()
+    ok(await importStoredWallet(base, { pin: PIN }))
+    const writes = h.state.stores.wallets.size
+    const probe = await importDuplicateReason(SEED)
+    const writer = await importStoredWallet({ ...base, network: 'devnet' }, { pin: PIN })
+    expect(probe).toBeTypeOf('string')
+    expect(writer).toEqual({ status: 'refused', reason: probe })
+    expect(h.state.stores.wallets.size).toBe(writes)
+    // Not a Seed: not a duplicate, and never an echo of the value.
+    expect(await importDuplicateReason('not a seed')).toBeNull()
+  })
+
   it('a Generated wallet with the same key is a duplicate too', async () => {
     const gen = ok(await createStoredWallet({ label: 'G', network: 'testnet', algorithm: 'ed25519', openCheck: 'pin', autoLockMinutes: 5, signing: 'standard', passkey: 'yes' }, { pin: PIN }))
     const result = await importStoredWallet({ ...base, seed: gen.seed }, { pin: PIN })
@@ -277,7 +290,7 @@ describe('importStoredWallet', () => {
 })
 
 describe('no chooser-side caller of importAndStoreWallet', () => {
-  it.each(['Chooser.tsx', 'WalletCard.tsx', 'AppShell.tsx', 'SettingsScreen.tsx', 'AppSettings.tsx'])('%s', (name) => {
+  it.each(['Chooser.tsx', 'WalletCard.tsx', 'AppShell.tsx', 'SettingsScreen.tsx', 'AppSettings.tsx', 'AddWalletScreen.tsx'])('%s', (name) => {
     const found = execSync(`find src -name ${name}`, { encoding: 'utf8' }).trim().split('\n').filter(Boolean)
     expect(found.length, `${name} must exist, or the guard checks nothing`).toBeGreaterThan(0)
     for (const f of found) expect(readFileSync(f, 'utf8'), f).not.toContain('importAndStoreWallet')

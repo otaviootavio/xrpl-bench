@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
@@ -10,7 +10,7 @@ import { WalletQuestions } from '@/components/wallet/WalletQuestions'
 import { ScreenFooter } from '@/components/wallet/TaskScreen'
 import { SeedReveal } from '@/components/wallet/SeedReveal'
 import { WrittenSeedConfirm } from '@/components/wallet/WrittenSeedConfirm'
-import { createDerivedWallet, createStoredWallet, describeCheckFailure, listWallets, type WalletMeta } from '@/lib/crypto/keystore'
+import { createDerivedWallet, createStoredWallet, describeCheckFailure, importStoredWallet, listWallets, type WalletMeta } from '@/lib/crypto/keystore'
 import { hasAppPin, startLockSession } from '@/lib/crypto/lock'
 import { triesRemaining } from '@/lib/crypto/pin'
 import {
@@ -42,7 +42,26 @@ import { useAppStore } from '@/store/app-store'
  * store is committed only after the backup step (Gate switches to Main the
  * moment a Wallet exists).
  */
+/**
+ * Import mode (AD-40): the same questions, PIN entry and written-Seed confirmation,
+ * with the Seed supplied by the host instead of generated. The host owns the Seed
+ * field and its ref; the flow asks for the Seed once, at the moment of writing,
+ * holds it only as an argument to `importStoredWallet`, and calls `clear` in
+ * `finally` on every exit. Seed Method and signature type are not asked (the Seed
+ * fixes the algorithm).
+ */
+export interface ImportSource {
+  /** The Seed field, rendered above the questions. `busy` freezes it. */
+  field: (busy: boolean) => ReactNode
+  /** Parse, duplicate probe, master-key check and its warning, in that order. */
+  acquire: (choice: { network: NetworkId; node?: string }) => Promise<{ status: 'ok'; seed: string } | { status: 'refused'; reason: string } | { status: 'cancelled' }>
+  /** Drops the Seed from the host's ref and field. */
+  clear: () => void
+}
+
 export interface CreateWalletFlowProps {
+  /** Present: this flow imports a Seed instead of generating one. */
+  importSource?: ImportSource
   /** Called once the Wallet is committed to the store, after its backup. */
   onDone?: (meta: WalletMeta) => void
   /** True from the moment a Wallet is being written until it is committed:
@@ -106,7 +125,7 @@ export function CreateWalletFlow(props: CreateWalletFlowProps) {
   return <CreateWalletForm capability={capability} {...props} />
 }
 
-function CreateWalletForm({ capability, onDone, onInProgressChange, defaultLabel = 'My Wallet', actionHost = null }: CreateWalletFlowProps & { capability: PasskeyCapability }) {
+function CreateWalletForm({ capability, onDone, onInProgressChange, defaultLabel = 'My Wallet', actionHost = null, importSource }: CreateWalletFlowProps & { capability: PasskeyCapability }) {
   const group = useId()
   const [step, setStep] = useState<Step>('questions')
   // Layout only: every answer lives in the state below, so closing Customise resets none.
@@ -214,6 +233,7 @@ function CreateWalletForm({ capability, onDone, onInProgressChange, defaultLabel
     origin,
     // This flow asks for the written Seed itself (the `confirm-seed` step).
     canConfirmWrittenSeed: true,
+    ...(importSource ? { imported: true } : {}),
   })
 
   /** The pre-write callback the keystore calls with the new Seed (FR-72): shows
@@ -306,8 +326,9 @@ function CreateWalletForm({ capability, onDone, onInProgressChange, defaultLabel
     setBusy(true)
     onInProgressChange?.(true)
     let created = false
+    const nothingDone = importSource ? 'Nothing was imported.' : 'Nothing was created.'
     try {
-      if (seedMethod === 'passkey-derived') {
+      if (!importSource && seedMethod === 'passkey-derived') {
         const derived = await createDerivedWallet(
           {
             label: newName,
@@ -341,52 +362,59 @@ function CreateWalletForm({ capability, onDone, onInProgressChange, defaultLabel
         }
         return
       }
-      const result = await createStoredWallet(
-        {
-          label: newName,
-          network,
-          ...(nodeMode === 'custom' && verifiedNode ? { node: verifiedNode } : {}),
-          algorithm,
-          openCheck,
-          autoLockMinutes,
-          signing,
-          passkey: capability,
-        },
-        { pin, confirmWrittenSeed, appPinExpected: appPin?.exists === true },
-      )
+      const nodeChoice = nodeMode === 'custom' && verifiedNode ? { node: verifiedNode } : {}
+      const ctx = { pin, confirmWrittenSeed, appPinExpected: appPin?.exists === true }
+      let result: Awaited<ReturnType<typeof createStoredWallet>> | Awaited<ReturnType<typeof importStoredWallet>>
+      if (importSource) {
+        // Order (AD-39): parse, duplicate probe, master-key check, then the keystore.
+        const got = await importSource.acquire({ network, ...nodeChoice })
+        if (got.status !== 'ok') {
+          if (got.status === 'refused') setError(got.reason)
+          else setError('Cancelled. Nothing was imported.')
+          return
+        }
+        result = await importStoredWallet({ label: newName, network, ...nodeChoice, openCheck, autoLockMinutes, signing, seed: got.seed, passkey: capability }, ctx)
+      } else {
+        result = await createStoredWallet({ label: newName, network, ...nodeChoice, algorithm, openCheck, autoLockMinutes, signing, passkey: capability }, ctx)
+      }
       switch (result.status) {
         case 'ok':
           pendingRef.current = { meta: result.value.meta, key: result.value.openKey, autoLockMinutes }
           created = true
-          if (options.writtenSeedRequired) {
-            // Already written down and confirmed before anything was stored: no
-            // second backup screen, and the Seed is not kept.
+          if (importSource || options.writtenSeedRequired) {
+            // An import was typed in by the person; a required confirmation already
+            // happened before anything was stored: no second backup screen, and
+            // the Seed is not kept.
             setStep('finish')
             await finishBackup(true)
-          } else {
+          } else if ('seed' in result.value) {
             seedRef.current = result.value.seed
             setStep('backup')
+          } else {
+            setError('Could not finish this wallet. Open it from the Wallets list.')
           }
           break
         case 'refused':
           setError(result.reason)
           break
         case 'cancelled':
-          setError('Cancelled. Nothing was created.')
+          setError(`Cancelled. ${nothingDone}`)
           break
         case 'unsupported':
-          setError('This device or browser could not use a passkey for this wallet. Nothing was created.')
+          setError(`This device or browser could not use a passkey for this wallet. ${nothingDone}`)
           break
         case 'wrong-credential':
-          setError(`${describeCheckFailure(result)} Nothing was created.`)
+          setError(`${describeCheckFailure(result)} ${nothingDone}`)
           break
         case 'locked-out':
-          setError(`${describeCheckFailure(result)} Nothing was created.`)
+          setError(`${describeCheckFailure(result)} ${nothingDone}`)
           break
       }
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Could not create the wallet. Nothing was created.')
+      // An import never shows a library message: it is not ours to promise it holds no Seed.
+      setError(importSource ? 'Could not import the wallet. Nothing was imported.' : err instanceof Error ? err.message : 'Could not create the wallet. Nothing was created.')
     } finally {
+      importSource?.clear()
       clearPinFields()
       setBusy(false)
       if (!created) {
@@ -519,13 +547,15 @@ function CreateWalletForm({ capability, onDone, onInProgressChange, defaultLabel
 
   const createButton = (
     <Button type="button" aria-disabled={!verdict.ok || labelError || (needsPin && pinReadFailed) ? true : undefined} aria-describedby={!verdict.ok ? `${group}-blocked` : labelError ? `${group}-label-error` : undefined} disabled={busy} onClick={() => void handleCreate()}>
-      {busy ? 'Creating…' : 'Create wallet'}
+      {busy ? (importSource ? 'Importing…' : 'Creating…') : importSource ? 'Import wallet' : 'Create wallet'}
     </Button>
   )
 
   return (
     <div className="flex flex-col gap-5">
+      {importSource?.field(busy)}
       <WalletQuestions
+        imported={!!importSource}
         group={group}
         options={options}
         busy={busy}

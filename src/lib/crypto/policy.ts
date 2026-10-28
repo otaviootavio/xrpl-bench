@@ -192,6 +192,8 @@ export interface OptionsContext {
   /** The networks of every Wallet on the lock the auto-lock answers apply to, when
    * that is more than `network` (a lock shared by legacy Wallets). */
   lockNetworks?: readonly NetworkId[]
+  /** The Seed comes from outside (an import): Open Check `none` is unavailable on every network. */
+  imported?: boolean
 }
 
 export interface DescribedOptions {
@@ -236,7 +238,9 @@ export function describeOptions(ctx: OptionsContext): DescribedOptions {
   const openCheck: Record<NewOpenCheck, OptionState> = {
     pin: { available: true },
     passkey: passkeyState(ctx.passkey),
-    none: fromVerdict(checkLockRequest({ network: ctx.network, openCheck: 'none', autoLockMinutes: MAINNET_MIN_AUTO_LOCK_MINUTES })),
+    none: ctx.imported
+      ? { available: false, reason: IMPORT_NEEDS_OPEN_CHECK_REASON }
+      : fromVerdict(checkLockRequest({ network: ctx.network, openCheck: 'none', autoLockMinutes: MAINNET_MIN_AUTO_LOCK_MINUTES })),
   }
   const signingFor = (kind: SigningKind): OptionState => {
     const allowed = checkSigningCheck(ctx.seedMethod, kind)

@@ -64,6 +64,8 @@ export interface WalletQuestionsProps {
   onCustomiseOpen: (open: boolean) => void
   /** Customise is forced open while a blocked combination or a failed Node test needs it. */
   customiseForced: boolean
+  /** An import: the Seed fixes the Seed Method and the signature type, so neither is asked or summarised. */
+  imported?: boolean
 }
 
 export function WalletQuestions(p: WalletQuestionsProps) {
@@ -73,8 +75,12 @@ export function WalletQuestions(p: WalletQuestionsProps) {
   const summaryRows: [string, string][] = [
     ['Network', NETWORKS[p.network].label],
     ['Node', p.nodeMode === 'builtin' ? 'Built-in Nodes' : p.verifiedNode ? `${p.verifiedNode} (tested)` : 'Your own Node (not tested yet)'],
-    ['Seed Method', p.seedMethod === 'stored' ? 'Stored Seed' : 'Passkey-Derived Seed'],
-    ['Signature type', p.algorithm === 'ed25519' ? 'Ed25519' : 'secp256k1'],
+    ...(p.imported
+      ? []
+      : ([
+          ['Seed Method', p.seedMethod === 'stored' ? 'Stored Seed' : 'Passkey-Derived Seed'],
+          ['Signature type', p.algorithm === 'ed25519' ? 'Ed25519' : 'secp256k1'],
+        ] as [string, string][])),
     ['Open Check', p.openCheck === 'pin' ? 'App PIN' : p.openCheck === 'passkey' ? 'Passkey' : 'No Open Check'],
     ['Auto-lock', minutesLabel(p.autoLockMinutes)],
     ['Signing Check', p.signing === 'standard' ? 'Standard' : p.signing === 'passkey' ? 'Passkey only' : 'App PIN only'],
@@ -103,6 +109,7 @@ export function WalletQuestions(p: WalletQuestionsProps) {
 
       <NetworkChoice value={p.network} onChange={p.onNetworkChange} disabled={busy || p.nodeBusy} />
 
+      {!p.imported && (
       <Axis legend="Seed Method">
         <Choice
           name={`${group}-seed`}
@@ -121,6 +128,7 @@ export function WalletQuestions(p: WalletQuestionsProps) {
           onSelect={p.onSelectDerived}
         />
       </Axis>
+      )}
 
       {p.seedMethod === 'passkey-derived' && (
         <>
@@ -219,10 +227,12 @@ export function WalletQuestions(p: WalletQuestionsProps) {
             )}
           </Axis>
 
-          <Axis legend="Signature type">
-            <Choice name={`${group}-algo`} checked={p.algorithm === 'ed25519'} label="Ed25519" state={{ available: true }} onSelect={() => p.onAlgorithm('ed25519')} />
-            <Choice name={`${group}-algo`} checked={p.algorithm === 'secp256k1'} label="secp256k1" state={{ available: true }} onSelect={() => p.onAlgorithm('secp256k1')} />
-          </Axis>
+          {!p.imported && (
+            <Axis legend="Signature type">
+              <Choice name={`${group}-algo`} checked={p.algorithm === 'ed25519'} label="Ed25519" state={{ available: true }} onSelect={() => p.onAlgorithm('ed25519')} />
+              <Choice name={`${group}-algo`} checked={p.algorithm === 'secp256k1'} label="secp256k1" state={{ available: true }} onSelect={() => p.onAlgorithm('secp256k1')} />
+            </Axis>
+          )}
 
           <Axis legend="Open Check">
             <Choice name={`${group}-open`} checked={p.openCheck === 'pin'} label="App PIN" state={options.openCheck.pin} onSelect={() => p.onOpenCheck('pin')} />

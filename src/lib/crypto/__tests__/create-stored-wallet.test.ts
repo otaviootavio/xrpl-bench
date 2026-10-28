@@ -604,3 +604,23 @@ describe('revealing on a legacy lock (FR-69)', () => {
     expect(h.state.stores.session.size).toBe(0)
   })
 })
+
+describe('the name of a new Seed (AD-42, chooser story 11)', () => {
+  const create = async (label: string) => ok(await createStoredWallet({ ...base, label, openCheck: 'none' }, {})).meta
+  const labels = () => [...h.state.stores.wallets.values()].map((r) => r.label).sort()
+
+  it('keeps a free typed name, normalised', async () => {
+    expect((await create('  Savings   box ')).label).toBe('Savings box')
+  })
+
+  it('replaces an empty label, and a label that is taken (case-insensitively), with the auto-suffixed default', async () => {
+    expect((await create('')).label).toBe('Wallet')
+    expect((await create('')).label).toBe('Wallet 2')
+    expect((await create('wallet')).label).toBe('Wallet 3')
+    expect(labels()).toEqual(['Wallet', 'Wallet 2', 'Wallet 3'])
+  })
+
+  it('replaces a name over 40 characters', async () => {
+    expect((await create('x'.repeat(41))).label).toBe('Wallet')
+  })
+})

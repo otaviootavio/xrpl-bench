@@ -254,7 +254,7 @@ describe('Settings: the busy guards hold while the check or the write runs', () 
     expect(screen.getByRole('button', { name: 'Checking…' })).toBeTruthy()
 
     // The screen cannot be left while the check runs: Back is disabled.
-    expect((screen.getByRole('button', { name: 'Settings' }) as HTMLButtonElement).disabled).toBe(true)
+    expect((screen.getByRole('button', { name: 'Wallets' }) as HTMLButtonElement).disabled).toBe(true)
     expect(screen.getByText('Add another wallet')).toBeTruthy()
 
     await click('Checking…')

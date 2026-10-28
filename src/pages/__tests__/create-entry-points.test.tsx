@@ -61,13 +61,17 @@ vi.mock('@/components/wallet/AddressLink', () => ({ AddressLink: () => <span /> 
 import { Onboarding } from '../Onboarding'
 import { SettingsTab } from '../tabs/SettingsTab'
 import { WalletScreens } from '../WalletScreens'
+import { AddWalletScreen } from '@/components/wallet/AddWalletScreen'
 import { useRoute } from '@/hooks/useRoute'
-import { isTaskRoute } from '@/lib/route'
+import { isTaskRoute, leaveScreen } from '@/lib/route'
+import { consumeAdded } from '@/lib/chooser-signals'
+import { toast } from '@/lib/notify'
 import { useAppStore } from '@/store/app-store'
 
-/** Settings, or the routed screen its buttons navigate to (what `Main` does). */
+/** Settings, or the routed screen its buttons navigate to (what `Main` and the app shell do). */
 function Host() {
   const route = useRoute()
+  if (route.screen === 'add-wallet') return <AddWalletScreen onClose={leaveScreen} />
   return isTaskRoute(route) ? <WalletScreens route={route} /> : <SettingsTab />
 }
 
@@ -154,9 +158,9 @@ describe('Settings > Add wallet', () => {
   it('the screen cannot be left while a Wallet is being written or backed up, then returns to Settings when done', async () => {
     render(<Host />)
     await click('Add wallet')
-    const props = h.flowProps.at(-1) as { onInProgressChange: (b: boolean) => void; onDone: () => void }
+    const props = h.flowProps.at(-1) as { onInProgressChange: (b: boolean) => void; onDone: (meta: { seedId: string }) => void }
     await act(async () => props.onInProgressChange(true))
-    expect((screen.getByRole('button', { name: 'Settings' }) as HTMLButtonElement).disabled).toBe(true)
+    expect((screen.getByRole('button', { name: 'Wallets' }) as HTMLButtonElement).disabled).toBe(true)
     // The browser's Back is put back too.
     await act(async () => {
       window.history.back()
@@ -166,9 +170,53 @@ describe('Settings > Add wallet', () => {
     expect(screen.getByText('the creation flow')).toBeTruthy()
     await act(async () => {
       props.onInProgressChange(false)
-      props.onDone()
+      props.onDone({ seedId: 'w-new' })
     })
     await waitFor(() => expect(screen.queryByText('the creation flow')).toBeNull())
     expect(window.location.pathname).toBe('/')
+  })
+})
+
+describe('Add wallet at the app shell (chooser story 11)', () => {
+  it('works with every lock closed: Generate is offered, Import is not, and nothing says why', async () => {
+    useAppStore.setState({ openLocks: {} } as never)
+    window.history.replaceState(null, '', '/wallets/new')
+    render(<AddWalletScreen onClose={() => {}} />)
+    expect(screen.getByText('the creation flow')).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'Import' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Generate' })).toBeNull()
+    expect(screen.queryByText(/import/i)).toBeNull()
+  })
+
+  it('on success: announces the new card, says Wallet added., returns, and selects nothing', async () => {
+    useAppStore.setState({ openLocks: {} } as never)
+    const onClose = vi.fn()
+    render(<AddWalletScreen onClose={onClose} />)
+    const props = h.flowProps.at(-1) as { onDone: (meta: { seedId: string }) => void }
+    act(() => props.onDone({ seedId: 'seed-9' }))
+    expect(consumeAdded()).toBe('seed-9')
+    expect(consumeAdded()).toBeNull() // one-shot
+    expect(toast.success).toHaveBeenCalledWith('Wallet added.')
+    expect(onClose).toHaveBeenCalledTimes(1)
+    expect(useAppStore.getState().activeWalletId).toBe('w1')
+  })
+
+  it('the route carries only the screen name', async () => {
+    render(<Host />)
+    await click('Add wallet')
+    expect(window.location.pathname).toBe('/wallets/new')
+    expect(window.location.search + window.location.hash).toBe('')
+  })
+})
+
+describe('first run: the one allowed writer of the first selection', () => {
+  it('Onboarding selects the wallet its flow made; the flow itself selects nothing', async () => {
+    useAppStore.setState({ wallets: [], activeWalletId: null, openLocks: {} } as never)
+    render(<Onboarding />)
+    await click('Create a new wallet')
+    const props = h.flowProps.at(-1) as { onDone: (meta: { id: string }) => void }
+    expect(useAppStore.getState().activeWalletId).toBeNull()
+    act(() => props.onDone({ id: 'first' }))
+    expect(useAppStore.getState().activeWalletId).toBe('first')
   })
 })

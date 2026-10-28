@@ -300,7 +300,7 @@ export function Onboarding() {
             </CardHeader>
             <CardContent className="flex flex-col gap-3">
               {/* Commits to the store itself, after the seed backup. */}
-              <CreateWalletFlow onInProgressChange={setCreating} />
+              <CreateWalletFlow onInProgressChange={setCreating} onDone={(meta) => setActiveWalletId(meta.id)} />
               <Button variant="outline" onClick={() => setStep('choice')} disabled={creating}>
                 Back
               </Button>

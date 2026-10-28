@@ -21,6 +21,7 @@ vi.mock('@/components/AppHeader', () => ({ AppHeader: () => <header>wallet-heade
 vi.mock('@/hooks/useAppUpdate', () => ({ useAppUpdate: () => ({ updateReady: false, declined: false }) }))
 vi.mock('@/lib/build-info', () => ({ BUILD: { version: '0.0.0', commitSha: 'x', builtAt: '' }, shortSha: 'x', sourceUrl: 'https://example.invalid', formatBuiltAt: () => '' }))
 vi.mock('@/pages/Main', () => ({ Main: () => <p>content</p> }))
+vi.mock('@/components/wallet/AddWalletScreen', () => ({ AddWalletScreen: () => <p>add wallet screen</p> }))
 // Real hooks, wrapped so each mount and unmount is counted.
 vi.mock('@/hooks/useAutoLock', async (orig) => {
   const real = await orig<typeof import('@/hooks/useAutoLock')>()
@@ -49,7 +50,8 @@ vi.mock('@/hooks/useClearCacheOnLock', async (orig) => {
 
 import { AppShell, walletInView } from '../AppShell'
 import { useAppStore, lockRemainingMs } from '@/store/app-store'
-import { navigate, resetToHome, leaveToChooser } from '@/lib/route'
+import { navigate, resetToHome, leaveToChooser, leaveScreen } from '@/lib/route'
+import { announceAdded } from '@/lib/chooser-signals'
 import { queryKeys } from '@/lib/xrpl/query-keys'
 
 const W = (id: string, lockId: string) =>
@@ -120,8 +122,7 @@ describe('AppShell mounts the lifecycle once, above the route switch (AD-31)', (
     expect(walletInView({ screen: 'chooser' }, 'a')).toBeNull()
     expect(walletInView({ screen: 'settings' }, 'a')).toBeNull()
     expect(walletInView({ screen: 'wallet', walletId: 'a' }, 'a')).toBe('a')
-    // INTERIM (Story 11): Add wallet is still launched from inside a wallet.
-    expect(walletInView({ screen: 'add-wallet' }, 'a')).toBe('a')
+    expect(walletInView({ screen: 'add-wallet' }, 'a')).toBeNull()
     useAppStore.getState().openLock('X', KEY, 1)
     mount()
     act(() => void vi.advanceTimersByTime(40_000))
@@ -175,13 +176,51 @@ describe('AppShell route switch and guards (AD-32, AD-36)', () => {
     expect(window.location.pathname).toBe('/')
   })
 
-  it('add-wallet and task screens keep the wallet content and header', () => {
+  it('add-wallet renders at the shell under the chooser header, with no Main and no open wallet (AD-32, AD-40)', () => {
     mount()
     act(() => navigate('/wallets/new'))
-    expect(screen.getByText('content')).toBeTruthy()
-    expect(screen.getByText('wallet-header')).toBeTruthy()
+    expect(screen.getByText('add wallet screen')).toBeTruthy()
+    expect(screen.queryByText('content')).toBeNull()
+    expect(screen.queryByText('wallet-header')).toBeNull()
+    expect(screen.getByText('XRPL Bench')).toBeTruthy()
+    // Every lock is closed here: nothing about the screen needed one.
+    expect(Object.keys(useAppStore.getState().openLocks)).toEqual([])
+  })
+
+  it('task screens keep the wallet content and header', () => {
+    mount()
     act(() => navigate('/wallets/a/checks'))
     expect(screen.getByText('content')).toBeTruthy()
+  })
+
+  it('leaving Add wallet for the chooser focuses the new card h2 when one was announced, else the h1', () => {
+    useAppStore.setState({ wallets: [W('a', 'X'), W('b', 'Y')] } as never)
+    mount()
+    act(() => navigate('/wallets/new'))
+    act(() => {
+      announceAdded('b')
+      leaveScreen()
+    })
+    act(() => void vi.advanceTimersByTime(50))
+    expect(document.activeElement).toBe(screen.getByRole('heading', { level: 2, name: 'b' }))
+    expect(document.activeElement?.closest('[data-seed-id]')?.getAttribute('data-seed-id')).toBe('b')
+    act(() => navigate('/wallets/new'))
+    act(() => leaveScreen())
+    act(() => void vi.advanceTimersByTime(50))
+    expect(document.activeElement).toBe(screen.getByRole('heading', { level: 1, name: 'Wallets' }))
+  })
+
+  it('an announcement the Chooser never saw does not move focus on a later visit', () => {
+    useAppStore.setState({ wallets: [W('a', 'X'), W('b', 'Y')] } as never)
+    mount()
+    act(() => navigate('/wallets/a'))
+    act(() => navigate('/wallets/new'))
+    act(() => announceAdded('b'))
+    act(() => leaveScreen()) // back to the wallet shell, not the Chooser
+    act(() => void vi.advanceTimersByTime(50))
+    act(() => leaveToChooser())
+    act(() => void vi.advanceTimersByTime(50))
+    expect(document.activeElement).toBe(screen.getByRole('heading', { level: 1, name: 'Wallets' }))
   })
 })
 

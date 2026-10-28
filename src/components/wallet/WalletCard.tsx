@@ -13,7 +13,12 @@ const KEY = 'h-auto min-h-8 max-w-full whitespace-normal py-1 pointer-coarse:min
 
 /** The card's name: `{typography.wallet-name}`, sentence case as typed, wraps. */
 function CardName({ children }: { children: string }) {
-  return <h2 className="min-w-0 break-words text-[0.9375rem] font-semibold leading-tight">{children}</h2>
+  // tabIndex -1: the Chooser puts focus here once, on the card Add wallet just made.
+  return (
+    <h2 tabIndex={-1} className="min-w-0 break-words text-[0.9375rem] font-semibold leading-tight">
+      {children}
+    </h2>
+  )
 }
 
 function NetworkRow({ name, row, active, onRemove }: { name: string; row: WalletRow; active: boolean; onRemove: (walletId: string) => void }) {
@@ -196,7 +201,7 @@ export function WalletCard({
   onRemove: (walletId: string) => void
 }) {
   return (
-    <li className="panel-plate flex flex-col gap-3 rounded-md px-4 pb-4 pt-3">
+    <li data-seed-id={group.seedId} className="panel-plate flex flex-col gap-3 rounded-md px-4 pb-4 pt-3">
       {group.state === 'locked' ? (
         <LockedCard group={group} active={group.entryWalletId === activeWalletId} onRename={onRename} onRemove={onRemove} />
       ) : (

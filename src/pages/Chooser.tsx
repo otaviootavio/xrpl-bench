@@ -5,7 +5,10 @@ import { RemoveDialog, type RemoveTarget } from '@/components/wallet/RemoveDialo
 import { RenameDialog, type RenameTarget } from '@/components/wallet/RenameDialog'
 import { WalletCard } from '@/components/wallet/WalletCard'
 import { listWallets, removeWallet, renameWallet, type RemoveWalletResult, type WalletMeta } from '@/lib/crypto/keystore'
+import { Button } from '@/components/ui/button'
+import { consumeAdded } from '@/lib/chooser-signals'
 import { notify } from '@/lib/notify'
+import { ADD_WALLET_PATH, navigate } from '@/lib/route'
 import { removeWalletData, tearDownLock } from '@/lib/teardown'
 import { useAppStore } from '@/store/app-store'
 import { groupWalletsBySeed, nextActiveWalletId, walletIdsInChooserOrder, type OpenGroup, type WalletGroup } from '@/store/wallet-groups'
@@ -42,6 +45,15 @@ export function Chooser() {
   const statusRef = useRef<HTMLDivElement>(null)
   const headingRef = useRef<HTMLHeadingElement>(null)
   const previous = useRef<Map<string, string> | null>(null)
+
+  // Add wallet announced the card it made: focus its h2, once. A cold start announced nothing.
+  useEffect(() => {
+    const seedId = consumeAdded()
+    if (!seedId) return
+    // The card is not there (a failed refresh): the h1 still names the screen.
+    const card = document.querySelector<HTMLElement>(`[data-seed-id="${CSS.escape(seedId)}"] h2`)
+    ;(card ?? headingRef.current)?.focus()
+  }, [])
 
   // One polite region for every lock-state change, whatever caused it. Written
   // to the node, not held in state; nothing is announced on first render.
@@ -187,6 +199,9 @@ export function Chooser() {
           />
         ))}
       </ul>
+      <Button type="button" variant="outline" className="h-auto min-h-8 w-full sm:w-fit whitespace-normal py-1 pointer-coarse:min-h-11" onClick={() => navigate(ADD_WALLET_PATH)}>
+        Add wallet
+      </Button>
       <RemoveDialog
         target={removing}
         onConfirm={confirmRemove}

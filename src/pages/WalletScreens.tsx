@@ -1,6 +1,5 @@
 import { useEffect } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
-import { AddWalletScreen } from '@/components/wallet/AddWalletScreen'
 import { ControlWalletScreen } from '@/components/wallet/ControlWalletScreen'
 import { EditChecksScreen, type EditedChecks } from '@/components/wallet/EditChecksScreen'
 import { TwoDeviceScreen } from '@/components/wallet/TwoDeviceSign'
@@ -28,8 +27,8 @@ export function WalletScreens({ route }: { route: TaskRoute }) {
   const closeLock = useAppStore((s) => s.closeLock)
   const setLockMinutes = useAppStore((s) => s.setLockMinutes)
 
-  const target = route.screen === 'add-wallet' ? null : (wallets.find((w) => w.id === route.walletId) ?? null)
-  const reachable = route.screen === 'add-wallet' || (target !== null && target.lockId in openLocks)
+  const target = wallets.find((w) => w.id === route.walletId) ?? null
+  const reachable = target !== null && target.lockId in openLocks
   useEffect(() => {
     if (!reachable) resetToHome()
   }, [reachable])
@@ -63,7 +62,6 @@ export function WalletScreens({ route }: { route: TaskRoute }) {
     }
   }
 
-  if (route.screen === 'add-wallet') return <AddWalletScreen onClose={leaveScreen} />
   if (!reachable || !target) return null
   switch (route.screen) {
     case 'edit-checks':

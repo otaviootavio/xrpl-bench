@@ -1,6 +1,7 @@
 /** @vitest-environment jsdom */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { readFileSync } from 'node:fs'
 
 /**
  * Story 5: the creation flow asks one question per axis, in order, each with a
@@ -513,7 +514,8 @@ describe('a created Wallet: backup first, then the store', () => {
     const state = useAppStore.getState()
     expect(Object.keys(state.openLocks)).toEqual(['lock-1'])
     expect(state.wallets).toEqual([META])
-    expect(state.activeWalletId).toBe('w1')
+    // Creation never selects (AD-34, AD-40): the caller decides.
+    expect(state.activeWalletId).toBeNull()
     expect(JSON.stringify({ wallets: state.wallets, activeWalletId: state.activeWalletId })).not.toContain(SEED)
     expect(inProgress).toEqual([true, false])
   })
@@ -685,7 +687,7 @@ describe('Passkey-Derived Seed (story 6)', () => {
     await click(screen.getByRole('button', { name: /Continue to my wallet/ }))
     await waitFor(() => expect(onDone).toHaveBeenCalled())
     expect(h.startLockSession).toHaveBeenCalled()
-    expect(useAppStore.getState().activeWalletId).toBe('w1')
+    expect(useAppStore.getState().activeWalletId).toBeNull()
   })
 })
 
@@ -873,5 +875,59 @@ describe('Written-Seed confirmation (story 7)', () => {
     expect(done).not.toHaveBeenCalled()
     await click(screen.getByRole('button', { name: 'Try again' }))
     await waitFor(() => expect(done).toHaveBeenCalledWith(META))
+  })
+})
+
+describe('the wallet name and the questions component (chooser story 11)', () => {
+  const W = (id: string, label: string) => ({ ...META, id, seedId: id, label })
+  const enterPin = async () => {
+    type(await screen.findByLabelText(/Choose an App PIN/), '123456')
+    type(screen.getByLabelText(/Confirm the App PIN/), '123456')
+  }
+  const labelInput = () => screen.getByLabelText('Label') as HTMLInputElement
+
+  it('an empty label is created under the auto-suffixed default, never the typed-nothing', async () => {
+    useAppStore.setState({ wallets: [W('a', 'Wallet')] } as never)
+    await mountCollapsed({ defaultLabel: '' })
+    await enterPin()
+    await click(createButton())
+    expect(h.createStoredWallet.mock.calls[0][0]).toMatchObject({ label: 'Wallet 2' })
+  })
+
+  it.each([
+    ['   ', null],
+    ['x'.repeat(41), 'Use 40 characters or fewer.'],
+    ['savings', 'Another wallet on this device already has that name.'],
+  ])('a typed name %j: error %j, tied to the field, and Create does nothing while it shows', async (typed, error) => {
+    useAppStore.setState({ wallets: [W('a', 'Savings'), W('a2', 'Savings'), W('b', 'Other')] } as never)
+    await mountCollapsed({ defaultLabel: '' })
+    type(labelInput(), typed)
+    if (error === null) {
+      expect(labelInput().getAttribute('aria-invalid')).toBeNull()
+      return
+    }
+    const text = screen.getByText(error)
+    expect(labelInput().getAttribute('aria-invalid')).toBe('true')
+    expect(labelInput().getAttribute('aria-describedby')).toBe(text.id)
+    expect(createButton().getAttribute('aria-disabled')).toBe('true')
+    await click(createButton())
+    expect(h.createStoredWallet).not.toHaveBeenCalled()
+  })
+
+  it('a free typed name goes through as typed', async () => {
+    useAppStore.setState({ wallets: [W('a', 'Savings')] } as never)
+    await mountCollapsed({ defaultLabel: '' })
+    type(labelInput(), 'Cold storage')
+    await enterPin()
+    await click(createButton())
+    expect(h.createStoredWallet.mock.calls[0][0]).toMatchObject({ label: 'Cold storage' })
+  })
+
+  it('creation never selects: the flow does not call setActiveWalletId, and the questions are one component', () => {
+    const source = readFileSync('src/components/wallet/CreateWalletFlow.tsx', 'utf8')
+    expect(source).not.toMatch(/setActiveWalletId/)
+    expect(source).toMatch(/<WalletQuestions\b/)
+    expect(source).not.toMatch(/legend="(Seed Method|Open Check|Signing Check)"/)
+    expect(readFileSync('src/components/wallet/WalletQuestions.tsx', 'utf8')).toMatch(/legend="Signing Check"/)
   })
 })

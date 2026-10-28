@@ -60,12 +60,11 @@ export function enteredWalletId(route: Route, activeWalletId: string | null): st
   return isWalletScreen(route) ? activeWalletId : null
 }
 
-/** The routed task screens `WalletScreens` renders in place of the shell. */
-export type TaskRoute = Extract<Route, { screen: 'add-wallet' | 'edit-checks' | 'two-device' | 'control' }>
+/** The routed task screens `WalletScreens` renders in place of the shell. Add wallet is not one: the app shell renders it (AD-32). */
+export type TaskRoute = Extract<Route, { screen: 'edit-checks' | 'two-device' | 'control' }>
 
 export function isTaskRoute(route: Route): route is TaskRoute {
   return (
-    route.screen === 'add-wallet' ||
     route.screen === 'edit-checks' ||
     route.screen === 'two-device' ||
     route.screen === 'control'

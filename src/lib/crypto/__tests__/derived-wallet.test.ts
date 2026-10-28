@@ -617,3 +617,11 @@ describe('a Mainnet view of a derived Seed goes through policy', () => {
     expect((await addNetworkView(passkeyOnly.meta.id, 'devnet')).network).toBe('devnet')
   })
 })
+
+describe('the name of a new Seed (AD-42, chooser story 11)', () => {
+  it('an empty or taken label becomes the auto-suffixed default, as for a Stored Seed', async () => {
+    const first = ok(await createDerivedWallet({ ...base, label: '' }, { pin: PIN })).meta
+    const second = ok(await createDerivedWallet({ ...base, label: 'wallet' }, { pin: PIN })).meta
+    expect([first.label, second.label]).toEqual(['Wallet', 'Wallet 2'])
+  })
+})

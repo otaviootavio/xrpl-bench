@@ -54,7 +54,7 @@ export function AppHeader() {
           )}
         </div>
         {wallet && open && (
-          <div className="flex items-center gap-2">
+          <div className="flex min-w-0 max-w-full flex-wrap items-center gap-2">
             <NetworkPlate />
             {/* Closes THIS Wallet's lock only (AD-26). A lock with no Open Check
                 has nothing to lock. */}

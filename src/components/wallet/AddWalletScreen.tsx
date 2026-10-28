@@ -10,28 +10,32 @@ import { NetworkChoice } from '@/components/wallet/NetworkChoice'
 import { ScreenFooter, TaskScreen } from '@/components/wallet/TaskScreen'
 import { useLeaveBlocker } from '@/hooks/useRoute'
 import { addressFromSeed, importAndStoreWallet, listWallets, parseSeedInput } from '@/lib/crypto/keystore'
+import { announceAdded } from '@/lib/chooser-signals'
 import { toast } from '@/lib/notify'
 import { checkBeforeImport, IMPORT_WARNING_COPY, INVALID_SEED_MESSAGE, type ImportWarning } from '@/lib/seed-import'
 import type { NetworkId } from '@/lib/xrpl/networks'
-import { useActiveNetwork, useAppStore, useWalletOpenKey } from '@/store/app-store'
+import { useAppStore, useWalletOpenKey } from '@/store/app-store'
 
 /**
- * Add wallet (`/wallets/new`), a routed screen. Generate is `CreateWalletFlow`,
- * the very component onboarding renders: it makes the Wallet its own lock and
- * commits itself after the Seed backup, so only the exit differs (onboarding
- * continues into the app, this returns to Settings). Import keeps the same
- * order as onboarding (lib/seed-import.ts): parse, check, warn, and only then write.
+ * Add wallet (`/wallets/new`), a chooser-side screen the app shell renders (AD-32,
+ * AD-40): it needs no open wallet. Generate is `CreateWalletFlow`, the very
+ * component onboarding renders: it makes the Wallet its own lock and commits
+ * itself after the Seed backup, and it never selects or enters the wallet. On
+ * success this returns to where the user came from and announces the new card so
+ * the Chooser can focus it.
+ *
+ * Import is unchanged (Stories 12 and 13 move it): it still writes under an open
+ * wallet's lock, so it is offered only while one is open. It keeps the same order
+ * as onboarding (lib/seed-import.ts): parse, check, warn, and only then write.
  *
  * Guardrail #3: the typed Seed is in an uncontrolled input; the parsed one waits
  * in a ref while the master-key warning is open, never in state, the path or the
- * history entry. Mounted only while the active Wallet's lock is open (AD-26): it
- * is the lock a new Wallet is added under.
+ * history entry.
  */
 export function AddWalletScreen({ onClose }: { onClose: () => void }) {
-  // Only the fallback for a record the vault migration has not reached
-  // (`listWallets`); every ledger read takes its network from its own Wallet.
-  const activeNetwork = useActiveNetwork()
   const activeWalletId = useAppStore((s) => s.activeWalletId)
+  // Only the fallback for a record the vault migration has not reached (`listWallets`); no ledger read (AD-36).
+  const fallbackNetwork = useAppStore((s) => s.wallets.find((w) => w.id === s.activeWalletId)?.network ?? 'testnet')
   const activeLockId = useAppStore((s) => s.wallets.find((w) => w.id === s.activeWalletId)?.lockId ?? null)
   const setWallets = useAppStore((s) => s.setWallets)
   const setActiveWalletId = useAppStore((s) => s.setActiveWalletId)
@@ -40,7 +44,10 @@ export function AddWalletScreen({ onClose }: { onClose: () => void }) {
 
   // The network a Wallet added here will live on — fixed at creation (AD-19).
   const [addNetwork, setAddNetwork] = useState<NetworkId>('testnet')
-  const [addMode, setAddMode] = useState<'generate' | 'import'>('generate')
+  const [requestedMode, setAddMode] = useState<'generate' | 'import'>('generate')
+  // Import still needs an open wallet's key: with none open it is not offered, and says nothing about it.
+  const importOffered = vaultKey !== null
+  const addMode = importOffered ? requestedMode : 'generate'
   const [footerHost, setFooterHost] = useState<HTMLElement | null>(null)
   const [label, setLabel] = useState('')
   const [importWarning, setImportWarning] = useState<ImportWarning | null>(null)
@@ -66,7 +73,7 @@ export function AddWalletScreen({ onClose }: { onClose: () => void }) {
 
   async function storeImported(seed: string, key: CryptoKey, net: NetworkId) {
     const meta = await importAndStoreWallet(label || 'Wallet', seed, key, net, activeLockId ?? undefined)
-    setWallets(await listWallets(activeNetwork))
+    setWallets(await listWallets(fallbackNetwork))
     setActiveWalletId(meta.id)
     pendingImportSeedRef.current = null
     if (seedInputRef.current) seedInputRef.current.value = ''
@@ -125,16 +132,24 @@ export function AddWalletScreen({ onClose }: { onClose: () => void }) {
   }
 
   return (
-    <TaskScreen title="Add another wallet" description="Generate a new wallet or import one with a seed." onBack={onClose} locked={locked}>
+    <TaskScreen
+      title="Add another wallet"
+      description={importOffered ? 'Generate a new wallet or import one with a seed.' : 'Generate a new wallet.'}
+      backLabel="Wallets"
+      onBack={onClose}
+      locked={locked}
+    >
       <div className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-3">
-        <div className="flex flex-wrap gap-2">
-          <Button variant={addMode === 'generate' ? 'default' : 'outline'} onClick={() => setAddMode('generate')} type="button" disabled={locked}>
-            Generate
-          </Button>
-          <Button variant={addMode === 'import' ? 'default' : 'outline'} onClick={() => setAddMode('import')} type="button" disabled={locked}>
-            Import
-          </Button>
-        </div>
+        {importOffered && (
+          <div className="flex flex-wrap gap-2">
+            <Button variant={addMode === 'generate' ? 'default' : 'outline'} onClick={() => setAddMode('generate')} type="button" disabled={locked}>
+              Generate
+            </Button>
+            <Button variant={addMode === 'import' ? 'default' : 'outline'} onClick={() => setAddMode('import')} type="button" disabled={locked}>
+              Import
+            </Button>
+          </div>
+        )}
         {addMode === 'generate' ? (
           // Network, Node, Seed Method, signature type, Open Check, Signing Check:
           // the flow asks each, and commits itself after the seed backup.
@@ -142,7 +157,9 @@ export function AddWalletScreen({ onClose }: { onClose: () => void }) {
             defaultLabel=""
             actionHost={footerHost}
             onInProgressChange={setCreating}
-            onDone={() => {
+            onDone={(meta) => {
+              // Creation selects and enters nothing: the Chooser focuses the new card.
+              announceAdded(meta.seedId)
               toast.success('Wallet added.')
               onClose()
             }}

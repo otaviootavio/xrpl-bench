@@ -7,25 +7,20 @@ import { Lamp } from '@/components/ui/lamp'
 import { Chooser } from '@/pages/Chooser'
 import { SettingsScreen } from '@/pages/SettingsScreen'
 import { Main } from '@/pages/Main'
+import { AddWalletScreen } from '@/components/wallet/AddWalletScreen'
 import { useRoute } from '@/hooks/useRoute'
 import { useUpdateMarker } from '@/hooks/useUpdateMarker'
 import { useAutoLock } from '@/hooks/useAutoLock'
 import { useClearCacheOnLock } from '@/hooks/useClearCacheOnLock'
 import { useAppStore } from '@/store/app-store'
 import { leaveWallet } from '@/lib/teardown'
-import { enteredWalletId, isWalletScreen, navigate, resetToHome, SETTINGS_PATH, type Route } from '@/lib/route'
+import { clearAdded } from '@/lib/chooser-signals'
+import { enteredWalletId, isWalletScreen, leaveScreen, navigate, resetToHome, SETTINGS_PATH, type Route } from '@/lib/route'
 
-/**
- * The wallet in view on this route: the one the user is inside, or none.
- *
- * INTERIM (Story 11): Add wallet is still launched from inside a wallet's
- * Settings tab and creates against the active wallet, so it keeps counting that
- * wallet's activity. The `add-wallet` clause goes when Add wallet moves to the
- * chooser.
- */
+/** The wallet in view on this route: the one the user is inside, or none. */
 // oxlint-disable-next-line react/only-export-components -- pinned to this file, beside the route switch that shares it
 export function walletInView(route: Route, activeWalletId: string | null): string | null {
-  return enteredWalletId(route, activeWalletId) ?? (route.screen === 'add-wallet' ? activeWalletId : null)
+  return enteredWalletId(route, activeWalletId)
 }
 
 /**
@@ -73,8 +68,8 @@ export function AppShell() {
   // (AD-32); anything else is an unreachable location and lands on the chooser.
   const shellRoute = route.screen === 'wallet' || route.screen === 'configure'
   const shellReachable = shellRoute && route.walletId === activeWalletId && activeExists
-  const chooserSide = route.screen === 'chooser' || route.screen === 'settings' || (shellRoute && !shellReachable)
-  const walletSide = isWalletScreen(route) || route.screen === 'add-wallet'
+  const chooserSide = !isWalletScreen(route) || (shellRoute && !shellReachable)
+  const walletSide = isWalletScreen(route)
   useEffect(() => {
     if (shellRoute && !shellReachable) resetToHome()
   }, [shellRoute, shellReachable])
@@ -85,17 +80,24 @@ export function AppShell() {
   const previous = useRef<{ route: Route; walletId: string | null } | null>(null)
   useEffect(() => {
     const before = previous.current
-    previous.current = { route, walletId: walletInView(route, activeWalletId) }
+    // Add wallet is chooser-side, but when it was launched from a wallet's Settings that wallet is still the one to shed on the way out.
+    previous.current = { route, walletId: walletInView(route, activeWalletId) ?? (route.screen === 'add-wallet' ? (before?.walletId ?? null) : null) }
     if (before?.walletId && route.screen === 'chooser') {
       leaveWallet(queryClient, before.walletId)
-      document.getElementById('chooser-heading')?.focus()
+      // A new card's h2 may already hold focus (a finished add): keep it.
+      if (!document.activeElement?.closest('[data-seed-id]')) document.getElementById('chooser-heading')?.focus()
     } else if (before?.route.screen === 'settings' && route.screen === 'chooser') {
       // The Wallets key on /settings unmounted with the screen: land on the h1, not on the document.
       document.getElementById('chooser-heading')?.focus()
+    } else if (before?.route.screen === 'add-wallet' && route.screen === 'chooser') {
+      // Back or a finished add. A new card's h2 already took focus on the Chooser's mount: keep it.
+      if (!document.activeElement?.closest('[data-seed-id]')) document.getElementById('chooser-heading')?.focus()
     } else if (before?.route.screen === 'chooser' && route.screen === 'settings') {
       // The Settings key unmounted with the chooser: the screen names itself.
       document.getElementById('settings-heading')?.focus()
     }
+    // An announced add the Chooser never saw (Add wallet was opened from a wallet's Settings) must not move focus later.
+    if (route.screen !== 'chooser' && route.screen !== 'add-wallet') clearAdded()
   }, [route, activeWalletId, queryClient])
 
   return (
@@ -127,7 +129,15 @@ export function AppShell() {
           target. It stays out of the tab order. Nothing suppresses the ring on
           this landing target: §6.3 admits no carve-out. */}
       <main id="main-content" tabIndex={-1} className="px-4 pb-6 pt-3">
-        {route.screen === 'settings' ? <SettingsScreen /> : chooserSide ? <Chooser /> : <Main />}
+        {route.screen === 'settings' ? (
+          <SettingsScreen />
+        ) : route.screen === 'add-wallet' ? (
+          <AddWalletScreen onClose={leaveScreen} />
+        ) : chooserSide ? (
+          <Chooser />
+        ) : (
+          <Main />
+        )}
       </main>
     </ChassisShell>
   )

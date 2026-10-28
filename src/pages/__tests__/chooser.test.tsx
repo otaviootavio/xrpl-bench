@@ -38,6 +38,7 @@ import { REMOVE_BACKUP, REMOVE_DONE, REMOVE_FAILED, REMOVE_LAST, REMOVE_LOCKED_R
 import { queryKeys } from '@/lib/xrpl/query-keys'
 import { tearDownLock } from '@/lib/teardown'
 import { Chooser } from '../Chooser'
+import { announceAdded, consumeAdded } from '@/lib/chooser-signals'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { useAppStore } from '@/store/app-store'
 import { DEVNET_NOTICE } from '@/components/wallet/DevnetNotice'
@@ -822,5 +823,32 @@ describe('Remove (AD-46)', () => {
     const chooser = readFileSync('src/pages/Chooser.tsx', 'utf8')
     expect(chooser).toMatch(/finally\s*{[\s\S]*removeWalletData\(/)
     expect(chooser).not.toMatch(/importAndStoreWallet|generateAndStoreWallet/)
+  })
+})
+
+describe('Add wallet from the chooser (chooser story 11)', () => {
+  it('the Add wallet key opens /wallets/new, and works with every card locked', () => {
+    mount()
+    expect(screen.getAllByRole('button', { name: /^Open / }).length).toBeGreaterThan(0)
+    fireEvent.click(screen.getByRole('button', { name: 'Add wallet' }))
+    expect(window.location.pathname).toBe('/wallets/new')
+    expect(window.location.search + window.location.hash).toBe('')
+  })
+
+  it('focuses the h2 of the card Add wallet announced, once; a cold start moves nothing', () => {
+    const first = mount()
+    expect(document.activeElement).toBe(document.body)
+    first.unmount()
+    act(() => announceAdded('b'))
+    mount()
+    const card = document.querySelector('[data-seed-id="b"]')
+    expect(card).not.toBeNull()
+    expect(document.activeElement).toBe(card?.querySelector('h2'))
+    expect(document.activeElement?.getAttribute('tabindex')).toBe('-1')
+    expect(consumeAdded()).toBeNull()
+  })
+
+  it('Add wallet announces the card it made, so the Chooser can focus it', () => {
+    expect(readFileSync('src/components/wallet/AddWalletScreen.tsx', 'utf8')).toMatch(/announceAdded/)
   })
 })

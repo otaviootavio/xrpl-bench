@@ -54,15 +54,15 @@ describe('isWalletScreen', () => {
 })
 
 describe('isTaskRoute', () => {
-  it('names the four routed task screens and nothing else', () => {
+  it('names the three routed task screens and nothing else (Add wallet is rendered by the app shell)', () => {
     const tasks: Route[] = [
-      { screen: 'add-wallet' },
       { screen: 'edit-checks', walletId: 'a' },
       { screen: 'two-device', walletId: 'a' },
       { screen: 'control', walletId: 'a' },
     ]
     for (const route of tasks) expect(isTaskRoute(route)).toBe(true)
     const others: Route[] = [
+      { screen: 'add-wallet' },
       { screen: 'chooser' },
       { screen: 'settings' },
       { screen: 'wallet', walletId: 'a' },

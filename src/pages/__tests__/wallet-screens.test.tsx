@@ -5,7 +5,6 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 
 vi.mock('idb-keyval', () => ({ get: async () => undefined, set: async () => {}, del: async () => {} }))
 // Each screen has its own test: here they are stand-ins that name the Wallet they were given.
-vi.mock('@/components/wallet/AddWalletScreen', () => ({ AddWalletScreen: () => <p>add wallet screen</p> }))
 vi.mock('@/components/wallet/EditChecksScreen', () => ({ EditChecksScreen: ({ wallet }: { wallet: { id: string } }) => <p>edit checks for {wallet.id}</p> }))
 vi.mock('@/components/wallet/ControlWalletScreen', () => ({ ControlWalletScreen: ({ controller }: { controller: { id: string } }) => <p>control for {controller.id}</p> }))
 vi.mock('@/components/wallet/TwoDeviceSign', () => ({ TwoDeviceScreen: ({ wallet }: { wallet: { id: string } }) => <p>two device for {wallet.id}</p> }))
@@ -53,11 +52,5 @@ describe('WalletScreens', () => {
     mount({ screen: screenName, walletId })
     expect(screen.queryByText(/for /)).toBeNull()
     expect(window.location.pathname).toBe('/')
-  })
-
-  it('shows Add wallet for the active, open Wallet', () => {
-    window.history.replaceState(null, '', '/wallets/new')
-    mount({ screen: 'add-wallet' })
-    expect(screen.getByText('add wallet screen')).toBeTruthy()
   })
 })

@@ -6,7 +6,7 @@ import { deriveAesKeyFromBits, generateOrdinal, HKDF_INFO, isOrdinal, seedSalt, 
 import { buildLock, createLock, deleteLock, discardAllLocks, discardAppPin, discardUnusedAppPin, getLockInfo, hasAppPin, legacyLockRecord, openLock, provesAppPin, setAutoLockMinutes, withAppPin, type CheckResult } from './lock'
 import { checkAutoLock, checkEditAllowed, checkLockRequest, checkWalletRequest, requiresWrittenSeed, resolveEdit, type CheckEditRequest, type NewOpenCheck, type PasskeyCapability, type PasskeyChoice, type PolicyVerdict, type SigningKind } from './policy'
 import { b64ToBuf, bufToB64 } from './encoding'
-import { validateWalletName, type WalletNameReason } from '@/lib/wallet-name'
+import { uniqueDefaultName, validateWalletName, type WalletNameReason } from '@/lib/wallet-name'
 import { attemptPin, getLockoutState, PBKDF2_ITERATIONS, recordFailure, triesRemaining } from './pin'
 import {
   assertAnyPasskeyAndDeriveBits,
@@ -758,6 +758,17 @@ export async function renameWallet(seedId: string, rawName: string): Promise<Ren
   }
 }
 
+/**
+ * The name a NEW Seed is stored under (AD-42): the typed one when it passes the one name
+ * rule against the stored records, otherwise (empty, too long, or taken) the first free
+ * `Wallet`, `Wallet 2`, ... A best-effort guard across tabs, not a security boundary.
+ */
+async function nameForNewWallet(raw: string): Promise<string> {
+  const others = (await listStoredWallets()).map((w) => w.label)
+  const verdict = validateWalletName(raw, others)
+  return verdict.ok ? verdict.name : uniqueDefaultName('Wallet', others)
+}
+
 /** Does this device still hold an App PIN or a non-zero PIN failure count? On a
  * device with no Wallet that is residue of a removal whose `discardAppPin` failed
  * (AD-46), and first-run Onboarding then offers Remove all. Read here so a screen
@@ -877,7 +888,9 @@ export interface CreateWalletContext {
 
 const APP_PIN_GONE = 'The App PIN was removed from this device while you were setting this up. Start again: you will be asked to set a new PIN.'
 
-async function createStoredWalletUnguarded(input: CreateStoredWalletInput, ctx: CreateWalletContext): Promise<CreateStoredWalletResult> {
+async function createStoredWalletUnguarded(requested: CreateStoredWalletInput, ctx: CreateWalletContext): Promise<CreateStoredWalletResult> {
+  // Inside the guard, so the name is checked against the records this write will sit beside (AD-42).
+  const input = { ...requested, label: await nameForNewWallet(requested.label) }
   const verdict = checkWalletRequest({
     canConfirmWrittenSeed: !!ctx.confirmWrittenSeed,
     network: input.network,
@@ -1027,7 +1040,8 @@ export function createDerivedWallet(input: CreateDerivedWalletInput, ctx: Create
   return exclusiveVaultWrite(() => createDerivedWalletUnguarded(input, ctx))
 }
 
-async function createDerivedWalletUnguarded(input: CreateDerivedWalletInput, ctx: CreateWalletContext): Promise<CreateDerivedWalletResult> {
+async function createDerivedWalletUnguarded(requested: CreateDerivedWalletInput, ctx: CreateWalletContext): Promise<CreateDerivedWalletResult> {
+  const input = { ...requested, label: await nameForNewWallet(requested.label) }
   const rpId = getRpId()
   const verdict = checkWalletRequest({
     canConfirmWrittenSeed: !!ctx.confirmWrittenSeed,

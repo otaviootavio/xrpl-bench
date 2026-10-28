@@ -4,7 +4,7 @@ import { AddWalletScreen } from '@/components/wallet/AddWalletScreen'
 import { ControlWalletScreen } from '@/components/wallet/ControlWalletScreen'
 import { EditChecksScreen, type EditedChecks } from '@/components/wallet/EditChecksScreen'
 import { TwoDeviceScreen } from '@/components/wallet/TwoDeviceSign'
-import { leaveScreen, resetToHome, type Route } from '@/lib/route'
+import { leaveScreen, resetToHome, type TaskRoute } from '@/lib/route'
 import { listWallets } from '@/lib/crypto/keystore'
 import { startLockSession } from '@/lib/crypto/lock'
 import { toast } from '@/lib/notify'
@@ -18,7 +18,7 @@ import { useActiveNetwork, useAppStore } from '@/store/app-store'
  * location is reset to the shell, so nothing account-scoped renders for a lock
  * that is not open.
  */
-export function WalletScreens({ route }: { route: Exclude<Route, { screen: 'home' }> }) {
+export function WalletScreens({ route }: { route: TaskRoute }) {
   const activeNetwork = useActiveNetwork()
   const queryClient = useQueryClient()
   const wallets = useAppStore((s) => s.wallets)

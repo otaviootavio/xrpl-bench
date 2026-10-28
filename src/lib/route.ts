@@ -13,28 +13,66 @@
  */
 
 export type Route =
-  | { screen: 'home' }
+  | { screen: 'chooser' }
+  | { screen: 'settings' }
   | { screen: 'add-wallet' }
+  | { screen: 'wallet'; walletId: string }
+  | { screen: 'configure'; walletId: string }
   | { screen: 'edit-checks'; walletId: string }
   | { screen: 'two-device'; walletId: string }
   | { screen: 'control'; walletId: string }
 
-export const HOME_PATH = '/'
+export const CHOOSER_PATH = '/'
+export const SETTINGS_PATH = '/settings'
 export const ADD_WALLET_PATH = '/wallets/new'
 
-const SEGMENTS = { 'edit-checks': 'checks', 'two-device': 'two-device', control: 'control' } as const
+/** The path segment after `/wallets/:id` for each in-wallet screen ('' is the wallet itself). */
+const SEGMENTS = {
+  wallet: '',
+  configure: 'configure',
+  'edit-checks': 'checks',
+  'two-device': 'two-device',
+  control: 'control',
+} as const
 type WalletScreen = keyof typeof SEGMENTS
 
 export function walletScreenPath(screen: WalletScreen, walletId: string): string {
-  return `/wallets/${encodeURIComponent(walletId)}/${SEGMENTS[screen]}`
+  const base = `/wallets/${encodeURIComponent(walletId)}`
+  return SEGMENTS[screen] ? `${base}/${SEGMENTS[screen]}` : base
+}
+
+/** The one split between chooser-side and in-wallet screens (AD-32). No consumer re-lists screens. */
+export function isWalletScreen(route: Route): route is Extract<Route, { walletId: string }> {
+  return (
+    route.screen === 'wallet' ||
+    route.screen === 'configure' ||
+    route.screen === 'edit-checks' ||
+    route.screen === 'two-device' ||
+    route.screen === 'control'
+  )
+}
+
+/** The routed task screens `WalletScreens` renders in place of the shell. */
+export type TaskRoute = Extract<Route, { screen: 'add-wallet' | 'edit-checks' | 'two-device' | 'control' }>
+
+export function isTaskRoute(route: Route): route is TaskRoute {
+  return (
+    route.screen === 'add-wallet' ||
+    route.screen === 'edit-checks' ||
+    route.screen === 'two-device' ||
+    route.screen === 'control'
+  )
 }
 
 export function parseRoute(pathname: string): Route {
-  const parts = pathname.split('/').filter(Boolean)
-  if (parts[0] !== 'wallets') return { screen: 'home' }
+  // Empty segments are kept (bar one trailing slash): `/wallets//checks` is not a route.
+  const parts = pathname.replace(/^\//, '').replace(/\/$/, '').split('/')
+  if (parts.length === 1 && parts[0] === 'settings') return { screen: 'settings' }
+  if (parts[0] !== 'wallets') return { screen: 'chooser' }
   if (parts.length === 2 && parts[1] === 'new') return { screen: 'add-wallet' }
-  if (parts.length === 3) {
-    const screen = (Object.keys(SEGMENTS) as WalletScreen[]).find((s) => SEGMENTS[s] === parts[2])
+  if (parts.length === 2 || parts.length === 3) {
+    const segment = parts[2] ?? ''
+    const screen = (Object.keys(SEGMENTS) as WalletScreen[]).find((s) => SEGMENTS[s] === segment)
     if (screen) {
       try {
         const walletId = decodeURIComponent(parts[1])
@@ -44,14 +82,27 @@ export function parseRoute(pathname: string): Route {
       }
     }
   }
-  return { screen: 'home' }
+  return { screen: 'chooser' }
+}
+
+/**
+ * Run once at module scope before the first render: only `/` is guaranteed to be
+ * served by the static shell, so a bookmark or reload at any other path (an
+ * in-wallet screen, `/settings`) lands on the chooser. Idempotent.
+ */
+export function rewriteBootLocation(): void {
+  // A reload keeps the entry's state: a stale `{ screen, depth }` or overlay marker at `/` would be read as real.
+  if (window.location.pathname !== CHOOSER_PATH || window.history.state !== null) {
+    window.history.replaceState(null, '', CHOOSER_PATH)
+  }
 }
 
 // ---- history ---------------------------------------------------------------
 
 const listeners = new Set<() => void>()
 let blockers = 0
-let blockedPath = HOME_PATH
+let blockedPath = CHOOSER_PATH
+let blockedDepth = 0
 let bypassNext = false
 let afterBypass: (() => void) | null = null
 let installed = false
@@ -68,7 +119,17 @@ function hasOverlayEntry(): boolean {
  * no secret, no form data, the same rule as every other state this app writes. */
 function pushOverlayEntry() {
   const screen = (window.history.state as { screen?: boolean } | null)?.screen === true
-  window.history.pushState(screen ? { screen: true, overlay: true } : { overlay: true }, '', undefined)
+  window.history.pushState(
+    screen ? { screen: true, depth: currentDepth(), overlay: true } : { overlay: true },
+    '',
+    undefined,
+  )
+}
+
+/** How many app-pushed entries sit above the chooser entry; 0 when absent (a boot's entry). */
+function currentDepth(): number {
+  const depth = (window.history.state as { depth?: unknown } | null)?.depth
+  return typeof depth === 'number' && Number.isInteger(depth) && depth > 0 ? depth : 0
 }
 
 function notify() {
@@ -97,7 +158,7 @@ function onPopState() {
   // A key-changing write or a Seed backup is running on the screen: the browser's
   // Back must not hide its outcome. Put the screen's entry back.
   if (blockers > 0 && window.location.pathname !== blockedPath) {
-    window.history.pushState({ screen: true }, '', blockedPath)
+    window.history.pushState({ screen: true, depth: blockedDepth }, '', blockedPath)
     return
   }
   notify()
@@ -125,7 +186,10 @@ export function currentPathname(): string {
 /** Opens a screen as a new history entry, so Back returns to where the user was. */
 export function navigate(path: string): void {
   if (blockers > 0) return
-  window.history.pushState({ screen: true }, '', path)
+  // An open overlay's entry sits above its screen's and shares its depth: count it,
+  // so `depth` stays the true number of entries above the chooser.
+  const depth = currentDepth() + (hasOverlayEntry() ? 1 : 0) + 1
+  window.history.pushState({ screen: true, depth }, '', path)
   notify()
 }
 
@@ -145,24 +209,53 @@ export function leaveScreen(): void {
   }
   if (overlayEntry) {
     bypassNext = true
-    afterBypass = () => window.history.replaceState(null, '', HOME_PATH)
+    afterBypass = () => window.history.replaceState(null, '', CHOOSER_PATH)
     window.history.back()
     return
   }
-  window.history.replaceState(null, '', HOME_PATH)
+  window.history.replaceState(null, '', CHOOSER_PATH)
+  notify()
+}
+
+/**
+ * The one return to the chooser from an in-wallet screen (AD-33). Honours a
+ * leave-blocker (does nothing while one is active). Unwinds every app-pushed
+ * entry, plus the overlay entry if one is open, in a single `history.go`; an
+ * entry a boot created has no depth and is replaced instead.
+ */
+export function leaveToChooser(): void {
+  if (blockers > 0) return
+  const state = window.history.state as { depth?: unknown; overlay?: boolean } | null
+  const depth = currentDepth()
+  const overlayEntry = state?.overlay === true
+  if (depth > 0) {
+    bypassNext = true
+    window.history.go(-(depth + (overlayEntry ? 1 : 0)))
+    return
+  }
+  if (overlayEntry) {
+    bypassNext = true
+    afterBypass = () => window.history.replaceState(null, '', CHOOSER_PATH)
+    window.history.back()
+    return
+  }
+  window.history.replaceState(null, '', CHOOSER_PATH)
   notify()
 }
 
 /** Replaces an unreachable location (no such Wallet, no Wallets at all) with the shell. */
 export function resetToHome(): void {
-  if (window.location.pathname === HOME_PATH) return
-  window.history.replaceState(null, '', HOME_PATH)
+  if (window.location.pathname === CHOOSER_PATH) return
+  window.history.replaceState(null, '', CHOOSER_PATH)
   notify()
 }
 
 /** Registers that the open screen cannot be left; returns the release. */
 export function blockLeaving(): () => void {
-  if (blockers === 0) blockedPath = window.location.pathname
+  if (blockers === 0) {
+    blockedPath = window.location.pathname
+    blockedDepth = currentDepth()
+  }
   blockers += 1
   let released = false
   return () => {

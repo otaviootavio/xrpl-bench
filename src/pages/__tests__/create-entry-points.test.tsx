@@ -59,12 +59,13 @@ import { Onboarding } from '../Onboarding'
 import { SettingsTab } from '../tabs/SettingsTab'
 import { WalletScreens } from '../WalletScreens'
 import { useRoute } from '@/hooks/useRoute'
+import { isTaskRoute } from '@/lib/route'
 import { useAppStore } from '@/store/app-store'
 
 /** Settings, or the routed screen its buttons navigate to (what `Main` does). */
 function Host() {
   const route = useRoute()
-  return route.screen === 'home' ? <SettingsTab /> : <WalletScreens route={route} />
+  return isTaskRoute(route) ? <WalletScreens route={route} /> : <SettingsTab />
 }
 
 const click = async (name: string | RegExp) => act(async () => void fireEvent.click(screen.getByRole('button', { name })))

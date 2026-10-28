@@ -11,6 +11,7 @@ import { SettingsTab } from './tabs/SettingsTab'
 import { Unlock } from './Unlock'
 import { WalletScreens } from './WalletScreens'
 import { useRoute } from '@/hooks/useRoute'
+import { isTaskRoute } from '@/lib/route'
 import { useActiveWallet, useActiveNetwork, useActiveNode, useWalletIsOpen } from '@/store/app-store'
 import { useIncomingPaymentNotifications } from '@/hooks/useIncomingPaymentNotifications'
 import { useAccountLiveUpdates } from '@/hooks/useAccountLiveUpdates'
@@ -55,7 +56,7 @@ function OpenWallet({ showUpdateMarker }: { showUpdateMarker: boolean }) {
   // screen returns to; the live hooks above stay mounted behind the screen.
   const [tab, setTab] = useState<string>('balances')
   // A task screen takes the whole content area (mobile dialogs S2).
-  if (route.screen !== 'home') return <WalletScreens route={route} />
+  if (isTaskRoute(route)) return <WalletScreens route={route} />
   return (
     <Tabs value={tab} onValueChange={setTab}>
       <TabsList>

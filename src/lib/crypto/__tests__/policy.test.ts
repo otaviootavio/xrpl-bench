@@ -8,6 +8,7 @@ import {
   describeOptions,
   olderBuildCannotOpen,
   resolveEdit,
+  IMPORT_NEEDS_OPEN_CHECK_REASON,
   NO_PRF_REASON,
   MAINNET_DERIVED_ORIGIN_REASON,
   MAINNET_DERIVED_UNKNOWN_ORIGIN_REASON,
@@ -113,6 +114,20 @@ describe('checkWalletRequest', () => {
     expect(checkWalletRequest({ ...request, seedMethod: 'passkey-derived', signing: 'passkey' })).toEqual({ ok: true })
     expect(checkWalletRequest({ ...request, seedMethod: 'passkey-derived', signing: 'passkey', origin: TEMPORARY })).toEqual({ ok: true })
     expect(checkWalletRequest({ ...request, network: 'devnet', seedMethod: 'passkey-derived', signing: 'passkey', origin: TEMPORARY })).toEqual({ ok: true })
+  })
+})
+
+describe('describeOptions for an import', () => {
+  it.each(['mainnet', 'testnet', 'devnet'] as const)('No Open Check is unavailable on %s, with the reason the keystore refuses with', (network) => {
+    const described = describeOptions({ ...context, network, imported: true })
+    expect(described.openCheck.none).toEqual({ available: false, reason: IMPORT_NEEDS_OPEN_CHECK_REASON })
+    expect(described.openCheck.pin).toEqual({ available: true })
+    expect(checkWalletRequest({ ...request, network, openCheck: 'none', imported: true })).toEqual({ ok: false, reason: IMPORT_NEEDS_OPEN_CHECK_REASON })
+    expect(describeOptions({ ...context, network, openCheck: 'none', imported: true }).combination).toEqual({ ok: false, reason: IMPORT_NEEDS_OPEN_CHECK_REASON })
+  })
+  it('a generated wallet still may have none on Testnet and Devnet', () => {
+    expect(describeOptions({ ...context, network: 'testnet' }).openCheck.none).toEqual({ available: true })
+    expect(describeOptions({ ...context, network: 'devnet' }).openCheck.none).toEqual({ available: true })
   })
 })
 

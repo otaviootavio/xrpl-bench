@@ -5,7 +5,7 @@ import { act, waitFor, cleanup, fireEvent, render, screen } from '@testing-libra
 
 /**
  * Story 5: both ways to make a new Wallet open the creation flow, and neither
- * writes a Wallet itself. Import keeps its own paths.
+ * writes a Wallet itself. Onboarding's Import keeps its own path.
  */
 const h = vi.hoisted(() => ({
   setUpVaultAuth: vi.fn(async () => ({}) as CryptoKey),
@@ -145,14 +145,14 @@ describe('Settings > Add wallet', () => {
     expect(h.createStoredWallet).not.toHaveBeenCalled()
   })
 
-  it('Import is untouched: label, network, seed and Add', async () => {
+  it('Import is the same flow in import mode, with the Seed field supplied by the screen', async () => {
     render(<Host />)
     await click('Add wallet')
     expect(window.location.pathname).toBe('/wallets/new')
     await click('Import')
-    expect(screen.queryByText('the creation flow')).toBeNull()
-    expect(document.getElementById('wseed')).toBeTruthy()
-    expect(screen.getByRole('button', { name: 'Add' })).toBeTruthy()
+    expect(screen.getByText('the creation flow')).toBeTruthy()
+    const props = h.flowProps.at(-1) as { importSource?: unknown }
+    expect(props.importSource).toBeTruthy()
   })
 
   it('the screen cannot be left while a Wallet is being written or backed up, then returns to Settings when done', async () => {
@@ -178,14 +178,13 @@ describe('Settings > Add wallet', () => {
 })
 
 describe('Add wallet at the app shell (chooser story 11)', () => {
-  it('works with every lock closed: Generate is offered, Import is not, and nothing says why', async () => {
+  it('works with every lock closed: Generate and Import are both offered', async () => {
     useAppStore.setState({ openLocks: {} } as never)
     window.history.replaceState(null, '', '/wallets/new')
     render(<AddWalletScreen onClose={() => {}} />)
     expect(screen.getByText('the creation flow')).toBeTruthy()
-    expect(screen.queryByRole('button', { name: 'Import' })).toBeNull()
-    expect(screen.queryByRole('button', { name: 'Generate' })).toBeNull()
-    expect(screen.queryByText(/import/i)).toBeNull()
+    expect(screen.getByRole('button', { name: 'Import' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Generate' })).toBeTruthy()
   })
 
   it('on success: announces the new card, says Wallet added., returns, and selects nothing', async () => {

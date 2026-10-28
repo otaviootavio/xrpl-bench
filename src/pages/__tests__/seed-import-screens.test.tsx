@@ -91,7 +91,6 @@ vi.mock('@/store/app-store', () => ({
 }))
 
 import { Onboarding } from '../Onboarding'
-import { AddWalletScreen } from '@/components/wallet/AddWalletScreen'
 
 function accountState(over: Record<string, unknown> = {}) {
   return { exists: true, address: ADDRESS, balanceDrops: '10000000', ownerCount: 0, sequence: 1, requireDestTag: false, disableMasterKey: false, ...over }
@@ -104,7 +103,6 @@ const ledger = {
 }
 
 beforeEach(() => {
-  onClose.mockReset()
   toastError.mockReset()
   toastSuccess.mockReset()
   importAndStoreWallet.mockReset().mockResolvedValue({ id: 'w-new', label: 'Wallet', address: ADDRESS, createdAt: 0 })
@@ -141,20 +139,10 @@ async function onboardingImport(value: string) {
   await click('Continue')
 }
 
-/** Settings > Add wallet (the routed screen): Import, type the value, Add. */
-async function settingsImport(value: string) {
-  render(<AddWalletScreen onClose={onClose} />)
-  await click('Import')
-  ;(document.getElementById('wseed') as HTMLInputElement).value = value
-  await click('Add')
-}
 
-const onClose = vi.fn()
-
-const screens = [
-  { name: 'Onboarding', importValue: onboardingImport },
-  { name: 'Settings', importValue: settingsImport },
-] as const
+// Settings > Add wallet no longer has its own import path: it is the creation
+// flow in import mode (chooser story 13), covered by add-wallet-import.test.tsx.
+const screens = [{ name: 'Onboarding', importValue: onboardingImport }] as const
 
 describe.each(screens)('$name: Seed import (Epic 11)', ({ importValue }) => {
   it('writes straight away when the master key is enabled — no extra step', async () => {
@@ -220,77 +208,6 @@ describe.each(screens)('$name: Seed import (Epic 11)', ({ importValue }) => {
   })
 })
 
-describe('Settings: dismissing the warning is cancelling it', () => {
-  it('Escape closes the warning and writes nothing — later or ever', async () => {
-    ledger.masterKeyDisabled()
-    await settingsImport(SEED)
-    expect(screen.getByText('Master key disabled')).toBeTruthy()
-    await act(async () => {
-      fireEvent.keyDown(document.activeElement ?? document.body, { key: 'Escape' })
-    })
-    expect(screen.queryByText('Master key disabled')).toBeNull()
-    expect(importAndStoreWallet).not.toHaveBeenCalled()
-    // Back on the form, the typed Seed is gone.
-    expect((document.getElementById('wseed') as HTMLInputElement).value).toBe('')
-  })
-
-  it('clears the input after a completed import', async () => {
-    ledger.masterKeyEnabled()
-    render(<AddWalletScreen onClose={onClose} />)
-    await click('Import')
-    const input = document.getElementById('wseed') as HTMLInputElement
-    input.value = SEED
-    await click('Add')
-    expect(importAndStoreWallet).toHaveBeenCalledTimes(1)
-    expect(input.value).toBe('')
-  })
-})
-
-describe('Settings: the busy guards hold while the check or the write runs', () => {
-  it('the Add screen cannot be left, re-submitted or switched to Generate while the check is in flight', async () => {
-    let settle!: (v: unknown) => void
-    fetchQuery.mockReturnValue(new Promise((r) => (settle = r)))
-    await settingsImport(SEED)
-    expect(screen.getByRole('button', { name: 'Checking…' })).toBeTruthy()
-
-    // The screen cannot be left while the check runs: Back is disabled.
-    expect((screen.getByRole('button', { name: 'Wallets' }) as HTMLButtonElement).disabled).toBe(true)
-    expect(screen.getByText('Add another wallet')).toBeTruthy()
-
-    await click('Checking…')
-    expect(fetchQuery).toHaveBeenCalledTimes(1)
-    expect((screen.getByRole('button', { name: 'Generate' }) as HTMLButtonElement).disabled).toBe(true)
-    expect((screen.getByRole('button', { name: 'Import' }) as HTMLButtonElement).disabled).toBe(true)
-    expect((document.getElementById('wlabel') as HTMLInputElement).disabled).toBe(true)
-
-    await act(async () => {
-      settle(accountState())
-    })
-    expect(importAndStoreWallet).toHaveBeenCalledTimes(1)
-  })
-
-  it('a double-click on "Import anyway" writes once', async () => {
-    ledger.masterKeyDisabled()
-    let settle!: (v: unknown) => void
-    importAndStoreWallet.mockReturnValue(new Promise((r) => (settle = r)))
-    await settingsImport(SEED)
-    // Two clicks as a browser delivers them: separate events, with React's
-    // commit for the first (busy, button disabled) landing before the second.
-    const button = screen.getByRole('button', { name: 'Import anyway' })
-    await act(async () => {
-      fireEvent.click(button)
-    })
-    await act(async () => {
-      fireEvent.click(button)
-    })
-    expect(importAndStoreWallet).toHaveBeenCalledTimes(1)
-    await act(async () => {
-      settle({ id: 'w-new', label: 'Wallet', address: ADDRESS, createdAt: 0 })
-    })
-    expect(importAndStoreWallet).toHaveBeenCalledTimes(1)
-  })
-})
-
 describe('Onboarding: the Seed survives the move from the import step to the PIN step', () => {
   it('probes and writes the Seed that was typed, not the empty value an unmounted input leaves', async () => {
     ledger.masterKeyEnabled()
@@ -304,7 +221,7 @@ describe('Onboarding: the Seed survives the move from the import step to the PIN
 })
 
 // ---------------------------------------------------------------------------
-// The Network choice reaches the pre-check and the write, on both screens.
+// The Network choice reaches the pre-check and the write.
 // ---------------------------------------------------------------------------
 
 const radio = (name: RegExp) => fireEvent.click(screen.getByRole('radio', { name }))
@@ -325,33 +242,6 @@ describe.each(['mainnet', 'devnet'] as const)('choosing %s', (network) => {
     expect(importAndStoreWallet.mock.calls[0][3]).toBe(network)
   })
 
-  it('Settings import: the pre-check and the write use it, and "Import anyway" keeps it', async () => {
-    ledger.masterKeyDisabled()
-    render(<AddWalletScreen onClose={onClose} />)
-    await click('Import')
-    radio(NETWORK_LABEL[network])
-    ;(document.getElementById('wseed') as HTMLInputElement).value = SEED
-    await click('Add')
-    expect(fetchQuery.mock.calls[0][0].queryKey).toEqual(['accountState', network, ADDRESS])
-    await click('Import anyway')
-    expect(importAndStoreWallet.mock.calls[0][3]).toBe(network)
-  })
-})
-
-describe('Settings: the Network choice is reset for the next Add', () => {
-  it('returns to Testnet after an import completes: the screen leaves, and the next one starts fresh', async () => {
-    ledger.masterKeyEnabled()
-    const first = render(<AddWalletScreen onClose={onClose} />)
-    await click('Import')
-    radio(/^Mainnet/)
-    ;(document.getElementById('wseed') as HTMLInputElement).value = SEED
-    await click('Add')
-    expect(onClose).toHaveBeenCalledTimes(1)
-    first.unmount()
-    render(<AddWalletScreen onClose={onClose} />)
-    await click('Import')
-    expect((screen.getByRole('radio', { name: /^Testnet/ }) as HTMLInputElement).checked).toBe(true)
-  })
 })
 
 describe('Onboarding: the legacy lock is opened before the Wallet list is committed', () => {

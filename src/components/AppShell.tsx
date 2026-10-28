@@ -2,14 +2,18 @@ import { useEffect, useRef } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { AppHeader } from '@/components/AppHeader'
 import { ChassisShell } from '@/components/ChassisShell'
+import { Button } from '@/components/ui/button'
+import { Lamp } from '@/components/ui/lamp'
 import { Chooser } from '@/pages/Chooser'
+import { SettingsScreen } from '@/pages/SettingsScreen'
 import { Main } from '@/pages/Main'
 import { useRoute } from '@/hooks/useRoute'
+import { useUpdateMarker } from '@/hooks/useUpdateMarker'
 import { useAutoLock } from '@/hooks/useAutoLock'
 import { useClearCacheOnLock } from '@/hooks/useClearCacheOnLock'
 import { useAppStore } from '@/store/app-store'
 import { leaveWallet } from '@/lib/teardown'
-import { enteredWalletId, isWalletScreen, resetToHome, type Route } from '@/lib/route'
+import { enteredWalletId, isWalletScreen, navigate, resetToHome, SETTINGS_PATH, type Route } from '@/lib/route'
 
 /**
  * The wallet in view on this route: the one the user is inside, or none.
@@ -22,6 +26,34 @@ import { enteredWalletId, isWalletScreen, resetToHome, type Route } from '@/lib/
 // oxlint-disable-next-line react/only-export-components -- pinned to this file, beside the route switch that shares it
 export function walletInView(route: Route, activeWalletId: string | null): string | null {
   return enteredWalletId(route, activeWalletId) ?? (route.screen === 'add-wallet' ? activeWalletId : null)
+}
+
+/**
+ * The chooser-side header: the nameplate and the Settings key, nothing that reads
+ * a wallet (AD-36). The key's name and text carry the update marker (never a
+ * modal, never a redirect); the lamp is aria-hidden and the words carry it.
+ */
+function ChooserHeader({ showSettingsKey }: { showSettingsKey: boolean }) {
+  return (
+    <header className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2 border-b border-border bg-background px-4 py-2.5">
+      <span className="panel-legend text-[0.75rem] tracking-[0.22em] text-foreground">XRPL Bench</span>
+      {showSettingsKey && <SettingsKey />}
+    </header>
+  )
+}
+
+function SettingsKey() {
+  const marked = useUpdateMarker()
+  return (
+    <Button
+      variant="outline"
+      className="h-auto min-h-8 max-w-full whitespace-normal py-1 pointer-coarse:min-h-11"
+      onClick={() => navigate(SETTINGS_PATH)}
+    >
+      {marked ? 'Settings, update available' : 'Settings'}
+      {marked && <Lamp tone="caution" className="ml-1" />}
+    </Button>
+  )
 }
 
 /**
@@ -57,6 +89,12 @@ export function AppShell() {
     if (before?.walletId && route.screen === 'chooser') {
       leaveWallet(queryClient, before.walletId)
       document.getElementById('chooser-heading')?.focus()
+    } else if (before?.route.screen === 'settings' && route.screen === 'chooser') {
+      // The Wallets key on /settings unmounted with the screen: land on the h1, not on the document.
+      document.getElementById('chooser-heading')?.focus()
+    } else if (before?.route.screen === 'chooser' && route.screen === 'settings') {
+      // The Settings key unmounted with the chooser: the screen names itself.
+      document.getElementById('settings-heading')?.focus()
     }
   }, [route, activeWalletId, queryClient])
 
@@ -79,10 +117,7 @@ export function AppShell() {
           {walletSide && !chooserSide ? (
             <AppHeader />
           ) : (
-            // Chooser side: the skip link and the nameplate, nothing that reads a wallet (AD-36).
-            <header className="flex items-center border-b border-border bg-background px-4 py-2.5">
-              <span className="panel-legend text-[0.75rem] tracking-[0.22em] text-foreground">XRPL Bench</span>
-            </header>
+            <ChooserHeader showSettingsKey={route.screen !== 'settings'} />
           )}
         </>
       }
@@ -92,7 +127,7 @@ export function AppShell() {
           target. It stays out of the tab order. Nothing suppresses the ring on
           this landing target: §6.3 admits no carve-out. */}
       <main id="main-content" tabIndex={-1} className="px-4 pb-6 pt-3">
-        {chooserSide ? <Chooser /> : <Main />}
+        {route.screen === 'settings' ? <SettingsScreen /> : chooserSide ? <Chooser /> : <Main />}
       </main>
     </ChassisShell>
   )

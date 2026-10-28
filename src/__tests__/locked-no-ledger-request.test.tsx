@@ -22,6 +22,7 @@ vi.mock('@/pages/Unlock', () => ({ Unlock: ({ wallet }: { wallet: { label: strin
 vi.mock('@/hooks/useIncomingPaymentNotifications', () => ({ useIncomingPaymentNotifications: (...a: unknown[]) => h.hookArgs('notify', ...a) }))
 vi.mock('@/hooks/useAccountLiveUpdates', () => ({ useAccountLiveUpdates: (...a: unknown[]) => h.hookArgs('live', ...a) }))
 vi.mock('@/hooks/useAppUpdate', () => ({ useAppUpdate: () => ({ updateReady: false, declined: false }) }))
+vi.mock('@/lib/build-info', () => ({ BUILD: { version: '0.0.0', commitSha: 'x', builtAt: '' }, shortSha: 'x', sourceUrl: 'https://example.invalid', formatBuiltAt: () => '' }))
 vi.mock('@/pages/tabs/BalancesTab', () => ({ BalancesTab: () => (h.tabRendered(), <div>tab</div>) }))
 vi.mock('@/pages/tabs/SendTab', () => ({ SendTab: () => (h.tabRendered(), <div>tab</div>) }))
 vi.mock('@/pages/tabs/ReceiveTab', () => ({ ReceiveTab: () => (h.tabRendered(), <div>tab</div>) }))

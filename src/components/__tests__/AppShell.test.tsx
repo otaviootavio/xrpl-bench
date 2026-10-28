@@ -18,6 +18,8 @@ vi.mock('@/lib/crypto/lock', () => ({
 }))
 vi.mock('idb-keyval', () => ({ get: async () => undefined, set: async () => {}, del: async () => {} }))
 vi.mock('@/components/AppHeader', () => ({ AppHeader: () => <header>wallet-header</header> }))
+vi.mock('@/hooks/useAppUpdate', () => ({ useAppUpdate: () => ({ updateReady: false, declined: false }) }))
+vi.mock('@/lib/build-info', () => ({ BUILD: { version: '0.0.0', commitSha: 'x', builtAt: '' }, shortSha: 'x', sourceUrl: 'https://example.invalid', formatBuiltAt: () => '' }))
 vi.mock('@/pages/Main', () => ({ Main: () => <p>content</p> }))
 // Real hooks, wrapped so each mount and unmount is counted.
 vi.mock('@/hooks/useAutoLock', async (orig) => {
@@ -133,7 +135,7 @@ describe('AppShell mounts the lifecycle once, above the route switch (AD-31)', (
 })
 
 describe('AppShell route switch and guards (AD-32, AD-36)', () => {
-  it('chooser and settings render the Chooser with no wallet header; the skip link is first', () => {
+  it('the chooser renders with no wallet header, the skip link first; settings renders its own screen', () => {
     const { container } = mount()
     expect(screen.getByRole('heading', { level: 1, name: 'Wallets' })).toBeTruthy()
     expect(screen.queryByText('content')).toBeNull()
@@ -141,7 +143,9 @@ describe('AppShell route switch and guards (AD-32, AD-36)', () => {
     expect(container.querySelector('a, button')?.textContent).toBe('Skip to content')
     expect(screen.getByText('XRPL Bench')).toBeTruthy()
     act(() => navigate('/settings'))
-    expect(screen.getByRole('heading', { level: 1, name: 'Wallets' })).toBeTruthy()
+    expect(screen.getByRole('heading', { level: 1, name: 'Settings' })).toBeTruthy()
+    expect(screen.queryByRole('heading', { level: 1, name: 'Wallets' })).toBeNull()
+    expect(screen.queryByText('wallet-header')).toBeNull()
   })
 
   it('a wallet route for the active, existing wallet renders the wallet content and header', () => {

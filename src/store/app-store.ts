@@ -6,6 +6,7 @@ import type { WalletMeta } from '@/lib/crypto/keystore'
 import { endAllLockSessions, endLockSession } from '@/lib/crypto/lock'
 import { LEGACY_LOCK_ID } from '@/lib/crypto/db'
 import { navigate, walletScreenPath } from '@/lib/route'
+import { resetConfigureFocusReturn } from '@/lib/configure-launch'
 import { migrateAddressBook, upsertAddressBookEntry, type AddressBookEntry } from '@/store/address-book'
 
 interface AppState {
@@ -95,6 +96,21 @@ export function enterWallet(walletId: string): void {
   if (!useAppStore.getState().wallets.some((w) => w.id === walletId)) return
   useAppStore.getState().setActiveWalletId(walletId)
   navigate(walletScreenPath('wallet', walletId))
+}
+
+/**
+ * The one function that selects a wallet and navigates to its Configure screen
+ * (AD-43): the card key hands it the card's entry view, so Configure always acts on
+ * one walletId. Same guard as `enterWallet`: an id that is not a Wallet here goes nowhere.
+ */
+export function configureWallet(walletId: string): void {
+  const { wallets, openLocks } = useAppStore.getState()
+  const wallet = wallets.find((w) => w.id === walletId)
+  // Configure needs an open lock: a closed one would be reset on arrival, leaving a stray history entry.
+  if (!wallet || !(wallet.lockId in openLocks)) return
+  resetConfigureFocusReturn()
+  useAppStore.getState().setActiveWalletId(walletId)
+  navigate(walletScreenPath('configure', walletId))
 }
 
 /** Milliseconds until an open lock expires (0 if past), or null if not open. */

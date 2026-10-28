@@ -1,8 +1,9 @@
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { ControlWalletScreen } from '@/components/wallet/ControlWalletScreen'
 import { EditChecksScreen, type EditedChecks } from '@/components/wallet/EditChecksScreen'
 import { TwoDeviceScreen } from '@/components/wallet/TwoDeviceSign'
+import { clearConfigureLaunch, peekConfigureLaunch } from '@/lib/configure-launch'
 import { leaveScreen, resetToHome, type TaskRoute } from '@/lib/route'
 import { listWallets } from '@/lib/crypto/keystore'
 import { startLockSession } from '@/lib/crypto/lock'
@@ -26,6 +27,16 @@ export function WalletScreens({ route }: { route: TaskRoute }) {
   const openLock = useAppStore((s) => s.openLock)
   const closeLock = useAppStore((s) => s.closeLock)
   const setLockMinutes = useAppStore((s) => s.setLockMinutes)
+
+  // Opened from Configure or from the Settings tab? Decided once, at mount, by the launch
+  // marker the Configure keys set (never the URL or history state), so the Back label
+  // and the return agree with where the user came from. The tab's launch leaves the
+  // default label `Settings`; the label never carries a wallet name.
+  const [fromConfigure] = useState(peekConfigureLaunch)
+  useEffect(() => {
+    clearConfigureLaunch()
+  }, [])
+  const backLabel = fromConfigure ? 'Back to Configure' : undefined
 
   const target = wallets.find((w) => w.id === route.walletId) ?? null
   const reachable = target !== null && target.lockId in openLocks
@@ -65,15 +76,16 @@ export function WalletScreens({ route }: { route: TaskRoute }) {
   if (!reachable || !target) return null
   switch (route.screen) {
     case 'edit-checks':
-      return <EditChecksScreen wallet={target} onClose={leaveScreen} onEdited={handleEdited} />
+      return <EditChecksScreen wallet={target} onClose={leaveScreen} onEdited={handleEdited} backLabel={backLabel} />
     case 'two-device':
-      return <TwoDeviceScreen wallet={target} onClose={leaveScreen} />
+      return <TwoDeviceScreen wallet={target} onClose={leaveScreen} backLabel={backLabel} />
     case 'control':
       return (
         <ControlWalletScreen
           controller={target}
           wallets={wallets}
           onClose={leaveScreen}
+          backLabel={backLabel}
           onControlled={async () => {
             await refreshWallets()
             toast.success('The other wallet now operates this account.')

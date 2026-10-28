@@ -5,7 +5,7 @@ import { AddressLink } from '@/components/wallet/AddressLink'
 import { DEVNET_NOTICE } from '@/components/wallet/DevnetNotice'
 import { REMOVE_LOCKED_REASON } from '@/components/wallet/remove-copy'
 import { NETWORKS } from '@/lib/xrpl/networks'
-import { enterWallet } from '@/store/app-store'
+import { configureWallet, enterWallet } from '@/store/app-store'
 import type { LockedGroup, OpenGroup, WalletGroup, WalletRow } from '@/store/wallet-groups'
 
 /** A key that wraps its legend rather than push a card past 320px or 200% text. */
@@ -164,6 +164,17 @@ function OpenCard({
         ))}
       </ul>
       <div className="flex flex-wrap gap-2">
+        {/* An open card acts on its entry view (AD-43); a locked card has no Configure. */}
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          className={KEY}
+          aria-label={`Configure ${group.label}`}
+          onClick={() => configureWallet(group.entryWalletId)}
+        >
+          Configure
+        </Button>
         <RenameKey group={group} onRename={onRename} />
         {group.allowsLock && (
           <Button type="button" variant="outline" size="sm" className={KEY} aria-label={`Lock ${group.label}`} onClick={() => onLock(group)}>

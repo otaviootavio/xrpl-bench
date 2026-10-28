@@ -37,7 +37,9 @@ export function ControlWalletScreen({
   wallets,
   onClose,
   onControlled,
+  backLabel,
 }: {
+  backLabel?: string
   controller: WalletMeta
   wallets: readonly WalletMeta[]
   onClose: () => void
@@ -58,6 +60,7 @@ export function ControlWalletScreen({
         </>
       }
       onBack={onClose}
+      backLabel={backLabel}
       locked={locked}
     >
       <ControlWalletBody controller={controller} wallets={wallets} onClose={onClose} onControlled={onControlled} onLockedChange={setLocked} />

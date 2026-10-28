@@ -1,10 +1,11 @@
-import { ArrowLeftIcon, LockIcon } from 'lucide-react'
+import { ArrowLeftIcon, LockIcon, SlidersHorizontalIcon } from 'lucide-react'
 import { useQueryClient } from '@tanstack/react-query'
 import { Button } from '@/components/ui/button'
 import { useActiveWallet, useWalletIsOpen } from '@/store/app-store'
 import { NetworkPlate } from '@/components/wallet/NetworkPlate'
-import { useLeaveBlocked } from '@/hooks/useRoute'
-import { leaveToChooser } from '@/lib/route'
+import { useLeaveBlocked, useRoute } from '@/hooks/useRoute'
+import { leaveToChooser, navigate, walletScreenPath } from '@/lib/route'
+import { resetConfigureFocusReturn } from '@/lib/configure-launch'
 import { tearDownLock } from '@/lib/teardown'
 
 /**
@@ -22,6 +23,7 @@ export function AppHeader() {
   const wallet = useActiveWallet()
   const open = useWalletIsOpen(wallet?.id)
   const blocked = useLeaveBlocked()
+  const route = useRoute()
 
   return (
     <header className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2 border-b border-border bg-background px-4 py-2.5">
@@ -56,6 +58,24 @@ export function AppHeader() {
         {wallet && open && (
           <div className="flex min-w-0 max-w-full flex-wrap items-center gap-2">
             <NetworkPlate />
+            {/* Only for an open lock, and only on the wallet's own screen: not on Configure, and not over a task screen. */}
+            {route.screen === 'wallet' && (
+              <Button
+                variant="outline"
+                size="icon"
+                aria-label="Configure wallet"
+                aria-disabled={blocked || undefined}
+                aria-describedby={blocked ? 'wallets-key-reason' : undefined}
+                className="aria-disabled:cursor-not-allowed aria-disabled:opacity-60"
+                onClick={() => {
+                  if (blocked) return
+                  resetConfigureFocusReturn()
+                  navigate(walletScreenPath('configure', wallet.id))
+                }}
+              >
+                <SlidersHorizontalIcon className="size-4" />
+              </Button>
+            )}
             {/* Closes THIS Wallet's lock only (AD-26). A lock with no Open Check
                 has nothing to lock. */}
             {wallet.openCheck !== 'none' && (

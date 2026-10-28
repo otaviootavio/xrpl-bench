@@ -57,7 +57,7 @@ const ROLE_BUTTON = 'h-auto min-h-9 w-full whitespace-normal py-2 text-center'
  * `lib/two-device.ts`, and nothing here outlives the screen. Mount only for a
  * Wallet whose lock is open (AD-26).
  */
-export function TwoDeviceScreen({ wallet, onClose }: { wallet: WalletMeta; onClose: () => void }) {
+export function TwoDeviceScreen({ wallet, onClose, backLabel }: { wallet: WalletMeta; onClose: () => void; backLabel?: string }) {
   const [role, setRole] = useState<Role | null>(null)
   // True while a build, a Signing Check or a submission is running: leaving then would hide the outcome.
   const [busy, setBusy] = useState(false)
@@ -74,6 +74,7 @@ export function TwoDeviceScreen({ wallet, onClose }: { wallet: WalletMeta; onClo
         </>
       }
       onBack={onClose}
+      backLabel={backLabel}
       locked={busy}
     >
       {role === null && (

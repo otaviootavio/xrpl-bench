@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Axis, Choice } from '@/components/wallet/check-controls'
+import { NO_OPEN_CHECK_DETAIL, STANDARD_SIGNING_DETAIL, openCheckWords, signingWords } from '@/components/wallet/check-words'
 import { ScreenFooter, TaskScreen } from '@/components/wallet/TaskScreen'
 import { useLeaveBlocker } from '@/hooks/useRoute'
 import { minutesLabel } from '@/lib/minutes-label'
@@ -49,23 +50,6 @@ type SignSel = 'keep' | 'standard' | 'pin' | 'passkey-new' | 'passkey-existing'
 
 const MIN_PIN_HINT = 'The App PIN must be at least 6 digits.'
 
-function openCheckWords(kind: string): string {
-  switch (kind) {
-    case 'pin':
-      return 'App PIN'
-    case 'passkey':
-      return 'Passkey'
-    case 'either':
-      return 'Passkey or App PIN, shared with the other wallets on this lock'
-    default:
-      return 'No Open Check'
-  }
-}
-
-function signingWords(kind: SigningKind): string {
-  return kind === 'standard' ? 'Standard' : kind === 'passkey' ? 'Passkey only' : 'App PIN only'
-}
-
 export interface EditChecksScreenProps {
   /** The Wallet to edit; its lock is open (the route mounts this only then). */
   wallet: WalletMeta
@@ -73,9 +57,11 @@ export interface EditChecksScreenProps {
   onClose: () => void
   /** Called once the edit is committed. The caller swaps the lock and session. */
   onEdited: (edited: EditedChecks) => void | Promise<void>
+  /** The Back key's label; the TaskScreen default (`Settings`) when omitted. */
+  backLabel?: string
 }
 
-export function EditChecksScreen({ wallet, onClose, onEdited }: EditChecksScreenProps) {
+export function EditChecksScreen({ wallet, onClose, onEdited, backLabel }: EditChecksScreenProps) {
   // A step that is writing or waiting on the written Seed must not be left from under it.
   const [locked, setLocked] = useState(false)
   useLeaveBlocker(locked)
@@ -84,6 +70,7 @@ export function EditChecksScreen({ wallet, onClose, onEdited }: EditChecksScreen
       title="Edit checks"
       description={`${wallet.label}. The address does not change. The check you pass now is the one the change affects.`}
       onBack={onClose}
+      backLabel={backLabel}
       locked={locked}
     >
       <EditChecksForm key={wallet.id} wallet={wallet} onClose={onClose} onEdited={onEdited} onLockedChange={setLocked} />
@@ -408,7 +395,7 @@ function EditChecksBody({
               name={`${group}-open`}
               checked={openSel === 'none'}
               label="No Open Check"
-              detail={options.openCheck.none.available ? 'Nothing is asked to open the wallet. Testnet and Devnet only.' : undefined}
+              detail={options.openCheck.none.available ? NO_OPEN_CHECK_DETAIL : undefined}
               state={options.openCheck.none}
               onSelect={() => setOpenSel('none')}
             />
@@ -438,7 +425,7 @@ function EditChecksBody({
               name={`${group}-sign`}
               checked={signSel === 'standard'}
               label="Standard"
-              detail="Nothing is asked for signing."
+              detail={STANDARD_SIGNING_DETAIL}
               state={options.signing.standard}
               onSelect={() => setSignSel('standard')}
             />

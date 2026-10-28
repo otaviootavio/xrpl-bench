@@ -6,6 +6,7 @@ import { deriveAesKeyFromBits, generateOrdinal, HKDF_INFO, isOrdinal, seedSalt, 
 import { buildLock, createLock, deleteLock, discardUnusedAppPin, getLockInfo, hasAppPin, legacyLockRecord, openLock, provesAppPin, setAutoLockMinutes, withAppPin, type CheckResult } from './lock'
 import { checkAutoLock, checkEditAllowed, checkLockRequest, checkWalletRequest, requiresWrittenSeed, resolveEdit, type CheckEditRequest, type NewOpenCheck, type PasskeyCapability, type PasskeyChoice, type PolicyVerdict, type SigningKind } from './policy'
 import { b64ToBuf, bufToB64 } from './encoding'
+import { validateWalletName, type WalletNameReason } from '@/lib/wallet-name'
 import { attemptPin, getLockoutState, PBKDF2_ITERATIONS, recordFailure, triesRemaining } from './pin'
 import {
   assertAnyPasskeyAndDeriveBits,
@@ -701,6 +702,38 @@ export async function sealSeedUnderSigningCheck(
   const meta = (await listWallets()).find((w) => w.id === walletId)
   if (!meta) throw new Error('Wallet not found in local vault.')
   return { status: 'ok', value: meta }
+}
+
+export type RenameWalletResult =
+  | { ok: true; metas: WalletMeta[] }
+  | { ok: false; reason: WalletNameReason | 'write-failed' }
+
+/**
+ * Renames a Seed (AD-41): changes only the record's `label`, in one transaction.
+ * No `rev` bump (a rename is not an edit of what the Seed is sealed under, so an
+ * in-flight `commitWalletEdit` neither aborts nor loses the name), no lock, no
+ * ledger call. The rule is re-run here against the stored records, so a duplicate
+ * that appeared in another tab is refused. A failed write changes nothing.
+ */
+export async function renameWallet(seedId: string, rawName: string): Promise<RenameWalletResult> {
+  try {
+    const all = await listStoredWallets()
+    if (!all.some((w) => w.id === seedId)) return { ok: false, reason: 'write-failed' }
+    const verdict = validateWalletName(
+      rawName,
+      all.filter((w) => w.id !== seedId).map((w) => w.label),
+    )
+    if (!verdict.ok) return verdict
+    let written: StoredWallet | undefined
+    await mutateStoredWallet(seedId, (current) => {
+      written = { ...current, label: verdict.name }
+      return written
+    })
+    if (!written) return { ok: false, reason: 'write-failed' }
+    return { ok: true, metas: toMetas(written) }
+  } catch {
+    return { ok: false, reason: 'write-failed' }
+  }
 }
 
 /** Removes one Wallet. Its Seed record goes with its last view and not before:

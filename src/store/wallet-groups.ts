@@ -34,6 +34,37 @@ export type WalletGroup = LockedGroup | OpenGroup
 const byCreated = (a: WalletMeta, b: WalletMeta) =>
   a.createdAt - b.createdAt || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0)
 
+/** Every Wallet's id in chooser order: Seeds by `createdAt` then `seedId`, each Seed's
+ * views in view order (AD-43). The same order `groupWalletsBySeed` lays the cards in. */
+export function walletIdsInChooserOrder(wallets: readonly WalletMeta[]): string[] {
+  const bySeed = new Map<string, WalletMeta[]>()
+  for (const w of wallets) {
+    const list = bySeed.get(w.seedId)
+    if (list) list.push(w)
+    else bySeed.set(w.seedId, [w])
+  }
+  return [...bySeed]
+    .map(([seedId, list]) => ({ seedId, views: [...list].sort(byCreated) }))
+    .sort((a, b) => a.views[0].createdAt - b.views[0].createdAt || (a.seedId < b.seedId ? -1 : a.seedId > b.seedId ? 1 : 0))
+    .flatMap((g) => g.views.map((v) => v.id))
+}
+
+/**
+ * The one place the Active Wallet is re-picked after a removal (AD-46): `activeId`
+ * if it is still there, else the first Wallet in chooser order, else `null`. Pure.
+ * `remainingInChooserOrder` is every Wallet left (`walletIdsInChooserOrder`); the
+ * removed id is never chosen, whatever the list holds.
+ */
+export function nextActiveWalletId(
+  removedId: string,
+  activeId: string | null,
+  remainingInChooserOrder: readonly string[],
+): string | null {
+  const left = remainingInChooserOrder.filter((id) => id !== removedId)
+  if (activeId !== null && activeId !== removedId && left.includes(activeId)) return activeId
+  return left[0] ?? null
+}
+
 /** One group per Seed, ordered by Seed `createdAt` then `seedId` (AD-43). Pure. */
 export function groupWalletsBySeed(
   wallets: readonly WalletMeta[],

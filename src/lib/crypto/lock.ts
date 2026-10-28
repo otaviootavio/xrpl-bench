@@ -8,6 +8,7 @@ import { assertAnyPasskeyAndDeriveBits, assertPasskeyAndDeriveBits, getRpId, isC
 import {
   clearAllLockSessions,
   clearLockSession,
+  deleteAllLockRecords,
   deleteLockRecord,
   getLockRecord,
   extendLockSessionExpiry,
@@ -349,6 +350,31 @@ export async function discardUnusedAppPin(): Promise<void> {
     const { pinSaltB64: _salt, pinVerifier: _verifier, ...rest } = current
     return rest
   })
+}
+
+/**
+ * The App PIN goes with the last Wallet (AD-46, FR-86), and its failure count goes
+ * with it (AD-25: one PIN, one count). In ONE `mutateVaultMeta` transaction it
+ * deletes `pinSaltB64`, `pinVerifier`,
+ * `wrappedMasterKeyForPin`, `wrappedMasterKeyForPasskey`, `passkeyCredentialIdB64`
+ * and `rpId`, and resets `failedAttempts` and `lockedUntil` (checked against `VaultMeta`:
+ * those eight are every field but the key). The meta is built from scratch, never spread, so a field
+ * added later cannot survive into an emptied vault.
+ *
+ * The only function allowed to reset the failure count outside a successful unlock.
+ * It is not `discardUnusedAppPin`, which keeps the count because a passkey shares
+ * it and swallows its error. The caller (`keystore.removeWallet`) runs it under
+ * `exclusiveVaultWrite`, only once no stored Wallet remains. Rejects on failure.
+ */
+export async function discardAppPin(): Promise<void> {
+  await mutateVaultMeta(() => ({ key: 'vault', failedAttempts: 0 }))
+}
+
+/** Removes every lock record (the legacy one too) and every persisted session of a
+ * vault with no Wallet left. See `db.deleteAllLockRecords`. */
+export async function discardAllLocks(): Promise<void> {
+  await deleteAllLockRecords()
+  await clearAllLockSessions()
 }
 
 /**

@@ -162,6 +162,21 @@ beforeEach(() => {
 
 const recordOf = (id: string) => h.state.stores.wallets.get(id)
 
+describe('an App PIN the screen expected but a removal elsewhere deleted (AD-46)', () => {
+  it('refuses, and writes no lock, no Wallet and no PIN: a single typed entry never becomes the App PIN', async () => {
+    const result = await createStoredWallet(base, { pin: PIN, appPinExpected: true })
+    expect(result.status).toBe('refused')
+    expect(h.state.stores.wallets.size).toBe(0)
+    expect([...h.state.stores.vault.keys()].filter((k) => k.startsWith('lock:'))).toEqual([])
+    expect((h.state.stores.vault.get('vault') as { pinSaltB64?: string } | undefined)?.pinSaltB64).toBeUndefined()
+  })
+
+  it('a screen that expected no PIN (and asked twice) still creates it', async () => {
+    ok(await createStoredWallet(base, { pin: PIN, appPinExpected: false }))
+    expect((h.state.stores.vault.get('vault') as { pinSaltB64?: string }).pinSaltB64).toBeDefined()
+  })
+})
+
 describe('defaults: App PIN open, Standard signing', () => {
   it('writes one Wallet on its own lock, the Seed under the lock Open Key only', async () => {
     const { meta, openKey, seed } = ok(await createStoredWallet(base, { pin: PIN }))
@@ -388,10 +403,11 @@ describe('removing the last Wallet on a created lock', () => {
     expect((await listWallets()).map((m) => m.id)).toEqual([b.id])
   })
 
-  it('removing a legacy Wallet never deletes the legacy lock', async () => {
+  it('removing a legacy Wallet never deletes the legacy lock while another Wallet remains', async () => {
     const { generateAndStoreWallet } = await import('../keystore')
     const key = await setUpVaultAuth('t', PIN)
     const legacy = (await generateAndStoreWallet('L', key, 'testnet')).meta
+    await generateAndStoreWallet('M', key, 'testnet')
     await removeWallet(legacy.id)
     expect(h.state.stores.vault.get('lock:legacy')).toBeDefined()
   })

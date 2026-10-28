@@ -1,5 +1,6 @@
 /** @vitest-environment jsdom */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { readFileSync } from 'node:fs'
 import { act, waitFor, cleanup, fireEvent, render, screen } from '@testing-library/react'
 
 /**
@@ -11,6 +12,7 @@ const h = vi.hoisted(() => ({
   generateAndStoreWallet: vi.fn(),
   createStoredWallet: vi.fn(),
   flowProps: [] as Array<Record<string, unknown>>,
+  appPinResidue: vi.fn(async () => false),
 }))
 
 vi.mock('idb-keyval', () => ({ get: async () => undefined, set: async () => {}, del: async () => {} }))
@@ -23,6 +25,7 @@ vi.mock('@/lib/crypto/keystore', () => ({
   createStoredWallet: (...a: unknown[]) => h.createStoredWallet(...a),
   listWallets: async () => [],
   removeWallet: vi.fn(),
+  appPinResidue: () => h.appPinResidue(),
   revealSeed: vi.fn(),
   addNetworkView: vi.fn(),
   setLockAutoLock: vi.fn(),
@@ -101,6 +104,30 @@ describe('first run', () => {
     ;(document.getElementById('seed') as HTMLInputElement).value = 'sSeed'
     await click('Continue')
     expect(screen.getByLabelText(/PIN \(min 6 digits\)/)).toBeTruthy()
+  })
+})
+
+describe('first run after a removal whose App PIN discard failed (AD-46)', () => {
+  const offer = () => screen.queryByRole('button', { name: 'Remove all wallets from this device' })
+  afterEach(() => h.appPinResidue.mockResolvedValue(false))
+
+  it('offers Remove all while a PIN or a failure count remains, read through the keystore', async () => {
+    h.appPinResidue.mockResolvedValue(true)
+    render(<Onboarding />)
+    await waitFor(() => expect(offer()).not.toBeNull())
+    expect(h.appPinResidue).toHaveBeenCalled()
+    fireEvent.click(offer() as HTMLElement)
+    expect(screen.getByRole('button', { name: 'Erase everything' })).toBeTruthy()
+  })
+
+  it('offers nothing on a clean device', async () => {
+    render(<Onboarding />)
+    await waitFor(() => expect(h.appPinResidue).toHaveBeenCalled())
+    expect(offer()).toBeNull()
+  })
+
+  it('reads no vault meta itself', () => {
+    expect(readFileSync('src/pages/Onboarding.tsx', 'utf8')).not.toMatch(/getVaultMeta|pinSaltB64|failedAttempts/)
   })
 })
 

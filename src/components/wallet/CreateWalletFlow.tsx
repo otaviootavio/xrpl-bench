@@ -309,7 +309,7 @@ function CreateWalletForm({ capability, onDone, onInProgressChange, defaultLabel
             passkeyChoice,
             passkey: capability,
           },
-          { pin, confirmWrittenSeed },
+          { pin, confirmWrittenSeed, appPinExpected: appPin?.exists === true },
         )
         if (derived.status === 'ok') {
           pendingRef.current = { meta: derived.value.meta, key: derived.value.openKey, autoLockMinutes }
@@ -342,7 +342,7 @@ function CreateWalletForm({ capability, onDone, onInProgressChange, defaultLabel
           signing,
           passkey: capability,
         },
-        { pin, confirmWrittenSeed },
+        { pin, confirmWrittenSeed, appPinExpected: appPin?.exists === true },
       )
       switch (result.status) {
         case 'ok':

@@ -282,7 +282,7 @@ describe('TwoDeviceSign, the Settings row', () => {
     render(<TwoDeviceSign wallet={WALLET} />)
     await click(btn('Sign with two devices'))
     expect(window.location.pathname).toBe('/wallets/w/two-device')
-    expect(window.history.state).toEqual({ screen: true })
+    expect(window.history.state).toEqual({ screen: true, depth: 1 })
   })
 
   it('wraps the two role buttons instead of letting them run sideways', async () => {

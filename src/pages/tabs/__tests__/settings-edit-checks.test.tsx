@@ -74,6 +74,7 @@ vi.mock('@/components/ui/select', () => ({
 import { SettingsTab } from '../SettingsTab'
 import { WalletScreens } from '../../WalletScreens'
 import { useRoute } from '@/hooks/useRoute'
+import { isTaskRoute } from '@/lib/route'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { PromptsContext } from '@/hooks/usePrompts'
 import { useAppStore } from '@/store/app-store'
@@ -87,7 +88,7 @@ const PROMPTS = { pin: async () => '123456' }
 /** Settings, or the routed screen its buttons navigate to (what `Main` does). */
 function Host() {
   const route = useRoute()
-  return route.screen === 'home' ? <SettingsTab /> : <WalletScreens route={route} />
+  return isTaskRoute(route) ? <WalletScreens route={route} /> : <SettingsTab />
 }
 
 function renderSettings() {

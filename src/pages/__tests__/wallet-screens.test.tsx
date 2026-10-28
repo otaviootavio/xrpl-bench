@@ -12,13 +12,13 @@ vi.mock('@/components/wallet/TwoDeviceSign', () => ({ TwoDeviceScreen: ({ wallet
 
 import { WalletScreens } from '../WalletScreens'
 import { useAppStore } from '@/store/app-store'
-import type { Route } from '@/lib/route'
+import type { TaskRoute } from '@/lib/route'
 
 const wallet = (id: string, lockId: string) => ({
   id, seedId: id, lockId, label: id, address: `r${id}`, createdAt: 1, network: 'testnet', algorithm: 'ed25519', openCheck: 'pin', signingCheck: 'standard',
 })
 
-function mount(route: Exclude<Route, { screen: 'home' }>) {
+function mount(route: TaskRoute) {
   render(
     <QueryClientProvider client={new QueryClient()}>
       <WalletScreens route={route} />

@@ -40,6 +40,7 @@ function AutoLockRow({ lockId, minutes }: { lockId: string; minutes: number | nu
   const wallets = useAppStore((s) => s.wallets)
   const [busy, setBusy] = useState(false)
   const [problem, setProblem] = useState<string | null>(null)
+  const triggerRef = useRef<HTMLButtonElement | null>(null)
   const id = useId()
   const problemId = `${id}-problem`
   const sharedBy = new Set(wallets.filter((w) => w.lockId === lockId).map((w) => w.seedId)).size
@@ -67,6 +68,8 @@ function AutoLockRow({ lockId, minutes }: { lockId: string; minutes: number | nu
       setProblem(err instanceof Error && err.message ? err.message : 'Could not change the auto-lock.')
     } finally {
       setBusy(false)
+      // The select was disabled while the check ran, which drops focus; put it back where the keyboard user was.
+      setTimeout(() => triggerRef.current?.focus(), 0)
     }
   }
 
@@ -75,7 +78,7 @@ function AutoLockRow({ lockId, minutes }: { lockId: string; minutes: number | nu
       <div className="flex flex-wrap items-center justify-between gap-2">
         <Label htmlFor={id}>Auto-lock after inactivity</Label>
         <Select value={minutes === null ? '' : String(minutes)} onValueChange={(v) => void change(Number(v))} disabled={minutes === null || busy}>
-          <SelectTrigger id={id} className="w-36" aria-describedby={problem ? problemId : undefined}>
+          <SelectTrigger ref={triggerRef} id={id} className="w-36" aria-describedby={problem ? problemId : undefined}>
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -204,7 +207,7 @@ export function ConfigureScreen({ wallet }: { wallet: WalletMeta }) {
   }, [])
 
   return (
-    <div className="mx-auto flex w-full max-w-lg flex-col gap-4">
+    <div className="mx-auto flex w-full min-w-0 max-w-lg flex-col gap-4">
       <div className="flex flex-col gap-1">
         <h1 ref={headingRef} tabIndex={-1} className="font-legend text-base font-semibold uppercase leading-tight tracking-[0.08em]">
           Configure wallet

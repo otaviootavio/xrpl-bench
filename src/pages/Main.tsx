@@ -5,7 +5,7 @@ import { SendTab } from './tabs/SendTab'
 import { ReceiveTab } from './tabs/ReceiveTab'
 import { HistoryTab } from './tabs/HistoryTab'
 import { TrustLinesTab } from './tabs/TrustLinesTab'
-import { SettingsTab } from './tabs/SettingsTab'
+import { AppSettings } from './AppSettings'
 import { Unlock } from './Unlock'
 import { WalletScreens } from './WalletScreens'
 import { useRoute } from '@/hooks/useRoute'
@@ -35,7 +35,7 @@ const PANELS = [
   { value: 'receive', label: 'Receive', heading: 'Receive a payment', Panel: ReceiveTab },
   { value: 'history', label: 'History', heading: 'Transaction history', Panel: HistoryTab },
   { value: 'trustlines', label: 'Tokens', heading: 'Tokens and trust lines', Panel: TrustLinesTab },
-  { value: 'settings', label: 'Settings', heading: 'Settings', Panel: SettingsTab },
+  { value: 'settings', label: 'Settings', heading: 'Settings', Panel: AppSettings },
 ] as const
 
 /** The six panels and every ledger hook behind them. Mounted ONLY while the

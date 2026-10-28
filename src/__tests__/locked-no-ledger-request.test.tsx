@@ -28,7 +28,7 @@ vi.mock('@/pages/tabs/SendTab', () => ({ SendTab: () => (h.tabRendered(), <div>t
 vi.mock('@/pages/tabs/ReceiveTab', () => ({ ReceiveTab: () => (h.tabRendered(), <div>tab</div>) }))
 vi.mock('@/pages/tabs/HistoryTab', () => ({ HistoryTab: () => (h.tabRendered(), <div>tab</div>) }))
 vi.mock('@/pages/tabs/TrustLinesTab', () => ({ TrustLinesTab: () => (h.tabRendered(), <div>tab</div>) }))
-vi.mock('@/pages/tabs/SettingsTab', () => ({ SettingsTab: () => (h.tabRendered(), <div>tab</div>) }))
+vi.mock('@/pages/AppSettings', () => ({ AppSettings: () => (h.tabRendered(), <div>tab</div>) }))
 vi.mock('@/lib/crypto/lock', () => ({
   endLockSession: async () => {},
   endAllLockSessions: async () => {},

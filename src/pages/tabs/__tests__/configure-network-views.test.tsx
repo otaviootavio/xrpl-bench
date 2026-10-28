@@ -165,4 +165,36 @@ describe('Configure: Other networks', () => {
     await waitFor(() => expect(screen.queryByText('Use Savings on Mainnet?')).toBeNull())
     await waitFor(() => expect(document.activeElement?.getAttribute('data-configure-plate')).toBe('other-networks'))
   })
+
+  // Story 17 (R12): the Mainnet dialog's other two ways out, which the Settings dialog shared.
+  it('Escape closes the Mainnet dialog, adds nothing and returns focus to the opener', async () => {
+    setWallets([TESTNET], 'w2')
+    mount(TESTNET)
+    const opener = screen.getByRole('button', { name: 'Use on Mainnet' })
+    opener.focus()
+    fireEvent.click(opener)
+    const dialog = await screen.findByRole('dialog')
+    fireEvent.keyDown(dialog, { key: 'Escape' })
+    await waitFor(() => expect(screen.queryByText('Use Savings on Mainnet?')).toBeNull())
+    expect(h.addNetworkView).not.toHaveBeenCalled()
+    await waitFor(() => expect(document.activeElement).toBe(opener))
+  })
+
+  it('an outside press closes the Mainnet dialog, adds nothing and returns focus to the opener', async () => {
+    setWallets([TESTNET], 'w2')
+    mount(TESTNET)
+    const opener = screen.getByRole('button', { name: 'Use on Mainnet' })
+    opener.focus()
+    fireEvent.click(opener)
+    await screen.findByRole('dialog')
+    // Radix arms its outside-press listener on the next tick after the layer mounts.
+    await act(async () => void (await new Promise((r) => setTimeout(r, 10))))
+    // The Dialog defers an outside press to its click (Radix `deferPointerDownOutside`): press, then release on the overlay.
+    const overlay = document.querySelector('[data-slot="dialog-overlay"]') as HTMLElement
+    fireEvent.pointerDown(overlay)
+    fireEvent.click(overlay)
+    await waitFor(() => expect(screen.queryByText('Use Savings on Mainnet?')).toBeNull())
+    expect(h.addNetworkView).not.toHaveBeenCalled()
+    await waitFor(() => expect(document.activeElement).toBe(opener))
+  })
 })

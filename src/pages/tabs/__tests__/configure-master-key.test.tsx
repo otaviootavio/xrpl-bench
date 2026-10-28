@@ -130,4 +130,58 @@ describe('Configure: Operating another account', () => {
     expect(await screen.findByText('Submitted, could not confirm.')).toBeTruthy()
     expect(screen.getByText(/^Master key unknown/)).toBeTruthy()
   })
+
+  // Story 17 (R12): the rules `master-key-control.test.tsx` pins on the bare control, and the
+  // Settings tab's per-wallet row used to be the only screen that mounted it, now driven through Configure.
+  it('is aria-disabled with the reason when no wallet on this device signs as the Regular Key', () => {
+    useAppStore.setState({ wallets: [MASTER] } as never)
+    mount(MASTER)
+    expect(action('Turn master key off').getAttribute('aria-disabled')).toBe('true')
+    expect(screen.getByText(/No wallet on this device signs as this account’s Regular Key/)).toBeTruthy()
+  })
+
+  it('is aria-disabled for the master wallet while the master key is off, pointing to the Regular Key wallet', () => {
+    h.account = { isError: false, data: state({ regularKey: 'rKey', disableMasterKey: true }) }
+    mount(MASTER)
+    expect(screen.getByText(/^Master key off/)).toBeTruthy()
+    expect(action('Turn master key off').getAttribute('aria-disabled')).toBe('true')
+    expect(screen.getByText(/already off/)).toBeTruthy()
+  })
+
+  it('shows the reason and closes the confirm when the flow throws before anything is sent', async () => {
+    h.setMasterKey.mockRejectedValue(new Error('The vault could not be read.'))
+    mount(MASTER)
+    await click(action('Turn master key off'))
+    await click(confirmKey('Turn master key off'))
+    expect(await screen.findByText(/The vault could not be read\./)).toBeTruthy()
+    expect(screen.getAllByRole('button', { name: 'Turn master key off' })).toHaveLength(1)
+  })
+
+  it('recovers from an unconfirmed result only when "Check again" re-reads successfully', async () => {
+    const refetch = vi.fn()
+    h.account = { isError: false, data: state({ regularKey: 'rKey' }), refetch } as never
+    h.setMasterKey.mockResolvedValue({ status: 'unconfirmed', reason: 'Submitted, could not confirm.' })
+    mount(MASTER)
+    await click(action('Turn master key off'))
+    await click(confirmKey('Turn master key off'))
+    await screen.findByText(/^Master key unknown/)
+    expect(action('Turn master key off').getAttribute('aria-disabled')).toBe('true')
+    refetch.mockResolvedValueOnce({ isError: true, data: undefined })
+    await click(action('Check again'))
+    expect(screen.getByText(/^Master key unknown/)).toBeTruthy()
+    refetch.mockResolvedValueOnce({ isError: false, data: state({ regularKey: 'rKey', disableMasterKey: true }) })
+    await click(action('Check again'))
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'Check again' })).toBeNull())
+  })
+
+  it('Mainnet turn-on has no phrase field and the confirm is enabled at once', async () => {
+    h.account = { isError: false, data: state({ regularKey: 'rKey', disableMasterKey: true }) }
+    h.setMasterKey.mockResolvedValue({ status: 'validated', state: 'on' })
+    mount({ ...MAINNET_MASTER, id: 'rm', keyAddress: 'rKey' })
+    await click(action('Turn master key on'))
+    expect(screen.queryByLabelText(/Type “turn off”/)).toBeNull()
+    expect(confirmKey('Turn master key on').getAttribute('aria-disabled')).not.toBe('true')
+    await click(confirmKey('Turn master key on'))
+    await waitFor(() => expect(h.setMasterKey).toHaveBeenCalledWith('rm', true, expect.objectContaining({ confirmed: true })))
+  })
 })

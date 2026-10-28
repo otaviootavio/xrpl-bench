@@ -5,9 +5,9 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 
 vi.mock('idb-keyval', () => ({ get: async () => undefined, set: async () => {}, del: async () => {} }))
 // Each screen has its own test: here they are stand-ins that name the Wallet they were given.
-vi.mock('@/components/wallet/EditChecksScreen', () => ({ EditChecksScreen: ({ wallet }: { wallet: { id: string } }) => <p>edit checks for {wallet.id}</p> }))
-vi.mock('@/components/wallet/ControlWalletScreen', () => ({ ControlWalletScreen: ({ controller }: { controller: { id: string } }) => <p>control for {controller.id}</p> }))
-vi.mock('@/components/wallet/TwoDeviceSign', () => ({ TwoDeviceScreen: ({ wallet }: { wallet: { id: string } }) => <p>two device for {wallet.id}</p> }))
+vi.mock('@/components/wallet/EditChecksScreen', () => ({ EditChecksScreen: ({ wallet, backLabel }: { wallet: { id: string }; backLabel?: string }) => <p data-back={backLabel}>edit checks for {wallet.id}</p> }))
+vi.mock('@/components/wallet/ControlWalletScreen', () => ({ ControlWalletScreen: ({ controller, backLabel }: { controller: { id: string }; backLabel?: string }) => <p data-back={backLabel}>control for {controller.id}</p> }))
+vi.mock('@/components/wallet/TwoDeviceSign', () => ({ TwoDeviceScreen: ({ wallet, backLabel }: { wallet: { id: string }; backLabel?: string }) => <p data-back={backLabel}>two device for {wallet.id}</p> }))
 
 import { WalletScreens } from '../WalletScreens'
 import { useAppStore } from '@/store/app-store'
@@ -40,6 +40,16 @@ describe('WalletScreens', () => {
     mount({ screen: 'edit-checks', walletId: 'a' })
     expect(screen.getByText('edit checks for a')).toBeTruthy()
     expect(window.location.pathname).toBe('/wallets/a/checks')
+  })
+
+  it.each([
+    ['edit-checks', 'edit checks for a'],
+    ['two-device', 'two device for a'],
+    ['control', 'control for a'],
+  ] as const)('%s is always labelled `Back to Configure`: the only way in is the Configure screen', (screenName, text) => {
+    window.history.replaceState(null, '', `/wallets/a/x`)
+    mount({ screen: screenName, walletId: 'a' })
+    expect(screen.getByText(text).getAttribute('data-back')).toBe('Back to Configure')
   })
 
   it.each([

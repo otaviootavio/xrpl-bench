@@ -13,7 +13,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
  *   the identity function — a duplicate key is the defect this change would
  *   otherwise introduce.
  *
- * Real: the Settings tab and the app store. Faked: the persistence sink and the
+ * Real: `AppSettings` and the app store. Faked: the persistence sink and the
  * modules Settings needs but this list does not (same set as
  * `settings-full-reset.test.tsx`).
  */
@@ -52,7 +52,7 @@ vi.mock('@/lib/build-info', () => ({
   formatBuiltAt: () => '',
 }))
 
-import { SettingsTab } from '../SettingsTab'
+import { AppSettings } from '@/pages/AppSettings'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { useAppStore } from '@/store/app-store'
 import { accountExplorerUrl } from '@/lib/xrpl/networks'
@@ -65,7 +65,7 @@ function renderSettings() {
   render(
     <QueryClientProvider client={qc}>
       <TooltipProvider>
-        <SettingsTab />
+        <AppSettings />
       </TooltipProvider>
     </QueryClientProvider>,
   )

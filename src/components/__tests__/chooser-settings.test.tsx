@@ -13,7 +13,6 @@ const h = vi.hoisted(() => ({
   update: { updateReady: false, declined: false },
   getXrplClient: vi.fn(),
   wipeVault: vi.fn(async () => {}),
-  tabMounted: vi.fn(),
   walletHooks: vi.fn(),
 }))
 
@@ -24,7 +23,6 @@ vi.mock('@/lib/xrpl/client', () => ({ getXrplClient: h.getXrplClient, disconnect
 vi.mock('@/lib/xrpl/query-reads', () => ({ fetchAccountStateOnce: async () => null }))
 vi.mock('@/components/AppHeader', () => ({ AppHeader: () => <header>wallet-header</header> }))
 vi.mock('@/pages/Main', () => ({ Main: () => <p>wallet-content</p> }))
-vi.mock('@/pages/tabs/SettingsTab', () => ({ SettingsTab: () => (h.tabMounted(), <p>settings-tab</p>) }))
 vi.mock('@/store/app-store', async (orig) => {
   const real = await orig<typeof import('@/store/app-store')>()
   return {
@@ -79,7 +77,6 @@ beforeEach(() => {
   h.update = { updateReady: false, declined: false }
   h.getXrplClient.mockReset()
   h.wipeVault.mockReset().mockResolvedValue(undefined)
-  h.tabMounted.mockReset()
   h.walletHooks.mockReset()
   reload.mockReset()
   const real = window.location
@@ -168,7 +165,6 @@ describe('/settings reads no wallet and no ledger (AD-36)', () => {
     expect(qc.getQueryCache().getAll()).toHaveLength(0)
     expect(h.getXrplClient).not.toHaveBeenCalled()
     expect(h.walletHooks).not.toHaveBeenCalled()
-    expect(screen.queryByText('settings-tab')).toBeNull()
     expect(screen.queryByText('wallet-content')).toBeNull()
     expect(screen.queryByText(/auto-lock/i)).toBeNull()
     expect(screen.queryByRole('button', { name: /lock now/i })).toBeNull()
@@ -178,7 +174,8 @@ describe('/settings reads no wallet and no ledger (AD-36)', () => {
   it('the in-wallet tab and /settings are never mounted together', () => {
     mount()
     act(() => navigate('/settings'))
-    expect(h.tabMounted).not.toHaveBeenCalled()
+    // `Main` (the tab's owner) is chooser-side absent: one copy of the component, the one /settings mounts.
+    expect(screen.queryByText('wallet-content')).toBeNull()
     expect(screen.getAllByRole('heading', { name: 'Version' })).toHaveLength(1)
   })
 })

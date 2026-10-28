@@ -1,9 +1,8 @@
-import { useEffect, useState } from 'react'
+import { useEffect } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { ControlWalletScreen } from '@/components/wallet/ControlWalletScreen'
 import { EditChecksScreen, type EditedChecks } from '@/components/wallet/EditChecksScreen'
 import { TwoDeviceScreen } from '@/components/wallet/TwoDeviceSign'
-import { clearConfigureLaunch, peekConfigureLaunch } from '@/lib/configure-launch'
 import { leaveScreen, resetToHome, type TaskRoute } from '@/lib/route'
 import { listWallets } from '@/lib/crypto/keystore'
 import { startLockSession } from '@/lib/crypto/lock'
@@ -11,6 +10,8 @@ import { useLockMinutesChanged } from '@/hooks/useLockMinutesChanged'
 import { toast } from '@/lib/notify'
 import { queryKeys } from '@/lib/xrpl/query-keys'
 import { useActiveNetwork, useAppStore } from '@/store/app-store'
+
+const BACK_LABEL = 'Back to Configure'
 
 /**
  * The routed task screens (mobile dialogs S2). Mounted by `Main` only while the
@@ -29,15 +30,8 @@ export function WalletScreens({ route }: { route: TaskRoute }) {
   const closeLock = useAppStore((s) => s.closeLock)
   const lockMinutesChanged = useLockMinutesChanged()
 
-  // Opened from Configure or from the Settings tab? Decided once, at mount, by the launch
-  // marker the Configure keys set (never the URL or history state), so the Back label
-  // and the return agree with where the user came from. The tab's launch leaves the
-  // default label `Settings`; the label never carries a wallet name.
-  const [fromConfigure] = useState(peekConfigureLaunch)
-  useEffect(() => {
-    clearConfigureLaunch()
-  }, [])
-  const backLabel = fromConfigure ? 'Back to Configure' : undefined
+  // A task screen is opened only from Configure and returns there; the label never carries a wallet name.
+  const backLabel = BACK_LABEL
 
   const target = wallets.find((w) => w.id === route.walletId) ?? null
   const reachable = target !== null && target.lockId in openLocks

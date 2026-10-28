@@ -45,7 +45,23 @@ function NetworkRow({ name, row, active }: { name: string; row: WalletRow; activ
   )
 }
 
-function LockedCard({ group, active }: { group: LockedGroup; active: boolean }) {
+function RenameKey({ group, onRename }: { group: WalletGroup; onRename: (group: WalletGroup) => void }) {
+  return (
+    <Button
+      type="button"
+      variant="outline"
+      size="sm"
+      className={KEY}
+      data-rename-seed={group.seedId}
+      aria-label={`Rename ${group.label}`}
+      onClick={() => onRename(group)}
+    >
+      Rename
+    </Button>
+  )
+}
+
+function LockedCard({ group, active, onRename }: { group: LockedGroup; active: boolean; onRename: (group: WalletGroup) => void }) {
   return (
     <>
       <div className="flex flex-wrap items-start justify-between gap-x-3 gap-y-1">
@@ -68,6 +84,7 @@ function LockedCard({ group, active }: { group: LockedGroup; active: boolean }) 
         >
           Open
         </Button>
+        <RenameKey group={group} onRename={onRename} />
       </div>
     </>
   )
@@ -82,11 +99,13 @@ function OpenCard({
   activeWalletId,
   lockFailed,
   onLock,
+  onRename,
 }: {
   group: OpenGroup
   activeWalletId: string | null
   lockFailed: boolean
   onLock: (group: OpenGroup) => void
+  onRename: (group: WalletGroup) => void
 }) {
   const active = group.views.some((v) => v.walletId === activeWalletId)
   return (
@@ -103,13 +122,15 @@ function OpenCard({
           <NetworkRow key={row.walletId} name={group.label} row={row} active={row.walletId === activeWalletId} />
         ))}
       </ul>
-      {group.allowsLock ? (
-        <div className="flex flex-wrap gap-2">
+      <div className="flex flex-wrap gap-2">
+        <RenameKey group={group} onRename={onRename} />
+        {group.allowsLock && (
           <Button type="button" variant="outline" size="sm" className={KEY} aria-label={`Lock ${group.label}`} onClick={() => onLock(group)}>
             Lock
           </Button>
-        </div>
-      ) : (
+        )}
+      </div>
+      {!group.allowsLock && (
         <p className="text-sm text-muted-foreground">No Open Check: this wallet opens itself, so there is nothing to lock.</p>
       )}
       {lockFailed && (
@@ -127,18 +148,20 @@ export function WalletCard({
   activeWalletId,
   lockFailed = false,
   onLock,
+  onRename,
 }: {
   group: WalletGroup
   activeWalletId: string | null
   lockFailed?: boolean
   onLock: (group: OpenGroup) => void
+  onRename: (group: WalletGroup) => void
 }) {
   return (
     <li className="panel-plate flex flex-col gap-3 rounded-md px-4 pb-4 pt-3">
       {group.state === 'locked' ? (
-        <LockedCard group={group} active={group.entryWalletId === activeWalletId} />
+        <LockedCard group={group} active={group.entryWalletId === activeWalletId} onRename={onRename} />
       ) : (
-        <OpenCard group={group} activeWalletId={activeWalletId} lockFailed={lockFailed} onLock={onLock} />
+        <OpenCard group={group} activeWalletId={activeWalletId} lockFailed={lockFailed} onLock={onLock} onRename={onRename} />
       )}
     </li>
   )

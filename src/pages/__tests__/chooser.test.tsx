@@ -22,7 +22,13 @@ vi.mock('@/lib/teardown', async (orig) => {
   return { ...real, tearDownLock: vi.fn((...a: Parameters<typeof real.tearDownLock>) => { if (t.fail) throw new Error('boom'); return real.tearDownLock(...a) }) }
 })
 
+const k = vi.hoisted(() => ({ rename: vi.fn() }))
+vi.mock('@/lib/crypto/keystore', async (orig) => ({ ...(await orig<typeof import('@/lib/crypto/keystore')>()), renameWallet: k.rename }))
+
 import { readFileSync } from 'node:fs'
+import { waitFor } from '@testing-library/react'
+import { useNoticeStore } from '@/store/notice-store'
+import { RENAME_ERRORS, RENAME_HELP, RENAME_WRITE_FAILED } from '@/components/wallet/rename-copy'
 import { tearDownLock } from '@/lib/teardown'
 import { Chooser } from '../Chooser'
 import { TooltipProvider } from '@/components/ui/tooltip'
@@ -116,7 +122,7 @@ describe('the cards', () => {
     expect(card.textContent).not.toMatch(/mainnet|testnet|devnet|real funds|not stable/i)
     expect(card.textContent).not.toContain('ADDRESS') // the fixture address of every wallet carries it
     expect(card.querySelector('a')).toBeNull()
-    expect(within(card).getAllByRole('button')).toHaveLength(1)
+    expect(within(card).getAllByRole('button').map((b) => b.textContent)).toEqual(['Open', 'Rename'])
   })
 
   it('a locked Mainnet card renders exactly like a locked Testnet card', () => {
@@ -270,6 +276,8 @@ describe('the Lock key', () => {
     expect(within(card('Alpha')).queryByRole('button', { name: /^Lock / })).toBeNull()
     expect(within(card('Alpha')).getByText('No Open Check: this wallet opens itself, so there is nothing to lock.')).toBeTruthy()
     expect(within(card('Beta')).queryByText(/No Open Check/)).toBeNull()
+    // Rename is on every card, whatever its Open Check.
+    expect(within(card('Alpha')).getByRole('button', { name: 'Rename Alpha' })).toBeTruthy()
   })
 
   it('a failed teardown keeps the card open with persistent text', () => {
@@ -341,5 +349,176 @@ describe('the Lock key', () => {
     expect(screen.queryByText(/also locked/)).toBeNull()
     act(() => useAppStore.getState().openLock('LA', KEY, 5))
     expect(status()).toBe('Alpha: Open.')
+  })
+})
+
+
+describe('the Rename key and dialog', () => {
+  const card = (n: string) => screen.getByRole('heading', { level: 2, name: n }).closest('li') as HTMLElement
+  const field = () => screen.getByLabelText('Name') as HTMLInputElement
+  const save = () => screen.getByRole('button', { name: 'Save name' }) as HTMLButtonElement
+  const type = (v: string) => fireEvent.change(field(), { target: { value: v } })
+  const okRename = (seedId: string) => async (_id: string, name: string) => ({
+    ok: true as const,
+    metas: useAppStore.getState().wallets.filter((w) => w.seedId === seedId).map((w) => ({ ...w, label: name })),
+  })
+  beforeEach(() => {
+    k.rename.mockReset()
+    useNoticeStore.setState({ notices: [] } as never)
+  })
+
+  it('every card has Rename: after Open when locked, between the network rows and Lock when open', () => {
+    act(() => useAppStore.getState().openLock('LC', KEY, 5))
+    mount()
+    const names = (n: string) => within(card(n)).getAllByRole('button').map((b) => b.getAttribute('aria-label'))
+    expect(names('Alpha')).toEqual(['Open Alpha', 'Rename Alpha'])
+    expect(names('Gamma')).toEqual(['Open Gamma on Testnet', 'Open Gamma on Devnet', 'Open Gamma on Mainnet', 'Rename Gamma', 'Lock Gamma'])
+    expect(within(card('Alpha')).getByRole('button', { name: 'Rename Alpha' }).textContent).toBe('Rename')
+  })
+
+  it('opens a titled dialog with the always-visible help, Cancel and Save name; needs no lock', () => {
+    mount()
+    fireEvent.click(screen.getByRole('button', { name: 'Rename Alpha' }))
+    expect(screen.getByRole('dialog', { name: 'Rename wallet' })).toBeTruthy()
+    expect(field().value).toBe('Alpha')
+    expect(screen.getByText(RENAME_HELP)).toBe(screen.getByText('Only on this device. Never sent to the ledger.'))
+    expect(screen.getByRole('button', { name: 'Cancel' })).toBeTruthy()
+    expect(save().disabled).toBe(true) // unchanged
+    expect(useAppStore.getState().openLocks).toEqual({})
+  })
+
+  it.each([
+    ['   ', RENAME_ERRORS.empty, 'Give this wallet a name.'],
+    ['x'.repeat(41), RENAME_ERRORS['too-long'], 'Use 40 characters or fewer.'],
+    ['  bETA ', RENAME_ERRORS.duplicate, 'Another wallet on this device already has that name.'],
+  ])('shows %j as visible text tied to the field, on blur, and disables Save', (value, text, literal) => {
+    mount()
+    fireEvent.click(screen.getByRole('button', { name: 'Rename Alpha' }))
+    type(value)
+    expect(screen.queryByText(literal)).toBeNull() // not before blur or submit
+    fireEvent.blur(field())
+    expect(text).toBe(literal)
+    const err = screen.getByText(literal)
+    expect(field().getAttribute('aria-invalid')).toBe('true')
+    expect(field().getAttribute('aria-describedby')).toContain(err.id)
+    expect(field().getAttribute('aria-describedby')).toContain(screen.getByText(RENAME_HELP).id)
+    expect(save().disabled).toBe(true)
+    fireEvent.keyDown(field(), { key: 'Enter' })
+    expect(k.rename).not.toHaveBeenCalled()
+  })
+
+  it('Enter on an invalid name shows the error; a sibling view\'s name is never a collision', () => {
+    mount()
+    fireEvent.click(screen.getByRole('button', { name: 'Rename Gamma' }))
+    type(' ')
+    fireEvent.keyDown(field(), { key: 'Enter' })
+    expect(screen.getByText(RENAME_ERRORS.empty)).toBeTruthy()
+    type('gamma ') // its own name: valid (unchanged), not a duplicate
+    expect(screen.queryByText(RENAME_ERRORS.duplicate)).toBeNull()
+  })
+
+  it('an unchanged name closes silently with no write', async () => {
+    mount()
+    fireEvent.click(screen.getByRole('button', { name: 'Rename Alpha' }))
+    type('  Alpha ')
+    fireEvent.keyDown(field(), { key: 'Enter' })
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+    expect(k.rename).not.toHaveBeenCalled()
+    expect(useNoticeStore.getState().notices).toHaveLength(0)
+  })
+
+  it('a grandfathered duplicate left unchanged shows no error and closes silently', async () => {
+    useAppStore.setState({ wallets: [W('a', 'a', 'LA', 'Twin', 'testnet', 1), W('b', 'b', 'LB', 'twin', 'testnet', 2)] })
+    mount()
+    fireEvent.click(screen.getByRole('button', { name: 'Rename Twin' }))
+    fireEvent.blur(field())
+    expect(screen.queryByText(RENAME_ERRORS.duplicate)).toBeNull()
+    fireEvent.keyDown(field(), { key: 'Enter' })
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+    expect(k.rename).not.toHaveBeenCalled()
+  })
+
+  it('Enter that confirms an IME composition does not submit', () => {
+    mount()
+    fireEvent.click(screen.getByRole('button', { name: 'Rename Gamma' }))
+    type('Savings')
+    fireEvent.keyDown(field(), { key: 'Enter', isComposing: true })
+    expect(k.rename).not.toHaveBeenCalled()
+  })
+
+  it('saves a valid name: normalised, notice, closes, every row shows it, focus returns to Rename, order kept', async () => {
+    act(() => useAppStore.getState().openLock('LC', KEY, 5))
+    k.rename.mockImplementation(okRename('c'))
+    mount()
+    const key = screen.getByRole('button', { name: 'Rename Gamma' })
+    key.focus()
+    fireEvent.click(key)
+    type('  Savings   account ')
+    expect(save().disabled).toBe(false)
+    fireEvent.click(save())
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+    expect(k.rename).toHaveBeenCalledWith('c', 'Savings account')
+    expect(useNoticeStore.getState().notices.some((n) => JSON.stringify(n).includes('Wallet renamed.'))).toBe(true)
+    expect(screen.getByRole('button', { name: 'Open Savings account on Devnet' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Open Savings account on Mainnet' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Open Savings account on Testnet' })).toBeTruthy()
+    expect(useAppStore.getState().wallets.filter((w) => w.seedId === 'c').map((w) => w.label)).toEqual(['Savings account', 'Savings account', 'Savings account'])
+    expect(names()).toEqual(['Alpha', 'Beta', 'Savings account'])
+    await waitFor(() => expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Rename Savings account' })))
+  })
+
+  it('works on a locked card with no lock', async () => {
+    k.rename.mockImplementation(okRename('a'))
+    mount()
+    fireEvent.click(screen.getByRole('button', { name: 'Rename Alpha' }))
+    type('Zeta')
+    fireEvent.click(save())
+    await waitFor(() => expect(screen.getByRole('heading', { level: 2, name: 'Zeta' })).toBeTruthy())
+    expect(useAppStore.getState().openLocks).toEqual({})
+  })
+
+  it('a keystore refusal (cross-tab duplicate) shows the duplicate error and keeps the dialog', async () => {
+    k.rename.mockResolvedValue({ ok: false, reason: 'duplicate' })
+    mount()
+    fireEvent.click(screen.getByRole('button', { name: 'Rename Alpha' }))
+    type('Zeta')
+    fireEvent.click(save())
+    await waitFor(() => expect(screen.getByText(RENAME_ERRORS.duplicate)).toBeTruthy())
+    expect(screen.getByRole('dialog')).toBeTruthy()
+    expect(field().value).toBe('Zeta')
+  })
+
+  it('a failed write keeps the dialog open with the typed name and the exact message; the store is unchanged', async () => {
+    k.rename.mockResolvedValue({ ok: false, reason: 'write-failed' })
+    mount()
+    const before = useAppStore.getState().wallets
+    fireEvent.click(screen.getByRole('button', { name: 'Rename Alpha' }))
+    type('Zeta')
+    fireEvent.click(save())
+    await waitFor(() => expect(screen.getByRole('alert').textContent).toBe(RENAME_WRITE_FAILED))
+    expect(RENAME_WRITE_FAILED).toBe('Could not rename the wallet. Nothing was changed.')
+    expect(screen.getByRole('dialog')).toBeTruthy()
+    expect(field().value).toBe('Zeta')
+    expect(useAppStore.getState().wallets).toBe(before)
+    expect(useNoticeStore.getState().notices).toHaveLength(0)
+  })
+
+  it('Cancel closes without a write', async () => {
+    mount()
+    fireEvent.click(screen.getByRole('button', { name: 'Rename Alpha' }))
+    type('Zeta')
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+    expect(k.rename).not.toHaveBeenCalled()
+  })
+
+  it('the dialog and renameWallet share the one rule, and the UI never builds a label', () => {
+    const dialog = readFileSync('src/components/wallet/RenameDialog.tsx', 'utf8')
+    const store = readFileSync('src/pages/Chooser.tsx', 'utf8')
+    const keystore = readFileSync('src/lib/crypto/keystore.ts', 'utf8')
+    expect(dialog).toMatch(/validateWalletName\(/)
+    expect(keystore).toMatch(/validateWalletName\(/)
+    expect(store).not.toMatch(/label:/)
+    expect(dialog + store).not.toMatch(/outline-none|:focus\b/)
   })
 })

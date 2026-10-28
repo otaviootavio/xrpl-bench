@@ -1,9 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
+import { RenameDialog, type RenameTarget } from '@/components/wallet/RenameDialog'
 import { WalletCard } from '@/components/wallet/WalletCard'
+import { renameWallet } from '@/lib/crypto/keystore'
+import { notify } from '@/lib/notify'
 import { tearDownLock } from '@/lib/teardown'
 import { useAppStore } from '@/store/app-store'
-import { groupWalletsBySeed, type OpenGroup } from '@/store/wallet-groups'
+import { groupWalletsBySeed, type OpenGroup, type WalletGroup } from '@/store/wallet-groups'
 
 /**
  * The chooser (FR-79, FR-81, AD-36): one card per Seed, read from `wallets` and
@@ -20,6 +23,8 @@ export function Chooser() {
   const queryClient = useQueryClient()
   const [sharedNote, setSharedNote] = useState<string | null>(null)
   const [failedSeedId, setFailedSeedId] = useState<string | null>(null)
+  const setWallets = useAppStore((s) => s.setWallets)
+  const [renaming, setRenaming] = useState<RenameTarget | null>(null)
   const statusRef = useRef<HTMLDivElement>(null)
   const headingRef = useRef<HTMLHeadingElement>(null)
   const previous = useRef<Map<string, string> | null>(null)
@@ -56,6 +61,24 @@ export function Chooser() {
     [groups, queryClient],
   )
 
+  const onRename = useCallback((group: WalletGroup) => setRenaming({ seedId: group.seedId, name: group.label }), [])
+
+  // The one place a label reaches the store: the keystore's projection of the Seed it wrote.
+  const saveName = useCallback(
+    async (seedId: string, name: string) => {
+      const result = await renameWallet(seedId, name)
+      if (!result.ok) return result.reason
+      const { wallets: current } = useAppStore.getState()
+      // A Seed removed meanwhile is not brought back by its rename.
+      if (current.some((w) => w.seedId === seedId)) setWallets(current.filter((w) => w.seedId !== seedId).concat(result.metas))
+      // Only this dialog: the user may have cancelled it and opened another card's since.
+      setRenaming((r) => (r?.seedId === seedId ? null : r))
+      notify.success('Wallet renamed.')
+      return true as const
+    },
+    [setWallets],
+  )
+
   // A failure is about an open card: once that card has flipped (Lock elsewhere, auto-lock) it is
   // cleared, so it cannot come back when the card is opened again. Adjusting state during render.
   if (failedSeedId !== null && !groups.some((g) => g.seedId === failedSeedId && g.state === 'open')) {
@@ -80,9 +103,17 @@ export function Chooser() {
             activeWalletId={activeWalletId}
             lockFailed={group.state === 'open' && group.seedId === failedSeedId}
             onLock={onLock}
+            onRename={onRename}
           />
         ))}
       </ul>
+      <RenameDialog
+        target={renaming}
+        others={renaming ? groups.filter((g) => g.seedId !== renaming.seedId).map((g) => g.label) : []}
+        onSave={saveName}
+        onClose={() => setRenaming(null)}
+        returnFocusTo={(seedId) => document.querySelector<HTMLElement>(`[data-rename-seed="${CSS.escape(seedId)}"]`)}
+      />
     </section>
   )
 }

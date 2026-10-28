@@ -33,7 +33,7 @@ vi.mock('@/lib/crypto/keystore', () => ({
 }))
 vi.mock('@/lib/crypto/lock', () => ({ restoreOpenLocks: async () => [], endLockSession: async () => {}, endAllLockSessions: async () => {} }))
 vi.mock('@/pages/Onboarding', () => ({ Onboarding: () => null }))
-vi.mock('@/pages/Main', () => ({ Main: () => null }))
+vi.mock('@/components/AppShell', () => ({ AppShell: () => null, walletInView: (_r: unknown, id: string | null) => id }))
 
 async function mountApp() {
   vi.resetModules()

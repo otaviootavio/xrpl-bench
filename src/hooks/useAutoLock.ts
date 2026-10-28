@@ -1,6 +1,6 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useLayoutEffect, useRef } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
-import { expiredLockIds, lockRemainingMs, touchActiveLock, useAppStore } from '@/store/app-store'
+import { expiredLockIds, lockRemainingMs, touchLock, useAppStore } from '@/store/app-store'
 import { extendLockSession } from '@/lib/crypto/lock'
 import { tearDownAllLocks, tearDownLock } from '@/lib/teardown'
 
@@ -29,13 +29,19 @@ function locksImmediatelyOnBackground(): boolean {
  * (AD-26). Each open lock has its own minutes (from its lock record) and its own
  * expiry; one expiring tears down only that lock's Wallets. Backgrounding the
  * app past the grace window (immediately on a coarse pointer) closes EVERY lock
- * (FR-11). Activity restarts the ACTIVE Wallet's lock timer and, throttled,
+ * (FR-11). Activity restarts the ENTERED Wallet's lock timer and, throttled,
  * extends its persisted session, so a page refresh mid-session doesn't force
  * re-entering the PIN/passkey. Expiry is also checked lazily: a timer that a
  * background tab throttled and fired late finds the lock expired on the next
  * activity or visibility event. */
-export function useAutoLock() {
+export function useAutoLock(enteredWalletId: string | null) {
   const queryClient = useQueryClient()
+  // Read through a ref so a route change never re-arms the effect below (AD-31).
+  const enteredRef = useRef(enteredWalletId)
+  // A layout effect, so an activity event right after a route change reads the new id, not the last.
+  useLayoutEffect(() => {
+    enteredRef.current = enteredWalletId
+  }, [enteredWalletId])
   // A primitive, so the effect re-runs only when a lock opens, closes or has its
   // minutes changed — not on every unrelated store update.
   const openSpec = useAppStore((s) =>
@@ -60,9 +66,9 @@ export function useAutoLock() {
     function onActivity() {
       // A lock that already expired is closed, never extended by this event.
       for (const id of expiredLockIds()) tearDownLock(queryClient, id)
-      // Only the ACTIVE Wallet's lock counts the activity: another open lock
-      // keeps running down and auto-locks on its own schedule.
-      const active = touchActiveLock()
+      // Only the ENTERED wallet's lock counts the activity (AD-35): another open
+      // lock keeps running down, and with none entered nothing is extended.
+      const active = touchLock(enteredRef.current)
       if (!active) return
       arm(active)
       const lock = useAppStore.getState().openLocks[active]

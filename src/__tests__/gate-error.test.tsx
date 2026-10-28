@@ -34,8 +34,9 @@ vi.mock('@/pages/Onboarding', () => ({
     return <p>ONBOARDING</p>
   },
 }))
-vi.mock('@/pages/Main', () => ({
-  Main: () => {
+vi.mock('@/components/AppShell', () => ({
+  walletInView: (_r: unknown, id: string | null) => id,
+  AppShell: () => {
     h.main()
     return <p>MAIN</p>
   },

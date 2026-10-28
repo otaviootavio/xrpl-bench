@@ -6,6 +6,7 @@ import { Label } from '@/components/ui/label'
 import { QrCode } from '@/components/wallet/QrCode'
 import { TaskScreen } from '@/components/wallet/TaskScreen'
 import { useLeaveBlocker } from '@/hooks/useRoute'
+import { launchFromConfigure } from '@/lib/configure-launch'
 import { navigate, walletScreenPath } from '@/lib/route'
 import { QrScanner } from '@/components/wallet/QrScanner'
 import { useAccountState } from '@/hooks/useAccountState'
@@ -36,11 +37,18 @@ const KINDS: { kind: TwoDeviceKind; label: string }[] = [
   { kind: 'master-key', label: 'Master key' },
 ]
 
-/** The Settings row's entry to the two-device screen. */
-export function TwoDeviceSign({ wallet }: { wallet: WalletMeta }) {
+/** The entry to the two-device screen. Mounted by the Configure screen it passes `configureKey`,
+ * so the screen opens through `launchFromConfigure` (label `Back to Configure`, focus returns to this key). */
+export function TwoDeviceSign({ wallet, configureKey }: { wallet: WalletMeta; configureKey?: string }) {
+  const path = walletScreenPath('two-device', wallet.id)
   return (
     <div className="mt-1 text-xs text-muted-foreground" data-testid="two-device-sign">
-      <Button variant="outline" size="sm" onClick={() => navigate(walletScreenPath('two-device', wallet.id))}>
+      <Button
+        variant="outline"
+        size="sm"
+        data-configure-key={configureKey}
+        onClick={() => (configureKey ? launchFromConfigure(path, configureKey) : navigate(path))}
+      >
         Sign with two devices
       </Button>
     </div>

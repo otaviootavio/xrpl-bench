@@ -1,0 +1,30 @@
+- id: "1"
+  title: "Quiz shell: steps, Back and Next, counter, focus"
+  description: >-
+    CAP-1. A step container around the existing answers' state: current step, Back keeps every answer, "Step n of N" as text, focus to the step heading, reduced motion respected. No question moves yet.
+  invoke_dev_with: >-
+    Read CLAUDE.md, DESIGN.md, docs/agents/INDEX.md and docs/agents/verifying-your-work.md first. Fetch origin/dev before starting. Run the four gates: bun run lint, bun run build, bun run test, bun run check:contrast. Where UI changes, do a browser pass at 320, 390 and desktop widths in both themes. Stage by explicit path only. Answers stay in CreateWalletFlow state; the policy (describeOptions) and creation are not touched.
+- id: "2"
+  title: "Label and Network, then the recommended-setup shortcut"
+  description: >-
+    CAP-2, CAP-3. Step 1 asks Label and Network; step 2 is the read-only list with Create wallet and Walk me through it, on every network, naming Mainnet's forced rules. Create wallet from here equals the walk with no answer changed. Walk me through it opens the remaining existing controls as one step until story 3 splits them; the old Recommended panel and Customise toggle stop rendering here. Same at first run.
+  invoke_dev_with: >-
+    Read CLAUDE.md, DESIGN.md, docs/agents/INDEX.md and docs/agents/verifying-your-work.md first. Fetch origin/dev before starting. Run the four gates: bun run lint, bun run build, bun run test, bun run check:contrast. Where UI changes, do a browser pass at 320, 390 and desktop widths in both themes. Stage by explicit path only. Use the pre-selections from FR-60; do not restate or change them. Back, Next and Create wallet go in the sticky screen footer (actionHost), as Create wallet does today.
+- id: "3"
+  title: "The walk: one question per step"
+  description: >-
+    CAP-4, CAP-7. Node, Seed Method (with Passkey choice and domain warning), Signature type, Open Check with auto-lock, Signing Check, each from the policy's list with its plain consequence; unavailable answers stay visible with the reason; a failed Node test stays on the Node step; Import skips Seed Method and Signature type. See quiz-steps.md.
+  invoke_dev_with: >-
+    Read CLAUDE.md, DESIGN.md, docs/agents/INDEX.md and docs/agents/verifying-your-work.md first. Fetch origin/dev before starting. Run the four gates: bun run lint, bun run build, bun run test, bun run check:contrast. Where UI changes, do a browser pass at 320, 390 and desktop widths in both themes. Stage by explicit path only. Render the questions the policy lists; do not hard-code seven. Reuse the existing Choice and Axis controls and their detail copy.
+- id: "4"
+  title: "Review step and the Network-change reset"
+  description: >-
+    CAP-5, CAP-6. The review lists every answer with a Change action and a Create wallet button; changing Network keeps legal answers, resets illegal ones to the new pre-selection and announces it politely.
+  invoke_dev_with: >-
+    Read CLAUDE.md, DESIGN.md, docs/agents/INDEX.md and docs/agents/verifying-your-work.md first. Fetch origin/dev before starting. Run the four gates: bun run lint, bun run build, bun run test, bun run check:contrast. Where UI changes, do a browser pass at 320, 390 and desktop widths in both themes. Stage by explicit path only. After Change, Next returns to the review (assumption in SPEC.md).
+- id: "5"
+  title: "Retire the old form, tests, and the browser pass"
+  description: >-
+    CAP-8. Remove what is left of the old form (the Recommended and Customise props, any duplicate summary), rewrite the tests that assumed the single form, and run a real-browser pass at 320px and 200% zoom in both themes for Create, Import and first run.
+  invoke_dev_with: >-
+    Read CLAUDE.md, DESIGN.md, docs/agents/INDEX.md and docs/agents/verifying-your-work.md first. Fetch origin/dev before starting. Run the four gates: bun run lint, bun run build, bun run test, bun run check:contrast. Do a browser pass at 320, 390 and desktop widths in both themes, and at 200% zoom. Stage by explicit path only. Policy tests must pass unchanged; only tests that assume the single form are rewritten.

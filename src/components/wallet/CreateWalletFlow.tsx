@@ -8,9 +8,9 @@ import { RENAME_ERRORS } from '@/components/wallet/rename-copy'
 import {
   NameAndNetworkStep,
   RecommendedList,
-  WalkStep,
   type WalletQuestionsProps,
 } from '@/components/wallet/WalletQuestions'
+import { walkQuestions } from '@/components/wallet/walk-questions'
 import { QuizShell, type QuizStep } from '@/components/wallet/QuizShell'
 import { SeedReveal } from '@/components/wallet/SeedReveal'
 import { WrittenSeedConfirm } from '@/components/wallet/WrittenSeedConfirm'
@@ -107,6 +107,10 @@ function kindStatement(backupEligible: boolean | undefined): { title: string; bo
     body: `If it is synced: ${synced.charAt(0).toLowerCase()}${synced.slice(1)} If it is device-bound: ${bound.charAt(0).toLowerCase()}${bound.slice(1)}`,
   }
 }
+
+/** Quiz steps before the walk: 0 is label and network, 1 is the recommended-setup shortcut. */
+const SHORTCUT_INDEX = 1
+const FIRST_WALK_INDEX = 2
 
 const MAX_PIN_FIELD_HINT = 'The App PIN must be at least 6 digits.'
 
@@ -605,6 +609,7 @@ function CreateWalletForm({ capability, onDone, onInProgressChange, defaultLabel
     },
   }
 
+  const walk = walkQuestions(!!importSource)
   const quizSteps: QuizStep[] = [
     { id: 'name-network', title: 'Name and network', blocked: !!labelError || (!!importSource && !importSource.seedTyped) },
     {
@@ -612,13 +617,17 @@ function CreateWalletForm({ capability, onDone, onInProgressChange, defaultLabel
       title: 'Your setup',
       primary: createButton,
       secondary: (
-        <Button type="button" variant="outline" disabled={busy} onClick={() => setQuizIndex(2)}>
+        <Button type="button" variant="outline" disabled={busy} onClick={() => setQuizIndex(FIRST_WALK_INDEX)}>
           Walk me through it
         </Button>
       ),
     },
-    { id: 'walk', title: 'Your choices' },
+    ...walk.map((q) => ({ id: q.id, title: q.title })),
   ]
+
+  const walkQuestion = quizIndex >= FIRST_WALK_INDEX ? walk[quizIndex - FIRST_WALK_INDEX] : undefined
+  // The PIN is used where Create wallet is: the shortcut step and the last walk step.
+  const showPin = quizIndex === SHORTCUT_INDEX || quizIndex === quizSteps.length - 1
 
   return (
     <QuizShell steps={quizSteps} index={quizIndex} onIndex={(next) => { setSeedError(null); setQuizIndex(next) }} busy={busy} actionHost={actionHost} finalAction={createButton}>
@@ -626,10 +635,10 @@ function CreateWalletForm({ capability, onDone, onInProgressChange, defaultLabel
       {importSource && <div hidden={quizIndex !== 0} onChange={() => setSeedError(null)}>{importSource.field(busy, seedError)}</div>}
       {quizIndex === 0 && <NameAndNetworkStep {...questionProps} />}
       {quizIndex === 1 && <RecommendedList {...questionProps} />}
-      {quizIndex === 2 && <WalkStep {...questionProps} />}
+      {walkQuestion?.render(questionProps)}
 
       {/* Mounted once and only hidden on step 1: a typed PIN survives a step change. */}
-      <div hidden={quizIndex === 0} className="flex flex-col gap-5">
+      <div hidden={!showPin} className="flex flex-col gap-5">
         {needsPin && pinReadFailed && (
           <div role="alert" className="grid gap-1.5 text-sm">
             <p className="text-text-destructive">Could not read the App PIN state on this device.</p>

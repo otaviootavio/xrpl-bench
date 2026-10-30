@@ -143,6 +143,15 @@ So that the fast path stays fast.
 **Then** the remaining existing controls appear as one step, until story 20.3 splits them
 **And** Import shows the same steps without Seed Method and Signature type (FR-87)
 
+**Given** the user is importing and has typed no Seed on step 1
+**When** they try to go Next
+**Then** Next is `aria-disabled` and does nothing, with its reason as visible text (FR-91)
+**And** only a boolean "a Seed is typed" is kept in state, never the Seed (NFR-2)
+
+**Given** the user is importing and presses Create wallet on step 2
+**When** the Seed is refused (invalid, or already on this device)
+**Then** the flow returns to step 1 and shows the reason as text beside the Seed field (FR-91)
+
 **Given** the app is at first run, with no Wallet on the device
 **When** the quiz opens
 **Then** it is the same quiz, with the same shortcut step (FR-91)

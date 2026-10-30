@@ -72,6 +72,8 @@ const imported = () => ({ status: 'ok', value: { meta: META, openKey: KEY } })
 const click = async (el: HTMLElement) => act(async () => void fireEvent.click(el))
 const button = (name: string | RegExp) => screen.getByRole('button', { name })
 const seedInput = () => document.getElementById('wseed') as HTMLInputElement
+/** Type into the Seed field the way a person does, so the host learns that something is typed. */
+const typeSeed = (value: string) => fireEvent.change(seedInput(), { target: { value } })
 const setActiveWalletId = vi.fn()
 const onClose = vi.fn()
 
@@ -85,10 +87,20 @@ async function openImport() {
 
 /** Type the Seed (and the App PIN the default Open Check asks for) and press Import wallet. */
 async function submit(value = SEED, { pin = '123456' } = {}) {
-  seedInput().value = value
+  typeSeed(value)
+  // The Seed is typed on step 1; Import wallet is on step 2.
+  const next = screen.queryByRole('button', { name: 'Next' })
+  if (next) await click(next)
   const pinField = document.querySelector('input[id$="-pin"]') as HTMLInputElement | null
   if (pinField) pinField.value = pin
   await click(button(/Import wallet/))
+}
+
+/** Step 1 to step 3: the remaining controls. */
+async function walk() {
+  typeSeed(SEED)
+  await click(button('Next'))
+  await click(button('Walk me through it'))
 }
 
 const text = () => document.body.textContent ?? ''
@@ -165,25 +177,120 @@ describe('Import with every lock closed', () => {
   it('offers Import and Generate, and asks no Seed Method and no signature type', async () => {
     await openImport()
     expect(button('Generate')).toBeTruthy()
-    const legends = Array.from(document.querySelectorAll('legend')).map((l) => l.textContent)
-    expect(legends).not.toContain('Seed Method')
-    expect(legends).not.toContain('Signature type')
-    expect(legends).toContain('Open Check')
-    expect(legends).toContain('Signing Check')
+    const legends = () => Array.from(document.querySelectorAll('legend')).map((l) => l.textContent)
+    expect(screen.getByText('Step 1 of 3')).toBeTruthy()
+    typeSeed(SEED)
+    await click(button('Next'))
+    expect(screen.getByText('Step 2 of 3')).toBeTruthy()
     const rows = Array.from(document.querySelectorAll('dt')).map((d) => d.textContent)
-    expect(rows).not.toContain('Seed Method')
-    expect(rows).not.toContain('Signature type')
+    expect(rows).toEqual(['Label', 'Network', 'Node', 'Open Check', 'Auto-lock', 'Signing Check'])
+    expect(screen.queryAllByRole('radio').length).toBe(0)
+    await click(button('Walk me through it'))
+    expect(screen.getByText('Step 3 of 3')).toBeTruthy()
+    expect(legends()).not.toContain('Seed Method')
+    expect(legends()).not.toContain('Signature type')
+    expect(legends()).toContain('Open Check')
+    expect(legends()).toContain('Signing Check')
+  })
+
+  it('step 2 offers Import wallet as the primary action, and a Seed typed on step 1 is still imported from it', async () => {
+    await openImport()
+    expect(seedInput().closest('[hidden]')).toBeNull() // visible on step 1
+    typeSeed(SEED)
+    await click(button('Next'))
+    expect(seedInput().value).toBe(SEED) // still mounted, hidden
+    expect(seedInput().closest('[hidden]')).not.toBeNull()
+    expect(screen.queryByRole('button', { name: /Create wallet/ })).toBeNull()
+    const pinField = document.querySelector('input[id$="-pin"]') as HTMLInputElement
+    pinField.value = '123456'
+    await click(button('Import wallet'))
+    await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1))
+    expect(h.importStoredWallet.mock.calls[0][0]).toMatchObject({ seed: SEED, network: 'testnet' })
+  })
+
+  it('step 2 shows Back, Walk me through it, then Import wallet, in that order', async () => {
+    await openImport()
+    typeSeed(SEED)
+    await click(button('Next'))
+    const order = screen.getAllByRole('button').map((b) => b.textContent)
+    expect(order.filter((t) => t === 'Back' || t === 'Walk me through it' || t === 'Import wallet')).toEqual(['Back', 'Walk me through it', 'Import wallet'])
   })
 
   it('defaults the Open Check to the App PIN, or to a passkey where one is known to work', async () => {
     await openImport()
-    await click(button('Customise'))
+    await walk()
     expect((screen.getByRole('radio', { name: /^App PIN$/ }) as HTMLInputElement).checked).toBe(true)
     cleanup()
     h.capability = 'yes'
     await openImport()
-    await click(button('Customise'))
+    await walk()
     expect((screen.getByRole('radio', { name: /^Passkey$/ }) as HTMLInputElement).checked).toBe(true)
+  })
+})
+
+describe('the Seed field and step 1', () => {
+  it('Next is aria-disabled with its reason as text until a Seed is typed, and does nothing', async () => {
+    await openImport()
+    const next = button('Next')
+    expect(next.getAttribute('aria-disabled')).toBe('true')
+    expect(screen.getByText('Type your Seed to continue.')).toBeTruthy()
+    await click(next)
+    expect(screen.getByText('Step 1 of 3')).toBeTruthy()
+    typeSeed(SEED)
+    expect(button('Next').getAttribute('aria-disabled')).toBeNull()
+    await click(button('Next'))
+    expect(screen.getByText('Step 2 of 3')).toBeTruthy()
+  })
+
+  it('a Seed cleared by hand blocks Next again', async () => {
+    await openImport()
+    typeSeed(SEED)
+    typeSeed('')
+    expect(button('Next').getAttribute('aria-disabled')).toBe('true')
+  })
+
+  it('a whitespace-only Seed leaves Next disabled with its reason', async () => {
+    await openImport()
+    typeSeed('   ')
+    expect(button('Next').getAttribute('aria-disabled')).toBe('true')
+    expect(screen.getByText('Type your Seed to continue.')).toBeTruthy()
+  })
+
+  it('typing a new Seed clears the refusal reason', async () => {
+    await openImport()
+    await submit('garbage-not-a-seed')
+    await screen.findByText(INVALID)
+    typeSeed(SEED)
+    expect(screen.queryByText(INVALID)).toBeNull()
+    expect(seedInput().getAttribute('aria-invalid')).not.toBe('true')
+  })
+
+  it('an invalid Seed returns to step 1 with the reason beside the field', async () => {
+    await openImport()
+    await submit('garbage-not-a-seed')
+    const reason = await screen.findByText(INVALID)
+    expect(screen.getByText('Step 1 of 3')).toBeTruthy()
+    expect(reason.closest('[hidden]')).toBeNull()
+    expect(seedInput().getAttribute('aria-describedby')).toBe(reason.id)
+    expect(button('Next').getAttribute('aria-disabled')).toBe('true') // the field was cleared
+    expect(h.importStoredWallet).not.toHaveBeenCalled()
+  })
+
+  it('a duplicate Seed returns to step 1 with the reason beside the field', async () => {
+    h.importDuplicateReason.mockResolvedValue(DUPLICATE)
+    await openImport()
+    await submit()
+    const reason = await screen.findByText(DUPLICATE)
+    expect(screen.getByText('Step 1 of 3')).toBeTruthy()
+    expect(reason.closest('[hidden]')).toBeNull()
+  })
+
+  it('a refusal that is not about the Seed stays on step 2', async () => {
+    h.importStoredWallet.mockResolvedValue({ status: 'refused', reason: 'The policy said no.' })
+    await openImport()
+    await submit()
+    await screen.findByText('The policy said no.')
+    expect(screen.getByText('Step 2 of 3')).toBeTruthy()
   })
 })
 
@@ -274,7 +381,7 @@ describe('Open Check none', () => {
   it.each([/^Testnet/, /^Devnet/, /^Mainnet/])('is aria-disabled with a visible reason on %s', async (network) => {
     await openImport()
     await click(screen.getByRole('radio', { name: network }))
-    await click(button('Customise'))
+    await walk()
     const none = screen.getByRole('radio', { name: /^No Open Check/ })
     expect(none.getAttribute('aria-disabled')).toBe('true')
     expect(screen.getAllByText(/may already hold funds this device cannot see/).length).toBeGreaterThan(0)

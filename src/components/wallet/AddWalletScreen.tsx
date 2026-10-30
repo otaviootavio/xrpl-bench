@@ -40,6 +40,8 @@ export function AddWalletScreen({ onClose }: { onClose: () => void }) {
   // A new Wallet is being checked, written or backed up inside the flow. Not
   // leavable meanwhile: leaving reads as "stop", and the write would still land.
   const [creating, setCreating] = useState(false)
+  // Only whether the Seed field holds anything, never what: step 1 of the flow waits on it.
+  const [seedTyped, setSeedTyped] = useState(false)
   useLeaveBlocker(creating)
 
   // Uncontrolled: a controlled input would put the typed Seed into React state on every keystroke.
@@ -54,7 +56,10 @@ export function AddWalletScreen({ onClose }: { onClose: () => void }) {
   // written-Seed step, a mode switch), never on a re-render. What was typed goes with it, so a
   // detached element does not keep the Seed.
   const setSeedInput = useCallback((el: HTMLInputElement | null) => {
-    if (!el && seedInputRef.current) seedInputRef.current.value = ''
+    if (!el && seedInputRef.current) {
+      seedInputRef.current.value = ''
+      setSeedTyped(false)
+    }
     seedInputRef.current = el
     if (el) lastInputRef.current = el
   }, [])
@@ -63,6 +68,7 @@ export function AddWalletScreen({ onClose }: { onClose: () => void }) {
     pendingSeedRef.current = null
     if (seedInputRef.current) seedInputRef.current.value = ''
     if (lastInputRef.current) lastInputRef.current.value = ''
+    setSeedTyped(false)
   }
 
   // False once the screen is left: a probe or a ledger check that finishes after that must not go on.
@@ -101,7 +107,8 @@ export function AddWalletScreen({ onClose }: { onClose: () => void }) {
   }
 
   const importSource: ImportSource = {
-    field: (busy) => (
+    seedTyped,
+    field: (busy, reason) => (
       <div className="grid gap-1.5">
         <Label htmlFor="wseed">Seed</Label>
         <Input
@@ -113,18 +120,30 @@ export function AddWalletScreen({ onClose }: { onClose: () => void }) {
           spellCheck={false}
           disabled={busy}
           ref={setSeedInput}
+          onChange={(e) => setSeedTyped(e.target.value.trim() !== '')}
+          aria-invalid={reason ? true : undefined}
+          aria-describedby="wseed-note"
         />
+        {reason ? (
+          <p id="wseed-note" role="alert" className="text-sm text-text-destructive">
+            {reason}
+          </p>
+        ) : (
+          <p id="wseed-note" className="text-xs text-muted-foreground">
+            {seedTyped ? 'Next is ready.' : 'Type your Seed to continue.'}
+          </p>
+        )}
       </div>
     ),
     clear: clearSeed,
     async acquire({ network, node }) {
       const seed = parseSeedInput(seedInputRef.current?.value ?? '')
-      if (!seed) return { status: 'refused', reason: INVALID_SEED_MESSAGE }
+      if (!seed) return { status: 'refused', reason: INVALID_SEED_MESSAGE, at: 'seed' }
       pendingSeedRef.current = seed
       try {
         // Before any prompt and before any ledger read: a duplicate stops here.
         const duplicate = await importDuplicateReason(seed)
-        if (duplicate) return { status: 'refused', reason: duplicate }
+        if (duplicate) return { status: 'refused', reason: duplicate, at: 'seed' }
         if (!mountedRef.current) return { status: 'cancelled' } // left meanwhile: no ledger read for an abandoned address
         const warning = await checkBeforeImport(queryClient, network, addressFromSeed(seed), node)
         if (!mountedRef.current) return { status: 'cancelled' }

@@ -2,7 +2,7 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import { useState } from 'react'
-import { QuizShell } from '../QuizShell'
+import { QuizShell, type QuizStep } from '../QuizShell'
 
 const STEPS = [
   { id: 'a', title: 'First' },
@@ -112,5 +112,55 @@ describe('QuizShell', () => {
     expect(within(container).queryByRole('button', { name: 'Finish' })).toBeNull()
     await click(inHost('Back')!)
     expect(screen.getByText('Step 2 of 3')).toBeTruthy()
+  })
+
+  describe('per-step blocked, primary and secondary', () => {
+    function Custom({ steps, actionHost }: { steps: QuizStep[]; actionHost?: HTMLElement | null }) {
+      const [index, setIndex] = useState(0)
+      return (
+        <QuizShell steps={steps} index={index} onIndex={setIndex} busy={false} actionHost={actionHost} finalAction={<button type="button">Finish</button>}>
+          <p>body</p>
+        </QuizShell>
+      )
+    }
+    const extra = (blocked: boolean): QuizStep[] => [
+      { id: 'a', title: 'First', blocked },
+      { id: 'b', title: 'Second', primary: <button type="button">Do it</button>, secondary: <button type="button">Other way</button> },
+      { id: 'c', title: 'Third' },
+    ]
+
+    it('a blocked step makes Next aria-disabled and does nothing', async () => {
+      render(<Custom steps={extra(true)} />)
+      const next = screen.getByRole('button', { name: 'Next' })
+      expect(next.getAttribute('aria-disabled')).toBe('true')
+      await click(next)
+      expect(screen.getByText('Step 1 of 3')).toBeTruthy()
+    })
+
+    it('an unblocked step advances', async () => {
+      render(<Custom steps={extra(false)} />)
+      const next = screen.getByRole('button', { name: 'Next' })
+      expect(next.getAttribute('aria-disabled')).toBeNull()
+      await click(next)
+      expect(screen.getByText('Step 2 of 3')).toBeTruthy()
+    })
+
+    it('primary replaces Next and secondary sits between Back and it, inline', async () => {
+      const { container } = render(<Custom steps={extra(false)} />)
+      await click(screen.getByRole('button', { name: 'Next' }))
+      expect(screen.queryByRole('button', { name: 'Next' })).toBeNull()
+      const names = within(container).getAllByRole('button').map((b) => b.textContent)
+      expect(names).toEqual(['Back', 'Other way', 'Do it'])
+    })
+
+    it('primary and secondary render in the actionHost', async () => {
+      const host = document.createElement('div')
+      document.body.appendChild(host)
+      hosts.push(host)
+      const { container } = render(<Custom steps={extra(false)} actionHost={host} />)
+      await click(within(host).getByRole('button', { name: 'Next' }))
+      expect(within(host).getAllByRole('button').map((b) => b.textContent)).toEqual(['Back', 'Other way', 'Do it'])
+      expect(within(container).queryByRole('button', { name: 'Do it' })).toBeNull()
+    })
   })
 })

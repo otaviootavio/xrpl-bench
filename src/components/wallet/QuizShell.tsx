@@ -3,7 +3,16 @@ import { createPortal } from 'react-dom'
 import { Button } from '@/components/ui/button'
 import { ScreenFooter } from './TaskScreen'
 
-export type QuizStep = { id: string; title: string }
+export type QuizStep = {
+  id: string
+  title: string
+  /** Next is `aria-disabled` and does nothing while true. */
+  blocked?: boolean
+  /** A second forward action, shown between Back and the primary one. */
+  secondary?: ReactNode
+  /** Replaces Next (and the final action) on this step. */
+  primary?: ReactNode
+}
 
 /**
  * One step at a time. Controlled: the caller owns the index and every answer,
@@ -45,10 +54,13 @@ export function QuizShell({
       <Button type="button" variant="outline" aria-disabled={first || undefined} disabled={busy} onClick={() => !first && onIndex(index - 1)}>
         Back
       </Button>
-      {last ? (
+      {step?.secondary}
+      {step?.primary ? (
+        step.primary
+      ) : last ? (
         finalAction
       ) : (
-        <Button type="button" disabled={busy} onClick={() => onIndex(index + 1)}>
+        <Button type="button" aria-disabled={step?.blocked || undefined} disabled={busy} onClick={() => !step?.blocked && onIndex(index + 1)}>
           Next
         </Button>
       )}

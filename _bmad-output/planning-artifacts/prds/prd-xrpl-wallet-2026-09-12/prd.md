@@ -520,6 +520,9 @@ instead of one long form.
   action that returns to that question. **Create wallet** is on this step too.
 - Import (FR-2, FR-87) skips Seed Method and Signature type, because the Seed
   fixes both. Its Seed field and written-Seed confirmation (FR-72) are unchanged.
+  The Seed field is on step 1: Next is blocked until a Seed is typed, and a
+  refused Seed returns the user to step 1 with the reason beside the field.
+  Decided 2026-10-29.
 - **Back keeps every answer.** Changing Network keeps answers that are still
   legal and resets the ones that are not to the new pre-selection, and says so in
   visible text, announced politely (FR-55).

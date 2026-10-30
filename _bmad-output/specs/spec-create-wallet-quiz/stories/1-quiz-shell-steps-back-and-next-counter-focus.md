@@ -147,3 +147,5 @@ Status: done. Not yet browser-checked: see the deferred item.
 **Verification:** `bun run lint`, `bun run build`, `bun run check:contrast` pass; `bun run test` passes, 121 files and 1741 tests, policy tests unchanged.
 
 **Residual risks:** no real-browser pass at 320, 390 and desktop in both themes; on narrow screens Create wallet sits above Back in the sticky footer. An inert Back shows on every create screen until story 2 adds steps.
+
+Browser pass: done in story 20.2 (2026-10-29), which settled the deferred real-browser check for this shell.

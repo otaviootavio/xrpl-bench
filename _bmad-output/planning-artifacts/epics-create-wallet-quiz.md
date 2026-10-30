@@ -342,6 +342,10 @@ So that it ships clean and usable at 320px and 200% zoom.
 **When** moving through every step
 **Then** order, focus on the step heading, the step counter and the unavailable-answer reasons are announced (NFR-8)
 
+**Given** first-run Onboarding shows the quiz
+**When** the user looks for a way back
+**Then** exactly one Back is shown, and the screen's own leave action is named differently, for example "Back to start" (found by the story 20.2 audit)
+
 **Given** the quiz's styles
 **When** they are compared with `DESIGN.md`
 **Then** every colour comes from an existing token and none is added (UX-DR8, NFR-6)

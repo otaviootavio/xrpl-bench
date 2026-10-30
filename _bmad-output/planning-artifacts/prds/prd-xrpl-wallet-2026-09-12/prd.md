@@ -2,7 +2,7 @@
 title: XRPL Bench
 status: draft
 created: 2026-09-12
-updated: 2026-10-26
+updated: 2026-10-29
 ---
 
 # PRD: XRPL Bench
@@ -344,7 +344,7 @@ requirement exists to prevent.
   but does not lock it. Locking stays a separate action.*
 
 ### 4.3 Multi-Wallet Management
-*Detail: `docs/user-stories/multi-wallet-management.md`. FR-79 to FR-90: `_bmad-output/specs/spec-wallet-chooser/SPEC.md`.*
+*Detail: `docs/user-stories/multi-wallet-management.md`. FR-79 to FR-90: `_bmad-output/specs/spec-wallet-chooser/SPEC.md`. FR-91: planned, no spec yet.*
 
 #### FR-13: Add, list, and remove Wallets
 The user can hold several independent Wallets and remove any of them.
@@ -458,7 +458,8 @@ own lock is open.
 The user can add a Wallet from the chooser by Generate or by Import, even when
 every lock is closed.
 - Both ask the same per-Wallet questions (FR-60) and neither enters the Wallet.
-  The chooser shows the new card.
+  The chooser shows the new card. *Planned (FR-91): the questions are asked one
+  at a time.*
 - Import gives the new Wallet its own lock. It refuses an Open Check of none, on
   every network, applies the Mainnet floor (FR-65) and the written-Seed
   confirmation (FR-72), and refuses a Seed whose address is already on the
@@ -495,6 +496,50 @@ When an update is waiting (FR-48), the chooser's Settings key says so in its
 name and in visible text.
 - It is never a modal or a redirect, and an update the user declined does not
   light it again.
+
+#### FR-91: The per-Wallet questions are asked one at a time
+*Planned, not built. Changes how FR-60 is asked, not what it asks. Raised
+2026-10-29 because the Recommended panel repeats the choices that sit under
+Customise.*
+
+Generate and Import (FR-87) ask the per-Wallet questions (FR-60) as a short quiz
+instead of one long form.
+- **Step 1 asks Label and Network.** Network comes first because it decides
+  which later answers are legal (FR-65).
+- **Step 2 shows the recommended setup**: the pre-selected answers (FR-60) as a
+  read-only list, with **Create wallet** as the primary action and **Walk me
+  through it** as the secondary. It is shown on every network. On Mainnet it also
+  states the forced rules in plain text: an Open Check is required, and auto-lock
+  is at least 1 minute (FR-65).
+- **Walking through asks one question per step**, in FR-60's order: Node, Seed
+  Method (with the Passkey choice and the domain warning when Passkey-Derived is
+  picked, FR-63), Signature type, Open Check with auto-lock (FR-65), Signing
+  Check (FR-66). Each has its answer pre-selected and says in plain words what it
+  means for access and recovery.
+- **The walk ends on a review step** listing every answer, each with a **Change**
+  action that returns to that question. **Create wallet** is on this step too.
+- Import (FR-2, FR-87) skips Seed Method and Signature type, because the Seed
+  fixes both. Its Seed field and written-Seed confirmation (FR-72) are unchanged.
+- **Back keeps every answer.** Changing Network keeps answers that are still
+  legal and resets the ones that are not to the new pre-selection, and says so in
+  visible text, announced politely (FR-55).
+- An unavailable answer stays visible and `aria-disabled` with its reason as
+  visible text (FR-60, §9.1). It is never hidden, and the step does not skip it.
+- **A failed Node test keeps the user on the Node step** with the reason shown
+  and the built-in Nodes still selected.
+- **Steps are named in text** ("Step 3 of 7"), never by colour alone. Focus moves
+  to the new step's heading on Next and Back. Motion between steps respects
+  reduced motion. It works at 320px and at 200% text (NFR-9), with the actions
+  always reachable.
+- What stays untouched: the policy that decides which answers are legal (FR-60,
+  FR-65), creation, PIN entry (FR-7, FR-9), the Seed backup (FR-3), and NFR-2. No
+  secret is held in quiz state.
+- The quiz is the same at first run (§4.1) as from the chooser, shortcut step
+  included. Decided 2026-10-29.
+- The Configure screen (FR-88) is a separate surface and is not changed here.
+- `[ASSUMPTION]` Sequencing: the quiz is built first and renders whatever
+  questions the policy lists, so the passkey-signing work (§4.14) can add or
+  change a question without reworking it. Decided 2026-10-29.
 
 ### 4.4 Sending Payments
 *Detail: `docs/user-stories/sending-payments.md`*
@@ -796,7 +841,9 @@ Creating a Wallet asks, in this order:
 4. Open Check and auto-lock (FR-65).
 5. Signing Check (FR-66).
 
-- Import from Seed (FR-2) is not part of this flow.
+- Import from Seed (FR-2) asks the same questions except Seed Method and
+  Signature type, which the Seed fixes (FR-87). The Label is asked with Network.
+  How the questions are presented, one at a time, is FR-91.
 - Whether this Wallet will be controlled by an Account Master Key is not a
   creation question. It is a later, separate step (FR-75).
 - Every question has a pre-selected answer: `[ASSUMPTION]` Testnet; the first
@@ -1408,5 +1455,8 @@ nothing is *provably* broken, not that a change works.
   FR-72, FR-73, FR-75, FR-77, and FR-78. None blocks a phase: §10 questions 7
   to 9 were answered 2026-10-10. Questions 10 and 11 were answered
   2026-10-11. The rest are small enough to settle in the §4.14 UX pass.
+- **§4.3 FR-91** — `[ASSUMPTION]` Open Check and auto-lock share one quiz step,
+  as FR-60 pairs them, rather than getting a step each. Raised 2026-10-29 and
+  not yet confirmed by the owner. Settle in the UX pass.
 - **§7** — `[ASSUMPTION]` Success metrics are correctness gates rather than usage
   targets. No usage target exists anywhere in the repo record.

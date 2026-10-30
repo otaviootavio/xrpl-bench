@@ -88,7 +88,7 @@ async function mount(props: Parameters<typeof CreateWalletFlow>[0] = {}) {
 }
 
 /** The Generate steps in order. The walk is steps 2 to 6. */
-const GENERATE_STEPS = ['Name and network', 'Node', 'Seed Method', 'Signature type', 'Open Check and auto-lock', 'Signing Check']
+const GENERATE_STEPS = ['Name and network', 'Node', 'Seed Method', 'Signature type', 'Authentication to open the wallet, and auto-lock', 'Authentication to sign a transaction']
 const currentIndex = () => {
   const m = /^Step (\d+) of (\d+)$/.exec(screen.getByText(/^Step \d+ of \d+$/).textContent ?? '')
   return Number(m![1]) - 1
@@ -129,7 +129,7 @@ const legends = () =>
 const createButton = () => {
   const now = screen.queryByRole('button', { name: /Create wallet/ })
   if (now) return now
-  goToStep('Signing Check')
+  goToStep('Authentication to sign a transaction')
   return screen.getByRole('button', { name: /Create wallet/ })
 }
 const click = async (el: HTMLElement) => act(async () => void fireEvent.click(el))
@@ -172,8 +172,8 @@ describe('the questions and their pre-selected answers', () => {
       ['Step 2 of 6', 'Node', ['Node']],
       ['Step 3 of 6', 'Seed Method', ['Seed Method']],
       ['Step 4 of 6', 'Signature type', ['Signature type']],
-      ['Step 5 of 6', 'Open Check and auto-lock', ['Open Check', 'Auto-lock after inactivity']],
-      ['Step 6 of 6', 'Signing Check', ['Signing Check']],
+      ['Step 5 of 6', 'Authentication to open the wallet, and auto-lock', ['Authentication required to open the wallet', 'Auto-lock after inactivity']],
+      ['Step 6 of 6', 'Authentication to sign a transaction', ['Authentication required to sign a transaction']],
     ])
     expect(screen.queryByRole('button', { name: 'Next' })).toBeNull()
     expect(screen.getByRole('button', { name: /Create wallet/ })).toBeTruthy()
@@ -189,14 +189,14 @@ describe('the questions and their pre-selected answers', () => {
     expect(radioNamed('Ed25519').checked).toBe(true)
     expect(radioNamed('App PIN').checked).toBe(true)
     expect(radioNamed('5 minutes').checked).toBe(true)
-    expect(radioNamed(/^Standard/).checked).toBe(true)
+    expect(radioNamed(/^Nothing is asked for signing/).checked).toBe(true)
   })
 
   it('with a known PRF the Open Check defaults to a passkey; Signing stays Standard on Testnet and becomes passkey on Mainnet', async () => {
     h.capability = 'yes'
     await mount()
     expect(radioNamed('Passkey').checked).toBe(true)
-    expect(radioNamed(/^Standard/).checked).toBe(true)
+    expect(radioNamed(/^Nothing is asked for signing/).checked).toBe(true)
     await switchNetwork(/^Mainnet/)
     expect(radioNamed(/^Passkey only/).checked).toBe(true)
   })
@@ -252,7 +252,7 @@ describe('Label and Network, then the walk', () => {
       expect(screen.queryByRole('button', { name: /Create wallet/ })).toBeNull()
       expect(nextButton()).toBeTruthy()
     }
-    goToStep('Signing Check')
+    goToStep('Authentication to sign a transaction')
     expect(screen.getByRole('button', { name: /Create wallet/ })).toBeTruthy()
     expect(screen.queryByRole('button', { name: 'Next' })).toBeNull()
   })
@@ -265,12 +265,12 @@ describe('Label and Network, then the walk', () => {
       expect(screen.queryByText(sentence)).toBeNull()
     }
     await switchNetwork(/^Devnet/)
-    goToStep('Open Check and auto-lock')
+    goToStep('Authentication to open the wallet, and auto-lock')
     expect(screen.queryByText(sentence)).toBeNull()
     await switchNetwork(/^Mainnet/)
     for (const title of GENERATE_STEPS.slice(1)) {
       goToStep(title)
-      if (title === 'Open Check and auto-lock') expect(screen.getByText(sentence)).toBeTruthy()
+      if (title === 'Authentication to open the wallet, and auto-lock') expect(screen.getByText(sentence)).toBeTruthy()
       else expect(screen.queryByText(sentence)).toBeNull()
     }
   })
@@ -304,12 +304,12 @@ describe('Label and Network, then the walk', () => {
     expect(pin().closest('[hidden]')).not.toBeNull()
     await click(radioNamed('secp256k1'))
     await click(radioNamed('15 minutes'))
-    goToStep('Signing Check')
+    goToStep('Authentication to sign a transaction')
     expect(pin().closest('[hidden]')).toBeNull()
     type(pin(), '123456')
     goToStep('Name and network')
     expect(pin().closest('[hidden]')).not.toBeNull()
-    goToStep('Signing Check')
+    goToStep('Authentication to sign a transaction')
     expect(pin().value).toBe('123456')
     goToStep('Signature type')
     expect(radioNamed('secp256k1').checked).toBe(true)
@@ -339,9 +339,9 @@ describe('Label and Network, then the walk', () => {
     expect(screen.queryByText(/depends on the app's domain/)).toBeNull()
     expect(screen.queryByRole('radio', { name: /^Create a new passkey/ })).toBeNull()
     // The only Signing Check left is its own passkey.
-    goToStep('Signing Check')
+    goToStep('Authentication to sign a transaction')
     expect(radioNamed(/^Passkey only/).checked).toBe(true)
-    expect(radioNamed(/^Standard/).getAttribute('aria-disabled')).toBe('true')
+    expect(radioNamed(/^Nothing is asked for signing/).getAttribute('aria-disabled')).toBe('true')
     expect(radioNamed(/^App PIN only/).getAttribute('aria-disabled')).toBe('true')
     goToStep('Seed Method')
     expect(radioNamed(/^Passkey-Derived Seed/).checked).toBe(true)
@@ -407,7 +407,7 @@ describe('unavailable answers', () => {
   it('Mainnet: no Open Check and an auto-lock under a minute are aria-disabled with reasons, and creation cannot proceed', async () => {
     await mount()
     await switchNetwork(/^Mainnet/)
-    const none = radioNamed(/^No Open Check/)
+    const none = radioNamed(/^No authentication required to open the wallet/)
     expect(none.getAttribute('aria-disabled')).toBe('true')
     expect(screen.getAllByText(/A Mainnet wallet needs an Open Check/).length).toBeGreaterThan(0)
     const half = radioNamed('30 seconds')
@@ -422,21 +422,21 @@ describe('unavailable answers', () => {
 
   it('every Signing Check option says who it asks, and No Open Check explains itself only where it is available', async () => {
     await mount()
-    goToStep('Signing Check')
+    goToStep('Authentication to sign a transaction')
     expect(screen.getByText('Nothing is asked for signing.')).toBeTruthy()
     expect(screen.getByText('Asks for your passkey on every signature.')).toBeTruthy()
     expect(screen.getByText('Asks for your App PIN on every signature.')).toBeTruthy()
-    goToStep('Open Check and auto-lock')
-    expect(screen.getByText('Nothing is asked to open the wallet. Testnet and Devnet only.')).toBeTruthy()
+    goToStep('Authentication to open the wallet, and auto-lock')
+    expect(screen.getByText('Testnet and Devnet only.')).toBeTruthy()
     await switchNetwork(/^Mainnet/)
-    goToStep('Open Check and auto-lock')
-    expect(screen.queryByText('Nothing is asked to open the wallet. Testnet and Devnet only.')).toBeNull()
+    goToStep('Authentication to open the wallet, and auto-lock')
+    expect(screen.queryByText('Testnet and Devnet only.')).toBeNull()
   })
 
   it('Testnet may use no Open Check; switching to Mainnet then blocks it with the reason', async () => {
     await mount()
-    await click(radioNamed(/^No Open Check/))
-    expect(radioNamed(/^No Open Check/).checked).toBe(true)
+    await click(radioNamed(/^No authentication required to open the wallet/))
+    expect(radioNamed(/^No authentication required to open the wallet/).checked).toBe(true)
     expect(createButton().getAttribute('aria-disabled')).toBeNull()
     await switchNetwork(/^Mainnet/)
     expect(createButton().getAttribute('aria-disabled')).toBe('true')
@@ -450,7 +450,7 @@ describe('unavailable answers', () => {
     expect(radioNamed('Passkey').getAttribute('aria-disabled')).toBe('true')
     expect(radioNamed(/^Passkey only/).getAttribute('aria-disabled')).toBe('true')
     // Passkey-Derived, Passkey and Passkey only: one on each of their steps.
-    for (const title of ['Seed Method', 'Open Check and auto-lock', 'Signing Check']) {
+    for (const title of ['Seed Method', 'Authentication to open the wallet, and auto-lock', 'Authentication to sign a transaction']) {
       goToStep(title)
       expect(screen.getAllByText(/cannot use a passkey/).length).toBe(1)
     }
@@ -461,7 +461,7 @@ describe('unavailable answers', () => {
     h.capability = 'unknown'
     await mount()
     expect(radioNamed('Passkey').getAttribute('aria-disabled')).toBeNull()
-    for (const title of ['Seed Method', 'Open Check and auto-lock', 'Signing Check']) {
+    for (const title of ['Seed Method', 'Authentication to open the wallet, and auto-lock', 'Authentication to sign a transaction']) {
       goToStep(title)
       expect(screen.getAllByText('Checked when the passkey is created.').length).toBe(1)
     }
@@ -494,9 +494,9 @@ describe('a rule leaking into the screen would show here', () => {
     })
     await mount()
     await switchNetwork(/^Mainnet/)
-    await click(radioNamed(/^No Open Check/))
+    await click(radioNamed(/^No authentication required to open the wallet/))
     await click(radioNamed('30 seconds'))
-    expect(radioNamed(/^No Open Check/).getAttribute('aria-disabled')).toBeNull()
+    expect(radioNamed(/^No authentication required to open the wallet/).getAttribute('aria-disabled')).toBeNull()
     expect(radioNamed('30 seconds').getAttribute('aria-disabled')).toBeNull()
     expect(createButton().getAttribute('aria-disabled')).toBeNull()
     await screen.findByLabelText('Confirm the App PIN') // the default signing check still wants a PIN
@@ -538,7 +538,7 @@ describe('the App PIN', () => {
 
   it('is not asked for when neither check uses it', async () => {
     await mount()
-    await click(radioNamed(/^No Open Check/))
+    await click(radioNamed(/^No authentication required to open the wallet/))
     expect(screen.queryByLabelText('Your App PIN')).toBeNull()
     expect(screen.queryByLabelText(/Choose an App PIN/)).toBeNull()
   })
@@ -566,7 +566,7 @@ describe('a failed App PIN read', () => {
   it('says so with Retry, blocks Create, and recovers on retry', async () => {
     h.pinReadFails = true
     await mount()
-    goToStep('Signing Check')
+    goToStep('Authentication to sign a transaction')
     expect((await screen.findByRole('alert')).textContent).toMatch(/Could not read the App PIN state/)
     expect(screen.queryByLabelText(/Choose an App PIN/)).toBeNull()
     expect(createButton().getAttribute('aria-disabled')).toBe('true')
@@ -664,7 +664,7 @@ describe('the Node', () => {
     await mount()
     await click(radioNamed(/^A Node you choose/))
     expect(nextButton().getAttribute('aria-disabled')).toBeNull()
-    goToStep('Signing Check')
+    goToStep('Authentication to sign a transaction')
     expect(screen.getByText('Step 6 of 6')).toBeTruthy()
     await click(createButton())
     expect(screen.getByText('Test the custom Node first, or use the built-in Nodes.')).toBeTruthy()
@@ -677,7 +677,7 @@ describe('the Node', () => {
     await click(radioNamed('15 minutes'))
     await click(radioNamed(/^App PIN only/))
     goToStep('Seed Method')
-    goToStep('Signing Check')
+    goToStep('Authentication to sign a transaction')
     expect(radioNamed(/^App PIN only/).checked).toBe(true)
     expect(radioNamed('15 minutes').checked).toBe(true)
     expect(radioNamed('secp256k1').checked).toBe(true)
@@ -752,10 +752,10 @@ describe('Passkey-Derived Seed (story 6)', () => {
     expect(radioNamed(/^Use an existing passkey/).checked).toBe(false)
     // Its Signing Check is its passkey, and the others are aria-disabled with the policy's reason.
     expect(radioNamed(/^Passkey only/).checked).toBe(true)
-    expect(radioNamed(/^Standard/).getAttribute('aria-disabled')).toBe('true')
+    expect(radioNamed(/^Nothing is asked for signing/).getAttribute('aria-disabled')).toBe('true')
     await click(radioNamed(/^Stored Seed/))
     expect(screen.queryByText(/depends on the app's domain/)).toBeNull()
-    expect(radioNamed(/^Standard/).checked).toBe(true)
+    expect(radioNamed(/^Nothing is asked for signing/).checked).toBe(true)
   })
 
   it('creates through createDerivedWallet with the chosen passkey, then shows the ordinal once and the kind statement, and no Seed', async () => {
@@ -917,7 +917,7 @@ describe('Written-Seed confirmation (story 7)', () => {
   it('Testnet never shows the step: it goes to the ordinary backup', async () => {
     h.createStoredWallet.mockResolvedValue(created())
     await mount()
-    await click(radioNamed(/^No Open Check/))
+    await click(radioNamed(/^No authentication required to open the wallet/))
     await click(createButton())
     expect(await screen.findByText('Back up your seed')).toBeTruthy()
     expect(screen.queryByText('Write down your Seed')).toBeNull()
@@ -1090,7 +1090,7 @@ describe('the wallet name and the questions component (chooser story 11)', () =>
     expect(source).toMatch(/walkQuestions\(/)
     expect(source).toMatch(/\.render\(questionProps\)/)
     expect(source).not.toMatch(/legend="(Seed Method|Open Check|Signing Check)"/)
-    expect(readFileSync('src/components/wallet/WalletQuestions.tsx', 'utf8')).toMatch(/legend="Signing Check"/)
+    expect(readFileSync('src/components/wallet/WalletQuestions.tsx', 'utf8')).toMatch(/legend=\{SIGNING_CHECK_QUESTION\}/)
     expect(source).not.toMatch(/isRecommended|customiseForced|customiseOpen/)
   })
 })

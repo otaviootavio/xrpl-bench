@@ -318,8 +318,8 @@ describe('the Lock key', () => {
     act(() => useAppStore.getState().openLock('LA', KEY, 5))
     mount()
     expect(within(card('Alpha')).queryByRole('button', { name: /^Lock / })).toBeNull()
-    expect(within(card('Alpha')).getByText('No Open Check: this wallet opens itself, so there is nothing to lock.')).toBeTruthy()
-    expect(within(card('Beta')).queryByText(/No Open Check/)).toBeNull()
+    expect(within(card('Alpha')).getByText('No authentication required to open the wallet. This wallet opens itself, so there is nothing to lock.')).toBeTruthy()
+    expect(within(card('Beta')).queryByText(/No authentication required to open the wallet/)).toBeNull()
     // Rename is on every card, whatever its Open Check.
     expect(within(card('Alpha')).getByRole('button', { name: 'Rename Alpha' })).toBeTruthy()
   })

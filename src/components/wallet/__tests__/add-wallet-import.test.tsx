@@ -206,7 +206,7 @@ describe('Import with every lock closed', () => {
         await click(button('Next'))
       }
     }
-    expect(seen).toEqual(['Node', 'Node', 'Open Check and auto-lock', 'Open Check', 'Auto-lock after inactivity', 'Signing Check', 'Signing Check'])
+    expect(seen).toEqual(['Node', 'Node', 'Authentication to open the wallet, and auto-lock', 'Authentication required to open the wallet', 'Auto-lock after inactivity', 'Authentication to sign a transaction', 'Authentication required to sign a transaction'])
     expect(screen.queryByRole('button', { name: 'Next' })).toBeNull()
     expect(button('Import wallet')).toBeTruthy()
   })
@@ -431,7 +431,7 @@ describe('Open Check none', () => {
     await openImport()
     await click(screen.getByRole('radio', { name: network }))
     await walkToOpenCheck()
-    const none = screen.getByRole('radio', { name: /^No Open Check/ })
+    const none = screen.getByRole('radio', { name: /^No authentication required to open the wallet/ })
     expect(none.getAttribute('aria-disabled')).toBe('true')
     expect(screen.getAllByText(/may already hold funds this device cannot see/).length).toBeGreaterThan(0)
     await click(none)

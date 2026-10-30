@@ -4,6 +4,11 @@ import type { SigningKind } from '@/lib/crypto/policy'
  * Checks plate both read from here, so a check is never summarised two ways
  * (copy issues 8a-8i). */
 
+export const OPEN_CHECK_QUESTION = 'Authentication required to open the wallet'
+export const SIGNING_CHECK_QUESTION = 'Authentication required to sign a transaction'
+export const NO_OPEN_CHECK_ANSWER = 'No authentication required to open the wallet'
+export const STANDARD_SIGNING_ANSWER = 'Nothing is asked for signing.'
+
 export function openCheckWords(kind: string): string {
   switch (kind) {
     case 'pin':
@@ -13,14 +18,13 @@ export function openCheckWords(kind: string): string {
     case 'either':
       return 'Passkey or App PIN, shared with the other wallets on this lock'
     default:
-      return 'No Open Check'
+      return NO_OPEN_CHECK_ANSWER
   }
 }
 
 export function signingWords(kind: SigningKind): string {
-  return kind === 'standard' ? 'Standard' : kind === 'passkey' ? 'Passkey only' : 'App PIN only'
+  return kind === 'standard' ? STANDARD_SIGNING_ANSWER : kind === 'passkey' ? 'Passkey only' : 'App PIN only'
 }
 
-/** The sentence under a check's name where the choice list gives one. */
-export const NO_OPEN_CHECK_DETAIL = 'Nothing is asked to open the wallet. Testnet and Devnet only.'
-export const STANDARD_SIGNING_DETAIL = 'Nothing is asked for signing.'
+/** The sentence under the no-check answer where the choice list gives one. */
+export const NO_OPEN_CHECK_DETAIL = 'Testnet and Devnet only.'

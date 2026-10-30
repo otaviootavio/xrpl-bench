@@ -10,7 +10,13 @@ import { OtherNetworksPlate } from '@/components/wallet/OtherNetworksPlate'
 import { TwoDeviceSign } from '@/components/wallet/TwoDeviceSign'
 import { WalletNodeSection } from '@/components/wallet/WalletNodeSection'
 import { RevealSeedControl } from '@/components/wallet/RevealSeedControl'
-import { NO_OPEN_CHECK_DETAIL, STANDARD_SIGNING_DETAIL, openCheckWords, signingWords } from '@/components/wallet/check-words'
+import {
+  NO_OPEN_CHECK_DETAIL,
+  OPEN_CHECK_QUESTION,
+  SIGNING_CHECK_QUESTION,
+  openCheckWords,
+  signingWords,
+} from '@/components/wallet/check-words'
 import { launchFromConfigure, peekConfigureFocusReturn } from '@/lib/configure-launch'
 import { useLockMinutesChanged } from '@/hooks/useLockMinutesChanged'
 import { usePrompts } from '@/hooks/usePrompts'
@@ -132,14 +138,13 @@ function ChecksPlate({ wallet }: { wallet: WalletMeta }) {
       ) : (
         <dl className="flex flex-col gap-2 text-sm">
           <div className="min-w-0">
-            <dt className="panel-legend">Open Check</dt>
+            <dt className="panel-legend">{OPEN_CHECK_QUESTION}</dt>
             <dd className="mt-0.5 break-words">{openCheckWords(lock.data.openCheck)}</dd>
             {lock.data.openCheck === 'none' && <dd className="text-xs text-muted-foreground">{NO_OPEN_CHECK_DETAIL}</dd>}
           </div>
           <div className="min-w-0">
-            <dt className="panel-legend">Signing Check</dt>
+            <dt className="panel-legend">{SIGNING_CHECK_QUESTION}</dt>
             <dd className="mt-0.5 break-words">{signingWords(signing)}</dd>
-            {signing === 'standard' && <dd className="text-xs text-muted-foreground">{STANDARD_SIGNING_DETAIL}</dd>}
           </div>
         </dl>
       )}

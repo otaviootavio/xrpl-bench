@@ -6,7 +6,15 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Axis, Choice } from '@/components/wallet/check-controls'
-import { NO_OPEN_CHECK_DETAIL, STANDARD_SIGNING_DETAIL, openCheckWords, signingWords } from '@/components/wallet/check-words'
+import {
+  NO_OPEN_CHECK_ANSWER,
+  NO_OPEN_CHECK_DETAIL,
+  OPEN_CHECK_QUESTION,
+  SIGNING_CHECK_QUESTION,
+  STANDARD_SIGNING_ANSWER,
+  openCheckWords,
+  signingWords,
+} from '@/components/wallet/check-words'
 import { ScreenFooter, TaskScreen } from '@/components/wallet/TaskScreen'
 import { useLeaveBlocker } from '@/hooks/useRoute'
 import { minutesLabel } from '@/lib/minutes-label'
@@ -341,11 +349,13 @@ function EditChecksBody({
     return <WrittenSeedConfirm getSeed={getSeed} network={network} onSettle={settleConfirmation} />
   }
 
+  // The current answer in brackets, without its own full stop, so the label reads as one clean sentence.
+  const keepLabel = (words: string) => `Keep the current setting (${words.replace(/\.$/, '')})`
   const openKeep = (
     <Choice
       name={`${group}-open`}
       checked={openSel === 'keep'}
-      label={`Keep: ${openCheckWords(lock.openCheck)}`}
+      label={keepLabel(openCheckWords(lock.openCheck))}
       state={{ available: true }}
       onSelect={() => setOpenSel('keep')}
     />
@@ -354,7 +364,7 @@ function EditChecksBody({
     <Choice
       name={`${group}-sign`}
       checked={signSel === 'keep'}
-      label={`Keep: ${signingWords(current.signing)}`}
+      label={keepLabel(signingWords(current.signing))}
       state={{ available: true }}
       onSelect={() => setSignSel('keep')}
     />
@@ -370,7 +380,7 @@ function EditChecksBody({
           {network === 'mainnet' && <Badge variant="warning">Real funds</Badge>}
         </p>
 
-        <Axis legend="Open Check">
+        <Axis legend={OPEN_CHECK_QUESTION}>
           {openKeep}
           {lock.openCheck !== 'pin' && (
             <Choice name={`${group}-open`} checked={openSel === 'pin'} label="App PIN" state={options.openCheck.pin} onSelect={() => setOpenSel('pin')} />
@@ -394,7 +404,7 @@ function EditChecksBody({
             <Choice
               name={`${group}-open`}
               checked={openSel === 'none'}
-              label="No Open Check"
+              label={NO_OPEN_CHECK_ANSWER}
               detail={options.openCheck.none.available ? NO_OPEN_CHECK_DETAIL : undefined}
               state={options.openCheck.none}
               onSelect={() => setOpenSel('none')}
@@ -418,14 +428,13 @@ function EditChecksBody({
           )}
         </Axis>
 
-        <Axis legend="Signing Check">
+        <Axis legend={SIGNING_CHECK_QUESTION}>
           {signKeep}
           {showSigning('standard') && (
             <Choice
               name={`${group}-sign`}
               checked={signSel === 'standard'}
-              label="Standard"
-              detail={STANDARD_SIGNING_DETAIL}
+              label={STANDARD_SIGNING_ANSWER}
               state={options.signing.standard}
               onSelect={() => setSignSel('standard')}
             />

@@ -100,22 +100,22 @@ describe('the Checks plate wording', () => {
     useAppStore.setState({ wallets: [W('a', 'X', wallet)] } as never)
     act(() => navigate('/wallets/a/configure'))
     mount()
-    await screen.findByText('Open Check')
+    await screen.findByText('Authentication required to open the wallet')
     return document.querySelector('[data-slot="config-plate"] dl')?.textContent ?? ''
   }
 
   it('uses the words the Edit checks screen uses', async () => {
-    expect(await read({ openCheck: 'pin' })).toBe('Open CheckApp PINSigning CheckStandardNothing is asked for signing.')
+    expect(await read({ openCheck: 'pin' })).toBe('Authentication required to open the walletApp PINAuthentication required to sign a transactionNothing is asked for signing.')
   })
 
   it('No Open Check carries its sentence; a Signing Check names itself', async () => {
     expect(await read({ openCheck: 'none' }, { signingCheck: 'passkey' })).toBe(
-      'Open CheckNo Open CheckNothing is asked to open the wallet. Testnet and Devnet only.Signing CheckPasskey only',
+      'Authentication required to open the walletNo authentication required to open the walletTestnet and Devnet only.Authentication required to sign a transactionPasskey only',
     )
   })
 
   it('a Passkey-Derived Seed reads Passkey only', async () => {
-    expect(await read({ openCheck: 'passkey' }, { seedMethod: 'passkey-derived' })).toBe('Open CheckPasskeySigning CheckPasskey only')
+    expect(await read({ openCheck: 'passkey' }, { seedMethod: 'passkey-derived' })).toBe('Authentication required to open the walletPasskeyAuthentication required to sign a transactionPasskey only')
   })
 
   it('a failed read is not shown as a check: it says so and offers Retry', async () => {
@@ -123,8 +123,8 @@ describe('the Checks plate wording', () => {
     act(() => navigate('/wallets/a/configure'))
     mount()
     expect(await screen.findByRole('alert')).toBeTruthy()
-    expect(screen.queryByText('Open Check')).toBeNull()
-    expect(screen.queryByText('No Open Check')).toBeNull()
+    expect(screen.queryByText('Authentication required to open the wallet')).toBeNull()
+    expect(screen.queryByText('No authentication required to open the wallet')).toBeNull()
     h.lockInfo.mockResolvedValue({ id: 'X', openCheck: 'pin', autoLockMinutes: 5, pin: true, passkey: false })
     fireEvent.click(screen.getByRole('button', { name: 'Retry' }))
     expect(await screen.findByText('App PIN')).toBeTruthy()

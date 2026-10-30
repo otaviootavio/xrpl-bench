@@ -50,6 +50,8 @@ export function AddWalletScreen({ onClose }: { onClose: () => void }) {
   const lastInputRef = useRef<HTMLInputElement | null>(null)
   // The parsed Seed, only until it is handed to the keystore.
   const pendingSeedRef = useRef<string | null>(null)
+  // Set when the path was just changed: the remounted flow gives the picked radio focus once.
+  const [focusPath, setFocusPath] = useState(false)
   const warningResolveRef = useRef<((proceed: boolean) => void) | null>(null)
 
   // A STABLE ref callback: React calls it with null only when the field really leaves the DOM (the
@@ -167,23 +169,24 @@ export function AddWalletScreen({ onClose }: { onClose: () => void }) {
       locked={creating}
     >
       <div className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-3">
-        <div className="flex flex-wrap gap-2">
-          <Button variant={mode === 'generate' ? 'default' : 'outline'} onClick={() => {
-              clearSeed() // the typed Seed does not wait in a detached field
-              setMode('generate')
-            }} type="button" disabled={creating}>
-            Generate
-          </Button>
-          <Button variant={mode === 'import' ? 'default' : 'outline'} onClick={() => setMode('import')} type="button" disabled={creating}>
-            Import
-          </Button>
-        </div>
         {/* Keyed by mode: each mode starts its own answers, and the Seed field goes with Import. */}
         <CreateWalletFlow
           key={mode}
           defaultLabel=""
           actionHost={footerHost}
           onInProgressChange={setCreating}
+          pathChoice={{
+            value: mode === 'import' ? 'import' : 'create',
+            disabled: creating,
+            focusOnMount: focusPath,
+            onFocusTaken: () => setFocusPath(false),
+            onChange: (next) => {
+              if (next === (mode === 'import' ? 'import' : 'create')) return
+              if (next === 'create') clearSeed() // the typed Seed does not wait in a detached field
+              setFocusPath(true)
+              setMode(next === 'import' ? 'import' : 'generate')
+            },
+          }}
           {...(mode === 'import' ? { importSource } : {})}
           onDone={(meta) => {
             // Adding selects and enters nothing: the Chooser focuses the new card.

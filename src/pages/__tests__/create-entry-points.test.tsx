@@ -98,6 +98,7 @@ describe('first run', () => {
     render(<Onboarding />)
     await click('Create a new wallet')
     expect(screen.getByText('the creation flow')).toBeTruthy()
+    expect((h.flowProps.at(-1) as { pathChoice?: unknown }).pathChoice).toBeUndefined() // Onboarding's buttons choose the path
     expect(h.setUpVaultAuth).not.toHaveBeenCalled()
     expect(h.generateAndStoreWallet).not.toHaveBeenCalled()
   })
@@ -151,7 +152,8 @@ describe('Add wallet from the chooser: the routed screen', () => {
     render(<Host />)
     await addWallet()
     expect(window.location.pathname).toBe('/wallets/new')
-    await click('Import')
+    expect(screen.queryByRole('button', { name: 'Import' })).toBeNull()
+    await act(async () => (h.flowProps.at(-1) as { pathChoice: { onChange: (v: string) => void } }).pathChoice.onChange('import'))
     expect(screen.getByText('the creation flow')).toBeTruthy()
     const props = h.flowProps.at(-1) as { importSource?: unknown }
     expect(props.importSource).toBeTruthy()
@@ -163,6 +165,7 @@ describe('Add wallet from the chooser: the routed screen', () => {
     const props = h.flowProps.at(-1) as { onInProgressChange: (b: boolean) => void; onDone: (meta: { seedId: string }) => void }
     await act(async () => props.onInProgressChange(true))
     expect((screen.getByRole('button', { name: 'Wallets' }) as HTMLButtonElement).disabled).toBe(true)
+    expect((h.flowProps.at(-1) as { pathChoice: { disabled: boolean } }).pathChoice.disabled).toBe(true)
     // The browser's Back is put back too.
     await act(async () => {
       window.history.back()
@@ -185,8 +188,11 @@ describe('Add wallet at the app shell (chooser story 11)', () => {
     window.history.replaceState(null, '', '/wallets/new')
     render(<AddWalletScreen onClose={() => {}} />)
     expect(screen.getByText('the creation flow')).toBeTruthy()
-    expect(screen.getByRole('button', { name: 'Import' })).toBeTruthy()
-    expect(screen.getByRole('button', { name: 'Generate' })).toBeTruthy()
+    // The flow itself asks Create or Import: the screen has no Generate or Import button.
+    const props = h.flowProps.at(-1) as { pathChoice: { value: string } }
+    expect(props.pathChoice.value).toBe('create')
+    expect(screen.queryByRole('button', { name: 'Import' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Generate' })).toBeNull()
   })
 
   it('on success: announces the new card, says Wallet added., returns, and selects nothing', async () => {

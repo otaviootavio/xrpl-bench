@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react'
+import { useEffect, useRef, type ReactNode } from 'react'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -89,6 +89,40 @@ export function NameAndNetworkStep(p: WalletQuestionsProps) {
 
       <NetworkChoice value={p.network} onChange={p.onNetworkChange} disabled={busy || p.nodeBusy} />
     </>
+  )
+}
+
+export type WalletPath = 'create' | 'import'
+
+/** Host-supplied control for the first question of the Add wallet screen. */
+export interface PathChoiceProps {
+  value: WalletPath
+  onChange: (value: WalletPath) => void
+  disabled?: boolean
+  /** The choice just changed and the flow remounted: the picked radio takes focus. */
+  focusOnMount?: boolean
+  /** Called once focus has been taken, so a later remount does not take it again. */
+  onFocusTaken?: () => void
+}
+
+/** Create or Import: the first question, asked on step 1 only. Not part of the walk. */
+export function PathChoice({ group, path }: { group: string; path: PathChoiceProps }) {
+  const box = useRef<HTMLDivElement>(null)
+  const { focusOnMount, onFocusTaken } = path
+  useEffect(() => {
+    if (!focusOnMount) return
+    box.current?.querySelector<HTMLInputElement>('input[type="radio"]:checked')?.focus()
+    onFocusTaken?.()
+    // Mount only: a change of the flag later must not move focus.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+  return (
+    <div ref={box}>
+      <Axis legend="Create or import">
+        <Choice name={`${group}-path`} checked={path.value === 'create'} label="Create a new wallet" state={{ available: true }} disabled={path.disabled} onSelect={() => path.onChange('create')} />
+        <Choice name={`${group}-path`} checked={path.value === 'import'} label="Import a wallet" state={{ available: true }} disabled={path.disabled} onSelect={() => path.onChange('import')} />
+      </Axis>
+    </div>
   )
 }
 

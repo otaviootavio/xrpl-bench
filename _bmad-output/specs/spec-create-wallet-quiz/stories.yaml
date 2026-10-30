@@ -43,6 +43,6 @@
 - id: "8"
   title: "Retire the old form, tests, and the full browser pass"
   description: >-
-    CAP-8. Remove what is left of the old form, rewrite the tests that assumed the single form, and run a real-browser pass at 320px and 200% zoom in both themes for Create and Import, plus an Impeccable audit of the whole quiz.
+    CAP-8. Remove what is left of the old form, rewrite the tests that assumed the single form, and run a real-browser pass at 320px and 200% zoom in both themes for Create and Import, plus an Impeccable audit of the whole quiz. First-run Onboarding shows one Back only, not the shell's step Back beside Onboarding's own leave action.
   invoke_dev_with: >-
     Read CLAUDE.md, DESIGN.md, docs/agents/INDEX.md and docs/agents/verifying-your-work.md first. Fetch origin/dev before starting. Run the four gates: bun run lint, bun run build, bun run test, bun run check:contrast. Where UI changes, do a browser pass at 320, 390 and desktop widths in both themes. Stage by explicit path only. Policy tests must pass unchanged; only tests that assume the old form are rewritten.

@@ -1,0 +1,1520 @@
+diff --git a/_bmad-output/specs/spec-create-wallet-quiz/stories/4-review-step-and-the-network-change-reset.md b/_bmad-output/specs/spec-create-wallet-quiz/stories/4-review-step-and-the-network-change-reset.md
+new file mode 100644
+index 0000000..38d52d9
+--- /dev/null
++++ b/_bmad-output/specs/spec-create-wallet-quiz/stories/4-review-step-and-the-network-change-reset.md
+@@ -0,0 +1,154 @@
++---
++title: 'Review step and the Network-change reset'
++type: 'feature'
++created: '2026-10-30'
++status: 'in-progress'
++baseline_revision: a55b198b15712bf19d6342afe866e891241c8420
++review_loop_iteration: 0
++followup_review_recommended: false
++context:
++  - '{project-root}/_bmad-output/implementation-artifacts/epic-20-context.md'
++  - '{project-root}/_bmad-output/specs/spec-create-wallet-quiz/SPEC.md'
++  - '{project-root}/_bmad-output/specs/spec-create-wallet-quiz/quiz-steps.md'
++  - '{project-root}/docs/agents/INDEX.md'
++  - '{project-root}/docs/agents/verifying-your-work.md'
++warnings: [oversized]
++deferred: []
++---
++
++<intent-contract>
++
++## Intent
++
++**Problem:** The walk ends on its last question with Create wallet, so nobody sees all their answers together before creating. Changing Network on step 1 also only resets the Node and an untouched Signing Check, so answers made for the old Network (No Open Check, 30 seconds, Passkey-Derived on an unbound address) stay selected and are met later as blocked options.
++
++**Approach:** Add a Review step at the end of the walk: every applicable answer with a Change button, and Create wallet. A pure reconcile function runs on every Network change: it reads the new Network's legality from `describeOptions`, keeps legal answers, resets illegal ones to the pre-selection, and the flow shows a polite text line naming what was reset.
++
++## Boundaries & Constraints
++
++**Always:**
++- Review is the last step of the walk, after Signing Check, for Generate and Import. Counter: Generate "Step 8 of 8" on the review, Import "Step 6 of 6". The last walk question now shows Next; Create wallet is on step 2 and on the Review only. Both call the same `handleCreate`.
++- Review lists every applicable answer once: Label, Network, Node, Seed Method, Passkey choice (only when Passkey-Derived), Signature type, Open Check, Auto-lock, Signing Check. Import omits Seed Method, Passkey choice and Signature type. Each row has a **Change** button (accessible name "Change <term>", 44px target on coarse pointers) that goes to the step that asks it, with the answer kept.
++- One source for rows. Each `WALK_QUESTIONS` entry gains a `summary` (its rows, each tagged with the step id that asks it) and one formatter per answer is shared by the rows, the step-2 list and the reset line. Step 2's list and the Review read the same rows. A test fails if a registry entry yields no row.
++- After Change, Next goes to the Review, not the next question (assumption in SPEC.md). Back stays one step back. The return flag clears on arriving at the Review. Done in the Flow's `onIndex` wrapper (a forward move while the flag is set goes to the Review); `QuizShell` is not changed.
++- The reconcile reads legality from `describeOptions(next Network)` (`.seedMethod[x].available`, `.openCheck[x].available`, `.autoLock[minutes].available`, `.signing[x].available`). It never re-derives a rule. One `preselection(network, capability)` (Seed Method stored, Open Check passkey if capability is yes else pin, auto-lock 5, Signing Check per `defaultSigning`) is shared by the initial state and the reset.
++- Order: Seed Method first; if Passkey-Derived is kept, Signing Check stays passkey and touched; if it was reset to stored, Signing Check returns to the new pre-selection and is untouched. Then Open Check, auto-lock, and an unavailable Signing Check. A custom Node always resets to built-in (existing behaviour: a Node was proven for one Network only) and is named only when it was custom.
++- An untouched Signing Check keeps following the Network's pre-selection silently, as today. It is not an answer the person made, so it is not named. A Signing Check reset because Seed Method fell back is named.
++- The line is visible text under Network on step 1, in an always-mounted `role="status"` / `aria-live="polite"` region, naming each reset question and its new value (for example "Changed to Mainnet. Reset to the recommended answer: Open Check is now App PIN; Auto-lock is now 5 minutes."). No reset means no line. Each Network change replaces the line; it clears when the step changes. Words or icon, never colour alone; no new colour token.
++- Answers that were reset are not restored if the person switches back.
++- Create wallet still guards `options.combination.ok`, label and custom-Node checks, so policy refuses any illegal combination before any write, as today. Focus goes to the Review heading (the shell already does this). PIN fields show on step 2 and on the Review only (hidden, not unmounted, elsewhere). Import's Seed field stays mounted once. No secret enters state; the Review shows no Seed and no PIN.
++
++**Never:** Change `describeOptions`, `policy.ts`, any pre-selection value, or any legality rule. Hard-code which answers a Network makes illegal. Add or change a question. Change `QuizShell`, Configure, PIN entry, the Seed backup or the written-Seed step. Remove the existing Passkey/Seed/PIN mounting patterns. Animate a step change. Re-add a Recommended panel or Customise toggle (story 5 deletes leftovers).
++
++## I/O & Edge-Case Matrix
++
++| Scenario | Input / State | Expected Output / Behavior | Error Handling |
++|----------|--------------|---------------------------|----------------|
++| Review (Generate) | finish the walk, Next on Signing Check | "Review", "Step 8 of 8", a row and a Change for each applicable answer, Create wallet in the footer, PIN fields if an App PIN is chosen | Blocked verdict shows the existing warning Alert, Create `aria-disabled` |
++| Review (Import) | Import walk | "Step 6 of 6"; no Seed Method, Passkey or Signature type row | n/a |
++| Change then Next | Review, Change on Node, edit, Next | Node step keeps the answer; Next lands on the Review with the edit shown | n/a |
++| Change on Network | Review, Change on Network row | Step 1; Next lands on the Review (Label rules still block Next) | Label error blocks Next as today |
++| Testnet to Mainnet, illegal answers | No Open Check, 30 seconds, custom Node | Open Check to pre-selection, auto-lock to 5, Node to built-in; line names all three | n/a |
++| Testnet to Mainnet, legal answers | App PIN, 15 minutes, Passkey-Derived on a bound host | Kept; no line | n/a |
++| Derived on an unbound or unknown host | Passkey-Derived chosen, Network to Mainnet | Seed Method to Stored, Signing Check to the new pre-selection; both named; Passkey-Derived stays visible, `aria-disabled`, with its reason | n/a |
++| Nothing differs | Network changed with only pre-selections set | No line, no reset | n/a |
++| Back and forth | Reset on Mainnet, back to Testnet | Reset answers stay at pre-selection; a new line only if something resets again | n/a |
++| Create from Review | Same answers as step 2 | Same `createStoredWallet` / `createDerivedWallet` / `importStoredWallet` call as step 2 | Refusals show as today |
++
++</intent-contract>
++
++## Code Map
++
++- `src/components/wallet/CreateWalletFlow.tsx` -- `CreateWalletForm`: `quizSteps` (name-network, recommended, then `walk.map`), `SHORTCUT_INDEX = 1`, `FIRST_WALK_INDEX = 2`, `quizIndex`; `changeNetwork` (resets Node; sets signing to passkey if derived, else follows `defaultSigning` while `!signingTouched`); initial `useState`s for the pre-selections (`seedMethod 'stored'`, `openCheck` by capability, `autoLockMinutes 5`, `signing defaultSigning('testnet')`); `showPin` (step 2 or last step: now step 2 or Review); `onIndex` wrapper (clears `seedError`); `createButton` is also `finalAction`; `describeOptions(...)` call (line ~238) with `origin`, `capability`, `imported`; `handleCreate` guards stay; blocked `Alert` shows when `quizIndex !== 0`. `origin` is a memo from `getRpId()`, undefined when unknown.
++- `src/components/wallet/WalletQuestions.tsx` -- `NameAndNetworkStep` (add the status line region under `NetworkChoice`), `RecommendedList` (builds rows inline: move to shared rows, takes `rows`), question renders. Add `ReviewStep` (rows + Change). Panel vocabulary: `panel-well`, `dl`.
++- `src/components/wallet/walk-questions.ts` -- `WALK_QUESTIONS`, `walkQuestions(imported)`, `VERDICT_KEYS`. Add `summary`, `answerRows(props)`, shared formatters. It imports renders from `WalletQuestions`; keep `AnswerRow` as a type-only import to avoid a runtime cycle.
++- `src/components/wallet/network-reset.ts` (new) -- pure `reconcileForNetwork` and `preselection`.
++- `src/components/wallet/QuizShell.tsx` -- read only. Footer is Back, `secondary`, then `primary` or Next or `finalAction` on the last step; heading focus on step change; `blocked`.
++- `src/lib/crypto/policy.ts:232` -- `describeOptions`: read-only legality. Mainnet makes `openCheck.none`, `autoLock` 0.5, and Passkey-Derived (temporary or unknown origin) unavailable. `signing` is unavailable only for derived + non-passkey. `requiresWrittenSeed` is a verdict, not an illegal answer.
++- `src/components/wallet/check-controls.tsx`, `NetworkChoice.tsx`, `src/lib/minutes-label.ts` -- reuse; do not restyle. `src/components/ui/button.tsx` -- `size="sm"`, `variant="outline"`; coarse-pointer sizing as in `Choice`.
++- `src/components/wallet/__tests__/create-wallet-flow.test.tsx` -- helpers `GENERATE_STEPS` (add 'Review'), `goToStep`, `createButton` (now goes to 'Review'), `switchNetwork` (note it goes back to step 1; with a Change flag unset it walks forward), `summary()`. "of 7" strings become "of 8". Tests that need rewriting because the old behaviour changes: "Passkey-Derived on Mainnet at a b-cdn.net origin ... creation is refused" (derived now resets to Stored), "Mainnet: no Open Check and an auto-lock under a minute..." (reached by switching Network; now reset), "Testnet may use no Open Check; switching to Mainnet then blocks it" (now resets). `h.policyOverride` (line ~24) lets a test make `describeOptions` return a refusing `combination` or a permissive policy; the "a policy that allows everything is believed" test must still pass, since reconcile reads `describeOptions`. The `startMainnetPasskeyOnly` and written-Seed tests press Create from the last walk step and must go to the Review.
++- `src/components/wallet/__tests__/add-wallet-import.test.tsx` -- "of 5" becomes "of 6"; `walk`, the Import walk to step 5, final Import from step 5 (now the Review).
++- `src/components/wallet/__tests__/walk-questions.test.tsx` -- extend for `summary`; the coverage tests stay. `quiz-shell.test.tsx` and policy tests unchanged.
++- Carried from stories 1 to 3: Seed field and PIN fields are mounted once and only hidden (unmounting clears them); focus goes to the step `h2`; footer actions go through `actionHost`; nothing styles `:focus`; `outline-none` is banned; the Seed refused at create returns to step 1. Story 3's audit notes (two stacked Back buttons, sub-44px footer buttons, the App PIN field appearing on the last step) are story 5's, except that the PIN field now sits on the Review beside Create wallet.
++
++## Tasks & Acceptance
++
++**Execution:**
++- `src/components/wallet/network-reset.ts` -- new pure `preselection(network, capability)` and `reconcileForNetwork(answers, nextNetwork, ctx)` returning the next answers and the list of `{ question, to }` that were reset, using `describeOptions` for legality -- one place for the reset rule
++- `src/components/wallet/walk-questions.ts` -- add `summary` and shared formatters to the registry; export `answerRows(props)` with the step id on each row; Label and Network rows come from the fixed step 1
++- `src/components/wallet/WalletQuestions.tsx` -- `RecommendedList` takes rows; add `ReviewStep` with a Change per row; add the polite status region under Network in `NameAndNetworkStep`
++- `src/components/wallet/CreateWalletFlow.tsx` -- add the Review step after the walk; Change handler and return-to-review flag in `onIndex`; use `reconcileForNetwork` in `changeNetwork` and keep the existing Node reset; keep a `resetNote` state cleared on a step change; initial state from `preselection`; `showPin` on step 2 and the Review
++- `src/components/wallet/__tests__/network-reset.test.tsx` -- new. Exhaustive: for every pair of Networks, capability (yes, no, unknown), origin (bound, temporary, unknown), Seed Method, Open Check, auto-lock, Signing Check, imported or not: after the reconcile every selected answer is `available` in `describeOptions(next)`, and every answer that was available there is unchanged
++- `src/components/wallet/__tests__/create-wallet-flow.test.tsx`, `add-wallet-import.test.tsx`, `walk-questions.test.tsx` -- update helpers and counts; rewrite the three tests above; add tests for the matrix (Review rows and Change, Next returns, Import Review, reset line text and polite role, no line when nothing resets, Create from Review equals Create from step 2, Back keeps the Seed, PIN and answers)
++
++**Acceptance Criteria:**
++- Given the walk is finished, when Next is pressed on Signing Check, then the heading "Review" shows with "Step 8 of 8" (Import "6 of 6"), every applicable answer as text with its own Change, and Create wallet in the footer
++- Given a Change on any row, when its question renders, then the answer is as it was, and Next lands on the Review showing any edit
++- Given No Open Check, 30 seconds and a custom Node on Testnet, when Network is changed to Mainnet, then Open Check, auto-lock and Node are at their pre-selections, one visible polite status line names those three, and the Review shows the new values
++- Given only legal answers, when Network changes, then they are unchanged and no line shows
++- Given Passkey-Derived on an unbound address, when Network changes to Mainnet, then Seed Method is Stored, Signing Check is its pre-selection, the Passkey-Derived option stays visible and `aria-disabled` with its reason, and both resets are named
++- Given any Network change, then no selected answer is unavailable under `describeOptions` for the new Network (the exhaustive test fails otherwise)
++- Given the Review, when Create wallet is pressed, then the call matches step 2's for the same answers, and a refusing policy blocks it before any keystore call
++- Given first-run Onboarding and the chooser's add screen, then the Review and the reset behave identically
++
++## Spec Change Log
++
++## Review Triage Log
++
++### 2026-10-30 — Review pass
++- verdicts: 29 findings — high 0, medium 4, low 16, false 9, maybe-false 0
++- findings:
++  - Blind hunter
++  - `[low]` `[reject]` The reset line is cleared on the next step and never reaches the Review — it matches the contract ("clears when the step changes"; the Review shows the reconciled values); the fix would change the contract, and the harm is small
++  - `[medium]` `[patch]` `returnToReview` stays set after Change then Back, so "Walk me through it" then Next jumps to the Review and skips questions (verified: `goToIndex` clears the flag only on reaching the Review, and the Walk button calls `setQuizIndex` directly) — patch (fixed): Walk me through it now clears the return-to-Review flag; test added (Change Node, Back, Walk, Next lands on Seed Method): clear the flag when "Walk me through it" is pressed, plus a test for Change, Back, Walk, Next expecting Seed Method (same root as the Edge, Gap and Auditor flag rows)
++  - `[low]` `[patch]` Import and Review "no secret" assertions use `textContent`, which skips input values, and the Review claims "no PIN" with no PIN assertion (verified at create-wallet-flow.test.tsx:1185 and add-wallet-import.test.tsx:205/335; a Seed rendered as text would still be caught) — patch (fixed for the Review test): added a Seed-in-fields assertion and a PIN-field-empty assertion, and the comment now says what is checked; the Import test was not in this round: add a PIN assertion to the Review test and make the comment say what is actually checked
++  - `[low]` `[patch]` The `from` loop in the exhaustive reconcile test never reaches `reconcileForNetwork` and is silenced with `void from` (verified at network-reset.test.tsx:19,45) — patch (fixed): loop and `void from` deleted; case floor lowered to 5000 to match: delete the loop and the `void`
++  - `[low]` `[reject]` The invariant check does not assert `reset` equals the real diff or `signingTouched` — the spec's own acceptance condition (selected answers legal, legal answers kept) is met; extra assertions add test complexity for no demonstrated defect
++  - `[low]` `[patch]` Test title "...a later change replaces it" never makes a second reset (verified at create-wallet-flow.test.tsx:1304) — patch (fixed): test renamed to "...stays clear after going back and forth": rename the test to what it checks
++  - `[low]` `[reject]` `nodeDraft` is not cleared when the Node resets (verified: `changeNetwork` does not call `setNodeDraft`) — `verifiedNode` is cleared so a stale draft must be re-tested before use; existing behaviour. The `passkeyChoice`/`algorithm` part is false: neither depends on Network in `describeOptions`
++  - `[low]` `[patch]` The Mainnet sentence is written twice (WalletQuestions.tsx:124 and :146) and will diverge — patch (fixed): one MAINNET_RULE constant used in both places: one shared constant. The English line in `resetLine` is not a defect
++  - `[low]` `[reject]` Live region: `role="status"` plus `aria-live` is redundant but harmless, the empty `<p>` leaves a 6px gap under Network (cosmetic); the "not hidden" and "announced once" claims have nothing that disproves or confirms a defect
++  - `[low]` `[reject]` Focus and the step counter after Change are untested — the shell focuses the step heading on every step change (carried from story 1); a test gap only, no wrong behaviour shown
++  - `[low]` `[reject]` No Import test for Network change, Change on an Import row, or the duplicate-Seed return — `changeNetwork` passes `imported`, the unit matrix covers it, and the return to step 1 is existing, unchanged code (CreateWalletFlow.tsx:400)
++  - `[low]` `[reject]` Doc slip: long header comment, `FIRST_WALK_INDEX`/`SHORTCUT_INDEX` constants (they are named, not magic) and an untracked story file (committed with the story, not a code defect); no named harm
++  - Edge case hunter
++  - `[false]` `[reject]` Change has no 44px coarse-pointer target — `Button size="sm"` carries `pointer-coarse:h-11` (button.tsx:77) and "Change" at `text-base` with `px-3` is wider than 44px
++  - `[medium]` `[patch]` Stale `returnToReview` after Change then Back and Walk or Next — same defect as the Blind row; patch (fixed): Walk me through it now clears the return-to-Review flag; test added (Change Node, Back, Walk, Next lands on Seed Method) shared with it
++  - `[false]` `[reject]` `changeAnswer` skips `setSeedError(null)` — `seedError` is only set on the return to step 1, and the `goToIndex` that leaves step 1 already cleared it, so it is null on the Review
++  - `[false]` `[reject]` Auto-lock legality read with the old Open Check — `describeOptions` computes `autoLock` from `checkAutoLock(lockNetworks, minutes)`, which takes no Open Check
++  - `[false]` `[reject]` Two Network changes before a re-render read stale closure values — each click is a separate discrete event and React re-renders between them
++  - `[low]` `[reject]` Custom Node draft kept after reset — same as the Blind `nodeDraft` row
++  - `[false]` `[reject]` The inverted Mainnet No Open Check test left Create unguarded — the `policyOverride` test still asserts `aria-disabled` and no keystore call; the guard code is unchanged
++  - Verification gap reviewer
++  - `[medium]` `[patch]` Change on Node, Back, Walk, Next lands on the Review (pre-verified gap) — patch (fixed): Walk me through it now clears the return-to-Review flag; test added (Change Node, Back, Walk, Next lands on Seed Method), same as the Blind flag row
++  - `[false]` `[reject]` Walk bypasses `goToIndex`, so `seedError` is not cleared — `seedError` is already null on step 2 because the move into step 2 cleared it
++  - `[low]` `[reject]` Reset line is gone once the person presses Next — the contract says it clears when the step changes; no change wanted
++  - `[low]` `[reject]` No component test of a Network change during Import — the reviewer found no observable regression; the unit matrix covers `imported`
++  - Intent alignment auditor
++  - `[low]` `[reject]` Reset line visible only on step 1 — as the contract states; the fix would edit the contract
++  - `[false]` `[reject]` Create wallet only on step 2 and the Review — this is what the contract says
++  - `[medium]` `[patch]` Flag not tied to the changed question; not exercised via Back — same defect as the Blind flag row; patch (fixed): Walk me through it now clears the return-to-Review flag; test added (Change Node, Back, Walk, Next lands on Seed Method) shared with it
++  - `[low]` `[reject]` No render test of an Import Network change — see the Gap row
++  - `[false]` `[reject]` The strongest guarantee lives at the pure surface — the contract asks for exactly that exhaustive test; a coverage description, not a defect
++  - `[false]` `[reject]` AD-28 tests rewritten to assert the reset — policy guard unchanged and its refusal test remains
++
++## Design Notes
++
++- Resolved without asking: "legal" means available under `describeOptions` for the new Network. Network alone makes only No Open Check, 30 seconds and Passkey-Derived illegal; passkey-capability illegality does not change with Network and is not touched here.
++- Resolved without asking: a custom Node is reset on every Network change (already so, per the code); it is named only if it was custom. An untouched Signing Check following the Network's pre-selection is not a reset, since the person never chose it.
++- Resolved without asking (SPEC assumption): after Change, Next goes to the Review. Back remains one step back, so no new Back rule is needed; the flag clears on reaching the Review.
++- Resolved without asking: the reset line sits on step 1, the only place Network changes (the Review's Change on Network goes there), and clears when the step changes; the Review shows the reconciled values.
++- The Review row list adds "Passkey" (new or existing) when Passkey-Derived is chosen, because FR-91 says every applicable answer. Step 2 shows it too through the shared rows.
++- Golden example of the reset result:
++  `reconcileForNetwork({ seedMethod: 'stored', openCheck: 'none', autoLockMinutes: 0.5, signing: 'standard', signingTouched: false, nodeMode: 'custom' }, 'mainnet', ctx)` returns Open Check pin or passkey by capability, auto-lock 5, signing `defaultSigning('mainnet')`, Node built-in, and reset `[Open Check, Auto-lock, Node]` (Signing Check not named).
++
++## Verification
++
++**Commands:**
++- `bun run lint` -- expected: no errors
++- `bun run build` -- expected: `tsc -b` and Vite pass
++- `bun run test` -- expected: all pass; policy tests unchanged
++- `bun run check:contrast` -- expected: pass
++
++**Manual checks (if no CLI):**
++- Playwright MCP only, dev server, fresh profile: Create and Import walks at 320, 390 and desktop, dark and light, to the Review; Change and Next returns; on Testnet choose No Open Check and 30 seconds, then switch to Mainnet and read the line (display only, nothing created, funded or signed on Mainnet). Check focus lands on the Review heading, the line is announced politely, no sideways scroll, Back, Next and Create stay reachable in the footer.
+diff --git a/src/components/wallet/CreateWalletFlow.tsx b/src/components/wallet/CreateWalletFlow.tsx
+index c7bd1d9..13c8ca7 100644
+--- a/src/components/wallet/CreateWalletFlow.tsx
++++ b/src/components/wallet/CreateWalletFlow.tsx
+@@ -8,9 +8,11 @@ import { RENAME_ERRORS } from '@/components/wallet/rename-copy'
+ import {
+   NameAndNetworkStep,
+   RecommendedList,
++  ReviewStep,
+   type WalletQuestionsProps,
+ } from '@/components/wallet/WalletQuestions'
+-import { walkQuestions } from '@/components/wallet/walk-questions'
++import { answerRows, resetLine, walkQuestions } from '@/components/wallet/walk-questions'
++import { defaultSigning, preselection, reconcileForNetwork } from '@/components/wallet/network-reset'
+ import { QuizShell, type QuizStep } from '@/components/wallet/QuizShell'
+ import { SeedReveal } from '@/components/wallet/SeedReveal'
+ import { WrittenSeedConfirm } from '@/components/wallet/WrittenSeedConfirm'
+@@ -114,11 +116,6 @@ const FIRST_WALK_INDEX = 2
+ 
+ const MAX_PIN_FIELD_HINT = 'The App PIN must be at least 6 digits.'
+ 
+-function defaultSigning(network: NetworkId, capability: PasskeyCapability): SigningKind {
+-  if (network !== 'mainnet') return 'standard'
+-  return capability === 'yes' ? 'passkey' : 'pin'
+-}
+-
+ export function CreateWalletFlow(props: CreateWalletFlowProps) {
+   const [capability, setCapability] = useState<PasskeyCapability | null>(null)
+ 
+@@ -140,6 +137,10 @@ function CreateWalletForm({ capability, onDone, onInProgressChange, defaultLabel
+   const group = useId()
+   const [step, setStep] = useState<Step>('questions')
+   const [quizIndex, setQuizIndex] = useState(0)
++  // Set by a Change on the Review: the next forward move goes back to the Review.
++  const [returnToReview, setReturnToReview] = useState(false)
++  // What the last Network change reset, shown under Network on step 1 only.
++  const [resetNote, setResetNote] = useState<string | null>(null)
+   const [label, setLabel] = useState(defaultLabel)
+   const [network, setNewWalletNetwork] = useState<NetworkId>('testnet')
+   const [nodeMode, setNodeMode] = useState<'builtin' | 'custom'>('builtin')
+@@ -147,11 +148,11 @@ function CreateWalletForm({ capability, onDone, onInProgressChange, defaultLabel
+   const [verifiedNode, setVerifiedNode] = useState<string | null>(null)
+   const [nodeReason, setNodeReason] = useState<string | null>(null)
+   const [nodeBusy, setNodeBusy] = useState(false)
+-  const [seedMethod, setSeedMethod] = useState<SeedMethod>('stored')
++  const [seedMethod, setSeedMethod] = useState<SeedMethod>(() => preselection('testnet', capability).seedMethod)
+   const [algorithm, setAlgorithm] = useState<'ed25519' | 'secp256k1'>('ed25519')
+-  const [openCheck, setOpenCheck] = useState<NewOpenCheck>(capability === 'yes' ? 'passkey' : 'pin')
+-  const [autoLockMinutes, setAutoLockMinutes] = useState(5)
+-  const [signing, setSigning] = useState<SigningKind>(defaultSigning('testnet', capability))
++  const [openCheck, setOpenCheck] = useState<NewOpenCheck>(() => preselection('testnet', capability).openCheck)
++  const [autoLockMinutes, setAutoLockMinutes] = useState(() => preselection('testnet', capability).autoLockMinutes)
++  const [signing, setSigning] = useState<SigningKind>(() => preselection('testnet', capability).signing)
+   const [signingTouched, setSigningTouched] = useState(false)
+   const [appPin, setAppPin] = useState<{ exists: boolean; tries: number } | null>(null)
+   // A failed read is its own state: never rendered as "no App PIN yet".
+@@ -271,12 +272,23 @@ function CreateWalletForm({ capability, onDone, onInProgressChange, defaultLabel
+   function changeNetwork(next: NetworkId) {
+     setNewWalletNetwork(next)
+     networkRef.current = next
++    // Keep what is still legal on the new Network, put the rest back to the
++    // recommended answer, and say which. The rules come from `describeOptions`.
++    const { answers, reset } = reconcileForNetwork(
++      { seedMethod, openCheck, autoLockMinutes, signing, signingTouched, nodeMode },
++      next,
++      { capability, origin, imported: !!importSource },
++    )
++    setSeedMethod(answers.seedMethod)
++    setOpenCheck(answers.openCheck)
++    setAutoLockMinutes(answers.autoLockMinutes)
++    setSigning(answers.signing)
++    setSigningTouched(answers.signingTouched)
+     // A Node was proven for the network it was tested on, and only that one.
+     setNodeMode('builtin')
+     setVerifiedNode(null)
+     setNodeReason(null)
+-    if (seedMethod === 'passkey-derived') setSigning('passkey')
+-    else if (!signingTouched) setSigning(defaultSigning(next, capability))
++    setResetNote(resetLine(next, reset))
+   }
+ 
+   async function testNode() {
+@@ -617,25 +629,48 @@ function CreateWalletForm({ capability, onDone, onInProgressChange, defaultLabel
+       title: 'Your setup',
+       primary: createButton,
+       secondary: (
+-        <Button type="button" variant="outline" disabled={busy} onClick={() => setQuizIndex(FIRST_WALK_INDEX)}>
++        <Button type="button" variant="outline" disabled={busy} onClick={() => {
++            setReturnToReview(false)
++            setQuizIndex(FIRST_WALK_INDEX)
++          }}>
+           Walk me through it
+         </Button>
+       ),
+     },
+     ...walk.map((q) => ({ id: q.id, title: q.title })),
++    { id: 'review', title: 'Review' },
+   ]
++  const reviewIndex = quizSteps.length - 1
++  const rows = answerRows(questionProps)
++
++  function goToIndex(next: number) {
++    setSeedError(null)
++    setResetNote(null)
++    // After a Change, the next forward move lands on the Review, not the next question.
++    const target = returnToReview && next > quizIndex ? reviewIndex : next
++    if (target === reviewIndex) setReturnToReview(false)
++    setQuizIndex(target)
++  }
++
++  function changeAnswer(stepId: string) {
++    const at = quizSteps.findIndex((q) => q.id === stepId)
++    if (at < 0) return
++    setReturnToReview(true)
++    setQuizIndex(at)
++  }
+ 
+   const walkQuestion = quizIndex >= FIRST_WALK_INDEX ? walk[quizIndex - FIRST_WALK_INDEX] : undefined
+-  // The PIN is used where Create wallet is: the shortcut step and the last walk step.
+-  const showPin = quizIndex === SHORTCUT_INDEX || quizIndex === quizSteps.length - 1
++  // The PIN is used where Create wallet is: the shortcut step and the Review.
++  const showPin = quizIndex === SHORTCUT_INDEX || quizIndex === reviewIndex
+ 
+   return (
+-    <QuizShell steps={quizSteps} index={quizIndex} onIndex={(next) => { setSeedError(null); setQuizIndex(next) }} busy={busy} actionHost={actionHost} finalAction={createButton}>
++    <QuizShell steps={quizSteps} index={quizIndex} onIndex={goToIndex} busy={busy} actionHost={actionHost} finalAction={createButton}>
+       {/* Mounted once and only hidden elsewhere: unmounting would clear a typed Seed. */}
+       {importSource && <div hidden={quizIndex !== 0} onChange={() => setSeedError(null)}>{importSource.field(busy, seedError)}</div>}
+-      {quizIndex === 0 && <NameAndNetworkStep {...questionProps} />}
+-      {quizIndex === 1 && <RecommendedList {...questionProps} />}
++      {quizIndex === 0 && <NameAndNetworkStep {...questionProps} resetNote={resetNote} />}
++      {quizIndex === 1 && <RecommendedList rows={rows} network={network} />}
+       {walkQuestion?.render(questionProps)}
++      {quizIndex === reviewIndex && <ReviewStep rows={rows} network={network} onChange={changeAnswer} disabled={busy} />}
+ 
+       {/* Mounted once and only hidden on step 1: a typed PIN survives a step change. */}
+       <div hidden={!showPin} className="flex flex-col gap-5">
+diff --git a/src/components/wallet/WalletQuestions.tsx b/src/components/wallet/WalletQuestions.tsx
+index 314973b..814e51e 100644
+--- a/src/components/wallet/WalletQuestions.tsx
++++ b/src/components/wallet/WalletQuestions.tsx
+@@ -6,14 +6,15 @@ import { Label } from '@/components/ui/label'
+ import { Axis, Choice } from '@/components/wallet/check-controls'
+ import { NetworkChoice } from '@/components/wallet/NetworkChoice'
+ import { minutesLabel } from '@/lib/minutes-label'
+-import { normalizeWalletName } from '@/lib/wallet-name'
+ import type { describeOptions, NewOpenCheck, SeedMethod, SigningKind } from '@/lib/crypto/policy'
+-import { builtInNodes, NETWORKS, type NetworkId } from '@/lib/xrpl/networks'
++import { builtInNodes, type NetworkId } from '@/lib/xrpl/networks'
++
++const MAINNET_RULE = 'On Mainnet an Open Check is required, and auto-lock is at least 1 minute.'
+ 
+ /**
+  * The per-wallet questions (AD-40), split by quiz step: `NameAndNetworkStep`
+  * (Label, Network), `RecommendedList` (the read-only list of the pre-selected
+- * answers) and the walk, one step per question (`WALK_QUESTIONS`: Node, Seed
++ * answers), `ReviewStep` (the same list with a Change on each row) and the walk, one step per question (`WALK_QUESTIONS`: Node, Seed
+  * Method, signature type, Open Check with auto-lock, Signing Check).
+  * Presentational only: every answer lives in the caller's state, and
+  * which answers are legal, and why one is not, arrive as `options`, the result of
+@@ -61,6 +62,9 @@ export interface WalletQuestionsProps {
+   signing: SigningKind
+   onSigning: (kind: SigningKind) => void
+ 
++  /** Step 1 only: what the last Network change put back to its recommended answer, or none. */
++  resetNote?: string | null
++
+   /** An import: the Seed fixes the Seed Method and the signature type, so neither is asked or summarised. */
+   imported?: boolean
+ }
+@@ -89,38 +93,59 @@ export function NameAndNetworkStep(p: WalletQuestionsProps) {
+         )}
+       </div>
+ 
+-      <NetworkChoice value={p.network} onChange={p.onNetworkChange} disabled={busy || p.nodeBusy} />
++      <div className="grid gap-1.5">
++        <NetworkChoice value={p.network} onChange={p.onNetworkChange} disabled={busy || p.nodeBusy} />
++        {/* Always mounted, so a screen reader hears the text arrive. Words only: no colour carries it. */}
++        <p role="status" aria-live="polite" className="text-sm">
++          {p.resetNote}
++        </p>
++      </div>
+     </>
+   )
+ }
+ 
++/** One answer as a labelled line. `step` is the id of the quiz step that asks it, so the Review can send the person back there. */
++export interface AnswerRow {
++  step: string
++  term: string
++  value: string
++}
++
+ /** Step 2: every applicable answer once, as text, with no radio. */
+-export function RecommendedList(p: WalletQuestionsProps) {
+-  const rows: [string, string][] = [
+-    ['Label', normalizeWalletName(p.label) === '' ? 'Named automatically' : normalizeWalletName(p.label)],
+-    ['Network', NETWORKS[p.network].label],
+-    ['Node', p.nodeMode === 'builtin' ? 'Built-in Nodes' : p.verifiedNode ? `${p.verifiedNode} (tested)` : 'Your own Node (not tested yet)'],
+-    ...(p.imported
+-      ? []
+-      : ([
+-          ['Seed Method', p.seedMethod === 'stored' ? 'Stored Seed' : 'Passkey-Derived Seed'],
+-          ['Signature type', p.algorithm === 'ed25519' ? 'Ed25519' : 'secp256k1'],
+-        ] as [string, string][])),
+-    ['Open Check', p.openCheck === 'pin' ? 'App PIN' : p.openCheck === 'passkey' ? 'Passkey' : 'No Open Check'],
+-    ['Auto-lock', minutesLabel(p.autoLockMinutes)],
+-    ['Signing Check', p.signing === 'standard' ? 'Standard' : p.signing === 'passkey' ? 'Passkey only' : 'App PIN only'],
+-  ]
++export function RecommendedList({ rows, network }: { rows: readonly AnswerRow[]; network: NetworkId }) {
+   return (
+     <section aria-label="Your setup" className="panel-well grid gap-2 px-3 py-2">
+       <dl className="grid gap-y-2 text-sm">
+-        {rows.map(([term, value]) => (
+-          <div key={term}>
+-            <dt className="text-muted-foreground">{term}</dt>
+-            <dd className="min-w-0 break-words">{value}</dd>
++        {rows.map((row) => (
++          <div key={row.term}>
++            <dt className="text-readout-muted">{row.term}</dt>
++            <dd className="min-w-0 break-words">{row.value}</dd>
++          </div>
++        ))}
++      </dl>
++      {network === 'mainnet' && <p className="text-sm">{MAINNET_RULE}</p>}
++    </section>
++  )
++}
++
++/** The last step: the same rows as step 2, each with its own Change. */
++export function ReviewStep({ rows, network, onChange, disabled }: { rows: readonly AnswerRow[]; network: NetworkId; onChange: (step: string) => void; disabled: boolean }) {
++  return (
++    <section aria-label="Your answers" className="panel-well grid gap-2 px-3 py-2">
++      <dl className="grid gap-y-3 text-sm">
++        {rows.map((row) => (
++          <div key={row.term} className="flex items-center justify-between gap-3">
++            <div className="min-w-0">
++              <dt className="text-readout-muted">{row.term}</dt>
++              <dd className="min-w-0 break-words">{row.value}</dd>
++            </div>
++            <Button type="button" size="sm" variant="outline" className="shrink-0" disabled={disabled} aria-label={`Change ${row.term}`} onClick={() => onChange(row.step)}>
++              Change
++            </Button>
+           </div>
+         ))}
+       </dl>
+-      {p.network === 'mainnet' && <p className="text-sm">On Mainnet an Open Check is required, and auto-lock is at least 1 minute.</p>}
++      {network === 'mainnet' && <p className="text-sm">{MAINNET_RULE}</p>}
+     </section>
+   )
+ }
+diff --git a/src/components/wallet/__tests__/add-wallet-import.test.tsx b/src/components/wallet/__tests__/add-wallet-import.test.tsx
+index b1728c1..5344c87 100644
+--- a/src/components/wallet/__tests__/add-wallet-import.test.tsx
++++ b/src/components/wallet/__tests__/add-wallet-import.test.tsx
+@@ -184,20 +184,25 @@ describe('Import with every lock closed', () => {
+     await openImport()
+     expect(button('Generate')).toBeTruthy()
+     const legends = () => Array.from(document.querySelectorAll('legend')).map((l) => l.textContent)
+-    expect(screen.getByText('Step 1 of 5')).toBeTruthy()
++    expect(screen.getByText('Step 1 of 6')).toBeTruthy()
+     typeSeed(SEED)
+     await click(button('Next'))
+-    expect(screen.getByText('Step 2 of 5')).toBeTruthy()
++    expect(screen.getByText('Step 2 of 6')).toBeTruthy()
+     const rows = Array.from(document.querySelectorAll('dt')).map((d) => d.textContent)
+     expect(rows).toEqual(['Label', 'Network', 'Node', 'Open Check', 'Auto-lock', 'Signing Check'])
+     expect(screen.queryAllByRole('radio').length).toBe(0)
+     await click(button('Walk me through it'))
+     const seen: string[] = []
+     for (const n of [3, 4, 5]) {
+-      expect(screen.getByText(`Step ${n} of 5`)).toBeTruthy()
++      expect(screen.getByText(`Step ${n} of 6`)).toBeTruthy()
+       seen.push(screen.getByRole('heading', { level: 2 }).textContent ?? '', ...legends())
+-      if (n < 5) await click(button('Next'))
++      await click(button('Next'))
+     }
++    // The Review: no Seed Method, Passkey or Signature type row, and no Seed shown.
++    expect(screen.getByText('Step 6 of 6')).toBeTruthy()
++    expect(screen.getByRole('heading', { level: 2 }).textContent).toBe('Review')
++    expect(Array.from(document.querySelectorAll('dt')).map((d) => d.textContent)).toEqual(['Label', 'Network', 'Node', 'Open Check', 'Auto-lock', 'Signing Check'])
++    expect(document.body.textContent).not.toContain(SEED)
+     expect(seen).toEqual(['Node', 'Node', 'Open Check and auto-lock', 'Open Check', 'Auto-lock after inactivity', 'Signing Check', 'Signing Check'])
+     expect(screen.queryByRole('button', { name: 'Next' })).toBeNull()
+     expect(button('Import wallet')).toBeTruthy()
+@@ -245,11 +250,11 @@ describe('the Seed field and step 1', () => {
+     expect(next.getAttribute('aria-disabled')).toBe('true')
+     expect(screen.getByText('Type your Seed to continue.')).toBeTruthy()
+     await click(next)
+-    expect(screen.getByText('Step 1 of 5')).toBeTruthy()
++    expect(screen.getByText('Step 1 of 6')).toBeTruthy()
+     typeSeed(SEED)
+     expect(button('Next').getAttribute('aria-disabled')).toBeNull()
+     await click(button('Next'))
+-    expect(screen.getByText('Step 2 of 5')).toBeTruthy()
++    expect(screen.getByText('Step 2 of 6')).toBeTruthy()
+   })
+ 
+   it('a Seed cleared by hand blocks Next again', async () => {
+@@ -279,7 +284,7 @@ describe('the Seed field and step 1', () => {
+     await openImport()
+     await submit('garbage-not-a-seed')
+     const reason = await screen.findByText(INVALID)
+-    expect(screen.getByText('Step 1 of 5')).toBeTruthy()
++    expect(screen.getByText('Step 1 of 6')).toBeTruthy()
+     expect(reason.closest('[hidden]')).toBeNull()
+     expect(seedInput().getAttribute('aria-describedby')).toBe(reason.id)
+     expect(button('Next').getAttribute('aria-disabled')).toBe('true') // the field was cleared
+@@ -291,7 +296,7 @@ describe('the Seed field and step 1', () => {
+     await openImport()
+     await submit()
+     const reason = await screen.findByText(DUPLICATE)
+-    expect(screen.getByText('Step 1 of 5')).toBeTruthy()
++    expect(screen.getByText('Step 1 of 6')).toBeTruthy()
+     expect(reason.closest('[hidden]')).toBeNull()
+   })
+ 
+@@ -300,7 +305,7 @@ describe('the Seed field and step 1', () => {
+     await openImport()
+     await submit()
+     await screen.findByText('The policy said no.')
+-    expect(screen.getByText('Step 2 of 5')).toBeTruthy()
++    expect(screen.getByText('Step 2 of 6')).toBeTruthy()
+   })
+ })
+ 
+@@ -388,23 +393,26 @@ describe('the master-key warning', () => {
+ })
+ 
+ describe('the walk, to its last step', () => {
+-  it('keeps the PIN and the Seed across Next and Back, and imports from step 5 with a changed answer', async () => {
++  it('keeps the PIN and the Seed across Next and Back, and imports from the Review with a changed answer', async () => {
+     await openImport()
+     typeSeed(SEED)
+     await click(button('Next'))
+     const pinField = () => document.querySelector('input[id$="-pin"]') as HTMLInputElement
+     const pinHidden = () => pinField().closest('[hidden]') !== null
+-    expect(screen.getByText('Step 2 of 5')).toBeTruthy()
++    expect(screen.getByText('Step 2 of 6')).toBeTruthy()
+     expect(pinHidden()).toBe(false)
+     pinField().value = '123456'
+     await click(button('Walk me through it'))
+-    expect(screen.getByText('Step 3 of 5')).toBeTruthy()
++    expect(screen.getByText('Step 3 of 6')).toBeTruthy()
+     expect(pinHidden()).toBe(true)
+     await click(button('Next'))
+-    expect(screen.getByText('Step 4 of 5')).toBeTruthy()
++    expect(screen.getByText('Step 4 of 6')).toBeTruthy()
+     expect(pinHidden()).toBe(true)
+     await click(button('Next'))
+-    expect(screen.getByText('Step 5 of 5')).toBeTruthy()
++    expect(screen.getByText('Step 5 of 6')).toBeTruthy()
++    expect(pinHidden()).toBe(true)
++    await click(button('Next'))
++    expect(screen.getByText('Step 6 of 6')).toBeTruthy()
+     expect(pinHidden()).toBe(false)
+     expect(pinField().value).toBe('123456')
+     expect(seedInput().value).toBe(SEED)
+@@ -412,16 +420,20 @@ describe('the walk, to its last step', () => {
+     await click(button('Back'))
+     await click(button('Back'))
+     await click(button('Back'))
+-    expect(screen.getByText('Step 2 of 5')).toBeTruthy()
++    await click(button('Back'))
++    expect(screen.getByText('Step 2 of 6')).toBeTruthy()
+     expect(pinHidden()).toBe(false)
+     expect(pinField().value).toBe('123456')
+     await click(button('Walk me through it'))
+     await click(button('Next'))
+     await click(button('Next'))
+-    expect(screen.getByText('Step 5 of 5')).toBeTruthy()
++    expect(screen.getByText('Step 5 of 6')).toBeTruthy()
++    await click(screen.getByRole('radio', { name: /^App PIN only/ }))
++    await click(button('Next'))
++    expect(screen.getByText('Step 6 of 6')).toBeTruthy()
+     expect(pinField().value).toBe('123456')
+     expect(seedInput().value).toBe(SEED)
+-    await click(screen.getByRole('radio', { name: /^App PIN only/ }))
++    expect(screen.getByText('App PIN only')).toBeTruthy()
+     await click(button('Import wallet'))
+     await waitFor(() => expect(h.importStoredWallet).toHaveBeenCalledTimes(1))
+     expect(h.importDuplicateReason).toHaveBeenCalledWith(SEED)
+diff --git a/src/components/wallet/__tests__/create-wallet-flow.test.tsx b/src/components/wallet/__tests__/create-wallet-flow.test.tsx
+index 0173ec3..101d5db 100644
+--- a/src/components/wallet/__tests__/create-wallet-flow.test.tsx
++++ b/src/components/wallet/__tests__/create-wallet-flow.test.tsx
+@@ -88,8 +88,8 @@ async function mount(props: Parameters<typeof CreateWalletFlow>[0] = {}) {
+   await click(walkButton())
+ }
+ 
+-/** The Generate steps in order. The walk is steps 3 to 7. */
+-const GENERATE_STEPS = ['Name and network', 'Your setup', 'Node', 'Seed Method', 'Signature type', 'Open Check and auto-lock', 'Signing Check']
++/** The Generate steps in order. The walk is steps 3 to 7; the Review is step 8. */
++const GENERATE_STEPS = ['Name and network', 'Your setup', 'Node', 'Seed Method', 'Signature type', 'Open Check and auto-lock', 'Signing Check', 'Review']
+ const currentIndex = () => {
+   const m = /^Step (\d+) of (\d+)$/.exec(screen.getByText(/^Step \d+ of \d+$/).textContent ?? '')
+   return Number(m![1]) - 1
+@@ -113,6 +113,17 @@ async function switchNetwork(name: RegExp) {
+   await click(walkButton())
+ }
+ 
++/** From any step: back to step 1 and pick the Network, staying there to read the reset line. */
++async function switchNetworkOnStepOne(name: RegExp) {
++  goToStep('Name and network')
++  await click(radioNamed(name))
++}
++/** The polite line under Network on step 1: '' when none shows. */
++const resetNote = () => {
++  const region = document.querySelector('[role="status"][aria-live="polite"]')
++  return region?.textContent ?? ''
++}
++
+ const nextButton = () => screen.getByRole('button', { name: 'Next' })
+ const walkButton = () => screen.getByRole('button', { name: 'Walk me through it' })
+ /** The read-only list on step 2. */
+@@ -138,9 +149,7 @@ const legends = () =>
+     .filter((l) => !l.closest('[hidden]'))
+     .map((l) => l.textContent)
+ const createButton = () => {
+-  const now = screen.queryByRole('button', { name: /Create wallet/ })
+-  if (now) return now
+-  goToStep('Signing Check')
++  goToStep('Review')
+   return screen.getByRole('button', { name: /Create wallet/ })
+ }
+ const click = async (el: HTMLElement) => act(async () => void fireEvent.click(el))
+@@ -162,9 +171,9 @@ beforeEach(() => {
+ afterEach(cleanup)
+ 
+ describe('the quiz shell', () => {
+-  it('opens on Step 1 of 7 with Back inert and Next in place of Create wallet', async () => {
++  it('opens on Step 1 of 8 with Back inert and Next in place of Create wallet', async () => {
+     await mountCollapsed()
+-    expect(screen.getByText('Step 1 of 7')).toBeTruthy()
++    expect(screen.getByText('Step 1 of 8')).toBeTruthy()
+     expect(screen.getByRole('button', { name: 'Back' }).getAttribute('aria-disabled')).toBe('true')
+     expect(nextButton()).toBeTruthy()
+     expect(screen.queryByRole('button', { name: /Create wallet/ })).toBeNull()
+@@ -172,20 +181,26 @@ describe('the quiz shell', () => {
+ })
+ 
+ describe('the questions and their pre-selected answers', () => {
+-  it('asks one question per step, in the FR-60 order, each with "Step n of 7"', async () => {
++  it('asks one question per step, in the FR-60 order, each with "Step n of 8"', async () => {
+     await mount()
+     const seen: [string | null, string | null, (string | null)[]][] = []
+-    for (const title of GENERATE_STEPS.slice(2)) {
++    for (const title of GENERATE_STEPS.slice(2, 7)) {
+       goToStep(title)
+       seen.push([screen.getByText(/^Step \d of \d$/).textContent, screen.getByRole('heading', { level: 2 }).textContent, legends()])
+     }
+     expect(seen).toEqual([
+-      ['Step 3 of 7', 'Node', ['Node']],
+-      ['Step 4 of 7', 'Seed Method', ['Seed Method']],
+-      ['Step 5 of 7', 'Signature type', ['Signature type']],
+-      ['Step 6 of 7', 'Open Check and auto-lock', ['Open Check', 'Auto-lock after inactivity']],
+-      ['Step 7 of 7', 'Signing Check', ['Signing Check']],
++      ['Step 3 of 8', 'Node', ['Node']],
++      ['Step 4 of 8', 'Seed Method', ['Seed Method']],
++      ['Step 5 of 8', 'Signature type', ['Signature type']],
++      ['Step 6 of 8', 'Open Check and auto-lock', ['Open Check', 'Auto-lock after inactivity']],
++      ['Step 7 of 8', 'Signing Check', ['Signing Check']],
+     ])
++    // The last question now leads to the Review: Create wallet is on step 2 and the Review only.
++    expect(nextButton()).toBeTruthy()
++    expect(screen.queryByRole('button', { name: /Create wallet/ })).toBeNull()
++    goToStep('Review')
++    expect(screen.getByText('Step 8 of 8')).toBeTruthy()
++    expect(screen.getByRole('heading', { level: 2 }).textContent).toBe('Review')
+     expect(screen.queryByRole('button', { name: 'Next' })).toBeNull()
+     expect(screen.getByRole('button', { name: /Create wallet/ })).toBeTruthy()
+   })
+@@ -242,7 +257,7 @@ describe('Label and Network, then the recommended setup', () => {
+   it('step 2 on Testnet lists every answer once as text, with no radio, Create wallet primary and Walk me through it secondary', async () => {
+     await mountCollapsed()
+     await click(nextButton())
+-    expect(screen.getByText('Step 2 of 7')).toBeTruthy()
++    expect(screen.getByText('Step 2 of 8')).toBeTruthy()
+     expect(screen.queryAllByRole('radio').length).toBe(0)
+     expect(summary()).toEqual({
+       Label: 'My Wallet',
+@@ -322,10 +337,10 @@ describe('Label and Network, then the recommended setup', () => {
+     type(screen.getByLabelText('Confirm the App PIN'), '123456')
+     await click(screen.getByRole('button', { name: 'Create wallet' }))
+     expect((await screen.findByRole('alert')).textContent).toBe('Refused for a reason.')
+-    expect(screen.getByText('Step 2 of 7')).toBeTruthy()
++    expect(screen.getByText('Step 2 of 8')).toBeTruthy()
+   })
+ 
+-  it('the PIN fields appear on step 2 and the last step only, and a typed PIN and a chosen answer survive Next and Back', async () => {
++  it('the PIN fields appear on step 2 and the Review only, and a typed PIN and a chosen answer survive Next and Back', async () => {
+     await mountCollapsed()
+     const pin = () => screen.getByLabelText(/Choose an App PIN/) as HTMLInputElement
+     // The PIN fields render once the App PIN read resolves: wait for them, do not race it.
+@@ -340,6 +355,8 @@ describe('Label and Network, then the recommended setup', () => {
+     expect(pin().closest('[hidden]')).not.toBeNull()
+     await click(radioNamed('15 minutes'))
+     goToStep('Signing Check')
++    expect(pin().closest('[hidden]')).not.toBeNull()
++    goToStep('Review')
+     expect(pin().closest('[hidden]')).toBeNull()
+     expect(pin().value).toBe('123456')
+     goToStep('Your setup')
+@@ -360,7 +377,7 @@ describe('Label and Network, then the recommended setup', () => {
+     expect(screen.getByText('Use 40 characters or fewer.')).toBeTruthy()
+     expect(nextButton().getAttribute('aria-disabled')).toBe('true')
+     await click(nextButton())
+-    expect(screen.getByText('Step 1 of 7')).toBeTruthy()
++    expect(screen.getByText('Step 1 of 8')).toBeTruthy()
+     type(screen.getByLabelText('Label'), 'Fine')
+     expect(nextButton().getAttribute('aria-disabled')).toBeNull()
+   })
+@@ -368,7 +385,7 @@ describe('Label and Network, then the recommended setup', () => {
+   it('Walk me through it opens step 3, Passkey-Derived shows its choice and domain warning on the Seed Method step only, and Back returns to step 2', async () => {
+     h.capability = 'yes'
+     await mount()
+-    expect(screen.getByText('Step 3 of 7')).toBeTruthy()
++    expect(screen.getByText('Step 3 of 8')).toBeTruthy()
+     await click(nextButton())
+     await click(radioNamed(/^Passkey-Derived Seed/))
+     expect(radioNamed(/^Create a new passkey/).checked).toBe(true)
+@@ -425,18 +442,24 @@ describe('unavailable answers', () => {
+     expect(screen.queryByText(/Not available in this version yet/)).toBeNull()
+   })
+ 
+-  it('Passkey-Derived on Mainnet at a b-cdn.net origin is aria-disabled with the reason, and creation is refused', async () => {
++  it('Passkey-Derived on Mainnet at a b-cdn.net origin: switching Network resets it to Stored, and the option stays aria-disabled with its reason', async () => {
+     h.capability = 'yes'
+     h.rpId = 'sites-xrpl-bench-prod-pdbywc.b-cdn.net'
+     await mount()
+     await click(radioNamed(/^Passkey-Derived Seed/))
+     expect(radioNamed(/^Passkey-Derived Seed/).checked).toBe(true)
+-    await switchNetwork(/^Mainnet/)
++    await switchNetworkOnStepOne(/^Mainnet/)
++    expect(resetNote()).toBe('Changed to Mainnet. Reset to the recommended answer: Seed Method is now Stored Seed; Signing Check is now Passkey only.')
++    await click(nextButton())
++    await click(walkButton())
+     const derived = radioNamed(/^Passkey-Derived Seed/)
++    expect(radioNamed(/^Stored Seed/).checked).toBe(true)
++    expect(derived.checked).toBe(false)
+     expect(derived.getAttribute('aria-disabled')).toBe('true')
+     expect(screen.getAllByText(/tied to a temporary web address/).length).toBeGreaterThan(0)
+-    expect(createButton().getAttribute('aria-disabled')).toBe('true')
+-    await click(createButton())
++    // Policy still refuses a derived creation on this origin: nothing reaches the keystore from here.
++    await click(derived)
++    expect(derived.checked).toBe(false)
+     expect(h.createDerivedWallet).not.toHaveBeenCalled()
+     // Testnet is unaffected.
+     await switchNetwork(/^Testnet/)
+@@ -472,16 +495,20 @@ describe('unavailable answers', () => {
+     expect(screen.queryByText('Nothing is asked to open the wallet. Testnet and Devnet only.')).toBeNull()
+   })
+ 
+-  it('Testnet may use no Open Check; switching to Mainnet then blocks it with the reason', async () => {
++  it('Testnet may use no Open Check; switching to Mainnet resets it to the App PIN and says so', async () => {
+     await mount()
+     await click(radioNamed(/^No Open Check/))
+     expect(radioNamed(/^No Open Check/).checked).toBe(true)
+     expect(createButton().getAttribute('aria-disabled')).toBeNull()
+-    await switchNetwork(/^Mainnet/)
+-    expect(createButton().getAttribute('aria-disabled')).toBe('true')
++    await switchNetworkOnStepOne(/^Mainnet/)
++    expect(resetNote()).toBe('Changed to Mainnet. Reset to the recommended answer: Open Check is now App PIN.')
++    await click(nextButton())
++    await click(walkButton())
++    expect(radioNamed(/^No Open Check/).checked).toBe(false)
++    expect(radioNamed(/^No Open Check/).getAttribute('aria-disabled')).toBe('true')
++    expect(radioNamed('App PIN').checked).toBe(true)
+     expect(screen.getAllByText(/A Mainnet wallet needs an Open Check/).length).toBeGreaterThan(0)
+-    await click(createButton())
+-    expect(h.createStoredWallet).not.toHaveBeenCalled()
++    expect(createButton().getAttribute('aria-disabled')).toBeNull()
+   })
+ 
+   it('no PRF: both passkey answers are aria-disabled with the reason visible, and the defaults are the App PIN', async () => {
+@@ -605,7 +632,7 @@ describe('a failed App PIN read', () => {
+   it('says so with Retry, blocks Create, and recovers on retry', async () => {
+     h.pinReadFails = true
+     await mount()
+-    goToStep('Signing Check')
++    goToStep('Review')
+     expect((await screen.findByRole('alert')).textContent).toMatch(/Could not read the App PIN state/)
+     expect(screen.queryByLabelText(/Choose an App PIN/)).toBeNull()
+     expect(createButton().getAttribute('aria-disabled')).toBe('true')
+@@ -695,7 +722,7 @@ describe('the Node', () => {
+     expect(h.verifyNode).toHaveBeenCalledWith('testnet', 'wss://other.example.com')
+     expect(radioNamed(/^Built-in Nodes/).checked).toBe(true)
+     // It stays on the Node step, and Next is not blocked.
+-    expect(screen.getByText('Step 3 of 7')).toBeTruthy()
++    expect(screen.getByText('Step 3 of 8')).toBeTruthy()
+     expect(nextButton().getAttribute('aria-disabled')).toBeNull()
+   })
+ 
+@@ -703,8 +730,8 @@ describe('the Node', () => {
+     await mount()
+     await click(radioNamed(/^A Node you choose/))
+     expect(nextButton().getAttribute('aria-disabled')).toBeNull()
+-    goToStep('Signing Check')
+-    expect(screen.getByText('Step 7 of 7')).toBeTruthy()
++    goToStep('Review')
++    expect(screen.getByText('Step 8 of 8')).toBeTruthy()
+     await click(createButton())
+     expect(screen.getByText('Test the custom Node first, or use the built-in Nodes.')).toBeTruthy()
+     expect(h.createStoredWallet).not.toHaveBeenCalled()
+@@ -844,7 +871,7 @@ describe('Passkey-Derived Seed (story 6)', () => {
+     type(screen.getByLabelText(/Confirm the App PIN/), '123456')
+     await click(createButton())
+     expect(await screen.findByText('Cancelled. Nothing was created.')).toBeTruthy()
+-    expect(screen.getByText('Step 7 of 7')).toBeTruthy()
++    expect(screen.getByText('Step 8 of 8')).toBeTruthy()
+   })
+ 
+   it.each([
+@@ -863,7 +890,7 @@ describe('Passkey-Derived Seed (story 6)', () => {
+     type(screen.getByLabelText(/Confirm the App PIN/), '123456')
+     await click(createButton())
+     expect(await screen.findByText(message)).toBeTruthy()
+-    expect(screen.getByText('Step 7 of 7')).toBeTruthy()
++    expect(screen.getByText('Step 8 of 8')).toBeTruthy()
+   })
+ 
+   it('continuing from the ordinal commits the Wallet', async () => {
+@@ -947,7 +974,7 @@ describe('Written-Seed confirmation (story 7)', () => {
+   it('Cancel writes nothing and returns to the questions', async () => {
+     const done = await startMainnetPasskeyOnly()
+     await click(screen.getByRole('button', { name: 'Cancel' }))
+-    await screen.findByText('Step 7 of 7')
++    await screen.findByText('Step 8 of 8')
+     expect(screen.getByText(/Nothing was created/)).toBeTruthy()
+     expect(done).not.toHaveBeenCalled()
+     expect(h.startLockSession).not.toHaveBeenCalled()
+@@ -995,7 +1022,7 @@ describe('Written-Seed confirmation (story 7)', () => {
+ 
+     expect(await screen.findByText('Cancelled. Nothing was created.')).toBeTruthy()
+     expect(screen.queryByText('Write down your Seed')).toBeNull()
+-    expect(screen.getByText('Step 7 of 7')).toBeTruthy()
++    expect(screen.getByText('Step 8 of 8')).toBeTruthy()
+     expect(h.startLockSession).not.toHaveBeenCalled()
+   })
+ 
+@@ -1013,7 +1040,7 @@ describe('Written-Seed confirmation (story 7)', () => {
+     await click(screen.getByRole('button', { name: 'Check what I wrote' }))
+ 
+     expect(await screen.findByText('vault write failed')).toBeTruthy()
+-    expect(screen.getByText('Step 7 of 7')).toBeTruthy()
++    expect(screen.getByText('Step 8 of 8')).toBeTruthy()
+   })
+ 
+   it('Check and Cancel are inert once the confirmation is settled, while the keystore writes', async () => {
+@@ -1108,7 +1135,7 @@ describe('the wallet name and the questions component (chooser story 11)', () =>
+     expect(labelInput().getAttribute('aria-describedby')).toBe(text.id)
+     expect(nextButton().getAttribute('aria-disabled')).toBe('true')
+     await click(nextButton())
+-    expect(screen.getByText('Step 1 of 7')).toBeTruthy()
++    expect(screen.getByText('Step 1 of 8')).toBeTruthy()
+     expect(screen.queryByRole('button', { name: /Create wallet/ })).toBeNull()
+     expect(h.createStoredWallet).not.toHaveBeenCalled()
+   })
+@@ -1135,3 +1162,210 @@ describe('the wallet name and the questions component (chooser story 11)', () =>
+     expect(source).not.toMatch(/isRecommended|customiseForced|customiseOpen/)
+   })
+ })
++
++describe('the Review', () => {
++  const rowValues = () => Object.fromEntries(Array.from(document.querySelectorAll('dt')).map((dt) => [dt.textContent, dt.nextElementSibling?.textContent]))
++
++  it('lists every applicable answer once, each with its own Change, and Create wallet in the footer', async () => {
++    await mount()
++    goToStep('Review')
++    expect(screen.getByText('Step 8 of 8')).toBeTruthy()
++    expect(rowValues()).toEqual({
++      Label: 'My Wallet',
++      Network: 'Testnet',
++      Node: 'Built-in Nodes',
++      'Seed Method': 'Stored Seed',
++      'Signature type': 'Ed25519',
++      'Open Check': 'App PIN',
++      'Auto-lock': '5 minutes',
++      'Signing Check': 'Standard',
++    })
++    for (const term of Object.keys(rowValues())) expect(screen.getByRole('button', { name: `Change ${term}` })).toBeTruthy()
++    expect(screen.getByRole('button', { name: /Create wallet/ })).toBeTruthy()
++    // No secret on screen: the Seed is in neither the text nor any field, and any PIN field is empty.
++    expect(document.body.textContent).not.toContain(SEED)
++    expect(Array.from(document.querySelectorAll('input')).some((i) => i.value.includes(SEED))).toBe(false)
++    expect(Array.from(document.querySelectorAll<HTMLInputElement>('input[type="password"]')).every((i) => i.value === '')).toBe(true)
++  })
++
++  it('adds a Passkey row only when Passkey-Derived is chosen', async () => {
++    h.capability = 'yes'
++    await mount()
++    await click(radioNamed(/^Passkey-Derived Seed/))
++    await click(radioNamed(/^Use an existing passkey/))
++    goToStep('Review')
++    expect(rowValues()['Seed Method']).toBe('Passkey-Derived Seed')
++    expect(rowValues().Passkey).toBe('Existing passkey')
++    expect(rowValues()['Signing Check']).toBe('Passkey only')
++  })
++
++  it('focus lands on the Review heading', async () => {
++    await mount()
++    goToStep('Review')
++    await waitFor(() => expect(document.activeElement).toBe(screen.getByRole('heading', { level: 2, name: 'Review' })))
++  })
++
++  it('Change returns to that question with its answer kept, and Next lands on the Review with the edit', async () => {
++    await mount()
++    await click(radioNamed('secp256k1'))
++    goToStep('Review')
++    await click(screen.getByRole('button', { name: 'Change Node' }))
++    expect(screen.getByRole('heading', { level: 2 }).textContent).toBe('Node')
++    await click(radioNamed(/^A Node you choose/))
++    await click(nextButton())
++    expect(screen.getByRole('heading', { level: 2 }).textContent).toBe('Review')
++    expect(rowValues().Node).toBe('Your own Node (not tested yet)')
++    expect(rowValues()['Signature type']).toBe('secp256k1')
++    // Change on Auto-lock opens the paired step, with the answer kept.
++    await click(screen.getByRole('button', { name: 'Change Auto-lock' }))
++    expect(screen.getByRole('heading', { level: 2 }).textContent).toBe('Open Check and auto-lock')
++    expect(radioNamed('5 minutes').checked).toBe(true)
++    await click(radioNamed('15 minutes'))
++    // Back is one step back, not to the Review.
++    await click(screen.getByRole('button', { name: 'Back' }))
++    expect(screen.getByRole('heading', { level: 2 }).textContent).toBe('Signature type')
++    await click(nextButton())
++    expect(screen.getByRole('heading', { level: 2 }).textContent).toBe('Review')
++    expect(rowValues()['Auto-lock']).toBe('15 minutes')
++    // The flag is spent: Next on a walk question after that is the ordinary next step.
++    goToStep('Node')
++    await click(nextButton())
++    expect(screen.getByRole('heading', { level: 2 }).textContent).toBe('Seed Method')
++  })
++
++  it('Walk me through it after Change then Back does not jump to the Review', async () => {
++    await mount()
++    goToStep('Review')
++    await click(screen.getByRole('button', { name: 'Change Node' }))
++    await click(screen.getByRole('button', { name: 'Back' }))
++    await click(walkButton())
++    expect(screen.getByRole('heading', { level: 2 }).textContent).toBe('Node')
++    await click(nextButton())
++    expect(screen.getByRole('heading', { level: 2 }).textContent).toBe('Seed Method')
++  })
++
++  it('Change on Network goes to step 1, and Next lands on the Review', async () => {
++    await mount()
++    goToStep('Review')
++    await click(screen.getByRole('button', { name: 'Change Network' }))
++    expect(screen.getByText('Step 1 of 8')).toBeTruthy()
++    await click(radioNamed(/^Devnet/))
++    await click(nextButton())
++    expect(screen.getByRole('heading', { level: 2 }).textContent).toBe('Review')
++    expect(rowValues().Network).toBe('Devnet')
++  })
++
++  it('Create wallet from the Review calls the keystore as step 2 does for the same answers', async () => {
++    await mountCollapsed()
++    await click(nextButton())
++    type(await screen.findByLabelText(/Choose an App PIN/), '123456')
++    type(screen.getByLabelText('Confirm the App PIN'), '123456')
++    await click(screen.getByRole('button', { name: 'Create wallet' }))
++    const fromShortcut = h.createStoredWallet.mock.calls[0]
++    cleanup()
++    h.createStoredWallet.mockClear()
++    await mountCollapsed()
++    goToStep('Review')
++    type(await screen.findByLabelText(/Choose an App PIN/), '123456')
++    type(screen.getByLabelText('Confirm the App PIN'), '123456')
++    await click(screen.getByRole('button', { name: 'Create wallet' }))
++    expect(h.createStoredWallet.mock.calls[0][0]).toEqual(fromShortcut[0])
++    expect(h.createStoredWallet.mock.calls[0][1]).toMatchObject({ pin: '123456', appPinExpected: false })
++  })
++
++  it('a refusing policy blocks Create on the Review before any keystore call, with the existing warning', async () => {
++    h.policyOverride = (described) => ({ ...described, combination: { ok: false, reason: 'Not allowed for a test reason.' } })
++    await mount()
++    goToStep('Review')
++    expect(screen.getByText('This wallet cannot be created yet')).toBeTruthy()
++    expect(createButton().getAttribute('aria-disabled')).toBe('true')
++    await click(createButton())
++    expect(h.createStoredWallet).not.toHaveBeenCalled()
++  })
++
++  it('Back keeps the typed PIN and the answers across the Review', async () => {
++    await mount()
++    await click(radioNamed('secp256k1'))
++    goToStep('Review')
++    type(await screen.findByLabelText(/Choose an App PIN/), '123456')
++    goToStep('Signature type')
++    expect(radioNamed('secp256k1').checked).toBe(true)
++    goToStep('Review')
++    expect((screen.getByLabelText(/Choose an App PIN/) as HTMLInputElement).value).toBe('123456')
++  })
++})
++
++describe('changing Network resets the answers it makes illegal', () => {
++  it('names the three resets in one polite status line: Open Check, auto-lock and a custom Node', async () => {
++    await mount()
++    await click(radioNamed(/^No Open Check/))
++    await click(radioNamed('30 seconds'))
++    goToStep('Node')
++    await click(radioNamed(/^A Node you choose/))
++    await switchNetworkOnStepOne(/^Mainnet/)
++    const region = document.querySelector('[role="status"][aria-live="polite"]')!
++    expect(region.textContent).toBe('Changed to Mainnet. Reset to the recommended answer: Open Check is now App PIN; Auto-lock is now 5 minutes; Node is now Built-in Nodes.')
++    await click(nextButton())
++    await click(walkButton())
++    expect(radioNamed(/^Built-in Nodes/).checked).toBe(true)
++    expect(radioNamed('App PIN').checked).toBe(true)
++    expect(radioNamed('5 minutes').checked).toBe(true)
++    goToStep('Review')
++    expect(Object.fromEntries(Array.from(document.querySelectorAll('dt')).map((dt) => [dt.textContent, dt.nextElementSibling?.textContent]))).toMatchObject({ Network: 'Mainnet', Node: 'Built-in Nodes', 'Open Check': 'App PIN', 'Auto-lock': '5 minutes' })
++  })
++
++  it('the line clears when the step changes, and stays clear after going back and forth', async () => {
++    await mount()
++    await click(radioNamed(/^No Open Check/))
++    await switchNetworkOnStepOne(/^Mainnet/)
++    expect(resetNote()).not.toBe('')
++    await click(nextButton())
++    goToStep('Name and network')
++    expect(resetNote()).toBe('')
++    // Back and forth: the reset answer stays reset, and nothing new resets.
++    await click(radioNamed(/^Testnet/))
++    expect(resetNote()).toBe('')
++    goToStep('Open Check and auto-lock')
++    expect(radioNamed('App PIN').checked).toBe(true)
++  })
++
++  it('keeps legal answers and shows no line when nothing is illegal', async () => {
++    await mount()
++    await click(radioNamed('15 minutes'))
++    await switchNetworkOnStepOne(/^Mainnet/)
++    expect(resetNote()).toBe('')
++    await click(nextButton())
++    await click(walkButton())
++    expect(radioNamed('15 minutes').checked).toBe(true)
++  })
++
++  it('no line when only the pre-selections are set', async () => {
++    await mountCollapsed()
++    await click(radioNamed(/^Mainnet/))
++    expect(resetNote()).toBe('')
++  })
++
++  it('with a bound host, Passkey-Derived stays on Mainnet and its Signing Check stays the passkey', async () => {
++    h.capability = 'yes'
++    h.rpId = 'localhost'
++    await mount()
++    await click(radioNamed(/^Passkey-Derived Seed/))
++    await switchNetworkOnStepOne(/^Devnet/)
++    expect(resetNote()).toBe('')
++    await click(nextButton())
++    await click(walkButton())
++    expect(radioNamed(/^Passkey-Derived Seed/).checked).toBe(true)
++  })
++
++  it('a policy that allows everything resets nothing: the reset reads describeOptions', async () => {
++    h.policyOverride = (described) => ({
++      ...described,
++      openCheck: { pin: { available: true }, passkey: { available: true }, none: { available: true } },
++      autoLock: described.autoLock.map((c: object) => ({ ...c, available: true })),
++    })
++    await mount()
++    await click(radioNamed(/^No Open Check/))
++    await switchNetworkOnStepOne(/^Mainnet/)
++    expect(resetNote()).toBe('')
++  })
++})
+diff --git a/src/components/wallet/__tests__/network-reset.test.tsx b/src/components/wallet/__tests__/network-reset.test.tsx
+new file mode 100644
+index 0000000..74fd154
+--- /dev/null
++++ b/src/components/wallet/__tests__/network-reset.test.tsx
+@@ -0,0 +1,145 @@
++import { describe, expect, it } from 'vitest'
++import { AUTO_LOCK_CHOICES, describeOptions, type NewOpenCheck, type PasskeyCapability, type SeedMethod, type SigningKind } from '@/lib/crypto/policy'
++import { defaultSigning, preselection, reconcileForNetwork, type NetworkAnswers } from '@/components/wallet/network-reset'
++import type { NetworkId } from '@/lib/xrpl/networks'
++
++const NETWORKS: NetworkId[] = ['mainnet', 'testnet', 'devnet']
++const CAPABILITIES: PasskeyCapability[] = ['yes', 'no', 'unknown']
++const ORIGINS = ['localhost', 'sites-xrpl-bench-prod-pdbywc.b-cdn.net', undefined] // bound, temporary, unknown
++const SEEDS: SeedMethod[] = ['stored', 'passkey-derived']
++const OPEN: NewOpenCheck[] = ['pin', 'passkey', 'none']
++const SIGNING: SigningKind[] = ['standard', 'passkey', 'pin']
++
++const describe_ = (network: NetworkId, a: Pick<NetworkAnswers, 'seedMethod' | 'openCheck' | 'autoLockMinutes' | 'signing'>, capability: PasskeyCapability, origin: string | undefined, imported: boolean) =>
++  describeOptions({
++    network,
++    ...a,
++    passkey: capability,
++    origin,
++    canConfirmWrittenSeed: true,
++    ...(imported ? { imported: true } : {})
++  })
++
++describe('reconcileForNetwork', () => {
++  it('leaves no selected answer unavailable, and changes no answer that was available, for every combination', () => {
++    let cases = 0
++    for (const to of NETWORKS)
++      for (const capability of CAPABILITIES)
++        for (const origin of ORIGINS)
++          for (const imported of [false, true])
++            for (const seedMethod of SEEDS)
++              for (const openCheck of OPEN)
++                for (const autoLockMinutes of AUTO_LOCK_CHOICES)
++                  for (const signing of SIGNING)
++                    for (const signingTouched of [false, true]) {
++                      if (imported && seedMethod === 'passkey-derived') continue
++                      const answers: NetworkAnswers = {
++                        seedMethod,
++                        openCheck,
++                        autoLockMinutes,
++                        signing,
++                        signingTouched,
++                        nodeMode: 'builtin'
++                      }
++                      const { answers: next } = reconcileForNetwork(answers, to, { capability, origin, imported })
++                      const after = describe_(to, next, capability, origin, imported)
++                      expect(after.seedMethod[next.seedMethod].available).toBe(true)
++                      expect(after.openCheck[next.openCheck].available).toBe(true)
++                      expect(after.autoLock.find((c) => c.minutes === next.autoLockMinutes)?.available).toBe(true)
++                      expect(after.signing[next.signing].available).toBe(true)
++                      // What was legal on the new Network is kept.
++                      const before = describe_(to, answers, capability, origin, imported)
++                      if (before.seedMethod[seedMethod].available) expect(next.seedMethod).toBe(seedMethod)
++                      if (before.openCheck[openCheck].available) expect(next.openCheck).toBe(openCheck)
++                      if (before.autoLock.find((c) => c.minutes === autoLockMinutes)?.available) expect(next.autoLockMinutes).toBe(autoLockMinutes)
++                      // An untouched Signing Check follows the pre-selection; a chosen, legal one stays.
++                      if (next.seedMethod === 'stored' && signingTouched && before.signing[signing].available && seedMethod === 'stored') expect(next.signing).toBe(signing)
++                      if (!signingTouched && next.seedMethod === 'stored' && seedMethod === 'stored') expect(next.signing).toBe(defaultSigning(to, capability))
++                      cases++
++                    }
++    expect(cases).toBeGreaterThan(5000)
++  })
++
++  it('the golden example: Testnet answers on Mainnet', () => {
++    const { answers, reset } = reconcileForNetwork(
++      {
++        seedMethod: 'stored',
++        openCheck: 'none',
++        autoLockMinutes: 0.5,
++        signing: 'standard',
++        signingTouched: false,
++        nodeMode: 'custom'
++      },
++      'mainnet',
++      { capability: 'yes', origin: 'localhost', imported: false }
++    )
++    expect(answers).toMatchObject({
++      seedMethod: 'stored',
++      openCheck: 'passkey',
++      autoLockMinutes: 5,
++      signing: defaultSigning('mainnet', 'yes'),
++      nodeMode: 'builtin'
++    })
++    expect(reset.map((r) => r.question)).toEqual(['Open Check', 'Auto-lock', 'Node'])
++  })
++
++  it('Passkey-Derived on an unbound host falls back to Stored, and the Signing Check returns to its pre-selection, both named', () => {
++    const { answers, reset } = reconcileForNetwork(
++      {
++        seedMethod: 'passkey-derived',
++        openCheck: 'pin',
++        autoLockMinutes: 5,
++        signing: 'passkey',
++        signingTouched: true,
++        nodeMode: 'builtin'
++      },
++      'mainnet',
++      { capability: 'unknown', origin: 'x.b-cdn.net', imported: false }
++    )
++    expect(answers.seedMethod).toBe('stored')
++    expect(answers.signing).toBe('pin')
++    expect(answers.signingTouched).toBe(false)
++    expect(reset.map((r) => r.question)).toEqual(['Seed Method', 'Signing Check'])
++  })
++
++  it('Passkey-Derived on a bound host is kept with a touched passkey Signing Check', () => {
++    const { answers, reset } = reconcileForNetwork(
++      {
++        seedMethod: 'passkey-derived',
++        openCheck: 'pin',
++        autoLockMinutes: 5,
++        signing: 'passkey',
++        signingTouched: true,
++        nodeMode: 'builtin'
++      },
++      'mainnet',
++      { capability: 'yes', origin: 'localhost', imported: false }
++    )
++    expect(answers).toMatchObject({
++      seedMethod: 'passkey-derived',
++      signing: 'passkey',
++      signingTouched: true
++    })
++    expect(reset).toEqual([])
++  })
++
++  it('an untouched Signing Check follows the Network silently; nothing differing resets nothing', () => {
++    const pre = preselection('testnet', 'no')
++    const { answers, reset } = reconcileForNetwork({ ...pre, signingTouched: false, nodeMode: 'builtin' }, 'mainnet', { capability: 'no', origin: 'localhost', imported: false })
++    expect(answers.signing).toBe('pin')
++    expect(reset).toEqual([])
++  })
++
++  it('a built-in Node is not named', () => {
++    const { reset } = reconcileForNetwork(
++      {
++        ...preselection('testnet', 'no'),
++        signingTouched: false,
++        nodeMode: 'builtin'
++      },
++      'devnet',
++      { capability: 'no', origin: 'localhost', imported: false }
++    )
++    expect(reset).toEqual([])
++  })
++})
+diff --git a/src/components/wallet/__tests__/walk-questions.test.tsx b/src/components/wallet/__tests__/walk-questions.test.tsx
+index 6d73730..0e37d70 100644
+--- a/src/components/wallet/__tests__/walk-questions.test.tsx
++++ b/src/components/wallet/__tests__/walk-questions.test.tsx
+@@ -1,6 +1,7 @@
+ import { describe, expect, it } from 'vitest'
+ import { describeOptions } from '@/lib/crypto/policy'
+-import { VERDICT_KEYS, WALK_QUESTIONS, walkQuestions } from '@/components/wallet/walk-questions'
++import { answerRows, VERDICT_KEYS, WALK_QUESTIONS, walkQuestions } from '@/components/wallet/walk-questions'
++import type { WalletQuestionsProps } from '@/components/wallet/WalletQuestions'
+ 
+ const OPTIONS = describeOptions({
+   network: 'testnet',
+@@ -41,3 +42,53 @@ describe('the walk covers the policy', () => {
+     expect(walkQuestions(false)).toHaveLength(5)
+   })
+ })
++
++const PROPS = {
++  group: 'g',
++  options: OPTIONS,
++  busy: false,
++  origin: 'localhost',
++  label: 'Savings',
++  labelError: null,
++  network: 'testnet',
++  nodeMode: 'builtin',
++  nodeDraft: '',
++  verifiedNode: null,
++  nodeReason: null,
++  nodeBusy: false,
++  seedMethod: 'passkey-derived',
++  passkeyChoice: 'new',
++  algorithm: 'ed25519',
++  openCheck: 'pin',
++  autoLockMinutes: 5,
++  signing: 'passkey',
++} as unknown as WalletQuestionsProps
++
++describe('the walk summarises every answer once', () => {
++  it('every registry entry yields at least one row tagged with its own step', () => {
++    for (const q of WALK_QUESTIONS) {
++      const rows = q.summary(PROPS)
++      expect(rows.length).toBeGreaterThan(0)
++      for (const row of rows) expect(row.step).toBe(q.id)
++    }
++  })
++
++  it('answerRows lists Label and Network first, then each walk question, with the Passkey row only when derived', () => {
++    expect(answerRows(PROPS).map((r) => [r.step, r.term])).toEqual([
++      ['name-network', 'Label'],
++      ['name-network', 'Network'],
++      ['node', 'Node'],
++      ['seed-method', 'Seed Method'],
++      ['seed-method', 'Passkey'],
++      ['signature-type', 'Signature type'],
++      ['open-check', 'Open Check'],
++      ['open-check', 'Auto-lock'],
++      ['signing-check', 'Signing Check'],
++    ])
++    expect(answerRows({ ...PROPS, seedMethod: 'stored' }).some((r) => r.term === 'Passkey')).toBe(false)
++  })
++
++  it('Import omits Seed Method, Passkey and Signature type', () => {
++    expect(answerRows({ ...PROPS, imported: true }).map((r) => r.term)).toEqual(['Label', 'Network', 'Node', 'Open Check', 'Auto-lock', 'Signing Check'])
++  })
++})
+diff --git a/src/components/wallet/network-reset.ts b/src/components/wallet/network-reset.ts
+new file mode 100644
+index 0000000..f7491d3
+--- /dev/null
++++ b/src/components/wallet/network-reset.ts
+@@ -0,0 +1,133 @@
++import { describeOptions, type NewOpenCheck, type PasskeyCapability, type SeedMethod, type SigningKind } from '@/lib/crypto/policy'
++import type { NetworkId } from '@/lib/xrpl/networks'
++
++/**
++ * What the create-wallet quiz does to the later answers when Network changes
++ * (FR-91, FR-65). Pure: it holds no state and decides no rule. Whether an answer
++ * is still legal is read from `describeOptions` for the new Network, so a rule
++ * that moves in `lib/crypto/policy.ts` moves here with it.
++ */
++
++/** The Signing Check a Network pre-selects: Standard off Mainnet, otherwise the
++ * passkey when this device can use one, else the App PIN. */
++export function defaultSigning(network: NetworkId, capability: PasskeyCapability): SigningKind {
++  if (network !== 'mainnet') return 'standard'
++  return capability === 'yes' ? 'passkey' : 'pin'
++}
++
++export interface Preselection {
++  seedMethod: SeedMethod
++  openCheck: NewOpenCheck
++  autoLockMinutes: number
++  signing: SigningKind
++}
++
++/** FR-60's pre-selected answers. The initial state and the reset share this. */
++export function preselection(network: NetworkId, capability: PasskeyCapability): Preselection {
++  return {
++    seedMethod: 'stored',
++    openCheck: capability === 'yes' ? 'passkey' : 'pin',
++    autoLockMinutes: 5,
++    signing: defaultSigning(network, capability),
++  }
++}
++
++/** The answers the Network can make illegal, plus the two flags that say how
++ * they were reached. */
++export interface NetworkAnswers {
++  seedMethod: SeedMethod
++  openCheck: NewOpenCheck
++  autoLockMinutes: number
++  signing: SigningKind
++  /** True once the person chose the Signing Check (or Passkey-Derived fixed it). */
++  signingTouched: boolean
++  nodeMode: 'builtin' | 'custom'
++}
++
++export interface NetworkContext {
++  capability: PasskeyCapability
++  origin: string | undefined
++  imported: boolean
++}
++
++/** One answer that was put back to its pre-selection, and what it is now. */
++export type ResetItem =
++  | { question: 'Node'; to: 'builtin' }
++  | { question: 'Seed Method'; to: SeedMethod }
++  | { question: 'Open Check'; to: NewOpenCheck }
++  | { question: 'Auto-lock'; to: number }
++  | { question: 'Signing Check'; to: SigningKind }
++
++export interface Reconciled {
++  answers: NetworkAnswers
++  /** Seed Method, Open Check, Auto-lock, Signing Check, then Node. Empty when nothing was reset. */
++  reset: ResetItem[]
++}
++
++/**
++ * Keeps every answer that is still legal on `nextNetwork`, puts each illegal one
++ * back to its pre-selection, and says which. A Signing Check the person never
++ * chose keeps following the Network's pre-selection and is not named: it was
++ * never an answer of theirs.
++ */
++export function reconcileForNetwork(answers: NetworkAnswers, nextNetwork: NetworkId, ctx: NetworkContext): Reconciled {
++  const pre = preselection(nextNetwork, ctx.capability)
++  const describe = (seedMethod: SeedMethod, openCheck: NewOpenCheck, autoLockMinutes: number, signing: SigningKind) =>
++    describeOptions({
++      network: nextNetwork,
++      seedMethod,
++      openCheck,
++      autoLockMinutes,
++      signing,
++      passkey: ctx.capability,
++      origin: ctx.origin,
++      canConfirmWrittenSeed: true,
++      ...(ctx.imported ? { imported: true } : {}),
++    })
++  const reset: ResetItem[] = []
++  const next: NetworkAnswers = { ...answers }
++
++  // Seed Method first: the Signing Check depends on it.
++  const first = describe(answers.seedMethod, answers.openCheck, answers.autoLockMinutes, answers.signing)
++  let seedFellBack = false
++  if (!first.seedMethod[answers.seedMethod].available) {
++    next.seedMethod = pre.seedMethod
++    seedFellBack = true
++    reset.push({ question: 'Seed Method', to: pre.seedMethod })
++  }
++  const second = describe(next.seedMethod, answers.openCheck, answers.autoLockMinutes, answers.signing)
++
++  if (!second.openCheck[answers.openCheck].available) {
++    next.openCheck = pre.openCheck
++    reset.push({ question: 'Open Check', to: pre.openCheck })
++  }
++  const lock = second.autoLock.find((c) => c.minutes === answers.autoLockMinutes)
++  if (!lock || !lock.available) {
++    next.autoLockMinutes = pre.autoLockMinutes
++    reset.push({ question: 'Auto-lock', to: pre.autoLockMinutes })
++  }
++
++  if (next.seedMethod === 'passkey-derived') {
++    // Its only Signing Check is its passkey (FR-67).
++    next.signing = 'passkey'
++    next.signingTouched = true
++  } else if (seedFellBack) {
++    next.signing = pre.signing
++    next.signingTouched = false
++    reset.push({ question: 'Signing Check', to: pre.signing })
++  } else if (!answers.signingTouched) {
++    next.signing = pre.signing
++  } else if (!second.signing[answers.signing].available) {
++    next.signing = pre.signing
++    next.signingTouched = false
++    reset.push({ question: 'Signing Check', to: pre.signing })
++  }
++
++  // A Node was proven for the network it was tested on, and only that one.
++  if (answers.nodeMode === 'custom') {
++    next.nodeMode = 'builtin'
++    reset.push({ question: 'Node', to: 'builtin' })
++  }
++
++  return { answers: next, reset }
++}
+diff --git a/src/components/wallet/walk-questions.ts b/src/components/wallet/walk-questions.ts
+index 0a76a99..fb0b787 100644
+--- a/src/components/wallet/walk-questions.ts
++++ b/src/components/wallet/walk-questions.ts
+@@ -5,9 +5,48 @@ import {
+   SeedMethodQuestion,
+   SignatureTypeQuestion,
+   SigningCheckQuestion,
++  type AnswerRow,
+   type WalletQuestionsProps,
+ } from '@/components/wallet/WalletQuestions'
+-import type { describeOptions } from '@/lib/crypto/policy'
++import type { ResetItem } from '@/components/wallet/network-reset'
++import { minutesLabel } from '@/lib/minutes-label'
++import { normalizeWalletName } from '@/lib/wallet-name'
++import type { describeOptions, NewOpenCheck, SeedMethod, SigningKind } from '@/lib/crypto/policy'
++import { NETWORKS, type NetworkId } from '@/lib/xrpl/networks'
++
++/** One formatter per answer. The step 2 list, the Review and the Network-change
++ * line all read them, so an answer is worded in exactly one place. */
++export const formatLabel = (label: string) => (normalizeWalletName(label) === '' ? 'Named automatically' : normalizeWalletName(label))
++export const formatNetwork = (network: NetworkId) => NETWORKS[network].label
++export const formatNode = (nodeMode: 'builtin' | 'custom', verifiedNode: string | null) =>
++  nodeMode === 'builtin' ? 'Built-in Nodes' : verifiedNode ? `${verifiedNode} (tested)` : 'Your own Node (not tested yet)'
++export const formatSeedMethod = (m: SeedMethod) => (m === 'stored' ? 'Stored Seed' : 'Passkey-Derived Seed')
++export const formatPasskeyChoice = (c: 'new' | 'existing') => (c === 'new' ? 'New passkey' : 'Existing passkey')
++export const formatAlgorithm = (a: 'ed25519' | 'secp256k1') => (a === 'ed25519' ? 'Ed25519' : 'secp256k1')
++export const formatOpenCheck = (c: NewOpenCheck) => (c === 'pin' ? 'App PIN' : c === 'passkey' ? 'Passkey' : 'No Open Check')
++export const formatAutoLock = minutesLabel
++export const formatSigning = (s: SigningKind) => (s === 'standard' ? 'Standard' : s === 'passkey' ? 'Passkey only' : 'App PIN only')
++
++/** The text for one reset: "Open Check is now App PIN". */
++export function formatReset(item: ResetItem): string {
++  const to =
++    item.question === 'Node'
++      ? formatNode(item.to, null)
++      : item.question === 'Seed Method'
++        ? formatSeedMethod(item.to)
++        : item.question === 'Open Check'
++          ? formatOpenCheck(item.to)
++          : item.question === 'Auto-lock'
++            ? formatAutoLock(item.to)
++            : formatSigning(item.to)
++  return `${item.question} is now ${to}`
++}
++
++/** The visible line under Network after a change that reset answers; null when none did. */
++export function resetLine(network: NetworkId, reset: readonly ResetItem[]): string | null {
++  if (reset.length === 0) return null
++  return `Changed to ${formatNetwork(network)}. Reset to the recommended answer: ${reset.map(formatReset).join('; ')}.`
++}
+ 
+ /** What `describeOptions` returns that is a verdict on the whole combination, not a question. */
+ export const VERDICT_KEYS = ['combination', 'writtenSeedRequired'] as const
+@@ -20,19 +59,73 @@ export interface WalkQuestion {
+   title: string
+   covers: readonly (keyof ReturnType<typeof describeOptions>)[]
+   importApplies: boolean
++  /** The rows this question adds to the setup list and the Review, each tagged with this step. */
++  summary: (p: WalletQuestionsProps) => AnswerRow[]
+   render: (p: WalletQuestionsProps) => ReactNode
+ }
+ 
+ /** The walk, in `quiz-steps.md` order. One step per entry. */
+ export const WALK_QUESTIONS: readonly WalkQuestion[] = [
+-  { id: 'node', title: 'Node', covers: [], importApplies: true, render: NodeQuestion },
+-  { id: 'seed-method', title: 'Seed Method', covers: ['seedMethod'], importApplies: false, render: SeedMethodQuestion },
+-  { id: 'signature-type', title: 'Signature type', covers: [], importApplies: false, render: SignatureTypeQuestion },
+-  { id: 'open-check', title: 'Open Check and auto-lock', covers: ['openCheck', 'autoLock'], importApplies: true, render: OpenCheckQuestion },
+-  { id: 'signing-check', title: 'Signing Check', covers: ['signing'], importApplies: true, render: SigningCheckQuestion },
++  {
++    id: 'node',
++    title: 'Node',
++    covers: [],
++    importApplies: true,
++    summary: (p) => [{ step: 'node', term: 'Node', value: formatNode(p.nodeMode, p.verifiedNode) }],
++    render: NodeQuestion,
++  },
++  {
++    id: 'seed-method',
++    title: 'Seed Method',
++    covers: ['seedMethod'],
++    importApplies: false,
++    summary: (p) => [
++      { step: 'seed-method', term: 'Seed Method', value: formatSeedMethod(p.seedMethod) },
++      ...(p.seedMethod === 'passkey-derived' ? [{ step: 'seed-method', term: 'Passkey', value: formatPasskeyChoice(p.passkeyChoice) }] : []),
++    ],
++    render: SeedMethodQuestion,
++  },
++  {
++    id: 'signature-type',
++    title: 'Signature type',
++    covers: [],
++    importApplies: false,
++    summary: (p) => [{ step: 'signature-type', term: 'Signature type', value: formatAlgorithm(p.algorithm) }],
++    render: SignatureTypeQuestion,
++  },
++  {
++    id: 'open-check',
++    title: 'Open Check and auto-lock',
++    covers: ['openCheck', 'autoLock'],
++    importApplies: true,
++    summary: (p) => [
++      { step: 'open-check', term: 'Open Check', value: formatOpenCheck(p.openCheck) },
++      { step: 'open-check', term: 'Auto-lock', value: formatAutoLock(p.autoLockMinutes) },
++    ],
++    render: OpenCheckQuestion,
++  },
++  {
++    id: 'signing-check',
++    title: 'Signing Check',
++    covers: ['signing'],
++    importApplies: true,
++    summary: (p) => [{ step: 'signing-check', term: 'Signing Check', value: formatSigning(p.signing) }],
++    render: SigningCheckQuestion,
++  },
+ ]
+ 
+ /** The walk steps this person will see: Import omits Seed Method and Signature type. */
+ export function walkQuestions(imported: boolean): WalkQuestion[] {
+   return WALK_QUESTIONS.filter((q) => !imported || q.importApplies)
+ }
++
++/** Every applicable answer once, in the order they were asked: Label and Network
++ * from the fixed first step, then each walk question's own rows. Step 2 and the
++ * Review both render this list. */
++export function answerRows(p: WalletQuestionsProps): AnswerRow[] {
++  return [
++    { step: 'name-network', term: 'Label', value: formatLabel(p.label) },
++    { step: 'name-network', term: 'Network', value: formatNetwork(p.network) },
++    ...walkQuestions(!!p.imported).flatMap((q) => q.summary(p)),
++  ]
++}

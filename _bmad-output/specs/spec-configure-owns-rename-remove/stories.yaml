@@ -1,0 +1,18 @@
+- id: "1"
+  title: "Rename is a section of Configure"
+  description: >-
+    CAP-1. A Name section on the Configure screen renames the Wallet with the existing rules (1 to 40 characters, unique ignoring case, no lock, no ledger, failed write keeps the typed name). The chooser card's Rename stays until story 3.
+  invoke_dev_with: >-
+    Read CLAUDE.md, DESIGN.md, docs/agents/INDEX.md and docs/agents/verifying-your-work.md first. Fetch origin/dev before starting. Run the four gates: bun run lint, bun run build, bun run test, bun run check:contrast. Where UI changes, do a browser pass at 320, 390 and desktop widths in both themes. Stage by explicit path only. Reuse RenameDialog and lib/wallet-name.ts; do not change the rule. Put the section first in Configure's order.
+- id: "2"
+  title: "Remove is a section of Configure"
+  description: >-
+    CAP-2. A Remove section on the Configure screen removes the entered Wallet view with the existing three confirm bodies, the call-time lock re-check, teardown in finally, and the last-wallet App PIN deletion. After removal the app returns to the chooser, or first run if it was the last Wallet. The chooser card's Remove stays until story 3.
+  invoke_dev_with: >-
+    Read CLAUDE.md, DESIGN.md, docs/agents/INDEX.md and docs/agents/verifying-your-work.md first. Fetch origin/dev before starting. Run the four gates: bun run lint, bun run build, bun run test, bun run check:contrast. Where UI changes, do a browser pass at 320, 390 and desktop widths in both themes. Stage by explicit path only. Reuse RemoveDialog and the removal code; do not weaken AD-46 or the last-wallet atomicity. Put the section last in Configure's order.
+- id: "3"
+  title: "Chooser cards show only Open and Lock"
+  description: >-
+    CAP-3, CAP-4. Remove Configure, Rename and Remove from the chooser cards and their dialog hosts; a locked card shows its name, the Locked word and Open; Configure is reached from the wallet header key only. Re-point the old card tests to Configure and delete the ones that only tested the card controls.
+  invoke_dev_with: >-
+    Read CLAUDE.md, DESIGN.md, docs/agents/INDEX.md and docs/agents/verifying-your-work.md first. Fetch origin/dev before starting. Run the four gates: bun run lint, bun run build, bun run test, bun run check:contrast. Where UI changes, do a browser pass at 320, 390 and desktop widths in both themes. Stage by explicit path only. The locked-card type must keep holding a name only (AD-43). A screen test must fail if any of the three controls renders on a card.

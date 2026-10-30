@@ -11,25 +11,25 @@ sources: []
 
 ## Why
 
-A pain, owner-raised 2026-10-29. The create form shows every per-Wallet choice at once, then a Recommended panel that repeats the same values above the Customise radios, so the user reads each setting twice and scrolls a long page to make seven decisions. Seed Method sits outside Customise yet is also listed inside the panel. Asking one question at a time, with a shortcut for the pre-selected answers, keeps the fast path fast and states each consequence where the choice is made. The wallet is meant to hold real Mainnet funds, so the rules that decide which answers are legal must not move.
+A pain, owner-raised 2026-10-29. The create form shows every per-Wallet choice at once, then a Recommended panel that repeats the same values above the Customise radios, so the user reads each setting twice and scrolls a long page to make seven decisions. Seed Method sits outside Customise yet is also listed inside the panel. Asking one question at a time states each consequence where the choice is made. The users are advanced, so the quiz makes them choose every setting and offers no shortcut (revised 2026-10-30). The wallet is meant to hold real Mainnet funds, so the rules that decide which answers are legal must not move.
 
 ## Capabilities
 
 - **CAP-1** Quiz shell (PRD FR-91)
   - **intent:** The per-Wallet questions are asked one step at a time, and the user can go back without losing an answer.
   - **success:** A screen test steps forward and back across every step and finds each earlier answer unchanged; each step shows its position as text ("Step 3 of 7"); focus is on the new step's heading after Next and Back; with reduced motion set, no step transition animates.
-- **CAP-2** Label and Network first (FR-91, FR-60)
-  - **intent:** The first step asks the Wallet's Label and its Network, before anything that depends on Network.
-  - **success:** Step 1 shows Label and Network only; the Label's existing validation text appears there; no later question renders before Network is answered.
-- **CAP-3** Recommended setup shortcut (FR-91)
-  - **intent:** The second step shows the pre-selected answers as one read-only list, with a way to create now or to walk through them.
-  - **success:** The step lists every applicable answer once and holds no radio; **Create wallet** is the primary action and **Walk me through it** the secondary; it renders on Mainnet, Testnet and Devnet; on Mainnet it states in text that an Open Check is required and auto-lock is at least 1 minute; **Create wallet** from this step produces the same Wallet the walk would with no answer changed.
+- **CAP-2** Create or Import, Label and Network first (FR-91, FR-60)
+  - **intent:** The first step asks whether to create a new Wallet or import one, then the Label and the Network, before anything that depends on them.
+  - **success:** Step 1 shows the Create-or-Import question, the Label and the Network (Import also its Seed field); no Generate or Import switch is shown on any later step; going Back to step 1 and changing the choice starts the answers again; the Label's validation text appears on step 1.
+- **CAP-3** No shortcut: every setting is asked (FR-91)
+  - **intent:** A user chooses every setting, so nothing is created from defaults they did not look at.
+  - **success:** No step shows a read-only list of the setup, no Walk me through it button exists, and Create wallet (or Import wallet) appears only on the last step; on Mainnet the Open Check step states in text that an Open Check is required and auto-lock is at least 1 minute.
 - **CAP-4** One question per step (FR-91, FR-60, FR-63, FR-65)
   - **intent:** Walking through asks Node, Seed Method, Signature type, Open Check with auto-lock, and Signing Check in that order, each pre-selected and explained in plain words.
   - **success:** The step list in `quiz-steps.md` renders in order; each question's pre-selection equals FR-60's; an answer the device or Network cannot support is visible, `aria-disabled`, with its reason as text, and is never skipped; choosing Passkey-Derived adds the Passkey choice and the app-domain warning to the Seed Method step; in Import, Seed Method and Signature type do not appear, step 1 Next is blocked until a Seed is typed (a boolean only is kept), and a refused Seed returns to step 1 with the reason beside the field.
 - **CAP-5** Review before create (FR-91)
-  - **intent:** The walk ends on a review of every answer, each reachable for change.
-  - **success:** The review lists every applicable answer; each row's **Change** returns to that question with its answer kept; **Create wallet** on the review creates the same Wallet as on the shortcut.
+  - **intent:** The walk ends on a review of every answer, each reachable for change, from which the Wallet is created.
+  - **success:** The review lists every applicable answer; each row's **Change** returns to that question with its answer kept; **Create wallet** (**Import wallet**) is on the review; if an App PIN is needed its fields are visible above the footer at 320px and 390px, and a missing or short PIN moves focus to the PIN field with the reason beside it; the review uses plate styling from `DESIGN.md`, not a dark readout well.
 - **CAP-6** Network change reconciles later answers (FR-91, FR-65)
   - **intent:** Changing Network never leaves an illegal answer selected or silently drops a legal one.
   - **success:** Changing Network after later steps were answered keeps each answer that is still legal and resets each illegal one to the new pre-selection; a visible text line names what was reset, announced politely; policy refuses any illegal combination at create as it does today.
@@ -39,6 +39,9 @@ A pain, owner-raised 2026-10-29. The create form shows every per-Wallet choice a
 - **CAP-8** Phone, zoom and non-colour cues (FR-91, NFR-9)
   - **intent:** The quiz works on the narrowest supported screen and at 200% text without relying on colour.
   - **success:** At 320px, and separately at 200% zoom, no step clips or scrolls sideways and its actions stay reachable through the screen footer; `bun run check:contrast` passes; step position and unavailable-answer reasons are text.
+- **CAP-9** Plain wording for the checks (FR-91)
+  - **intent:** The two check questions use short, simple wording, and the same check is never named two ways in the app.
+  - **success:** The Open Check question reads "Authentication required to open the wallet" with its no-check answer "No authentication required to open the wallet"; the Signing Check question reads "Authentication required to sign a transaction" with its Standard answer "Nothing is asked for signing."; the quiz, the Configure Checks plate and Edit checks all read the words from `check-words.ts`; no string says the app signs data; every new or changed sentence is under 21 words (a test checks it).
 
 ## Constraints
 
@@ -48,6 +51,7 @@ A pain, owner-raised 2026-10-29. The create form shows every per-Wallet choice a
 - The Configure screen (FR-88) is not changed. Code check 2026-10-29: `WalletQuestions` is imported only by `CreateWalletFlow`, which `AddWalletScreen` (chooser) and `Onboarding` (first run) render.
 - The quiz is identical wherever `CreateWalletFlow` renders: the chooser's add screen and first-run `Onboarding`, shortcut step included. Decided 2026-10-29.
 - Back, Next and Create wallet sit in the sticky screen footer (`actionHost`), where Create wallet sits today.
+- Wording follows ASD-STE100: short sentences, one idea each, simple verbs. The app signs transactions only (code check 2026-10-30: `writes.ts`), so no copy mentions data or message signing.
 - The look stays inside the existing panel vocabulary of `DESIGN.md`. No new colour token.
 - An unavailable answer is never hidden. A failed read is never shown as an empty one (PRD §9.1).
 
@@ -61,7 +65,7 @@ A pain, owner-raised 2026-10-29. The create form shows every per-Wallet choice a
 
 ## Success signal
 
-On a phone at 320px a user creates a Testnet wallet with one tap after naming it, and creates a Mainnet wallet by walking every question, reading each consequence where the choice is made. The previous form's duplicated Recommended list no longer exists, and every existing policy test still passes unchanged.
+On a phone at 320px a user chooses Create or Import, then walks every question, reading each consequence where the choice is made, reviews the answers, and creates the Wallet. There is no shortcut and no Generate/Import switch after step 1, the previous form's duplicated Recommended list no longer exists, and every existing policy test still passes unchanged.
 
 ## Assumptions
 

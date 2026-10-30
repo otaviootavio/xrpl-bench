@@ -6,14 +6,12 @@ import { Label } from '@/components/ui/label'
 import { Axis, Choice } from '@/components/wallet/check-controls'
 import { NetworkChoice } from '@/components/wallet/NetworkChoice'
 import { minutesLabel } from '@/lib/minutes-label'
-import { normalizeWalletName } from '@/lib/wallet-name'
 import type { describeOptions, NewOpenCheck, SeedMethod, SigningKind } from '@/lib/crypto/policy'
-import { builtInNodes, NETWORKS, type NetworkId } from '@/lib/xrpl/networks'
+import { builtInNodes, type NetworkId } from '@/lib/xrpl/networks'
 
 /**
  * The per-wallet questions (AD-40), split by quiz step: `NameAndNetworkStep`
- * (Label, Network), `RecommendedList` (the read-only list of the pre-selected
- * answers) and the walk, one step per question (`WALK_QUESTIONS`: Node, Seed
+ * (Label, Network) and the walk, one step per question (`WALK_QUESTIONS`: Node, Seed
  * Method, signature type, Open Check with auto-lock, Signing Check).
  * Presentational only: every answer lives in the caller's state, and
  * which answers are legal, and why one is not, arrive as `options`, the result of
@@ -91,37 +89,6 @@ export function NameAndNetworkStep(p: WalletQuestionsProps) {
 
       <NetworkChoice value={p.network} onChange={p.onNetworkChange} disabled={busy || p.nodeBusy} />
     </>
-  )
-}
-
-/** Step 2: every applicable answer once, as text, with no radio. */
-export function RecommendedList(p: WalletQuestionsProps) {
-  const rows: [string, string][] = [
-    ['Label', normalizeWalletName(p.label) === '' ? 'Named automatically' : normalizeWalletName(p.label)],
-    ['Network', NETWORKS[p.network].label],
-    ['Node', p.nodeMode === 'builtin' ? 'Built-in Nodes' : p.verifiedNode ? `${p.verifiedNode} (tested)` : 'Your own Node (not tested yet)'],
-    ...(p.imported
-      ? []
-      : ([
-          ['Seed Method', p.seedMethod === 'stored' ? 'Stored Seed' : 'Passkey-Derived Seed'],
-          ['Signature type', p.algorithm === 'ed25519' ? 'Ed25519' : 'secp256k1'],
-        ] as [string, string][])),
-    ['Open Check', p.openCheck === 'pin' ? 'App PIN' : p.openCheck === 'passkey' ? 'Passkey' : 'No Open Check'],
-    ['Auto-lock', minutesLabel(p.autoLockMinutes)],
-    ['Signing Check', p.signing === 'standard' ? 'Standard' : p.signing === 'passkey' ? 'Passkey only' : 'App PIN only'],
-  ]
-  return (
-    <section aria-label="Your setup" className="panel-well grid gap-2 px-3 py-2">
-      <dl className="grid gap-y-2 text-sm">
-        {rows.map(([term, value]) => (
-          <div key={term}>
-            <dt className="text-muted-foreground">{term}</dt>
-            <dd className="min-w-0 break-words">{value}</dd>
-          </div>
-        ))}
-      </dl>
-      {p.network === 'mainnet' && <p className="text-sm">On Mainnet an Open Check is required, and auto-lock is at least 1 minute.</p>}
-    </section>
   )
 }
 
@@ -257,6 +224,7 @@ export function OpenCheckQuestion(p: WalletQuestionsProps) {
   return (
     <>
       <Lead>The Open Check is what is asked to open this wallet. Auto-lock closes it again after a while without use.</Lead>
+      {p.network === 'mainnet' && <p className="text-sm">On Mainnet an Open Check is required, and auto-lock is at least 1 minute.</p>}
       <Axis legend="Open Check">
         <Choice name={`${group}-open`} checked={p.openCheck === 'pin'} label="App PIN" detail="Asks for your App PIN to open the wallet." state={options.openCheck.pin} onSelect={() => p.onOpenCheck('pin')} />
         <Choice name={`${group}-open`} checked={p.openCheck === 'passkey'} label="Passkey" detail="Asks for your passkey to open the wallet." state={options.openCheck.passkey} onSelect={() => p.onOpenCheck('passkey')} />

@@ -88,22 +88,24 @@ async function openImport() {
 /** Type the Seed (and the App PIN the default Open Check asks for) and press Import wallet. */
 async function submit(value = SEED, { pin = '123456' } = {}) {
   typeSeed(value)
-  // The Seed is typed on step 1; Import wallet is on step 2.
-  const next = screen.queryByRole('button', { name: 'Next' })
-  if (next) await click(next)
+  // The Seed is typed on step 1; Import wallet is on the last step.
+  for (let guard = 0; guard < 6; guard++) {
+    const next = screen.queryByRole('button', { name: 'Next' })
+    if (!next) break
+    await click(next)
+  }
   const pinField = document.querySelector('input[id$="-pin"]') as HTMLInputElement | null
   if (pinField) pinField.value = pin
   await click(button(/Import wallet/))
 }
 
-/** Step 1 to step 3: the Node, the first question of the walk. */
+/** Step 1 to step 2: the Node, the first question of the walk. */
 async function walk() {
   typeSeed(SEED)
   await click(button('Next'))
-  await click(button('Walk me through it'))
 }
 
-/** Step 1 to step 4: Open Check and auto-lock. */
+/** Step 1 to step 3: Open Check and auto-lock. */
 async function walkToOpenCheck() {
   await walk()
   await click(button('Next'))
@@ -184,46 +186,41 @@ describe('Import with every lock closed', () => {
     await openImport()
     expect(button('Generate')).toBeTruthy()
     const legends = () => Array.from(document.querySelectorAll('legend')).map((l) => l.textContent)
-    expect(screen.getByText('Step 1 of 5')).toBeTruthy()
+    expect(screen.getByText('Step 1 of 4')).toBeTruthy()
     typeSeed(SEED)
     await click(button('Next'))
-    expect(screen.getByText('Step 2 of 5')).toBeTruthy()
-    const rows = Array.from(document.querySelectorAll('dt')).map((d) => d.textContent)
-    expect(rows).toEqual(['Label', 'Network', 'Node', 'Open Check', 'Auto-lock', 'Signing Check'])
-    expect(screen.queryAllByRole('radio').length).toBe(0)
-    await click(button('Walk me through it'))
+    expect(document.querySelectorAll('dt').length).toBe(0)
+    expect(screen.queryByRole('button', { name: 'Walk me through it' })).toBeNull()
     const seen: string[] = []
-    for (const n of [3, 4, 5]) {
-      expect(screen.getByText(`Step ${n} of 5`)).toBeTruthy()
+    for (const n of [2, 3, 4]) {
+      expect(screen.getByText(`Step ${n} of 4`)).toBeTruthy()
       seen.push(screen.getByRole('heading', { level: 2 }).textContent ?? '', ...legends())
-      if (n < 5) await click(button('Next'))
+      if (n < 4) {
+        expect(screen.queryByRole('button', { name: 'Import wallet' })).toBeNull()
+        await click(button('Next'))
+      }
     }
     expect(seen).toEqual(['Node', 'Node', 'Open Check and auto-lock', 'Open Check', 'Auto-lock after inactivity', 'Signing Check', 'Signing Check'])
     expect(screen.queryByRole('button', { name: 'Next' })).toBeNull()
     expect(button('Import wallet')).toBeTruthy()
   })
 
-  it('step 2 offers Import wallet as the primary action, and a Seed typed on step 1 is still imported from it', async () => {
+  it('Import wallet is on the last step only, and a Seed typed on step 1 is still imported from it', async () => {
     await openImport()
     expect(seedInput().closest('[hidden]')).toBeNull() // visible on step 1
     typeSeed(SEED)
     await click(button('Next'))
     expect(seedInput().value).toBe(SEED) // still mounted, hidden
     expect(seedInput().closest('[hidden]')).not.toBeNull()
+    expect(screen.queryByRole('button', { name: /Import wallet|Create wallet/ })).toBeNull()
+    await click(button('Next'))
+    await click(button('Next'))
     expect(screen.queryByRole('button', { name: /Create wallet/ })).toBeNull()
     const pinField = document.querySelector('input[id$="-pin"]') as HTMLInputElement
     pinField.value = '123456'
     await click(button('Import wallet'))
     await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1))
     expect(h.importStoredWallet.mock.calls[0][0]).toMatchObject({ seed: SEED, network: 'testnet' })
-  })
-
-  it('step 2 shows Back, Walk me through it, then Import wallet, in that order', async () => {
-    await openImport()
-    typeSeed(SEED)
-    await click(button('Next'))
-    const order = screen.getAllByRole('button').map((b) => b.textContent)
-    expect(order.filter((t) => t === 'Back' || t === 'Walk me through it' || t === 'Import wallet')).toEqual(['Back', 'Walk me through it', 'Import wallet'])
   })
 
   it('defaults the Open Check to the App PIN, or to a passkey where one is known to work', async () => {
@@ -245,11 +242,11 @@ describe('the Seed field and step 1', () => {
     expect(next.getAttribute('aria-disabled')).toBe('true')
     expect(screen.getByText('Type your Seed to continue.')).toBeTruthy()
     await click(next)
-    expect(screen.getByText('Step 1 of 5')).toBeTruthy()
+    expect(screen.getByText('Step 1 of 4')).toBeTruthy()
     typeSeed(SEED)
     expect(button('Next').getAttribute('aria-disabled')).toBeNull()
     await click(button('Next'))
-    expect(screen.getByText('Step 2 of 5')).toBeTruthy()
+    expect(screen.getByText('Step 2 of 4')).toBeTruthy()
   })
 
   it('a Seed cleared by hand blocks Next again', async () => {
@@ -279,7 +276,7 @@ describe('the Seed field and step 1', () => {
     await openImport()
     await submit('garbage-not-a-seed')
     const reason = await screen.findByText(INVALID)
-    expect(screen.getByText('Step 1 of 5')).toBeTruthy()
+    expect(screen.getByText('Step 1 of 4')).toBeTruthy()
     expect(reason.closest('[hidden]')).toBeNull()
     expect(seedInput().getAttribute('aria-describedby')).toBe(reason.id)
     expect(button('Next').getAttribute('aria-disabled')).toBe('true') // the field was cleared
@@ -291,16 +288,16 @@ describe('the Seed field and step 1', () => {
     await openImport()
     await submit()
     const reason = await screen.findByText(DUPLICATE)
-    expect(screen.getByText('Step 1 of 5')).toBeTruthy()
+    expect(screen.getByText('Step 1 of 4')).toBeTruthy()
     expect(reason.closest('[hidden]')).toBeNull()
   })
 
-  it('a refusal that is not about the Seed stays on step 2', async () => {
+  it('a refusal that is not about the Seed stays on the last step', async () => {
     h.importStoredWallet.mockResolvedValue({ status: 'refused', reason: 'The policy said no.' })
     await openImport()
     await submit()
     await screen.findByText('The policy said no.')
-    expect(screen.getByText('Step 2 of 5')).toBeTruthy()
+    expect(screen.getByText('Step 4 of 4')).toBeTruthy()
   })
 })
 
@@ -388,37 +385,30 @@ describe('the master-key warning', () => {
 })
 
 describe('the walk, to its last step', () => {
-  it('keeps the PIN and the Seed across Next and Back, and imports from step 5 with a changed answer', async () => {
+  it('keeps the PIN and the Seed across Next and Back, and imports from step 4 with a changed answer', async () => {
     await openImport()
     typeSeed(SEED)
     await click(button('Next'))
     const pinField = () => document.querySelector('input[id$="-pin"]') as HTMLInputElement
     const pinHidden = () => pinField().closest('[hidden]') !== null
-    expect(screen.getByText('Step 2 of 5')).toBeTruthy()
+    expect(screen.getByText('Step 2 of 4')).toBeTruthy()
+    expect(pinHidden()).toBe(true)
+    await click(button('Next'))
+    expect(screen.getByText('Step 3 of 4')).toBeTruthy()
+    expect(pinHidden()).toBe(true)
+    await click(button('Next'))
+    expect(screen.getByText('Step 4 of 4')).toBeTruthy()
     expect(pinHidden()).toBe(false)
     pinField().value = '123456'
-    await click(button('Walk me through it'))
-    expect(screen.getByText('Step 3 of 5')).toBeTruthy()
-    expect(pinHidden()).toBe(true)
-    await click(button('Next'))
-    expect(screen.getByText('Step 4 of 5')).toBeTruthy()
-    expect(pinHidden()).toBe(true)
-    await click(button('Next'))
-    expect(screen.getByText('Step 5 of 5')).toBeTruthy()
-    expect(pinHidden()).toBe(false)
-    expect(pinField().value).toBe('123456')
     expect(seedInput().value).toBe(SEED)
     // Back to step 2 and forward again: nothing typed is lost.
     await click(button('Back'))
     await click(button('Back'))
-    await click(button('Back'))
-    expect(screen.getByText('Step 2 of 5')).toBeTruthy()
-    expect(pinHidden()).toBe(false)
-    expect(pinField().value).toBe('123456')
-    await click(button('Walk me through it'))
+    expect(screen.getByText('Step 2 of 4')).toBeTruthy()
+    expect(pinHidden()).toBe(true)
     await click(button('Next'))
     await click(button('Next'))
-    expect(screen.getByText('Step 5 of 5')).toBeTruthy()
+    expect(screen.getByText('Step 4 of 4')).toBeTruthy()
     expect(pinField().value).toBe('123456')
     expect(seedInput().value).toBe(SEED)
     await click(screen.getByRole('radio', { name: /^App PIN only/ }))

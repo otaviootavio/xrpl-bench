@@ -28,8 +28,8 @@ export const WALK_QUESTIONS: readonly WalkQuestion[] = [
   { id: 'node', title: 'Node', covers: [], importApplies: true, render: NodeQuestion },
   { id: 'seed-method', title: 'Seed Method', covers: ['seedMethod'], importApplies: false, render: SeedMethodQuestion },
   { id: 'signature-type', title: 'Signature type', covers: [], importApplies: false, render: SignatureTypeQuestion },
-  { id: 'open-check', title: 'Open Check and auto-lock', covers: ['openCheck', 'autoLock'], importApplies: true, render: OpenCheckQuestion },
-  { id: 'signing-check', title: 'Signing Check', covers: ['signing'], importApplies: true, render: SigningCheckQuestion },
+  { id: 'open-check', title: 'Authentication to open the wallet, and auto-lock', covers: ['openCheck', 'autoLock'], importApplies: true, render: OpenCheckQuestion },
+  { id: 'signing-check', title: 'Authentication to sign a transaction', covers: ['signing'], importApplies: true, render: SigningCheckQuestion },
 ]
 
 /** The walk steps this person will see: Import omits Seed Method and Signature type. */

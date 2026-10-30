@@ -4,6 +4,13 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Axis, Choice } from '@/components/wallet/check-controls'
+import {
+  NO_OPEN_CHECK_ANSWER,
+  NO_OPEN_CHECK_DETAIL,
+  OPEN_CHECK_QUESTION,
+  SIGNING_CHECK_QUESTION,
+  STANDARD_SIGNING_ANSWER,
+} from '@/components/wallet/check-words'
 import { NetworkChoice } from '@/components/wallet/NetworkChoice'
 import { minutesLabel } from '@/lib/minutes-label'
 import type { describeOptions, NewOpenCheck, SeedMethod, SigningKind } from '@/lib/crypto/policy'
@@ -259,14 +266,14 @@ export function OpenCheckQuestion(p: WalletQuestionsProps) {
     <>
       <Lead>The Open Check is what is asked to open this wallet. Auto-lock closes it again after a while without use.</Lead>
       {p.network === 'mainnet' && <p className="text-sm">On Mainnet an Open Check is required, and auto-lock is at least 1 minute.</p>}
-      <Axis legend="Open Check">
+      <Axis legend={OPEN_CHECK_QUESTION}>
         <Choice name={`${group}-open`} checked={p.openCheck === 'pin'} label="App PIN" detail="Asks for your App PIN to open the wallet." state={options.openCheck.pin} onSelect={() => p.onOpenCheck('pin')} />
         <Choice name={`${group}-open`} checked={p.openCheck === 'passkey'} label="Passkey" detail="Asks for your passkey to open the wallet." state={options.openCheck.passkey} onSelect={() => p.onOpenCheck('passkey')} />
         <Choice
           name={`${group}-open`}
           checked={p.openCheck === 'none'}
-          label="No Open Check"
-          detail={options.openCheck.none.available ? 'Nothing is asked to open the wallet. Testnet and Devnet only.' : undefined}
+          label={NO_OPEN_CHECK_ANSWER}
+          detail={options.openCheck.none.available ? NO_OPEN_CHECK_DETAIL : undefined}
           state={options.openCheck.none}
           onSelect={() => p.onOpenCheck('none')}
         />
@@ -291,12 +298,11 @@ export function OpenCheckQuestion(p: WalletQuestionsProps) {
 export function SigningCheckQuestion(p: WalletQuestionsProps) {
   const { group, options } = p
   return (
-    <Axis legend="Signing Check">
+    <Axis legend={SIGNING_CHECK_QUESTION}>
       <Choice
         name={`${group}-sign`}
         checked={p.signing === 'standard'}
-        label="Standard"
-        detail="Nothing is asked for signing."
+        label={STANDARD_SIGNING_ANSWER}
         state={options.signing.standard}
         onSelect={() => p.onSigning('standard')}
       />

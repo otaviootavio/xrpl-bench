@@ -3,6 +3,7 @@ import { Button } from '@/components/ui/button'
 import { StatusLegend } from '@/components/ui/lamp'
 import { AddressLink } from '@/components/wallet/AddressLink'
 import { DEVNET_NOTICE } from '@/components/wallet/DevnetNotice'
+import { NO_OPEN_CHECK_ANSWER } from '@/components/wallet/check-words'
 import { REMOVE_LOCKED_REASON } from '@/components/wallet/remove-copy'
 import { NETWORKS } from '@/lib/xrpl/networks'
 import { configureWallet, enterWallet } from '@/store/app-store'
@@ -183,7 +184,7 @@ function OpenCard({
         )}
       </div>
       {!group.allowsLock && (
-        <p className="text-sm text-muted-foreground">No Open Check: this wallet opens itself, so there is nothing to lock.</p>
+        <p className="text-sm text-muted-foreground">{NO_OPEN_CHECK_ANSWER}. This wallet opens itself, so there is nothing to lock.</p>
       )}
       {lockFailed && (
         <p role="alert" className="text-sm font-medium text-text-destructive">

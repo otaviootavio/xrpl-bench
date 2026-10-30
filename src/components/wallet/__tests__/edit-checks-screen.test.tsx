@@ -57,7 +57,7 @@ async function mount(wallet: Record<string, unknown> = META, onEdited = vi.fn(),
       <EditChecksScreen wallet={wallet as never} onClose={onClose} onEdited={onEdited} />
     </QueryClientProvider>,
   )
-  await screen.findByText('Open Check')
+  await screen.findByText('Authentication required to open the wallet')
   return { onEdited, onClose }
 }
 
@@ -103,7 +103,7 @@ describe('Edit checks screen', () => {
 
   it('Mainnet: No Open Check is aria-disabled with the policy reason, and the sub-minute lock too', async () => {
     await mount({ ...META, network: 'mainnet' })
-    expect(radio('No Open Check').getAttribute('aria-disabled')).toBe('true')
+    expect(radio('No authentication required to open the wallet').getAttribute('aria-disabled')).toBe('true')
     expect(screen.getAllByText(/Mainnet wallet needs an Open Check/).length).toBeGreaterThan(0)
     expect(radio('30 seconds').getAttribute('aria-disabled')).toBe('true')
     expect(screen.getByText('Real funds')).toBeTruthy()
@@ -111,7 +111,7 @@ describe('Edit checks screen', () => {
 
   it('No Open Check explains itself only where it is available, and every Signing Check option says who it asks', async () => {
     await mount()
-    expect(screen.getAllByText('Nothing is asked to open the wallet. Testnet and Devnet only.').length).toBe(1)
+    expect(screen.getAllByText('Testnet and Devnet only.').length).toBe(1)
     expect(screen.getByText('Asks for your App PIN on every signature.')).toBeTruthy()
     expect(screen.getByText(/^Asks for your passkey on every signature\./)).toBeTruthy()
     cleanup()
@@ -120,21 +120,21 @@ describe('Edit checks screen', () => {
     expect(screen.getByText('Nothing is asked for signing.')).toBeTruthy()
     cleanup()
     await mount({ ...META, network: 'mainnet' })
-    expect(screen.queryByText('Nothing is asked to open the wallet. Testnet and Devnet only.')).toBeNull()
+    expect(screen.queryByText('Testnet and Devnet only.')).toBeNull()
   })
 
   it('a Passkey-Derived Wallet: every Signing Check answer is aria-disabled with the reason; Open Check is editable', async () => {
     await mount({ ...META, seedMethod: 'passkey-derived', signingCheck: 'passkey' })
-    for (const name of ['Standard', 'App PIN only', /^Passkey only: a new passkey/, /use one already on this device/]) {
+    for (const name of ['Nothing is asked for signing.', 'App PIN only', /^Passkey only: a new passkey/, /use one already on this device/]) {
       // the Open Check axis also offers a passkey: look only in the Signing Check fieldset
-      const fieldset = screen.getByText('Signing Check').closest('fieldset') as HTMLElement
+      const fieldset = screen.getByText('Authentication required to sign a transaction').closest('fieldset') as HTMLElement
       const inside = Array.from(fieldset.querySelectorAll('input[type=radio]')) as HTMLInputElement[]
       const labelled = inside.filter((r) => (r.closest('label')?.textContent ?? '').match(name))
       expect(labelled.length).toBeGreaterThan(0)
       for (const r of labelled) expect(r.getAttribute('aria-disabled')).toBe('true')
     }
     expect(screen.getAllByText(/Signing Check is its passkey/).length).toBeGreaterThan(0)
-    expect(radio('No Open Check').getAttribute('aria-disabled')).toBeNull()
+    expect(radio('No authentication required to open the wallet').getAttribute('aria-disabled')).toBeNull()
   })
 
   it('warns that an older version can no longer open the wallet when a Signing Check is added or the legacy lock is left', async () => {
@@ -197,7 +197,7 @@ describe('Edit checks screen', () => {
     await screen.findByText('Write down your Seed')
     await click(screen.getByRole('button', { name: 'Cancel' }))
     await waitFor(() => expect(settled).toBe(false))
-    expect(await screen.findByText('Open Check')).toBeTruthy()
+    expect(await screen.findByText('Authentication required to open the wallet')).toBeTruthy()
   })
 
   it('typing the challenged groups resolves the callback true and the edit goes on to onEdited and close', async () => {
@@ -286,7 +286,7 @@ describe('Edit checks screen', () => {
         <EditChecksScreen wallet={legacy as never} onClose={vi.fn()} onEdited={vi.fn()} />
       </QueryClientProvider>,
     )
-    await screen.findByText('Open Check')
+    await screen.findByText('Authentication required to open the wallet')
     expect(radio('30 seconds').getAttribute('aria-disabled')).toBe('true')
   })
 })

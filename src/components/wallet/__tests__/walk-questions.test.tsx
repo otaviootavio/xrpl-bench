@@ -33,7 +33,7 @@ describe('the walk covers the policy', () => {
   })
 
   it('the order is the one in quiz-steps.md', () => {
-    expect(WALK_QUESTIONS.map((q) => q.title)).toEqual(['Node', 'Seed Method', 'Signature type', 'Open Check and auto-lock', 'Signing Check'])
+    expect(WALK_QUESTIONS.map((q) => q.title)).toEqual(['Node', 'Seed Method', 'Signature type', 'Authentication to open the wallet, and auto-lock', 'Authentication to sign a transaction'])
   })
 
   it('Import omits Seed Method and Signature type', () => {

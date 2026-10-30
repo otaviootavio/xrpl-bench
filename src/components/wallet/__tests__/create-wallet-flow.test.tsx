@@ -117,6 +117,16 @@ beforeEach(() => {
 })
 afterEach(cleanup)
 
+describe('the quiz shell', () => {
+  it('opens on Step 1 of 1 with Back inert and Create wallet in place of Next', async () => {
+    await mountCollapsed()
+    expect(screen.getByText('Step 1 of 1')).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Back' }).getAttribute('aria-disabled')).toBe('true')
+    expect(screen.queryByRole('button', { name: 'Next' })).toBeNull()
+    expect(createButton()).toBeTruthy()
+  })
+})
+
 describe('the questions and their pre-selected answers', () => {
   it('asks in the FR-60 order', async () => {
     await mount()

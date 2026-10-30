@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react'
-import { createPortal } from 'react-dom'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -7,7 +6,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { RENAME_ERRORS } from '@/components/wallet/rename-copy'
 import { WalletQuestions } from '@/components/wallet/WalletQuestions'
-import { ScreenFooter } from '@/components/wallet/TaskScreen'
+import { QuizShell, type QuizStep } from '@/components/wallet/QuizShell'
 import { SeedReveal } from '@/components/wallet/SeedReveal'
 import { WrittenSeedConfirm } from '@/components/wallet/WrittenSeedConfirm'
 import { createDerivedWallet, createStoredWallet, describeCheckFailure, importStoredWallet, listWallets, type WalletMeta } from '@/lib/crypto/keystore'
@@ -101,6 +100,9 @@ function kindStatement(backupEligible: boolean | undefined): { title: string; bo
   }
 }
 
+// One interim step until the questions are split across steps.
+const QUIZ_STEPS: QuizStep[] = [{ id: 'setup', title: 'Wallet setup' }]
+
 const MAX_PIN_FIELD_HINT = 'The App PIN must be at least 6 digits.'
 
 function defaultSigning(network: NetworkId, capability: PasskeyCapability): SigningKind {
@@ -130,6 +132,7 @@ function CreateWalletForm({ capability, onDone, onInProgressChange, defaultLabel
   const [step, setStep] = useState<Step>('questions')
   // Layout only: every answer lives in the state below, so closing Customise resets none.
   const [customiseOpen, setCustomiseOpen] = useState(false)
+  const [quizIndex, setQuizIndex] = useState(0)
   const [label, setLabel] = useState(defaultLabel)
   const [network, setNewWalletNetwork] = useState<NetworkId>('testnet')
   const [nodeMode, setNodeMode] = useState<'builtin' | 'custom'>('builtin')
@@ -552,7 +555,7 @@ function CreateWalletForm({ capability, onDone, onInProgressChange, defaultLabel
   )
 
   return (
-    <div className="flex flex-col gap-5">
+    <QuizShell steps={QUIZ_STEPS} index={quizIndex} onIndex={setQuizIndex} busy={busy} actionHost={actionHost} finalAction={createButton}>
       {importSource?.field(busy)}
       <WalletQuestions
         imported={!!importSource}
@@ -648,8 +651,6 @@ function CreateWalletForm({ capability, onDone, onInProgressChange, defaultLabel
           {error}
         </p>
       )}
-
-      {actionHost ? createPortal(<ScreenFooter>{createButton}</ScreenFooter>, actionHost) : createButton}
-    </div>
+    </QuizShell>
   )
 }

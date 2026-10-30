@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -12,8 +13,9 @@ import { builtInNodes, NETWORKS, type NetworkId } from '@/lib/xrpl/networks'
 /**
  * The per-wallet questions (AD-40), split by quiz step: `NameAndNetworkStep`
  * (Label, Network), `RecommendedList` (the read-only list of the pre-selected
- * answers) and `WalkStep` (Seed Method, Node, signature type, Open Check,
- * auto-lock, Signing Check). Presentational only: every answer lives in the caller's state, and
+ * answers) and the walk, one step per question (`WALK_QUESTIONS`: Node, Seed
+ * Method, signature type, Open Check with auto-lock, Signing Check).
+ * Presentational only: every answer lives in the caller's state, and
  * which answers are legal, and why one is not, arrive as `options`, the result of
  * `describeOptions` (AD-28). An unavailable answer is `aria-disabled` with its
  * reason as visible text, never hidden, never colour alone.
@@ -123,63 +125,16 @@ export function RecommendedList(p: WalletQuestionsProps) {
   )
 }
 
-/** Step 3: the remaining controls, all visible. */
-export function WalkStep(p: WalletQuestionsProps) {
-  const { group, options, busy } = p
+function Lead({ children }: { children: ReactNode }) {
+  return <p className="text-sm text-muted-foreground">{children}</p>
+}
+
+export function NodeQuestion(p: WalletQuestionsProps) {
+  const { group, busy } = p
   const nodes = builtInNodes(p.network)
   return (
     <>
-      {!p.imported && (
-      <Axis legend="Seed Method">
-        <Choice
-          name={`${group}-seed`}
-          checked={p.seedMethod === 'stored'}
-          label="Stored Seed"
-          detail="A Seed is generated here and kept on this device, encrypted."
-          state={options.seedMethod.stored}
-          onSelect={p.onSelectStored}
-        />
-        <Choice
-          name={`${group}-seed`}
-          checked={p.seedMethod === 'passkey-derived'}
-          label="Passkey-Derived Seed"
-          detail="No Seed is stored: it is computed from your passkey each time it is needed."
-          state={options.seedMethod['passkey-derived']}
-          onSelect={p.onSelectDerived}
-        />
-      </Axis>
-      )}
-
-      {p.seedMethod === 'passkey-derived' && (
-        <>
-          <Axis legend="Passkey">
-            <Choice
-              name={`${group}-passkey`}
-              checked={p.passkeyChoice === 'new'}
-              label="Create a new passkey"
-              detail="The passkey is named after this wallet."
-              state={{ available: true }}
-              onSelect={() => p.onPasskeyChoice('new')}
-            />
-            <Choice
-              name={`${group}-passkey`}
-              checked={p.passkeyChoice === 'existing'}
-              label="Use an existing passkey"
-              detail="Your browser lists the passkeys on this device for this app."
-              state={{ available: true }}
-              onSelect={() => p.onPasskeyChoice('existing')}
-            />
-          </Axis>
-          <Alert variant="warning">
-            <AlertTitle>This Seed depends on the app's domain</AlertTitle>
-            <AlertDescription>
-              {p.origin ? `Your passkey is tied to ${p.origin}. ` : 'Your passkey is tied to the address this app is served from. '}
-              If the app's domain ever changes, this wallet cannot be opened from the passkey. It could then be recovered only with a written Seed or a Controlling Wallet.
-            </AlertDescription>
-          </Alert>
-        </>
-      )}
-
+      <Lead>The Node is the server this wallet reads the ledger from and sends its transactions to.</Lead>
       <Axis legend="Node">
         <Choice
           name={`${group}-node`}
@@ -219,16 +174,92 @@ export function WalkStep(p: WalletQuestionsProps) {
         )}
       </Axis>
 
-      {!p.imported && (
-        <Axis legend="Signature type">
-          <Choice name={`${group}-algo`} checked={p.algorithm === 'ed25519'} label="Ed25519" state={{ available: true }} onSelect={() => p.onAlgorithm('ed25519')} />
-          <Choice name={`${group}-algo`} checked={p.algorithm === 'secp256k1'} label="secp256k1" state={{ available: true }} onSelect={() => p.onAlgorithm('secp256k1')} />
-        </Axis>
+      {p.nodeReason && (
+        <p role="alert" className="text-xs text-text-destructive">
+          Not used. {p.nodeReason} The built-in Nodes stay selected.
+        </p>
       )}
+    </>
+  )
+}
 
+export function SeedMethodQuestion(p: WalletQuestionsProps) {
+  const { group, options } = p
+  return (
+    <>
+      <Axis legend="Seed Method">
+        <Choice
+          name={`${group}-seed`}
+          checked={p.seedMethod === 'stored'}
+          label="Stored Seed"
+          detail="A Seed is generated here and kept on this device, encrypted."
+          state={options.seedMethod.stored}
+          onSelect={p.onSelectStored}
+        />
+        <Choice
+          name={`${group}-seed`}
+          checked={p.seedMethod === 'passkey-derived'}
+          label="Passkey-Derived Seed"
+          detail="No Seed is stored: it is computed from your passkey each time it is needed."
+          state={options.seedMethod['passkey-derived']}
+          onSelect={p.onSelectDerived}
+        />
+      </Axis>
+
+      {p.seedMethod === 'passkey-derived' && (
+        <>
+          <Axis legend="Passkey">
+            <Choice
+              name={`${group}-passkey`}
+              checked={p.passkeyChoice === 'new'}
+              label="Create a new passkey"
+              detail="The passkey is named after this wallet."
+              state={{ available: true }}
+              onSelect={() => p.onPasskeyChoice('new')}
+            />
+            <Choice
+              name={`${group}-passkey`}
+              checked={p.passkeyChoice === 'existing'}
+              label="Use an existing passkey"
+              detail="Your browser lists the passkeys on this device for this app."
+              state={{ available: true }}
+              onSelect={() => p.onPasskeyChoice('existing')}
+            />
+          </Axis>
+          <Alert variant="warning">
+            <AlertTitle>This Seed depends on the app's domain</AlertTitle>
+            <AlertDescription>
+              {p.origin ? `Your passkey is tied to ${p.origin}. ` : 'Your passkey is tied to the address this app is served from. '}
+              If the app's domain ever changes, this wallet cannot be opened from the passkey. It could then be recovered only with a written Seed or a Controlling Wallet.
+            </AlertDescription>
+          </Alert>
+        </>
+      )}
+    </>
+  )
+}
+
+export function SignatureTypeQuestion(p: WalletQuestionsProps) {
+  const { group } = p
+  return (
+    <>
+      <Lead>The signature type is fixed once the wallet exists. Most wallets and services accept either.</Lead>
+      <Axis legend="Signature type">
+        <Choice name={`${group}-algo`} checked={p.algorithm === 'ed25519'} label="Ed25519" state={{ available: true }} onSelect={() => p.onAlgorithm('ed25519')} />
+        <Choice name={`${group}-algo`} checked={p.algorithm === 'secp256k1'} label="secp256k1" state={{ available: true }} onSelect={() => p.onAlgorithm('secp256k1')} />
+      </Axis>
+    </>
+  )
+}
+
+export function OpenCheckQuestion(p: WalletQuestionsProps) {
+  const { group, options } = p
+  return (
+    <>
+      <Lead>The Open Check is what is asked to open this wallet. Auto-lock closes it again after a while without use.</Lead>
       <Axis legend="Open Check">
-        <Choice name={`${group}-open`} checked={p.openCheck === 'pin'} label="App PIN" state={options.openCheck.pin} onSelect={() => p.onOpenCheck('pin')} />
-        <Choice name={`${group}-open`} checked={p.openCheck === 'passkey'} label="Passkey" state={options.openCheck.passkey} onSelect={() => p.onOpenCheck('passkey')} />
+        <Choice name={`${group}-open`} checked={p.openCheck === 'pin'} label="App PIN" detail="Asks for your App PIN to open the wallet." state={options.openCheck.pin} onSelect={() => p.onOpenCheck('pin')} />
+        <Choice name={`${group}-open`} checked={p.openCheck === 'passkey'} label="Passkey" detail="Asks for your passkey to open the wallet." state={options.openCheck.passkey} onSelect={() => p.onOpenCheck('passkey')} />
         <Choice
           name={`${group}-open`}
           checked={p.openCheck === 'none'}
@@ -251,39 +282,38 @@ export function WalkStep(p: WalletQuestionsProps) {
           />
         ))}
       </Axis>
-
-      <Axis legend="Signing Check">
-        <Choice
-          name={`${group}-sign`}
-          checked={p.signing === 'standard'}
-          label="Standard"
-          detail="Nothing is asked for signing."
-          state={options.signing.standard}
-          onSelect={() => p.onSigning('standard')}
-        />
-        <Choice
-          name={`${group}-sign`}
-          checked={p.signing === 'passkey'}
-          label="Passkey only"
-          detail="Asks for your passkey on every signature."
-          state={options.signing.passkey}
-          onSelect={() => p.onSigning('passkey')}
-        />
-        <Choice
-          name={`${group}-sign`}
-          checked={p.signing === 'pin'}
-          label="App PIN only"
-          detail="Asks for your App PIN on every signature."
-          state={options.signing.pin}
-          onSelect={() => p.onSigning('pin')}
-        />
-      </Axis>
-
-      {p.nodeReason && (
-        <p role="alert" className="text-xs text-text-destructive">
-          Not used. {p.nodeReason} The built-in Nodes stay selected.
-        </p>
-      )}
     </>
+  )
+}
+
+export function SigningCheckQuestion(p: WalletQuestionsProps) {
+  const { group, options } = p
+  return (
+    <Axis legend="Signing Check">
+      <Choice
+        name={`${group}-sign`}
+        checked={p.signing === 'standard'}
+        label="Standard"
+        detail="Nothing is asked for signing."
+        state={options.signing.standard}
+        onSelect={() => p.onSigning('standard')}
+      />
+      <Choice
+        name={`${group}-sign`}
+        checked={p.signing === 'passkey'}
+        label="Passkey only"
+        detail="Asks for your passkey on every signature."
+        state={options.signing.passkey}
+        onSelect={() => p.onSigning('passkey')}
+      />
+      <Choice
+        name={`${group}-sign`}
+        checked={p.signing === 'pin'}
+        label="App PIN only"
+        detail="Asks for your App PIN on every signature."
+        state={options.signing.pin}
+        onSelect={() => p.onSigning('pin')}
+      />
+    </Axis>
   )
 }

@@ -15,6 +15,7 @@ export function Choice({
   state,
   onSelect,
   detail,
+  disabled,
 }: {
   name: string
   checked: boolean
@@ -22,6 +23,8 @@ export function Choice({
   state: OptionState
   onSelect: () => void
   detail?: ReactNode
+  /** Inert while something is running: the native `disabled`, unlike an unavailable answer. */
+  disabled?: boolean
 }) {
   const textId = useId()
   const hasText = !state.available || !!state.note || !!detail
@@ -31,6 +34,7 @@ export function Choice({
         <Radio
           name={name}
           checked={checked}
+          disabled={disabled}
           aria-disabled={state.available ? undefined : true}
           aria-describedby={hasText ? textId : undefined}
           onChange={() => {

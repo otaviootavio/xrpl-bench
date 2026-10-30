@@ -28,6 +28,8 @@ vi.mock('idb-keyval', () => ({ get: async () => undefined, set: async () => {}, 
 vi.mock('@/lib/crypto/webauthn', () => ({ detectPrfSupport: async () => h.capability, getRpId: () => 'localhost' }))
 vi.mock('@/lib/crypto/lock', () => ({ hasAppPin: async () => h.appPin, startLockSession: (...a: unknown[]) => h.startLockSession(...(a as [])) }))
 vi.mock('@/lib/crypto/pin', () => ({ triesRemaining: async () => 8 }))
+vi.mock('@/lib/build-info', () => ({ BUILD: { version: '0.0.0' }, shortSha: 'abc', sourceUrl: '#', formatBuiltAt: () => 'now' }))
+vi.mock('@/lib/crypto/auth', () => ({ setUpVaultAuth: vi.fn(), hasPasskeyRegistered: async () => false, wipeVault: async () => {} }))
 vi.mock('@/lib/xrpl/client', () => ({ verifyNode: vi.fn() }))
 vi.mock('@/lib/xrpl/query-reads', () => ({ fetchAccountStateOnce: (...a: unknown[]) => h.fetchAccountStateOnce(...a) }))
 vi.mock('@/lib/seed-import', async (importOriginal) => {
@@ -43,12 +45,16 @@ vi.mock('@/lib/crypto/keystore', () => ({
   importStoredWallet: (...a: unknown[]) => h.importStoredWallet(...a),
   createStoredWallet: vi.fn(),
   createDerivedWallet: vi.fn(),
+  appPinResidue: async () => false,
+  importAndStoreWallet: vi.fn(),
   listWallets: async () => [META],
   describeCheckFailure: (r: { status: string; triesRemaining?: number }) =>
     r.status === 'wrong-credential' ? `Incorrect PIN. ${r.triesRemaining} tries remaining.` : 'Locked out.',
 }))
 
 import { AddWalletScreen } from '../AddWalletScreen'
+import { CreateWalletFlow } from '../CreateWalletFlow'
+import { Onboarding } from '@/pages/Onboarding'
 import { consumeAdded } from '@/lib/chooser-signals'
 import { useAppStore } from '@/store/app-store'
 import { useNoticeStore } from '@/store/notice-store'
@@ -79,8 +85,7 @@ const onClose = vi.fn()
 
 async function openImport() {
   const view = render(<AddWalletScreen onClose={onClose} />)
-  await screen.findByRole('button', { name: 'Import' })
-  await click(button('Import'))
+  await click(await screen.findByRole('radio', { name: 'Import a wallet' }))
   await screen.findByLabelText('Seed')
   return view
 }
@@ -174,17 +179,18 @@ describe('Import with every lock closed', () => {
     expect(h.importStoredWallet.mock.calls[0][0]).toMatchObject({ network })
   })
 
-  it('switching to Generate clears a typed Seed from the field it leaves', async () => {
+  it('switching to Create clears a typed Seed from the field it leaves', async () => {
     await openImport()
     const field = seedInput()
     field.value = SEED
-    await click(button('Generate'))
+    await click(screen.getByRole('radio', { name: 'Create a new wallet' }))
     expect(field.value).toBe('')
   })
 
-  it('offers Import and Generate, and asks no Seed Method and no signature type', async () => {
+  it('offers Create and Import as radios, and asks no Seed Method and no signature type', async () => {
     await openImport()
-    expect(button('Generate')).toBeTruthy()
+    expect(screen.getByRole('radio', { name: 'Create a new wallet' })).toBeTruthy()
+    expect(screen.queryByRole('button', { name: /^(Generate|Import)$/ })).toBeNull()
     const legends = () => Array.from(document.querySelectorAll('legend')).map((l) => l.textContent)
     expect(screen.getByText('Step 1 of 4')).toBeTruthy()
     typeSeed(SEED)
@@ -578,13 +584,129 @@ describe('the Seed is never in rendered text, a notice, a toast or the URL', () 
   })
 })
 
+describe('Create or Import is the first question', () => {
+  const radio = (name: string) => screen.getByRole('radio', { name }) as HTMLInputElement
+  const noPath = () => {
+    expect(screen.queryByRole('radio', { name: /Create a new wallet|Import a wallet/ })).toBeNull()
+    expect(screen.queryByRole('button', { name: /^(Generate|Import)$/ })).toBeNull()
+  }
+
+  it('step 1 titles the question, selects Create, and shows no Seed field', async () => {
+    render(<AddWalletScreen onClose={onClose} />)
+    await screen.findByRole('radio', { name: 'Create a new wallet' })
+    expect(screen.getByText('Step 1 of 6')).toBeTruthy()
+    expect(screen.getByRole('heading', { level: 2 }).textContent).toBe('Create or import')
+    expect(radio('Create a new wallet').checked).toBe(true)
+    expect(radio('Import a wallet').checked).toBe(false)
+    expect(seedInput()).toBeNull()
+    expect(screen.getByLabelText('Label')).toBeTruthy()
+    expect(screen.queryByRole('button', { name: /^(Generate|Import)$/ })).toBeNull()
+  })
+
+  it('choosing Import shows the Seed field above the Label, as Step 1 of 4, with focus on the radio', async () => {
+    await openImport()
+    expect(screen.getByText('Step 1 of 4')).toBeTruthy()
+    expect(radio('Import a wallet').checked).toBe(true)
+    expect(document.activeElement).toBe(radio('Import a wallet'))
+    expect(seedInput().compareDocumentPosition(screen.getByLabelText('Label')) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(screen.getByText('Type your Seed to continue.')).toBeTruthy()
+  })
+
+  it('choosing Create again puts focus on the Create radio', async () => {
+    await openImport()
+    await click(radio('Create a new wallet'))
+    expect(document.activeElement).toBe(radio('Create a new wallet'))
+  })
+
+  it('no path control on any later step, on either path', async () => {
+    await openImport()
+    typeSeed(SEED)
+    for (let n = 2; n <= 4; n++) {
+      await click(button('Next'))
+      noPath()
+    }
+    cleanup()
+    render(<AddWalletScreen onClose={onClose} />)
+    await screen.findByRole('radio', { name: 'Create a new wallet' })
+    for (let n = 2; n <= 6; n++) {
+      await click(button('Next'))
+      noPath()
+    }
+  })
+
+  it('Back then a changed path starts the answers again', async () => {
+    await openImport()
+    fireEvent.change(screen.getByLabelText('Label'), { target: { value: 'Savings' } })
+    await click(screen.getByRole('radio', { name: /^Mainnet/ }))
+    typeSeed(SEED)
+    await click(button('Next'))
+    await click(button('Back'))
+    expect(seedInput().value).toBe(SEED)
+    await click(radio('Create a new wallet'))
+    expect(screen.getByText('Step 1 of 6')).toBeTruthy()
+    expect((screen.getByLabelText('Label') as HTMLInputElement).value).toBe('')
+    expect((screen.getByRole('radio', { name: /^Testnet/ }) as HTMLInputElement).checked).toBe(true)
+    await click(radio('Import a wallet'))
+    expect(seedInput().value).toBe('')
+  })
+
+  it('Back without a change keeps the Label, Network and Seed', async () => {
+    await openImport()
+    fireEvent.change(screen.getByLabelText('Label'), { target: { value: 'Savings' } })
+    await click(screen.getByRole('radio', { name: /^Devnet/ }))
+    typeSeed(SEED)
+    await click(button('Next'))
+    await click(button('Back'))
+    expect((screen.getByLabelText('Label') as HTMLInputElement).value).toBe('Savings')
+    expect((screen.getByRole('radio', { name: /^Devnet/ }) as HTMLInputElement).checked).toBe(true)
+    expect(seedInput().value).toBe(SEED)
+    expect(radio('Import a wallet').checked).toBe(true)
+  })
+})
+
 describe('busy guards', () => {
   it('the screen cannot be left or the mode switched while the check runs', async () => {
     h.checkBeforeImport.mockReturnValue(new Promise(() => {}))
     await openImport()
     await submit()
     expect((screen.getByRole('button', { name: 'Wallets' }) as HTMLButtonElement).disabled).toBe(true)
-    expect((screen.getByRole('button', { name: 'Generate' }) as HTMLButtonElement).disabled).toBe(true)
+    // The path is asked on step 1 only, and Back is inert while busy: no way to change it mid-run.
+    expect(screen.queryByRole('radio', { name: /Create a new wallet|Import a wallet/ })).toBeNull()
+    expect((screen.getByRole('button', { name: 'Back' }) as HTMLButtonElement).disabled).toBe(true)
     expect(seedInput().disabled).toBe(true)
+  })
+
+  it('the real Create and Import radios are natively disabled when the host says creating', async () => {
+    render(
+      <CreateWalletFlow
+        defaultLabel=""
+        onDone={() => {}}
+        pathChoice={{ value: 'create', disabled: true, onChange: () => {} }}
+      />,
+    )
+    const radios = await screen.findAllByRole('radio', { name: /^(Create a new wallet|Import a wallet)$/ })
+    expect(radios).toHaveLength(2)
+    for (const r of radios) expect((r as HTMLInputElement).disabled).toBe(true)
+  })
+
+  it('the same radios are enabled when neither the host nor the flow is busy', async () => {
+    render(
+      <CreateWalletFlow
+        defaultLabel=""
+        onDone={() => {}}
+        pathChoice={{ value: 'create', disabled: false, onChange: () => {} }}
+      />,
+    )
+    const radios = await screen.findAllByRole('radio', { name: /^(Create a new wallet|Import a wallet)$/ })
+    for (const r of radios) expect((r as HTMLInputElement).disabled).toBe(false)
+  })
+})
+
+describe('first-run Onboarding', () => {
+  it('step 1 of its real flow (Name and network) shows no Create or Import radios', async () => {
+    render(<Onboarding />)
+    await click(await screen.findByRole('button', { name: 'Create a new wallet' }))
+    expect((await screen.findByRole('heading', { level: 2 })).textContent).toBe('Name and network')
+    expect(screen.queryByRole('radio', { name: /Create a new wallet|Import a wallet/ })).toBeNull()
   })
 })

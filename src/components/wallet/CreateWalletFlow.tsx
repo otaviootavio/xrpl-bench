@@ -7,6 +7,8 @@ import { Label } from '@/components/ui/label'
 import { RENAME_ERRORS } from '@/components/wallet/rename-copy'
 import {
   NameAndNetworkStep,
+  PathChoice,
+  type PathChoiceProps,
   type WalletQuestionsProps,
 } from '@/components/wallet/WalletQuestions'
 import { walkQuestions } from '@/components/wallet/walk-questions'
@@ -79,6 +81,8 @@ export interface CreateWalletFlowProps {
    * its parent, so left inside the form it stayed below the fold until the
    * form itself scrolled into view. */
   actionHost?: HTMLElement | null
+  /** Present (Add wallet): step 1 asks Create or Import first. Absent (Onboarding): it does not. */
+  pathChoice?: PathChoiceProps
 }
 
 /** `confirm-seed`: the Seed is shown and three groups of it typed back, BEFORE
@@ -131,7 +135,7 @@ export function CreateWalletFlow(props: CreateWalletFlowProps) {
   return <CreateWalletForm capability={capability} {...props} />
 }
 
-function CreateWalletForm({ capability, onDone, onInProgressChange, defaultLabel = 'My Wallet', actionHost = null, importSource }: CreateWalletFlowProps & { capability: PasskeyCapability }) {
+function CreateWalletForm({ capability, onDone, onInProgressChange, defaultLabel = 'My Wallet', actionHost = null, importSource, pathChoice }: CreateWalletFlowProps & { capability: PasskeyCapability }) {
   const group = useId()
   const [step, setStep] = useState<Step>('questions')
   const [quizIndex, setQuizIndex] = useState(0)
@@ -606,7 +610,7 @@ function CreateWalletForm({ capability, onDone, onInProgressChange, defaultLabel
 
   const walk = walkQuestions(!!importSource)
   const quizSteps: QuizStep[] = [
-    { id: 'name-network', title: 'Name and network', blocked: !!labelError || (!!importSource && !importSource.seedTyped) },
+    { id: 'name-network', title: pathChoice ? 'Create or import' : 'Name and network', blocked: !!labelError || (!!importSource && !importSource.seedTyped) },
     ...walk.map((q) => ({ id: q.id, title: q.title })),
   ]
 
@@ -616,6 +620,7 @@ function CreateWalletForm({ capability, onDone, onInProgressChange, defaultLabel
 
   return (
     <QuizShell steps={quizSteps} index={quizIndex} onIndex={(next) => { setSeedError(null); setQuizIndex(next) }} busy={busy} actionHost={actionHost} finalAction={createButton}>
+      {pathChoice && quizIndex === 0 && <PathChoice group={group} path={{ ...pathChoice, disabled: pathChoice.disabled || busy }} />}
       {/* Mounted once and only hidden elsewhere: unmounting would clear a typed Seed. */}
       {importSource && <div hidden={quizIndex !== 0} onChange={() => setSeedError(null)}>{importSource.field(busy, seedError)}</div>}
       {quizIndex === 0 && <NameAndNetworkStep {...questionProps} />}

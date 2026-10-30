@@ -81,15 +81,14 @@ async function mountCollapsed(props: Parameters<typeof CreateWalletFlow>[0] = {}
   await screen.findByLabelText('Label')
 }
 
-/** Mounts and walks to step 3, where most policy tests drive their radios. */
+/** Mounts and walks to step 2 (Node), where most policy tests start driving their radios. */
 async function mount(props: Parameters<typeof CreateWalletFlow>[0] = {}) {
   await mountCollapsed(props)
   await click(nextButton())
-  await click(walkButton())
 }
 
-/** The Generate steps in order. The walk is steps 3 to 7. */
-const GENERATE_STEPS = ['Name and network', 'Your setup', 'Node', 'Seed Method', 'Signature type', 'Open Check and auto-lock', 'Signing Check']
+/** The Generate steps in order. The walk is steps 2 to 6. */
+const GENERATE_STEPS = ['Name and network', 'Node', 'Seed Method', 'Signature type', 'Open Check and auto-lock', 'Signing Check']
 const currentIndex = () => {
   const m = /^Step (\d+) of (\d+)$/.exec(screen.getByText(/^Step \d+ of \d+$/).textContent ?? '')
   return Number(m![1]) - 1
@@ -99,35 +98,25 @@ function goToStep(title: string) {
   const target = GENERATE_STEPS.indexOf(title)
   for (let guard = 0; guard < 10 && currentIndex() !== target; guard++) {
     const now = currentIndex()
-    if (now < target) fireEvent.click(screen.getByRole('button', { name: now === 1 ? 'Walk me through it' : 'Next' }))
+    if (now < target) fireEvent.click(screen.getByRole('button', { name: 'Next' }))
     else fireEvent.click(screen.getByRole('button', { name: 'Back' }))
   }
   expect(currentIndex()).toBe(target)
 }
 
-/** From any step: back to step 1, pick the Network, and walk forward to step 3 again. */
+/** From any step: back to step 1, pick the Network, and walk forward to step 2 again. */
 async function switchNetwork(name: RegExp) {
   goToStep('Name and network')
   await click(radioNamed(name))
   await click(nextButton())
-  await click(walkButton())
 }
 
 const nextButton = () => screen.getByRole('button', { name: 'Next' })
-const walkButton = () => screen.getByRole('button', { name: 'Walk me through it' })
-/** The read-only list on step 2. */
-const summary = () => {
-  // The step shell's own section carries the same name (the step title); the list is the one with terms.
-  const section = screen.getAllByRole('region', { name: 'Your setup' }).find((r) => r.querySelector('dt'))!
-  return Object.fromEntries(Array.from(section.querySelectorAll('dt')).map((dt) => [dt.textContent, dt.nextElementSibling?.textContent]))
-}
-
 /** The radio with this name. Each question has its own step, so this visits the walk steps until one shows it. */
 const radioNamed = (name: RegExp | string): HTMLInputElement => {
   const found = () => screen.queryByRole('radio', { name }) as HTMLInputElement | null
   if (found()) return found()!
-  for (const title of GENERATE_STEPS.slice(2)) {
-    if (currentIndex() < 2 && !screen.queryByRole('button', { name: 'Walk me through it' }) && currentIndex() === 0) break
+  for (const title of GENERATE_STEPS.slice(1)) {
     goToStep(title)
     if (found()) return found()!
   }
@@ -162,9 +151,9 @@ beforeEach(() => {
 afterEach(cleanup)
 
 describe('the quiz shell', () => {
-  it('opens on Step 1 of 7 with Back inert and Next in place of Create wallet', async () => {
+  it('opens on Step 1 of 6 with Back inert and Next in place of Create wallet', async () => {
     await mountCollapsed()
-    expect(screen.getByText('Step 1 of 7')).toBeTruthy()
+    expect(screen.getByText('Step 1 of 6')).toBeTruthy()
     expect(screen.getByRole('button', { name: 'Back' }).getAttribute('aria-disabled')).toBe('true')
     expect(nextButton()).toBeTruthy()
     expect(screen.queryByRole('button', { name: /Create wallet/ })).toBeNull()
@@ -172,19 +161,19 @@ describe('the quiz shell', () => {
 })
 
 describe('the questions and their pre-selected answers', () => {
-  it('asks one question per step, in the FR-60 order, each with "Step n of 7"', async () => {
+  it('asks one question per step, in the FR-60 order, each with "Step n of 6"', async () => {
     await mount()
     const seen: [string | null, string | null, (string | null)[]][] = []
-    for (const title of GENERATE_STEPS.slice(2)) {
+    for (const title of GENERATE_STEPS.slice(1)) {
       goToStep(title)
       seen.push([screen.getByText(/^Step \d of \d$/).textContent, screen.getByRole('heading', { level: 2 }).textContent, legends()])
     }
     expect(seen).toEqual([
-      ['Step 3 of 7', 'Node', ['Node']],
-      ['Step 4 of 7', 'Seed Method', ['Seed Method']],
-      ['Step 5 of 7', 'Signature type', ['Signature type']],
-      ['Step 6 of 7', 'Open Check and auto-lock', ['Open Check', 'Auto-lock after inactivity']],
-      ['Step 7 of 7', 'Signing Check', ['Signing Check']],
+      ['Step 2 of 6', 'Node', ['Node']],
+      ['Step 3 of 6', 'Seed Method', ['Seed Method']],
+      ['Step 4 of 6', 'Signature type', ['Signature type']],
+      ['Step 5 of 6', 'Open Check and auto-lock', ['Open Check', 'Auto-lock after inactivity']],
+      ['Step 6 of 6', 'Signing Check', ['Signing Check']],
     ])
     expect(screen.queryByRole('button', { name: 'Next' })).toBeNull()
     expect(screen.getByRole('button', { name: /Create wallet/ })).toBeTruthy()
@@ -194,7 +183,6 @@ describe('the questions and their pre-selected answers', () => {
     await mountCollapsed()
     expect(radioNamed(/^Testnet/).checked).toBe(true)
     await click(nextButton())
-    await click(walkButton())
     expect(radioNamed(/^Built-in Nodes/).checked).toBe(true)
     expect(screen.getByText(/wss:\/\/s\.altnet\.rippletest\.net:51233/)).toBeTruthy()
     expect(radioNamed(/^Stored Seed/).checked).toBe(true)
@@ -228,126 +216,100 @@ describe('the questions and their pre-selected answers', () => {
   })
 })
 
-describe('Label and Network, then the recommended setup', () => {
-  it('step 1 shows only Label and Network, and no Recommended panel or Customise button exists', async () => {
+describe('Label and Network, then the walk', () => {
+  it('step 1 shows only Label and Network', async () => {
     await mountCollapsed()
     expect(legends()).toEqual(['Network'])
     expect(screen.getByLabelText('Label')).toBeTruthy()
     expect(screen.getAllByRole('radio').length).toBe(3)
     expect(screen.queryByRole('button', { name: 'Customise' })).toBeNull()
     expect(screen.queryByText('Recommended')).toBeNull()
-    expect(screen.queryByRole('region', { name: 'Your setup' })).toBeNull()
   })
 
-  it('step 2 on Testnet lists every answer once as text, with no radio, Create wallet primary and Walk me through it secondary', async () => {
+  it('step 2 of 6 is the Node question: no list, no other radios, no Create wallet, no Walk me through it', async () => {
     await mountCollapsed()
     await click(nextButton())
-    expect(screen.getByText('Step 2 of 7')).toBeTruthy()
-    expect(screen.queryAllByRole('radio').length).toBe(0)
-    expect(summary()).toEqual({
-      Label: 'My Wallet',
-      Network: 'Testnet',
-      Node: 'Built-in Nodes',
-      'Seed Method': 'Stored Seed',
-      'Signature type': 'Ed25519',
-      'Open Check': 'App PIN',
-      'Auto-lock': '5 minutes',
-      'Signing Check': 'Standard',
-    })
-    expect(screen.queryByText(/an Open Check is required/)).toBeNull()
-    const names = screen.getAllByRole('button').map((b) => b.textContent)
-    expect(names).toEqual(['Back', 'Walk me through it', 'Create wallet'])
-    expect(screen.getByRole('button', { name: 'Create wallet' }).className).not.toMatch(/bg-card/)
-    expect(walkButton().className).toMatch(/bg-card/)
+    expect(screen.getByText('Step 2 of 6')).toBeTruthy()
+    expect(screen.getByRole('heading', { level: 2 }).textContent).toBe('Node')
+    expect(legends()).toEqual(['Node'])
+    expect(screen.getAllByRole('radio').map((r) => (r as HTMLInputElement).closest('label')?.textContent?.trim() ?? '')).toEqual(['Built-in Nodes', 'A Node you choose'])
+    expect(screen.getAllByRole('button').map((b) => b.textContent)).toEqual(['Back', 'Next'])
   })
 
-  it('an automatic name reads Named automatically', async () => {
-    await mountCollapsed({ defaultLabel: '' })
-    await click(nextButton())
-    expect(summary().Label).toBe('Named automatically')
-  })
-
-  it('Devnet and Mainnet show the same list; Mainnet adds the rule in words', async () => {
+  it('no step has a Walk me through it button or a read-only list of terms', async () => {
     await mountCollapsed()
-    await click(radioNamed(/^Devnet/))
-    await click(nextButton())
-    expect(summary().Network).toBe('Devnet')
-    expect(screen.queryByText(/an Open Check is required/)).toBeNull()
-    await click(screen.getByRole('button', { name: 'Back' }))
-    await click(radioNamed(/^Mainnet/))
-    await click(nextButton())
-    expect(summary().Network).toBe('Mainnet')
-    expect(summary()['Signing Check']).toBe('App PIN only')
-    expect(screen.getByText(/an Open Check is required, and auto-lock is at least 1 minute/)).toBeTruthy()
-    expect(screen.queryAllByRole('radio').length).toBe(0)
+    for (const title of GENERATE_STEPS) {
+      goToStep(title)
+      expect(screen.queryByRole('button', { name: 'Walk me through it' })).toBeNull()
+      expect(Array.from(document.querySelectorAll('dt')).filter((dt) => !dt.closest('[hidden]'))).toEqual([])
+    }
   })
 
-  it('with a PRF the list reads a passkey as the Open Check, and Mainnet a passkey as the Signing Check', async () => {
-    h.capability = 'yes'
+  it('Create wallet is absent on steps 1 to 5 and present on step 6', async () => {
     await mountCollapsed()
-    await click(nextButton())
-    expect(summary()['Open Check']).toBe('Passkey')
-    expect(summary()['Signing Check']).toBe('Standard')
-    await click(screen.getByRole('button', { name: 'Back' }))
-    await click(radioNamed(/^Mainnet/))
-    await click(nextButton())
-    expect(summary()['Signing Check']).toBe('Passkey only')
+    for (const title of GENERATE_STEPS.slice(0, 5)) {
+      goToStep(title)
+      expect(screen.queryByRole('button', { name: /Create wallet/ })).toBeNull()
+      expect(nextButton()).toBeTruthy()
+    }
+    goToStep('Signing Check')
+    expect(screen.getByRole('button', { name: /Create wallet/ })).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'Next' })).toBeNull()
   })
 
-  it('Create wallet from step 2 calls the keystore with the same arguments as from step 3', async () => {
+  it('Mainnet states the Open Check rule in words on the Open Check step only; Testnet and Devnet do not', async () => {
+    const sentence = /an Open Check is required, and auto-lock is at least 1 minute/
     await mountCollapsed()
-    await click(nextButton())
-    type(await screen.findByLabelText(/Choose an App PIN/), '123456')
-    type(screen.getByLabelText('Confirm the App PIN'), '123456')
-    await click(screen.getByRole('button', { name: 'Create wallet' }))
-    const fromShortcut = h.createStoredWallet.mock.calls[0]
-    cleanup()
-    h.createStoredWallet.mockClear()
+    for (const title of GENERATE_STEPS) {
+      goToStep(title)
+      expect(screen.queryByText(sentence)).toBeNull()
+    }
+    await switchNetwork(/^Devnet/)
+    goToStep('Open Check and auto-lock')
+    expect(screen.queryByText(sentence)).toBeNull()
+    await switchNetwork(/^Mainnet/)
+    for (const title of GENERATE_STEPS.slice(1)) {
+      goToStep(title)
+      if (title === 'Open Check and auto-lock') expect(screen.getByText(sentence)).toBeTruthy()
+      else expect(screen.queryByText(sentence)).toBeNull()
+    }
+  })
+
+  it('Create wallet on the last step calls the keystore with the walk defaults', async () => {
     await mount()
     type(await screen.findByLabelText(/Choose an App PIN/), '123456')
     type(screen.getByLabelText('Confirm the App PIN'), '123456')
     await click(createButton())
-    const fromWalk = h.createStoredWallet.mock.calls[0]
-    expect(fromShortcut[0]).toEqual(fromWalk[0])
-    expect(fromShortcut[1]).toMatchObject({ pin: '123456', appPinExpected: false })
-    expect(fromWalk[1]).toMatchObject({ pin: '123456', appPinExpected: false })
-    expect(fromShortcut[0]).toMatchObject({ network: 'testnet', algorithm: 'ed25519', openCheck: 'pin', autoLockMinutes: 5, signing: 'standard' })
+    expect(h.createStoredWallet.mock.calls[0][1]).toMatchObject({ pin: '123456', appPinExpected: false })
+    expect(h.createStoredWallet.mock.calls[0][0]).toMatchObject({ network: 'testnet', algorithm: 'ed25519', openCheck: 'pin', autoLockMinutes: 5, signing: 'standard' })
   })
 
-  it('a refusal from step 2 shows as text on step 2', async () => {
+  it('a refusal shows as text on the last step', async () => {
     h.createStoredWallet.mockResolvedValue({ status: 'refused', reason: 'Refused for a reason.' })
-    await mountCollapsed()
-    await click(nextButton())
+    await mount()
     type(await screen.findByLabelText(/Choose an App PIN/), '123456')
     type(screen.getByLabelText('Confirm the App PIN'), '123456')
-    await click(screen.getByRole('button', { name: 'Create wallet' }))
+    await click(createButton())
     expect((await screen.findByRole('alert')).textContent).toBe('Refused for a reason.')
-    expect(screen.getByText('Step 2 of 7')).toBeTruthy()
+    expect(screen.getByText('Step 6 of 6')).toBeTruthy()
   })
 
-  it('the PIN fields appear on step 2 and the last step only, and a typed PIN and a chosen answer survive Next and Back', async () => {
+  it('the PIN fields appear on the last step only, and a typed PIN and a chosen answer survive Next and Back', async () => {
     await mountCollapsed()
     const pin = () => screen.getByLabelText(/Choose an App PIN/) as HTMLInputElement
     // The PIN fields render once the App PIN read resolves: wait for them, do not race it.
     await screen.findByLabelText(/Choose an App PIN/)
     expect(pin().closest('[hidden]')).not.toBeNull()
     await click(nextButton())
-    type(await screen.findByLabelText(/Choose an App PIN/), '123456')
-    expect(pin().closest('[hidden]')).toBeNull()
-    await click(walkButton())
     expect(pin().closest('[hidden]')).not.toBeNull()
     await click(radioNamed('secp256k1'))
-    expect(pin().closest('[hidden]')).not.toBeNull()
     await click(radioNamed('15 minutes'))
     goToStep('Signing Check')
     expect(pin().closest('[hidden]')).toBeNull()
-    expect(pin().value).toBe('123456')
-    goToStep('Your setup')
-    expect(summary()['Signature type']).toBe('secp256k1')
-    expect(summary()['Auto-lock']).toBe('15 minutes')
+    type(pin(), '123456')
     goToStep('Name and network')
     expect(pin().closest('[hidden]')).not.toBeNull()
-    goToStep('Your setup')
+    goToStep('Signing Check')
     expect(pin().value).toBe('123456')
     goToStep('Signature type')
     expect(radioNamed('secp256k1').checked).toBe(true)
@@ -360,15 +322,15 @@ describe('Label and Network, then the recommended setup', () => {
     expect(screen.getByText('Use 40 characters or fewer.')).toBeTruthy()
     expect(nextButton().getAttribute('aria-disabled')).toBe('true')
     await click(nextButton())
-    expect(screen.getByText('Step 1 of 7')).toBeTruthy()
+    expect(screen.getByText('Step 1 of 6')).toBeTruthy()
     type(screen.getByLabelText('Label'), 'Fine')
     expect(nextButton().getAttribute('aria-disabled')).toBeNull()
   })
 
-  it('Walk me through it opens step 3, Passkey-Derived shows its choice and domain warning on the Seed Method step only, and Back returns to step 2', async () => {
+  it('Passkey-Derived shows its choice and domain warning on the Seed Method step only', async () => {
     h.capability = 'yes'
     await mount()
-    expect(screen.getByText('Step 3 of 7')).toBeTruthy()
+    expect(screen.getByText('Step 2 of 6')).toBeTruthy()
     await click(nextButton())
     await click(radioNamed(/^Passkey-Derived Seed/))
     expect(radioNamed(/^Create a new passkey/).checked).toBe(true)
@@ -381,35 +343,34 @@ describe('Label and Network, then the recommended setup', () => {
     expect(radioNamed(/^Passkey only/).checked).toBe(true)
     expect(radioNamed(/^Standard/).getAttribute('aria-disabled')).toBe('true')
     expect(radioNamed(/^App PIN only/).getAttribute('aria-disabled')).toBe('true')
-    goToStep('Your setup')
-    expect(summary()['Seed Method']).toBe('Passkey-Derived Seed')
-    expect(summary()['Signing Check']).toBe('Passkey only')
+    goToStep('Seed Method')
+    expect(radioNamed(/^Passkey-Derived Seed/).checked).toBe(true)
   })
 
-  it('a blocked combination shows the Alert on step 2 and Create wallet is aria-disabled and does nothing', async () => {
+  it('a blocked combination shows the Alert after step 1 and Create wallet on the last step is aria-disabled and does nothing', async () => {
     h.policyOverride = (d) => ({ ...d, combination: { ok: false, reason: 'SENTINEL combination.' } })
     await mountCollapsed()
     expect(screen.queryByText('This wallet cannot be created yet')).toBeNull()
     await click(nextButton())
     expect(screen.getByText('This wallet cannot be created yet')).toBeTruthy()
     expect(screen.getByText('SENTINEL combination.')).toBeTruthy()
-    const create = screen.getByRole('button', { name: 'Create wallet' })
+    const create = createButton()
     expect(create.getAttribute('aria-disabled')).toBe('true')
     await click(create)
     expect(h.createStoredWallet).not.toHaveBeenCalled()
   })
 
-  it('the Node row reads not tested until the check passes, then the address', async () => {
+  it('a custom Node typed and tested on the Node step is kept after Back and forward', async () => {
     await mount()
     await click(radioNamed(/^A Node you choose/))
     type(screen.getByLabelText(/Node address/), 'wss://mine.example.com')
-    await click(screen.getByRole('button', { name: 'Back' }))
-    expect(summary()['Node']).toBe('Your own Node (not tested yet)')
-    await click(walkButton())
     await click(screen.getByRole('button', { name: 'Test this Node' }))
     await screen.findByText(/answers for this network/)
     await click(screen.getByRole('button', { name: 'Back' }))
-    expect(summary()['Node']).toBe('wss://mine.example.com (tested)')
+    await click(nextButton())
+    expect(radioNamed(/^A Node you choose/).checked).toBe(true)
+    expect((screen.getByLabelText(/Node address/) as HTMLInputElement).value).toBe('wss://mine.example.com')
+    expect(screen.getByText(/answers for this network/)).toBeTruthy()
   })
 })
 
@@ -451,7 +412,7 @@ describe('unavailable answers', () => {
     expect(screen.getAllByText(/A Mainnet wallet needs an Open Check/).length).toBeGreaterThan(0)
     const half = radioNamed('30 seconds')
     expect(half.getAttribute('aria-disabled')).toBe('true')
-    expect(screen.getByText(/at least 1 minute/)).toBeTruthy()
+    expect(screen.getByText(/must auto-lock after at least 1 minute of inactivity/)).toBeTruthy()
     // Forcing them on: still refused, nothing created.
     await click(none)
     expect(none.checked).toBe(false)
@@ -695,7 +656,7 @@ describe('the Node', () => {
     expect(h.verifyNode).toHaveBeenCalledWith('testnet', 'wss://other.example.com')
     expect(radioNamed(/^Built-in Nodes/).checked).toBe(true)
     // It stays on the Node step, and Next is not blocked.
-    expect(screen.getByText('Step 3 of 7')).toBeTruthy()
+    expect(screen.getByText('Step 2 of 6')).toBeTruthy()
     expect(nextButton().getAttribute('aria-disabled')).toBeNull()
   })
 
@@ -704,7 +665,7 @@ describe('the Node', () => {
     await click(radioNamed(/^A Node you choose/))
     expect(nextButton().getAttribute('aria-disabled')).toBeNull()
     goToStep('Signing Check')
-    expect(screen.getByText('Step 7 of 7')).toBeTruthy()
+    expect(screen.getByText('Step 6 of 6')).toBeTruthy()
     await click(createButton())
     expect(screen.getByText('Test the custom Node first, or use the built-in Nodes.')).toBeTruthy()
     expect(h.createStoredWallet).not.toHaveBeenCalled()
@@ -752,7 +713,6 @@ describe('the Node', () => {
     await act(async () => finish())
     expect(radioNamed(/^Devnet/).disabled).toBe(false)
     await click(nextButton())
-    await click(walkButton())
     await screen.findByText(/answers for this network/)
   })
 
@@ -844,7 +804,7 @@ describe('Passkey-Derived Seed (story 6)', () => {
     type(screen.getByLabelText(/Confirm the App PIN/), '123456')
     await click(createButton())
     expect(await screen.findByText('Cancelled. Nothing was created.')).toBeTruthy()
-    expect(screen.getByText('Step 7 of 7')).toBeTruthy()
+    expect(screen.getByText('Step 6 of 6')).toBeTruthy()
   })
 
   it.each([
@@ -863,7 +823,7 @@ describe('Passkey-Derived Seed (story 6)', () => {
     type(screen.getByLabelText(/Confirm the App PIN/), '123456')
     await click(createButton())
     expect(await screen.findByText(message)).toBeTruthy()
-    expect(screen.getByText('Step 7 of 7')).toBeTruthy()
+    expect(screen.getByText('Step 6 of 6')).toBeTruthy()
   })
 
   it('continuing from the ordinal commits the Wallet', async () => {
@@ -947,7 +907,7 @@ describe('Written-Seed confirmation (story 7)', () => {
   it('Cancel writes nothing and returns to the questions', async () => {
     const done = await startMainnetPasskeyOnly()
     await click(screen.getByRole('button', { name: 'Cancel' }))
-    await screen.findByText('Step 7 of 7')
+    await screen.findByText('Step 6 of 6')
     expect(screen.getByText(/Nothing was created/)).toBeTruthy()
     expect(done).not.toHaveBeenCalled()
     expect(h.startLockSession).not.toHaveBeenCalled()
@@ -995,7 +955,7 @@ describe('Written-Seed confirmation (story 7)', () => {
 
     expect(await screen.findByText('Cancelled. Nothing was created.')).toBeTruthy()
     expect(screen.queryByText('Write down your Seed')).toBeNull()
-    expect(screen.getByText('Step 7 of 7')).toBeTruthy()
+    expect(screen.getByText('Step 6 of 6')).toBeTruthy()
     expect(h.startLockSession).not.toHaveBeenCalled()
   })
 
@@ -1013,7 +973,7 @@ describe('Written-Seed confirmation (story 7)', () => {
     await click(screen.getByRole('button', { name: 'Check what I wrote' }))
 
     expect(await screen.findByText('vault write failed')).toBeTruthy()
-    expect(screen.getByText('Step 7 of 7')).toBeTruthy()
+    expect(screen.getByText('Step 6 of 6')).toBeTruthy()
   })
 
   it('Check and Cancel are inert once the confirmation is settled, while the keystore writes', async () => {
@@ -1048,7 +1008,6 @@ describe('Written-Seed confirmation (story 7)', () => {
     await screen.findByLabelText('Label')
     await click(radioNamed(/^Mainnet/))
     await click(nextButton())
-    await click(walkButton())
     await click(createButton())
     await screen.findByText('Write down your Seed')
     unmount()
@@ -1108,7 +1067,7 @@ describe('the wallet name and the questions component (chooser story 11)', () =>
     expect(labelInput().getAttribute('aria-describedby')).toBe(text.id)
     expect(nextButton().getAttribute('aria-disabled')).toBe('true')
     await click(nextButton())
-    expect(screen.getByText('Step 1 of 7')).toBeTruthy()
+    expect(screen.getByText('Step 1 of 6')).toBeTruthy()
     expect(screen.queryByRole('button', { name: /Create wallet/ })).toBeNull()
     expect(h.createStoredWallet).not.toHaveBeenCalled()
   })
@@ -1127,7 +1086,7 @@ describe('the wallet name and the questions component (chooser story 11)', () =>
     const source = readFileSync('src/components/wallet/CreateWalletFlow.tsx', 'utf8')
     expect(source).not.toMatch(/setActiveWalletId/)
     expect(source).toMatch(/<NameAndNetworkStep\b/)
-    expect(source).toMatch(/<RecommendedList\b/)
+    expect(source).not.toMatch(/RecommendedList|SHORTCUT_INDEX|Walk me through it/)
     expect(source).toMatch(/walkQuestions\(/)
     expect(source).toMatch(/\.render\(questionProps\)/)
     expect(source).not.toMatch(/legend="(Seed Method|Open Check|Signing Check)"/)

@@ -17,14 +17,32 @@
   invoke_dev_with: >-
     Read CLAUDE.md, DESIGN.md, docs/agents/INDEX.md and docs/agents/verifying-your-work.md first. Fetch origin/dev before starting. Run the four gates: bun run lint, bun run build, bun run test, bun run check:contrast. Where UI changes, do a browser pass at 320, 390 and desktop widths in both themes. Stage by explicit path only. Render the questions the policy lists; do not hard-code seven. Reuse the existing Choice and Axis controls and their detail copy.
 - id: "4"
-  title: "Review step and the Network-change reset"
+  title: "Remove the recommended-setup step"
   description: >-
-    CAP-5, CAP-6. The review lists every answer with a Change action and a Create wallet button; changing Network keeps legal answers, resets illegal ones to the new pre-selection and announces it politely.
+    CAP-3. Delete the read-only setup list, the Create wallet and Walk me through it buttons on step 2, so every question is asked; step 2 becomes Node. On Mainnet the Open Check step states the forced rules in text. Create wallet shows only on the last step. Rework of committed story 2.
   invoke_dev_with: >-
-    Read CLAUDE.md, DESIGN.md, docs/agents/INDEX.md and docs/agents/verifying-your-work.md first. Fetch origin/dev before starting. Run the four gates: bun run lint, bun run build, bun run test, bun run check:contrast. Where UI changes, do a browser pass at 320, 390 and desktop widths in both themes. Stage by explicit path only. After Change, Next returns to the review (assumption in SPEC.md).
+    Read CLAUDE.md, DESIGN.md, docs/agents/INDEX.md and docs/agents/verifying-your-work.md first. Fetch origin/dev before starting. Run the four gates: bun run lint, bun run build, bun run test, bun run check:contrast. Where UI changes, do a browser pass at 320, 390 and desktop widths in both themes. Stage by explicit path only. Story 2 and 3 are committed and tested; amend them, do not rebuild. Remove the tests for the setup list and the shortcut rather than weakening them.
 - id: "5"
-  title: "Retire the old form, tests, and the browser pass"
+  title: "Create or Import is the first question"
   description: >-
-    CAP-8. Remove what is left of the old form (the Recommended and Customise props, any duplicate summary), rewrite the tests that assumed the single form, and run a real-browser pass at 320px and 200% zoom in both themes for Create, Import and first run.
+    CAP-2. Step 1 asks Create a new wallet or import one, with Label and Network (Import shows its Seed field). The Generate and Import buttons on the Add wallet screen go away; the path cannot change after step 1 except by going Back, which starts the answers again. First-run Onboarding keeps its own entry buttons.
   invoke_dev_with: >-
-    Read CLAUDE.md, DESIGN.md, docs/agents/INDEX.md and docs/agents/verifying-your-work.md first. Fetch origin/dev before starting. Run the four gates: bun run lint, bun run build, bun run test, bun run check:contrast. Do a browser pass at 320, 390 and desktop widths in both themes, and at 200% zoom. Stage by explicit path only. Policy tests must pass unchanged; only tests that assume the single form are rewritten.
+    Read CLAUDE.md, DESIGN.md, docs/agents/INDEX.md and docs/agents/verifying-your-work.md first. Fetch origin/dev before starting. Run the four gates: bun run lint, bun run build, bun run test, bun run check:contrast. Where UI changes, do a browser pass at 320, 390 and desktop widths in both themes. Stage by explicit path only. The mode switch lives in src/components/wallet/AddWalletScreen.tsx; keep the Seed handling and the keyed restart of answers.
+- id: "6"
+  title: "Plain wording for the checks"
+  description: >-
+    CAP-9. One words list (check-words.ts) used by the quiz, the Configure Checks plate and Edit checks: Open Check question "Authentication required to open the wallet" with "No authentication required to open the wallet"; Signing Check question "Authentication required to sign a transaction" with "Nothing is asked for signing." ASD-STE100 style, no mention of signing data.
+  invoke_dev_with: >-
+    Read CLAUDE.md, DESIGN.md, docs/agents/INDEX.md and docs/agents/verifying-your-work.md first. Fetch origin/dev before starting. Run the four gates: bun run lint, bun run build, bun run test, bun run check:contrast. Where UI changes, do a browser pass at 320, 390 and desktop widths in both themes. Stage by explicit path only. The app signs transactions only, never data. Keep sentences under 21 words and add a test for that. Update every test that matches the old strings.
+- id: "7"
+  title: "Review before create, the Network-change reset, and a reachable PIN"
+  description: >-
+    CAP-5, CAP-6. The review lists every answer with Change and holds Create wallet; the App PIN fields are visible above the footer and a missing or short PIN moves focus to the PIN field with the reason beside it; changing Network keeps legal answers and resets illegal ones with a polite announcement. Plate styling, not a dark readout well.
+  invoke_dev_with: >-
+    Read CLAUDE.md, DESIGN.md, docs/agents/INDEX.md and docs/agents/verifying-your-work.md first. Fetch origin/dev before starting. Run the four gates: bun run lint, bun run build, bun run test, bun run check:contrast. Where UI changes, do a browser pass at 320, 390 and desktop widths in both themes. Stage by explicit path only. A parked earlier attempt is in _bmad-output/implementation-artifacts/wip-quiz-20-4-before-replan.patch (built when the shortcut existed): reuse its network-reset logic, not its steps. After building, run /impeccable critique on the review step and fix what it finds.
+- id: "8"
+  title: "Retire the old form, tests, and the full browser pass"
+  description: >-
+    CAP-8. Remove what is left of the old form, rewrite the tests that assumed the single form, and run a real-browser pass at 320px and 200% zoom in both themes for Create and Import, plus an Impeccable audit of the whole quiz.
+  invoke_dev_with: >-
+    Read CLAUDE.md, DESIGN.md, docs/agents/INDEX.md and docs/agents/verifying-your-work.md first. Fetch origin/dev before starting. Run the four gates: bun run lint, bun run build, bun run test, bun run check:contrast. Where UI changes, do a browser pass at 320, 390 and desktop widths in both themes. Stage by explicit path only. Policy tests must pass unchanged; only tests that assume the old form are rewritten.

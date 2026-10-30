@@ -1,18 +1,17 @@
 # Quiz steps
 
-The order is FR-60's. Pre-selections are FR-60's and are not restated here. Each step reads its options and their reasons from `describeOptions`.
+The order is FR-60's. Pre-selections are FR-60's and are not restated here. Each step reads its options and their reasons from `describeOptions`. There is no shortcut step (decided 2026-10-30).
 
 | # | Step | Asks | Shown when | Notes |
 |---|---|---|---|---|
-| 1 | Label and Network | Label; Network | always | Network first: it decides later legality (FR-65). Label validation text stays here. |
-| 2 | Recommended setup | nothing: a read-only list | always, every Network | Primary **Create wallet**, secondary **Walk me through it**. On Mainnet names the forced rules in text. |
-| 3 | Node | Built-in Nodes or a Node you choose, with its test | walk only | A failed test stays on this step (CAP-7). |
-| 4 | Seed Method | Stored Seed or Passkey-Derived Seed; the Passkey choice and the app-domain warning when Passkey-Derived | walk, Generate only | Skipped in Import: the Seed fixes it. |
-| 5 | Signature type | Ed25519 or secp256k1 | walk, Generate only | Skipped in Import: the Seed fixes it. |
-| 6 | Open Check and auto-lock | Open Check; auto-lock minutes | walk | Mainnet floor: an Open Check is required, auto-lock at least 1 minute. Assumption: paired. |
-| 7 | Signing Check | Standard, passkey only, or App PIN only | walk | Options the Network or device cannot support stay visible with the reason. |
-| R | Review | nothing: every answer with **Change** | end of the walk | **Create wallet** here equals step 2's. |
+| 1 | Create or Import, Label, Network | Create a new Wallet or import one; Label; Network (Import: the Seed field) | always | Network first: it decides later legality (FR-65). The path cannot change after this step except by going Back here. |
+| 2 | Node | Built-in Nodes or a Node you choose, with its test | always | A failed test stays on this step (CAP-7). |
+| 3 | Seed Method | Stored Seed or Passkey-Derived Seed; the Passkey choice and the app-domain warning when Passkey-Derived | Create only | Skipped in Import: the Seed fixes it. |
+| 4 | Signature type | Ed25519 or secp256k1 | Create only | Skipped in Import: the Seed fixes it. |
+| 5 | Authentication to open the wallet, and auto-lock | the Open Check; auto-lock minutes | always | On Mainnet: an Open Check is required, auto-lock at least 1 minute, said in text. Assumption: paired. |
+| 6 | Authentication to sign a transaction | Nothing is asked for signing; passkey only; App PIN only | always | Options the Network or device cannot support stay visible with the reason. |
+| R | Review | every answer with **Change**; the App PIN fields where needed | end of the walk | **Create wallet** (**Import wallet**) is here. Plate styling, not a dark well. |
 
-The step counter counts the steps the user will actually see for that mode and Network: Import omits steps 4 and 5.
+The step counter counts the steps the user will actually see: Create is 7 steps (6 plus the review), Import is 5.
 
 After **Create wallet**, the flow continues exactly as today: PIN entry where an App PIN is chosen, the written-Seed confirmation, the Seed backup, then done. None of that is part of the quiz.

@@ -20,7 +20,7 @@ This document provides the epic and story breakdown for the Create-wallet Quiz, 
 
 New (PRD section 4.3):
 
-FR-91: The per-Wallet questions are asked one at a time. Step 1 asks Label and Network. Step 2 shows the pre-selected answers as a read-only list with Create wallet and Walk me through it, on every network, naming Mainnet's forced rules. The walk asks Node, Seed Method (with the Passkey choice and domain warning), Signature type, Open Check with auto-lock, and Signing Check, each pre-selected and explained in plain words. A review step lists every answer with Change. Back keeps every answer. Changing Network keeps legal answers and resets illegal ones with a polite announcement. An unavailable answer stays visible and `aria-disabled` with its reason as text. A failed Node test keeps the user on the Node step. Steps are named in text, focus moves to the step heading, motion respects reduced motion, and it works at 320px and 200% text.
+FR-91: The per-Wallet questions are asked one at a time, with no shortcut. Step 1 asks whether to create a new Wallet or import one, then the Label and Network. The walk asks Node, Seed Method (with the Passkey choice and domain warning), Signature type, Open Check with auto-lock, and Signing Check, each pre-selected and explained in plain words (ASD-STE100). A review step lists every answer with Change, holds Create wallet, and keeps the App PIN fields reachable. Back keeps every answer. Changing Network keeps legal answers and resets illegal ones with a polite announcement. An unavailable answer stays visible and `aria-disabled` with its reason as text. A failed Node test keeps the user on the Node step. Steps are named in text, focus moves to the step heading, motion respects reduced motion, and it works at 320px and 200% text. (Revised 2026-10-30.)
 
 Amended:
 
@@ -56,16 +56,19 @@ Delivery: the four gates (`bun run lint`, `bun run build`, `bun run test`, `bun 
 
 UX-DR1: A step container with "Step n of N" as text, counting only the steps the user will see (Import omits Seed Method and Signature type).
 UX-DR2: Focus moves to the new step's heading on Next and Back.
-UX-DR3: Step 2 is a read-only list, no radio, with Create wallet primary and Walk me through it secondary, on every network; on Mainnet it names the forced rules in text.
+UX-DR3: No step shows a read-only setup list and no Walk me through it button exists; Create wallet (Import wallet) appears only on the last step; on Mainnet the Open Check step names the forced rules in text.
 UX-DR4: Each question step reuses the existing `Choice` and `Axis` controls and their detail copy; an unavailable answer is `aria-disabled` with its reason as text.
 UX-DR5: The review step lists every answer with a Change action that returns to that question; after Change, Next returns to the review.
 UX-DR6: The Network-change reset line is visible text and is announced politely.
 UX-DR7: Actions stay reachable at 320px and 200% text through the screen footer; no step clips or scrolls sideways.
-UX-DR8: No new colour token; the existing panel vocabulary of `DESIGN.md`.
+UX-DR8: No new colour token; the existing panel vocabulary of `DESIGN.md`; the review step uses plate styling, not a dark readout well.
+UX-DR9: Step 1 asks Create or Import with the Label and Network; no Generate or Import switch shows on later steps.
+UX-DR10: One words list (`check-words.ts`) serves the quiz, Configure and Edit checks; ASD-STE100 style; no copy says the app signs data.
+UX-DR11: The App PIN fields are visible above the footer on the review step at 320px and 390px, and a missing or short PIN moves focus to the PIN field with the reason beside it.
 
 ### FR Coverage Map
 
-FR-91: Stories 20.1 to 20.5.
+FR-91: Stories 20.1 to 20.8.
 FR-60 (Import line, Label): Story 20.2, 20.3.
 FR-87: Stories 20.2, 20.3.
 NFR-5, NFR-6, NFR-8, NFR-9, NFR-10: Story 20.5, and each UI story.
@@ -75,7 +78,7 @@ NFR-5, NFR-6, NFR-8, NFR-9, NFR-10: Story 20.5, and each UI story.
 ### Epic 20: Create a wallet one question at a time
 A user creating or importing a wallet is asked one question at a time. They can accept the recommended setup in one tap or walk through each choice with its consequence stated, and they review everything before the wallet is created. The rules that decide which answers are legal, and how the wallet is written, stay as they are.
 **FRs covered:** FR-91, FR-60 (Import line, Label), FR-87
-**Stories (stories.yaml):** 1 to 5, as 20.1 to 20.5. No spec or done checkpoints (owner, 2026-10-29).
+**Stories (stories.yaml):** 1 to 8, as 20.1 to 20.8. Stories 20.1 to 20.3 are built. 20.2 is amended by 20.4 (the shortcut is removed). No spec or done checkpoints (owner, 2026-10-29).
 
 
 ## Epic 20: Create a wallet one question at a time
@@ -194,21 +197,115 @@ So that I understand what I am choosing where I choose it.
 
 **And** a test fails if a question the policy lists is not rendered as a step
 
-### Story 20.4: Review before create, and the Network-change reset
+### Story 20.4: The recommended-setup step is removed
+
+As an advanced user,
+I want to choose every setting myself,
+So that nothing is created from defaults I did not look at.
+
+*Amends story 20.2 (built): its shortcut step and Walk me through it button go.*
+
+**Acceptance Criteria:**
+
+**Given** the user leaves step 1
+**When** the next step renders
+**Then** it is the first question (Node), and no step shows a read-only list of the setup (FR-91, CAP-3)
+**And** no Walk me through it button exists, and no Create wallet button appears before the last step
+
+**Given** the Network is Mainnet
+**When** the Open Check step renders
+**Then** it states in text that an Open Check is required and auto-lock is at least 1 minute (FR-65)
+
+**Given** the user is on the last question
+**When** they continue
+**Then** Create wallet (Import wallet) replaces Next, until story 20.7 adds the review
+
+**Given** the steps are counted
+**When** "Step n of N" renders
+**Then** N counts only the steps shown for Create or Import (UX-DR1)
+
+**And** the tests for the setup list and the shortcut are removed, and a test fails if a read-only setup list or a Walk me through it button renders
+
+### Story 20.5: Create or Import is the first question
+
+As a user adding a wallet,
+I want to say whether I create a new wallet or import one as the first question,
+So that the path is chosen on purpose and cannot be switched in the middle of the run.
+
+**Acceptance Criteria:**
+
+**Given** the Add wallet screen opens
+**When** step 1 renders
+**Then** it asks Create a new wallet or import one, with the Label and Network, and Import shows its Seed field (FR-91, CAP-2, UX-DR9)
+
+**Given** the user is past step 1
+**When** they look for a Generate or Import switch
+**Then** none is shown, and the only way to change the choice is Back to step 1 (FR-91)
+**And** changing it there starts the answers again, as the two paths ask different questions
+
+**Given** first-run Onboarding
+**When** the user starts
+**Then** its own entry buttons still choose the path, as today (FR-87 known gap), and the quiz after that is the same
+
+**Given** the Seed handling
+**When** the path is Import
+**Then** the Seed field, its blocked Next and its refusal returning to step 1 behave as in story 20.2 (NFR-2)
+
+**And** a test fails if the path can be switched after step 1
+
+### Story 20.6: Plain wording for the checks
+
+As a user choosing how a wallet is protected,
+I want the two check questions in short, simple words,
+So that I understand what is asked, and never see one check named two ways.
+
+**Acceptance Criteria:**
+
+**Given** the Open Check step
+**When** it renders
+**Then** the question reads "Authentication required to open the wallet", with the answers App PIN, Passkey and "No authentication required to open the wallet" (FR-91, CAP-9)
+
+**Given** the Signing Check step
+**When** it renders
+**Then** the question reads "Authentication required to sign a transaction", with the answers "Nothing is asked for signing.", Passkey only and App PIN only
+**And** no copy says the app signs data, because it signs transactions only
+
+**Given** the Configure Checks plate and Edit checks
+**When** they name the same checks
+**Then** they use the same words from `check-words.ts`, the one list the quiz also reads (UX-DR10)
+
+**Given** every new or changed sentence
+**When** a test measures it
+**Then** each is under 21 words and says one thing (ASD-STE100)
+
+**And** every test that matched the old strings is updated, and the policy tests pass unchanged
+
+### Story 20.7: Review before create, the Network-change reset, and a reachable PIN
 
 As a user about to create a wallet,
-I want to see every answer once more and change any of them,
-So that nothing is created that I did not choose.
+I want to see every answer once more, change any of them, and enter my App PIN where I can see it,
+So that nothing is created that I did not choose, and a missing PIN never fails silently.
+
+*A parked earlier attempt is in `_bmad-output/implementation-artifacts/wip-quiz-20-4-before-replan.patch`; its network-reset logic may be reused.*
 
 **Acceptance Criteria:**
 
 **Given** the user finishes the walk
 **When** the review renders
-**Then** it lists every applicable answer, each with **Change**, and **Create wallet** (FR-91, CAP-5)
+**Then** it lists every applicable answer, each with **Change**, and holds **Create wallet** (**Import wallet**) (FR-91, CAP-5)
+**And** it uses plate styling from `DESIGN.md`, not a dark readout well (UX-DR8)
 
 **Given** the user chooses Change on a row
 **When** that question renders
 **Then** its answer is kept, and Next returns to the review (assumption in SPEC.md)
+
+**Given** an App PIN is needed and the review opens at 320px or 390px
+**When** the step renders
+**Then** the PIN fields are visible above the sticky footer without scrolling past it (UX-DR11)
+
+**Given** Create wallet is pressed with a missing or short PIN
+**When** the refusal shows
+**Then** focus moves to the PIN field and the reason is text beside it
 
 **Given** the user changes Network after later steps were answered
 **When** the change is made
@@ -219,9 +316,9 @@ So that nothing is created that I did not choose.
 **When** creation runs
 **Then** policy refuses any illegal combination before any write, as today (AD-28)
 
-**And** a test fails if a Network change leaves an illegal answer selected
+**And** an Impeccable critique of the review step is run and its findings fixed
 
-### Story 20.5: Retire the old form, rewrite its tests, and check it in a real browser
+### Story 20.8: Retire the old form, rewrite its tests, and check it in a real browser
 
 As the owner,
 I want nothing of the old long form left, and the quiz proven on a phone-width screen,

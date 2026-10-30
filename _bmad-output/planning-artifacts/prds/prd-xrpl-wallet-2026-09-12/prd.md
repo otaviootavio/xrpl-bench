@@ -434,6 +434,8 @@ The user can lock an open Wallet from the chooser without entering it.
   in visible text.
 
 #### FR-85: Rename a Wallet
+*Planned change (FR-92): renaming moves from the chooser card to the Wallet's Configure screen.*
+
 The user can rename a Wallet from the chooser. The name belongs to the Seed, so
 every network row under the card shows it.
 - A name is 1 to 40 characters and cannot match, ignoring case, another
@@ -444,6 +446,8 @@ every network row under the card shows it.
   is kept.
 
 #### FR-86: Remove a Wallet from the chooser
+*Planned change (FR-92): removing moves from the chooser card to the Wallet's Configure screen.*
+
 The user can remove one Wallet view from the chooser, only while that Wallet's
 own lock is open.
 - A locked card says it must be opened first. The rule holds even if the control
@@ -471,7 +475,7 @@ every lock is closed.
 
 #### FR-88: A Configure screen for each Wallet
 Each open Wallet has one Configure screen for everything that belongs to that
-Wallet alone, reached from its card and from the Wallet's header.
+Wallet alone, reached from its card and from the Wallet's header. *Planned change (FR-92): reached from the Wallet's header only, and it also holds Rename and Remove.*
 - It holds, in this order: Checks (with auto-lock, FR-10), Seed (reveal,
   FR-69), Operating another account (FR-75, FR-77), Other networks (FR-61), Node
   (FR-61) and Two-device signing (FR-78).
@@ -498,26 +502,40 @@ name and in visible text.
   light it again.
 
 #### FR-91: The per-Wallet questions are asked one at a time
-*Planned, not built. Changes how FR-60 is asked, not what it asks. Raised
-2026-10-29 because the Recommended panel repeats the choices that sit under
-Customise.*
+*Planned; partly built (the shell, the first steps and the walk). Changes how
+FR-60 is asked, not what it asks. Raised 2026-10-29. Revised 2026-10-30: no
+recommended-setup shortcut, and Create or Import is the first question.*
 
-Generate and Import (FR-87) ask the per-Wallet questions (FR-60) as a short quiz
-instead of one long form.
-- **Step 1 asks Label and Network.** Network comes first because it decides
-  which later answers are legal (FR-65).
-- **Step 2 shows the recommended setup**: the pre-selected answers (FR-60) as a
-  read-only list, with **Create wallet** as the primary action and **Walk me
-  through it** as the secondary. It is shown on every network. On Mainnet it also
-  states the forced rules in plain text: an Open Check is required, and auto-lock
-  is at least 1 minute (FR-65).
-- **Walking through asks one question per step**, in FR-60's order: Node, Seed
-  Method (with the Passkey choice and the domain warning when Passkey-Derived is
-  picked, FR-63), Signature type, Open Check with auto-lock (FR-65), Signing
-  Check (FR-66). Each has its answer pre-selected and says in plain words what it
-  means for access and recovery.
+Creating or importing a Wallet (FR-87) asks the per-Wallet questions (FR-60) as
+a short quiz instead of one long form. The users are advanced, so the quiz makes
+them choose every setting. It does not offer a shortcut.
+- **Step 1 asks whether to create a new Wallet or import one**, then the Label
+  and the Network. This choice is part of the quiz, not a switch beside it. It
+  cannot be changed after step 1 except by going back to step 1. Changing it
+  there starts the answers again, because the two paths ask different questions.
+  Network comes before the other questions because it decides which of them
+  are legal (FR-65).
+- **There is no recommended-setup step.** Every question has its answer
+  pre-selected (FR-60) and every question is asked.
+- **Each question has its own step**, in FR-60's order: Node, Seed Method (with
+  the Passkey choice and the domain warning when Passkey-Derived is picked,
+  FR-63), Signature type, Open Check with auto-lock (FR-65), Signing Check
+  (FR-66). Each says in plain words what it means for access and recovery. On
+  Mainnet the Open Check step also says in text that an Open Check is required
+  and that auto-lock is at least 1 minute (FR-65).
 - **The walk ends on a review step** listing every answer, each with a **Change**
-  action that returns to that question. **Create wallet** is on this step too.
+  action that returns to that question. **Create wallet** (or **Import wallet**)
+  is on this step. If an App PIN is needed, its fields are reachable on this step
+  without scrolling past the footer, and a refused or missing PIN moves focus to
+  the PIN field and shows the reason beside it.
+- **Wording follows ASD-STE100** (Simplified Technical English): short
+  sentences, one idea in each, simple verbs. The Open Check question reads
+  "Authentication required to open the wallet", and its no-check answer reads
+  "No authentication required to open the wallet". The Signing Check question
+  reads "Authentication required to sign a transaction", and its no-check answer
+  reads "Nothing is asked for signing." The app signs transactions only: it has
+  no data or message signing. One list of words serves the quiz, Configure and
+  Edit checks, so the same check is never named two ways.
 - Import (FR-2, FR-87) skips Seed Method and Signature type, because the Seed
   fixes both. Its Seed field and written-Seed confirmation (FR-72) are unchanged.
   The Seed field is on step 1: Next is blocked until a Seed is typed, and a
@@ -533,16 +551,34 @@ instead of one long form.
 - **Steps are named in text** ("Step 3 of 7"), never by colour alone. Focus moves
   to the new step's heading on Next and Back. Motion between steps respects
   reduced motion. It works at 320px and at 200% text (NFR-9), with the actions
-  always reachable.
+  always reachable. The review step uses the plate vocabulary of `DESIGN.md`,
+  not a dark readout well.
 - What stays untouched: the policy that decides which answers are legal (FR-60,
   FR-65), creation, PIN entry (FR-7, FR-9), the Seed backup (FR-3), and NFR-2. No
   secret is held in quiz state.
-- The quiz is the same at first run (§4.1) as from the chooser, shortcut step
-  included. Decided 2026-10-29.
-- The Configure screen (FR-88) is a separate surface and is not changed here.
-- `[ASSUMPTION]` Sequencing: the quiz is built first and renders whatever
-  questions the policy lists, so the passkey-signing work (§4.14) can add or
-  change a question without reworking it. Decided 2026-10-29.
+- The quiz is the same at first run (§4.1) as from the chooser. *Known gap:* the
+  first-run Import button still uses the older flow (FR-87's known gap).
+- The Configure screen (FR-88) is a separate surface and is not changed here,
+  except for the shared wording above.
+- `[ASSUMPTION]` Sequencing: the quiz renders whatever questions the policy
+  lists, so the passkey-signing work (§4.14) can add or change a question without
+  reworking it. Decided 2026-10-29.
+
+#### FR-92: Rename and Remove live on the Wallet's Configure screen
+*Planned, not built. Decided 2026-10-30. Changes FR-81, FR-85, FR-86 and FR-88.*
+
+A Wallet's card on the chooser has two actions at most: **Open**, and **Lock**
+while its lock is open. The card has no Configure, Rename or Remove.
+- **Configure is reached from the Wallet's header**, inside the Wallet. It is not
+  on the card.
+- **Rename (FR-85) is a section of Configure**, with the same rules: 1 to 40
+  characters, unique ignoring case, no lock asked, nothing sent to the ledger.
+- **Remove (FR-86) is a section of Configure**, with the same confirm bodies and
+  rules. Configure exists only while the lock is open, so a locked card can no
+  longer show a Remove control at all.
+- A locked card shows its name and nothing else (FR-81), with Open.
+- Removing the last Wallet still returns the app to first run and deletes the
+  App PIN (FR-13). Remove all, in Settings (FR-89), is unchanged.
 
 ### 4.4 Sending Payments
 *Detail: `docs/user-stories/sending-payments.md`*

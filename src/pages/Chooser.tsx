@@ -1,25 +1,18 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
-import { REMOVE_DONE, REMOVE_FAILED, REMOVE_PIN_NOT_DISCARDED, removeBodyFor, type RemoveBody } from '@/components/wallet/remove-copy'
+import { removeBodyFor, type RemoveBody } from '@/components/wallet/remove-copy'
 import { RemoveDialog, type RemoveTarget } from '@/components/wallet/RemoveDialog'
 import { RenameDialog, type RenameTarget } from '@/components/wallet/RenameDialog'
 import { WalletCard } from '@/components/wallet/WalletCard'
-import { listWallets, removeWallet, renameWallet, type RemoveWalletResult, type WalletMeta } from '@/lib/crypto/keystore'
+import { renameWallet } from '@/lib/crypto/keystore'
 import { Button } from '@/components/ui/button'
 import { consumeAdded } from '@/lib/chooser-signals'
 import { notify } from '@/lib/notify'
 import { ADD_WALLET_PATH, navigate } from '@/lib/route'
-import { removeWalletData, tearDownLock } from '@/lib/teardown'
+import { openWalletNow, confirmRemoveWallet } from '@/lib/remove-wallet'
+import { tearDownLock } from '@/lib/teardown'
 import { useAppStore } from '@/store/app-store'
-import { groupWalletsBySeed, nextActiveWalletId, walletIdsInChooserOrder, type OpenGroup, type WalletGroup } from '@/store/wallet-groups'
-
-/** The Wallet if its lock is open NOW: read from the store at the moment of the call, never from
- * what a card was rendered with. */
-function openWalletNow(walletId: string): WalletMeta | null {
-  const { wallets, openLocks } = useAppStore.getState()
-  const wallet = wallets.find((w) => w.id === walletId)
-  return wallet && wallet.lockId in openLocks ? wallet : null
-}
+import { groupWalletsBySeed, type OpenGroup, type WalletGroup } from '@/store/wallet-groups'
 
 /**
  * The chooser (FR-79, FR-81, AD-36): one card per Seed, read from `wallets` and
@@ -37,7 +30,6 @@ export function Chooser() {
   const [sharedNote, setSharedNote] = useState<string | null>(null)
   const [failedSeedId, setFailedSeedId] = useState<string | null>(null)
   const setWallets = useAppStore((s) => s.setWallets)
-  const setActiveWalletId = useAppStore((s) => s.setActiveWalletId)
   const [renaming, setRenaming] = useState<RenameTarget | null>(null)
   const [removing, setRemoving] = useState<RemoveTarget | null>(null)
   // Set once a removal is confirmed: the card is gone, so focus goes to the h1, not the opener.
@@ -115,60 +107,16 @@ export function Chooser() {
   }, [])
 
   const confirmRemove = useCallback(
-    async (walletId: string, shownBody: RemoveBody) => {
-      // Again at confirm: the lock may have closed while the dialog was open.
-      const removed = openWalletNow(walletId)
-      if (!removed) {
-        setRemoving(null)
-        notify.error('This wallet is locked. Open it to remove it.')
-        return
-      }
-      // The dialog states a consequence; if the wallets changed under it, it no longer holds.
-      if (removeBodyFor(useAppStore.getState().wallets, walletId) !== shownBody) {
-        setRemoving(null)
-        notify.error('The wallets on this device changed. Open Remove again to see what it does now.')
-        return
-      }
-      let result: RemoveWalletResult | null = null
-      let teardownFailed = false
-      let readFailed = false
-      try {
-        result = await removeWallet(walletId)
-      } catch {
-        result = null
-      } finally {
-        // Whatever the keystore did, the session, the cache and the Active Wallet stop naming it.
-        const state = useAppStore.getState()
-        let vault: WalletMeta[] | null
-        try {
-          vault = await listWallets(state.network)
-        } catch {
-          // The keystore said the removal went through: the store minus it is what we know. If it
-          // threw AND the list cannot be read, nothing is known: never show that as the list.
-          vault = result ? state.wallets.filter((w) => w.id !== walletId) : null
-        }
-        try {
-          // Unread vault: only the removed wallet's data is shed (it is still listed), nothing else is torn down.
-          removeWalletData(queryClient, removed, vault ? vault.filter((w) => w.id !== walletId) : state.wallets)
-        } catch {
-          teardownFailed = true
-        }
-        removedRef.current = true
-        setRemoving(null)
-        if (vault) {
-          const remaining = vault.filter((w) => w.id !== walletId)
-          setWallets(vault)
-          setActiveWalletId(nextActiveWalletId(walletId, useAppStore.getState().activeWalletId, walletIdsInChooserOrder(remaining)))
-        } else {
-          readFailed = true
-        }
-        headingRef.current?.focus()
-      }
-      if (result === null || teardownFailed || readFailed) notify.error(REMOVE_FAILED)
-      else if (result.appPin === 'failed') notify.error(REMOVE_PIN_NOT_DISCARDED)
-      else notify.success(REMOVE_DONE)
-    },
-    [queryClient, setActiveWalletId, setWallets],
+    (walletId: string, shownBody: RemoveBody) =>
+      confirmRemoveWallet(queryClient, walletId, shownBody, {
+        refused: () => setRemoving(null),
+        settling: () => {
+          removedRef.current = true
+          setRemoving(null)
+        },
+        settled: () => headingRef.current?.focus(),
+      }),
+    [queryClient],
   )
 
   // A failure is about an open card: once that card has flipped (Lock elsewhere, auto-lock) it is

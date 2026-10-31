@@ -1,9 +1,11 @@
 import { useEffect, useId, useRef, useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { ConfigPlate } from '@/components/wallet/ConfigPlate'
+import { RemoveDialog, type RemoveTarget } from '@/components/wallet/RemoveDialog'
+import { removeBodyFor, type RemoveBody } from '@/components/wallet/remove-copy'
 import { RenameDialog } from '@/components/wallet/RenameDialog'
 import { ControlledNote } from '@/components/wallet/ControlledNote'
 import { MasterKeyControl } from '@/components/wallet/MasterKeyControl'
@@ -28,7 +30,9 @@ import { minutesLabel } from '@/lib/minutes-label'
 import { useAppStore } from '@/store/app-store'
 import { holdsMasterKey } from '@/lib/control'
 import { getLockInfo } from '@/lib/crypto/lock'
-import { walletScreenPath } from '@/lib/route'
+import { confirmRemoveWallet, openWalletNow } from '@/lib/remove-wallet'
+import { leaveToChooser, walletScreenPath } from '@/lib/route'
+import { NETWORKS } from '@/lib/xrpl/networks'
 import { queryKeys } from '@/lib/xrpl/query-keys'
 
 /** A key that wraps its legend rather than push a plate past 320px or 200% text. */
@@ -240,6 +244,52 @@ function ControlPlate({ wallet }: { wallet: WalletMeta }) {
   )
 }
 
+const REMOVE_KEY = 'remove'
+
+/**
+ * Removing this wallet (FR-92, AD-46). The dialog, the copy and the removal itself are the chooser
+ * card's, through `lib/remove-wallet`: the lock is re-checked from the store when Remove is pressed
+ * and again at confirm. It acts on this one network view only.
+ */
+function RemovePlate({ wallet }: { wallet: WalletMeta }) {
+  const [removing, setRemoving] = useState<RemoveTarget | null>(null)
+  const queryClient = useQueryClient()
+  const network = NETWORKS[wallet.network].label
+
+  // The key's own state stops nothing a keyboard can do, so the guard is here, at call time.
+  function press() {
+    const now = openWalletNow(wallet.id)
+    if (!now) return
+    setRemoving({ walletId: wallet.id, name: now.label, body: removeBodyFor(useAppStore.getState().wallets, wallet.id) })
+  }
+
+  const confirm = (walletId: string, shownBody: RemoveBody) =>
+    confirmRemoveWallet(queryClient, walletId, shownBody, {
+      refused: () => setRemoving(null),
+      settling: (remaining) => {
+        setRemoving(null)
+        // Leave before the store write, so the history is unwound rather than replaced. With no wallet left, first run shows by itself.
+        if (remaining !== 0) leaveToChooser()
+      },
+      settled: () => {},
+    })
+
+  return (
+    <ConfigPlate title="Remove">
+      <p className="text-sm text-muted-foreground">Remove this wallet on {network} from this device.</p>
+      <Button type="button" variant="danger" size="sm" className={KEY} data-configure-key={REMOVE_KEY} aria-label={`Remove ${wallet.label} on ${network}`} onClick={press}>
+        Remove
+      </Button>
+      <RemoveDialog
+        target={removing}
+        onConfirm={confirm}
+        onClose={() => setRemoving(null)}
+        returnFocusTo={() => document.querySelector<HTMLElement>(`[data-configure-key="${REMOVE_KEY}"]`)}
+      />
+    </ConfigPlate>
+  )
+}
+
 /**
  * Per-wallet configuration (FR-88): one routed screen, a plate per concern in a
  * fixed order. The app shell mounts it only for the active Wallet whose lock is
@@ -275,6 +325,7 @@ export function ConfigureScreen({ wallet }: { wallet: WalletMeta }) {
       <ConfigPlate title="Two-device signing">
         <TwoDeviceSign wallet={wallet} configureKey={TWO_DEVICE_KEY} />
       </ConfigPlate>
+      <RemovePlate wallet={wallet} />
     </div>
   )
 }

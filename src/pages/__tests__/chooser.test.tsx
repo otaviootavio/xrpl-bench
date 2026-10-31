@@ -890,10 +890,14 @@ describe('Remove (AD-46)', () => {
   })
 
   it('the chooser closes no lock and clears no cache inline; the teardown owner does, from a finally', () => {
-    const files = ['src/pages/Chooser.tsx', 'src/components/wallet/WalletCard.tsx', 'src/components/wallet/RemoveDialog.tsx', 'src/components/wallet/remove-copy.ts']
+    const files = ['src/pages/Chooser.tsx', 'src/components/wallet/WalletCard.tsx', 'src/components/wallet/RemoveDialog.tsx', 'src/lib/remove-copy.ts']
     for (const f of files) expect(readFileSync(f, 'utf8'), f).not.toMatch(/closeLock|queryClient\.clear|\.clear\(|outline-none|:focus\b/)
     const chooser = readFileSync('src/pages/Chooser.tsx', 'utf8')
-    expect(chooser).toMatch(/finally\s*{[\s\S]*removeWalletData\(/)
+    // The removal itself moved to the one shared function (Configure story 2): the finally lives there now.
+    const shared = readFileSync('src/lib/remove-wallet.ts', 'utf8')
+    expect(shared).not.toMatch(/closeLock|queryClient\.clear|\.clear\(/)
+    expect(shared).toMatch(/finally\s*{[\s\S]*removeWalletData\(/)
+    expect(chooser).toMatch(/confirmRemoveWallet\(/)
     expect(chooser).not.toMatch(/importAndStoreWallet|generateAndStoreWallet/)
   })
 })

@@ -4,6 +4,8 @@ import { afterEach, describe, expect, it } from 'vitest'
 import * as words from '@/components/wallet/check-words'
 import { OpenCheckQuestion, SigningCheckQuestion, type WalletQuestionsProps } from '@/components/wallet/WalletQuestions'
 import { describeOptions } from '@/lib/crypto/policy'
+import { NETWORK_RESET_NOTE } from '@/components/wallet/network-reset'
+import { answerRows } from '@/components/wallet/walk-questions'
 
 afterEach(cleanup)
 
@@ -100,6 +102,23 @@ describe('plain wording for the checks', () => {
     for (const el of container.querySelectorAll('p, legend, label, span')) {
       if (el.children.length > 0) continue
       for (const s of sentences(el.textContent ?? '')) expect(wordCount(s), s).toBeLessThan(21)
+    }
+  })
+})
+
+describe('the Review and the Network reset line use short sentences', () => {
+  it('every Review value, note and the Network reset line is under 21 words, and none says a check signs data', () => {
+    const texts = [
+      ...answerRows({ ...props('testnet'), seedMethod: 'passkey-derived' }).flatMap((r) => [r.term, r.value]),
+      ...(['pin', 'passkey', 'none'] as const).map((openCheck) => answerRows({ ...props('testnet'), openCheck }).find((r) => r.term === words.OPEN_CHECK_QUESTION)!.value),
+      NETWORK_RESET_NOTE,
+      words.NETWORK_LOCKED_NOTE,
+      ...(['mainnet', 'testnet', 'devnet'] as const).flatMap((n) => [words.createConsequence(n, false), words.createConsequence(n, true)]),
+      ...answerRows({ ...props('testnet') }).map((r) => r.note ?? ''),
+    ]
+    for (const text of texts) {
+      for (const s of sentences(text)) expect(wordCount(s), s).toBeLessThan(21)
+      expect(text).not.toMatch(/sign(s|ing)? (data|message)/i)
     }
   })
 })

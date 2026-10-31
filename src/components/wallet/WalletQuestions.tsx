@@ -18,7 +18,7 @@ import { builtInNodes, type NetworkId } from '@/lib/xrpl/networks'
 
 /**
  * The per-wallet questions (AD-40), split by quiz step: `NameAndNetworkStep`
- * (Label, Network) and the walk, one step per question (`WALK_QUESTIONS`: Node, Seed
+ * (Label, Network), the walk and `ReviewStep` (every answer with a Change). The walk is one step per question (`WALK_QUESTIONS`: Node, Seed
  * Method, signature type, Open Check with auto-lock, Signing Check).
  * Presentational only: every answer lives in the caller's state, and
  * which answers are legal, and why one is not, arrive as `options`, the result of
@@ -66,6 +66,9 @@ export interface WalletQuestionsProps {
   signing: SigningKind
   onSigning: (kind: SigningKind) => void
 
+  /** Step 1 only: what the last Network change put back to its recommended answer, or none. */
+  resetNote?: string | null
+
   /** An import: the Seed fixes the Seed Method and the signature type, so neither is asked or summarised. */
   imported?: boolean
 }
@@ -94,8 +97,74 @@ export function NameAndNetworkStep(p: WalletQuestionsProps) {
         )}
       </div>
 
-      <NetworkChoice value={p.network} onChange={p.onNetworkChange} disabled={busy || p.nodeBusy} />
+      <div>
+        <NetworkChoice value={p.network} onChange={p.onNetworkChange} disabled={busy || p.nodeBusy} />
+        {/* Always mounted, so a screen reader hears the text arrive. Words only: no colour carries it. */}
+        <Alert role="none" className={p.resetNote ? 'mt-2' : 'sr-only'}>
+          {p.resetNote && <AlertTitle>Notice</AlertTitle>}
+          <p role="status" aria-live="polite" className="text-sm">
+            {p.resetNote}
+          </p>
+        </Alert>
+      </div>
     </>
+  )
+}
+
+/** One answer as a labelled line. `step` is the id of the quiz step that asks it, so the Review can send the person back there. */
+export interface AnswerRow {
+  /** The step its Change goes to. Absent on the Network row: it is locked on the Review, and changing it means going Back to step 1. */
+  step?: string
+  /** Plain prose under the value. */
+  note?: string
+  term: string
+  value: string
+  /** An address, URL or number: set in the Data face. */
+  data?: boolean
+}
+
+/** A Review plate: one legend, one padding, one gap. The answers and the App PIN both use it. */
+export function ReviewPlate({ legend, children }: { legend: string; children: ReactNode }) {
+  return (
+    <section aria-label={legend} className="panel-plate flex flex-col gap-3 rounded-md px-3 py-3">
+      <p aria-hidden="true" className="panel-legend">
+        {legend}
+      </p>
+      {children}
+    </section>
+  )
+}
+
+/** The Review's answers: every applicable answer as text, each with its own Change. A row with no Change carries its reason as text in `note`. `footer` is the last line of the plate. */
+export function ReviewStep({ rows, onChange, disabled, footer }: { rows: readonly AnswerRow[]; onChange: (step: string) => void; disabled: boolean; footer?: ReactNode }) {
+  return (
+    <ReviewPlate legend="Your answers">
+      <dl className="grid gap-y-3 text-sm">
+        {rows.map((row) => (
+          <div key={row.term} className="flex items-center justify-between gap-3">
+            <div className="min-w-0">
+              <dt className="panel-legend">{row.term}</dt>
+              <dd className={row.data ? 'font-data min-w-0 break-words' : 'min-w-0 break-words'}>{row.value}</dd>
+              {row.note && <dd className="text-xs text-muted-foreground">{row.note}</dd>}
+            </div>
+            {row.step !== undefined && (
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                className="h-auto min-h-8 shrink-0 py-1 pointer-coarse:min-h-11"
+                disabled={disabled}
+                aria-label={`Change ${row.term}`}
+                onClick={() => onChange(row.step!)}
+              >
+                Change
+              </Button>
+            )}
+          </div>
+        ))}
+      </dl>
+      {footer}
+    </ReviewPlate>
   )
 }
 

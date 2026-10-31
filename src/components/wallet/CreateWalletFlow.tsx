@@ -1,17 +1,23 @@
+import { flushSync } from 'react-dom'
 import { useCallback, useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { createConsequence } from '@/components/wallet/check-words'
 import { RENAME_ERRORS } from '@/components/wallet/rename-copy'
 import {
   NameAndNetworkStep,
   PathChoice,
+  ReviewPlate,
+  ReviewStep,
   type PathChoiceProps,
   type WalletQuestionsProps,
 } from '@/components/wallet/WalletQuestions'
-import { walkQuestions } from '@/components/wallet/walk-questions'
+import { answerRows, formatNetwork, walkQuestions } from '@/components/wallet/walk-questions'
+import { defaultSigning, NETWORK_RESET_NOTE, preselection } from '@/components/wallet/network-reset'
 import { QuizShell, type QuizStep } from '@/components/wallet/QuizShell'
 import { SeedReveal } from '@/components/wallet/SeedReveal'
 import { WrittenSeedConfirm } from '@/components/wallet/WrittenSeedConfirm'
@@ -34,7 +40,7 @@ import { useAppStore } from '@/store/app-store'
 /**
  * The creation flow (FR-60): one question per axis, in this order — Network and
  * Node, Seed Method, signature type, Open Check with auto-lock, Signing Check —
- * each with a pre-selected answer.
+ * each with a pre-selected answer, then a Review of every answer.
  *
  * This component only RENDERS. Which answers are legal, and why one is not, come
  * from `describeOptions` in `lib/crypto/policy.ts` (AD-28); creation calls the
@@ -113,11 +119,6 @@ function kindStatement(backupEligible: boolean | undefined): { title: string; bo
 
 const MAX_PIN_FIELD_HINT = 'The App PIN must be at least 6 digits.'
 
-function defaultSigning(network: NetworkId, capability: PasskeyCapability): SigningKind {
-  if (network !== 'mainnet') return 'standard'
-  return capability === 'yes' ? 'passkey' : 'pin'
-}
-
 export function CreateWalletFlow(props: CreateWalletFlowProps) {
   const [capability, setCapability] = useState<PasskeyCapability | null>(null)
 
@@ -139,6 +140,10 @@ function CreateWalletForm({ capability, onDone, onInProgressChange, defaultLabel
   const group = useId()
   const [step, setStep] = useState<Step>('questions')
   const [quizIndex, setQuizIndex] = useState(0)
+  // Set by a Change on the Review: the next forward move goes back to the Review.
+  const [returnToReview, setReturnToReview] = useState(false)
+  // What the last Network change reset, shown under Network on step 1 only.
+  const [resetNote, setResetNote] = useState<string | null>(null)
   const [label, setLabel] = useState(defaultLabel)
   const [network, setNewWalletNetwork] = useState<NetworkId>('testnet')
   const [nodeMode, setNodeMode] = useState<'builtin' | 'custom'>('builtin')
@@ -146,20 +151,23 @@ function CreateWalletForm({ capability, onDone, onInProgressChange, defaultLabel
   const [verifiedNode, setVerifiedNode] = useState<string | null>(null)
   const [nodeReason, setNodeReason] = useState<string | null>(null)
   const [nodeBusy, setNodeBusy] = useState(false)
-  const [seedMethod, setSeedMethod] = useState<SeedMethod>('stored')
+  const [seedMethod, setSeedMethod] = useState<SeedMethod>(() => preselection('testnet', capability).seedMethod)
   const [algorithm, setAlgorithm] = useState<'ed25519' | 'secp256k1'>('ed25519')
-  const [openCheck, setOpenCheck] = useState<NewOpenCheck>(capability === 'yes' ? 'passkey' : 'pin')
-  const [autoLockMinutes, setAutoLockMinutes] = useState(5)
-  const [signing, setSigning] = useState<SigningKind>(defaultSigning('testnet', capability))
-  const [signingTouched, setSigningTouched] = useState(false)
+  const [openCheck, setOpenCheck] = useState<NewOpenCheck>(() => preselection('testnet', capability).openCheck)
+  const [autoLockMinutes, setAutoLockMinutes] = useState(() => preselection('testnet', capability).autoLockMinutes)
+  const [signing, setSigning] = useState<SigningKind>(() => preselection('testnet', capability).signing)
   const [appPin, setAppPin] = useState<{ exists: boolean; tries: number } | null>(null)
   // A failed read is its own state: never rendered as "no App PIN yet".
   const [pinReadFailed, setPinReadFailed] = useState(false)
   const networkRef = useRef<NetworkId>('testnet')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  // Bumped on every refusal so the same message pressed twice still refocuses.
+  const [errorTick, setErrorTick] = useState(0)
   // Why the typed Import Seed was refused: shown beside its field on step 1. Text only.
   const [seedError, setSeedError] = useState<string | null>(null)
+  // Why the App PIN was refused, shown beside the field at fault. Text only, never the PIN.
+  const [pinError, setPinError] = useState<{ field: 'pin' | 'confirm'; text: string } | null>(null)
   const [backedUp, setBackedUp] = useState(false)
   const [passkeyChoice, setPasskeyChoice] = useState<'new' | 'existing'>('new')
   const [derivedBackup, setDerivedBackup] = useState<DerivedBackup | null>(null)
@@ -176,12 +184,20 @@ function CreateWalletForm({ capability, onDone, onInProgressChange, defaultLabel
 
   // Secrets and the key: refs only, never state.
   const pinRef = useRef<HTMLInputElement | null>(null)
+  const errorRef = useRef<HTMLDivElement | null>(null)
   const pinConfirmRef = useRef<HTMLInputElement | null>(null)
   const seedRef = useRef<string | null>(null)
   // The pending written-Seed confirmation: resolved by the step's buttons, or
   // `false` if the flow is left. Answers live in uncontrolled inputs, never state.
   const confirmResolveRef = useRef<((ok: boolean) => void) | null>(null)
   const pendingRef = useRef<{ meta: WalletMeta; key: CryptoKey; autoLockMinutes: number } | null>(null)
+
+  // A failed Create: move focus to the error and scroll it clear of the sticky footer.
+  useEffect(() => {
+    if (!error) return
+    errorRef.current?.focus()
+    errorRef.current?.scrollIntoView?.({ block: 'center' })
+  }, [error, errorTick])
   const getSeed = useCallback(() => seedRef.current, [])
 
   const setWallets = useAppStore((s) => s.setWallets)
@@ -268,14 +284,26 @@ function CreateWalletForm({ capability, onDone, onInProgressChange, defaultLabel
   }
 
   function changeNetwork(next: NetworkId) {
+    if (next === network) return
     setNewWalletNetwork(next)
     networkRef.current = next
+    // Network is chosen on step 1 only: a change starts every later answer again.
+    const pre = preselection(next, capability)
+    setSeedMethod(pre.seedMethod)
+    setOpenCheck(pre.openCheck)
+    setAutoLockMinutes(pre.autoLockMinutes)
+    setSigning(pre.signing)
+    setAlgorithm('ed25519')
+    setPasskeyChoice('new')
+    setNodeDraft('')
     // A Node was proven for the network it was tested on, and only that one.
     setNodeMode('builtin')
     setVerifiedNode(null)
     setNodeReason(null)
-    if (seedMethod === 'passkey-derived') setSigning('passkey')
-    else if (!signingTouched) setSigning(defaultSigning(next, capability))
+    setResetNote(NETWORK_RESET_NOTE)
+    // The reset answers were never walked: Next goes step by step, not back to the Review.
+    setReturnToReview(false)
+    setError(null)
   }
 
   async function testNode() {
@@ -302,17 +330,29 @@ function CreateWalletForm({ capability, onDone, onInProgressChange, defaultLabel
     if (pinConfirmRef.current) pinConfirmRef.current.value = ''
   }
 
+  /** A refused PIN: the reason shows beside its field and focus goes there. */
+  function refusePin(field: 'pin' | 'confirm', text: string) {
+    // Commit the error first so aria-invalid and aria-describedby are on the field when it takes focus.
+    flushSync(() => setPinError({ field, text }))
+    ;(field === 'confirm' ? pinConfirmRef : pinRef).current?.focus()
+    // The sticky footer can cover the reason under the field (200% zoom): bring it clear of it.
+    document.getElementById(`${group}-pin-error`)?.scrollIntoView?.({ block: 'center' })
+  }
+
   async function handleCreate() {
     if (busy || !options.combination.ok || labelError) return
     setError(null)
     setSeedError(null)
+    setPinError(null)
     const newName = normalizeWalletName(label) === '' ? uniqueDefaultName('Wallet', otherNames) : label
     if (needsPin && pinReadFailed) {
       setError('Could not read the App PIN state. Retry before creating.')
+      setErrorTick((t) => t + 1)
       return
     }
     if (nodeMode === 'custom' && !verifiedNode) {
       setError('Test the custom Node first, or use the built-in Nodes.')
+      setErrorTick((t) => t + 1)
       return
     }
     let pin: string | undefined
@@ -320,16 +360,16 @@ function CreateWalletForm({ capability, onDone, onInProgressChange, defaultLabel
       const typed = pinRef.current?.value ?? ''
       if (appPin?.exists) {
         if (typed === '') {
-          setError('Enter your App PIN.')
+          refusePin('pin', 'Enter your App PIN.')
           return
         }
       } else {
         if (typed.length < 6) {
-          setError(MAX_PIN_FIELD_HINT)
+          refusePin('pin', MAX_PIN_FIELD_HINT)
           return
         }
         if (typed !== (pinConfirmRef.current?.value ?? '')) {
-          setError("The two PINs don't match.")
+          refusePin('confirm', "The two PINs don't match.")
           return
         }
       }
@@ -554,7 +594,7 @@ function CreateWalletForm({ capability, onDone, onInProgressChange, defaultLabel
   const verdict = options.combination
 
   const createButton = (
-    <Button type="button" aria-disabled={!verdict.ok || labelError || (needsPin && pinReadFailed) ? true : undefined} aria-describedby={!verdict.ok ? `${group}-blocked` : labelError ? `${group}-label-error` : undefined} disabled={busy} onClick={() => void handleCreate()}>
+    <Button type="button" aria-disabled={!verdict.ok || labelError || (needsPin && pinReadFailed) ? true : undefined} aria-describedby={!verdict.ok ? `${group}-blocked` : labelError ? `${group}-label-error` : network === 'mainnet' ? `${group}-consequence` : undefined} disabled={busy} onClick={() => void handleCreate()}>
       {busy ? (importSource ? 'Importing…' : 'Creating…') : importSource ? 'Import wallet' : 'Create wallet'}
     </Button>
   )
@@ -584,13 +624,11 @@ function CreateWalletForm({ capability, onDone, onInProgressChange, defaultLabel
     seedMethod,
     onSelectStored: () => {
       setSeedMethod('stored')
-      setSigningTouched(false)
       setSigning(defaultSigning(network, capability))
     },
     onSelectDerived: () => {
       setSeedMethod('passkey-derived')
       // Its only Signing Check is its passkey (FR-67).
-      setSigningTouched(true)
       setSigning('passkey')
     },
     passkeyChoice,
@@ -603,7 +641,6 @@ function CreateWalletForm({ capability, onDone, onInProgressChange, defaultLabel
     onAutoLockMinutes: setAutoLockMinutes,
     signing,
     onSigning: (kind) => {
-      setSigningTouched(true)
       setSigning(kind)
     },
   }
@@ -612,63 +649,138 @@ function CreateWalletForm({ capability, onDone, onInProgressChange, defaultLabel
   const quizSteps: QuizStep[] = [
     { id: 'name-network', title: pathChoice ? 'Create or import' : 'Name and network', blocked: !!labelError || (!!importSource && !importSource.seedTyped) },
     ...walk.map((q) => ({ id: q.id, title: q.title })),
+    { id: 'review', title: 'Review' },
   ]
+  const reviewIndex = quizSteps.length - 1
+
+  /** The one place a forward move is decided. After a Change the next forward move
+   * lands on the Review, not the next question; Back always goes one step back and
+   * drops the return, so it can never skip questions later. */
+  function goToIndex(next: number) {
+    setSeedError(null)
+    setResetNote(null)
+    setPinError(null)
+    const target = returnToReview && next > quizIndex ? reviewIndex : next
+    if (target === reviewIndex || next < quizIndex) setReturnToReview(false)
+    setQuizIndex(target)
+  }
+
+  function changeAnswer(stepId: string) {
+    const at = quizSteps.findIndex((q) => q.id === stepId)
+    if (at < 0) return
+    setReturnToReview(true)
+    setResetNote(null)
+    setPinError(null)
+    setQuizIndex(at)
+  }
 
   const walkQuestion = quizIndex >= 1 ? walk[quizIndex - 1] : undefined
-  // The PIN is used where Create wallet is: the last step.
-  const showPin = quizIndex === quizSteps.length - 1
+  // The PIN is used where Create wallet is: the Review, the last step.
+  const showPin = quizIndex === reviewIndex
+  const pinFieldProps = (field: 'pin' | 'confirm') => {
+    const mine = pinError?.field === field
+    return {
+      'aria-invalid': mine ? true : undefined,
+      'aria-describedby': mine ? `${group}-pin-error` : undefined,
+      onChange: () => setPinError((e) => (e?.field === field ? null : e)),
+    }
+  }
+  const blockedAlert = (
+    <Alert variant="warning" id={`${group}-blocked`}>
+      <AlertTitle>This wallet cannot be created yet</AlertTitle>
+      <AlertDescription>
+        {!verdict.ok && <span>{verdict.reason}</span>}
+        {quizIndex === reviewIndex && <span> Use a Change button below to fix it, or go Back to step 1 to change the network.</span>}
+      </AlertDescription>
+    </Alert>
+  )
+  const pinReason = pinError && (
+    <p id={`${group}-pin-error`} className="text-sm text-text-destructive">
+      {pinError.text}
+    </p>
+  )
 
   return (
-    <QuizShell steps={quizSteps} index={quizIndex} onIndex={(next) => { setSeedError(null); setQuizIndex(next) }} busy={busy} actionHost={actionHost} finalAction={createButton}>
+    <QuizShell steps={quizSteps} index={quizIndex} onIndex={goToIndex} busy={busy} actionHost={actionHost} finalAction={createButton}>
       {pathChoice && quizIndex === 0 && <PathChoice group={group} path={{ ...pathChoice, disabled: pathChoice.disabled || busy }} />}
       {/* Mounted once and only hidden elsewhere: unmounting would clear a typed Seed. */}
       {importSource && <div hidden={quizIndex !== 0} onChange={() => setSeedError(null)}>{importSource.field(busy, seedError)}</div>}
-      {quizIndex === 0 && <NameAndNetworkStep {...questionProps} />}
+      {quizIndex === 0 && <NameAndNetworkStep {...questionProps} resetNote={resetNote} />}
+      {walkQuestion && <p className="text-sm text-muted-foreground">Network: {formatNetwork(network)}</p>}
       {walkQuestion?.render(questionProps)}
 
-      {/* Mounted once and only hidden before the last step: a typed PIN survives a step change. */}
-      <div hidden={!showPin} className="flex flex-col gap-5">
-        {needsPin && pinReadFailed && (
-          <div role="alert" className="grid gap-1.5 text-sm">
-            <p className="text-text-destructive">Could not read the App PIN state on this device.</p>
-            <Button type="button" size="sm" variant="outline" className="w-fit" onClick={() => void refreshAppPin()}>
-              Retry
-            </Button>
-          </div>
+      {quizIndex === reviewIndex && !verdict.ok && blockedAlert}
+
+      {quizIndex === reviewIndex && (
+        <ReviewStep
+          rows={answerRows(questionProps)}
+          onChange={changeAnswer}
+          disabled={busy}
+          footer={
+            <p id={`${group}-consequence`} className={network === 'mainnet' ? 'flex flex-wrap items-center gap-2 text-base font-semibold' : 'flex flex-wrap items-center gap-2 text-sm'}>
+              {network === 'mainnet' && <Badge variant="warning">Real funds</Badge>}
+              {createConsequence(network, !!importSource)}
+            </p>
+          }
+        />
+      )}
+
+      {/* Mounted once and only hidden before the Review: a typed PIN survives a step change.
+          It is the last plate, directly above the footer, so it is on screen at 320px. */}
+      <div hidden={!showPin} className="contents">
+        {needsPin && !pinReadFailed && !appPin && (
+          <ReviewPlate legend="App PIN">
+            <p role="status" className="text-sm text-muted-foreground">Checking App PIN…</p>
+          </ReviewPlate>
         )}
-        {needsPin && !pinReadFailed && appPin && (
-          <div className="grid gap-1.5">
-            {appPin.exists ? (
-              <>
-                <Label htmlFor={`${group}-pin`}>Your App PIN</Label>
-                <Input id={`${group}-pin`} ref={pinRef} type="password" inputMode="numeric" autoComplete="off" disabled={busy} />
-                <p className="text-xs text-muted-foreground">
-                  {appPin.tries} {appPin.tries === 1 ? 'try' : 'tries'} remaining. A wrong PIN counts; cancelling does not.
-                </p>
-              </>
+        {needsPin && (pinReadFailed || appPin) && (
+          <ReviewPlate legend="App PIN">
+            <p className="text-sm text-muted-foreground">{appPin?.exists ? 'Enter your App PIN to confirm.' : 'Choose an App PIN to protect this device.'}</p>
+            {pinReadFailed ? (
+              <div role="alert" className="grid gap-1.5 text-sm">
+                <p className="text-text-destructive">Could not read the App PIN state on this device.</p>
+                <Button type="button" size="sm" variant="outline" className="w-fit" onClick={() => void refreshAppPin()}>
+                  Retry
+                </Button>
+              </div>
             ) : (
-              <>
-                <Label htmlFor={`${group}-pin`}>Choose an App PIN (at least 6 digits)</Label>
-                <Input id={`${group}-pin`} ref={pinRef} type="password" inputMode="numeric" autoComplete="new-password" disabled={busy} />
-                <Label htmlFor={`${group}-pin-confirm`}>Confirm the App PIN</Label>
-                <Input id={`${group}-pin-confirm`} ref={pinConfirmRef} type="password" inputMode="numeric" autoComplete="new-password" disabled={busy} />
-                <p className="text-xs text-muted-foreground">One App PIN serves every wallet on this device that uses it.</p>
-              </>
+              appPin && (
+                <div className="grid gap-1.5">
+                  {appPin.exists ? (
+                    <>
+                      <Label htmlFor={`${group}-pin`}>Your App PIN</Label>
+                      <Input id={`${group}-pin`} ref={pinRef} type="password" inputMode="numeric" autoComplete="off" disabled={busy} {...pinFieldProps('pin')} />
+                      {pinError?.field === 'pin' && pinReason}
+                      <p className="text-xs text-muted-foreground">
+                        {appPin.tries} {appPin.tries === 1 ? 'try' : 'tries'} remaining. A wrong PIN counts; cancelling does not.
+                      </p>
+                    </>
+                  ) : (
+                    <>
+                      <Label htmlFor={`${group}-pin`}>Choose an App PIN (at least 6 digits)</Label>
+                      <Input id={`${group}-pin`} ref={pinRef} type="password" inputMode="numeric" autoComplete="new-password" disabled={busy} {...pinFieldProps('pin')} />
+                      {pinError?.field === 'pin' && pinReason}
+                      <Label htmlFor={`${group}-pin-confirm`}>Confirm the App PIN</Label>
+                      <Input id={`${group}-pin-confirm`} ref={pinConfirmRef} type="password" inputMode="numeric" autoComplete="new-password" disabled={busy} {...pinFieldProps('confirm')} />
+                      {pinError?.field === 'confirm' && pinReason}
+                      <p className="text-xs text-muted-foreground">One App PIN serves every wallet on this device that uses it.</p>
+                    </>
+                  )}
+                </div>
+              )
             )}
-          </div>
+          </ReviewPlate>
         )}
       </div>
 
-      {!verdict.ok && quizIndex !== 0 && (
-        <Alert variant="warning" id={`${group}-blocked`}>
-          <AlertTitle>This wallet cannot be created yet</AlertTitle>
-          <AlertDescription>{verdict.reason}</AlertDescription>
-        </Alert>
-      )}
+      {!verdict.ok && quizIndex !== 0 && quizIndex !== reviewIndex && blockedAlert}
       {error && (
-        <p role="alert" className="text-sm text-text-destructive">
-          {error}
-        </p>
+        <div ref={errorRef} tabIndex={-1} className="scroll-mb-32">
+          <Alert variant="warning">
+            <AlertTitle>{importSource ? 'The wallet was not imported' : 'The wallet was not created'}</AlertTitle>
+            <AlertDescription>{error}</AlertDescription>
+          </Alert>
+        </div>
       )}
     </QuizShell>
   )

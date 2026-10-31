@@ -752,4 +752,15 @@ describe('first-run Onboarding', () => {
     expect((await screen.findByRole('heading', { level: 2 })).textContent).toBe('Name and network')
     expect(screen.queryByRole('radio', { name: /Create a new wallet|Import a wallet/ })).toBeNull()
   })
+
+  it('shows exactly one button named Back (the quiz) and one named Back to start, which returns to the entry choice', async () => {
+    render(<Onboarding />)
+    await click(await screen.findByRole('button', { name: 'Create a new wallet' }))
+    await screen.findByRole('heading', { level: 2 })
+    expect(screen.getAllByRole('button', { name: /^Back$/ })).toHaveLength(1)
+    expect(screen.getAllByRole('button', { name: /^Back to start$/ })).toHaveLength(1)
+    await click(screen.getByRole('button', { name: 'Back to start' }))
+    expect(await screen.findByRole('button', { name: 'Create a new wallet' })).toBeTruthy()
+    expect(screen.queryByRole('button', { name: /^Back$/ })).toBeNull()
+  })
 })

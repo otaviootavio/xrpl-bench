@@ -1,7 +1,7 @@
 /** @vitest-environment jsdom */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
-import { readFileSync } from 'node:fs'
+import { readdirSync, readFileSync } from 'node:fs'
 
 /**
  * Story 5: the creation flow asks one question per axis, in order, each with a
@@ -1170,6 +1170,51 @@ describe('the wallet name and the questions component (chooser story 11)', () =>
     expect(source).not.toMatch(/legend="(Seed Method|Open Check|Signing Check)"/)
     expect(readFileSync('src/components/wallet/WalletQuestions.tsx', 'utf8')).toMatch(/legend=\{SIGNING_CHECK_QUESTION\}/)
     expect(source).not.toMatch(/isRecommended|customiseForced|customiseOpen/)
+  })
+})
+
+describe('the old form is retired (story 20.8)', () => {
+  const sources = () => {
+    const dir = 'src/components/wallet'
+    const files = readdirSync(dir)
+      .filter((f) => /\.tsx?$/.test(f))
+      .map((f) => `${dir}/${f}`)
+    return [...files, 'src/pages/Onboarding.tsx'].map((f) => [f, readFileSync(f, 'utf8')] as const)
+  }
+
+  it('no wallet component or Onboarding keeps a retired name, a Customise toggle or a Recommended panel', () => {
+    for (const [file, text] of sources()) {
+      expect(text, file).not.toMatch(/isRecommended|customiseForced|customiseOpen|RecommendedList|SHORTCUT_INDEX|Walk me through it/)
+      expect(text, file).not.toMatch(/Customi[sz]e/)
+      expect(text, file).not.toMatch(/Recommended/)
+    }
+  })
+
+  it('WalletQuestions holds no answer list: rows come from the Review only', () => {
+    const text = readFileSync('src/components/wallet/WalletQuestions.tsx', 'utf8')
+    expect(text).not.toMatch(/Your setup|Selected setup/)
+    const outside = text.replace(/export function ReviewStep[\s\S]*?(?=\nexport function PathChoice)/, '')
+    expect(outside.length).toBeLessThan(text.length)
+    expect(outside).toContain('export function PathChoice')
+    expect(outside).not.toMatch(/<dl\b|<dt\b|answerRows/)
+  })
+
+  it('moves focus to the step heading after Next, Back and Change, and keeps the counter as text', async () => {
+    await mountCollapsed()
+    for (const [i, title] of GENERATE_STEPS.slice(1).entries()) {
+      await click(nextButton())
+      expect(screen.getByText(`Step ${i + 2} of 7`)).toBeTruthy()
+      const heading = screen.getByRole('heading', { level: 2 })
+      expect(heading.textContent).toBe(title)
+      expect(document.activeElement).toBe(heading)
+    }
+    await click(screen.getByRole('button', { name: 'Back' }))
+    expect(document.activeElement).toBe(screen.getByRole('heading', { level: 2 }))
+    expect(screen.getByText('Step 6 of 7')).toBeTruthy()
+    goToStep('Review')
+    await click(screen.getByRole('button', { name: 'Change Signature type' }))
+    expect(document.activeElement).toBe(screen.getByRole('heading', { level: 2 }))
+    expect(screen.getByText('Step 4 of 7')).toBeTruthy()
   })
 })
 

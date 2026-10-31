@@ -139,11 +139,11 @@ export function ReviewPlate({ legend, children }: { legend: string; children: Re
 export function ReviewStep({ rows, onChange, disabled, footer }: { rows: readonly AnswerRow[]; onChange: (step: string) => void; disabled: boolean; footer?: ReactNode }) {
   return (
     <ReviewPlate legend="Your answers">
-      <dl className="grid gap-y-3 text-sm">
+      <dl className="grid grid-cols-[minmax(0,1fr)] gap-y-3 text-sm">
         {rows.map((row) => (
           <div key={row.term} className="flex items-center justify-between gap-3">
             <div className="min-w-0">
-              <dt className="panel-legend">{row.term}</dt>
+              <dt className="panel-legend break-words">{row.term}</dt>
               <dd className={row.data ? 'font-data min-w-0 break-words' : 'min-w-0 break-words'}>{row.value}</dd>
               {row.note && <dd className="text-xs text-muted-foreground">{row.note}</dd>}
             </div>

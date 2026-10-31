@@ -1,4 +1,5 @@
 /** @vitest-environment jsdom */
+import { readFileSync } from 'node:fs'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
@@ -39,7 +40,7 @@ vi.mock('@/lib/crypto/keystore', () => ({
 import { ConfigureScreen } from '@/components/wallet/ConfigureScreen'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { REMOVE_BACKUP, REMOVE_DONE, REMOVE_FAILED, REMOVE_LAST, REMOVE_PIN_NOT_DISCARDED, REMOVE_SIBLING, REMOVE_SOLE } from '@/components/wallet/remove-copy'
-import { Chooser } from '@/pages/Chooser'
+import { queryKeys } from '@/lib/xrpl/query-keys'
 import { navigate } from '@/lib/route'
 import { useAppStore } from '@/store/app-store'
 
@@ -56,13 +57,15 @@ function seed(wallets: unknown[], openLocks = ['L1']) {
   for (const l of openLocks) state().openLock(l, KEY, 5)
 }
 function mount() {
-  return render(
-    <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  const utils = render(
+    <QueryClientProvider client={queryClient}>
       <TooltipProvider>
         <ConfigureScreen wallet={W as never} />
       </TooltipProvider>
     </QueryClientProvider>,
   )
+  return { queryClient, ...utils }
 }
 const key = () => screen.getByRole('button', { name: 'Remove Savings on Testnet' })
 const dialog = () => screen.getByRole('dialog', { name: 'Remove this wallet?' })
@@ -92,17 +95,6 @@ describe('Configure Remove plate', () => {
     expect(key().className).toMatch(/border-destructive\/55/)
     expect(key().className).not.toMatch(/(^|\s)bg-destructive(\s|$)/)
     expect(within(plate).getByText('Remove this wallet on Testnet from this device.')).toBeTruthy()
-  })
-
-  it('the chooser card keeps its own Remove key', () => {
-    render(
-      <QueryClientProvider client={new QueryClient()}>
-        <TooltipProvider>
-          <Chooser />
-        </TooltipProvider>
-      </QueryClientProvider>,
-    )
-    expect(screen.getByRole('button', { name: 'Remove Savings on Testnet' })).toBeTruthy()
   })
 
   it.each([
@@ -245,5 +237,114 @@ describe('Configure Remove plate', () => {
     fireEvent.click(go)
     await waitFor(() => expect(state().wallets.map((w) => w.id)).toEqual(['w1b', 'w2']))
     expect(h.remove).toHaveBeenCalledTimes(1)
+  })
+
+  // Ported from the chooser card's Remove tests (Configure story 3): the same rules, on the surface that now owns them.
+  it('an overlay press and Back close it with no write, and Back stays on the screen it was opened from', async () => {
+    mount()
+    fireEvent.click(key())
+    fireEvent.keyDown(dialog(), { key: 'Escape' })
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+    fireEvent.click(key())
+    fireEvent.click(within(dialog()).getByRole('button', { name: 'Cancel' }))
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+    fireEvent.click(key())
+    fireEvent.pointerDown(document.querySelector('[data-slot="dialog-overlay"]') as HTMLElement)
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+    fireEvent.click(key())
+    expect(window.history.state?.overlay).toBe(true)
+    act(() => {
+      window.history.back()
+    })
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+    expect(window.location.pathname).toBe('/')
+    expect(h.remove).not.toHaveBeenCalled()
+  })
+
+  it('confirm: the cache loses the removed wallet\'s entries and one notice is shown', async () => {
+    vaultWithout('w1')
+    const { queryClient } = mount()
+    queryClient.setQueryData(queryKeys.accountState('testnet', 'rA'), 1)
+    fireEvent.click(key())
+    fireEvent.click(confirm())
+    await waitFor(() => expect(state().wallets.map((w) => w.id)).toEqual(['w1b', 'w2']))
+    expect(queryClient.getQueryData(queryKeys.accountState('testnet', 'rA'))).toBeUndefined()
+    expect(h.success).toHaveBeenCalledTimes(1)
+    expect(h.success).toHaveBeenCalledWith(REMOVE_DONE)
+  })
+
+  it('the last wallet: every lock closes, the Active Wallet is null, the cache is empty', async () => {
+    seed([W])
+    h.remove.mockResolvedValue({ emptied: true, appPin: 'discarded' })
+    h.list.mockResolvedValue([])
+    const { queryClient } = mount()
+    queryClient.setQueryData(queryKeys.recommendedFee('testnet'), 1)
+    fireEvent.click(key())
+    fireEvent.click(confirm())
+    await waitFor(() => expect(state().wallets).toEqual([]))
+    expect(state().openLocks).toEqual({})
+    expect(state().activeWalletId).toBeNull()
+    // The mounted screen's own lock-info read may refetch; what must be gone is what the wallet put there.
+    expect(queryClient.getQueryData(queryKeys.recommendedFee('testnet'))).toBeUndefined()
+    expect(h.error).not.toHaveBeenCalled()
+  })
+
+  it('a listWallets failure falls back to the store minus the removed wallet', async () => {
+    h.list.mockRejectedValue(new Error('read failed'))
+    mount()
+    fireEvent.click(key())
+    fireEvent.click(confirm())
+    await waitFor(() => expect(state().wallets.some((w) => w.id === 'w1')).toBe(false))
+    expect(state().wallets.map((w) => w.id)).toEqual(['w1b', 'w2'])
+  })
+
+  it('removing one wallet leaves the precache and the service-worker registration alone, and does not reload', async () => {
+    const live = new Set(['workbox-precache-v2-https://wallet.example/'])
+    const cacheStorage = { keys: vi.fn(async () => [...live]), delete: vi.fn(async (k: string) => live.delete(k)) }
+    vi.stubGlobal('caches', cacheStorage)
+    const registration = { unregister: vi.fn(async () => true) }
+    const sw = { getRegistrations: vi.fn(async () => [registration]) }
+    Object.defineProperty(window.navigator, 'serviceWorker', { value: sw, configurable: true })
+    const reload = vi.fn()
+    const real = window.location
+    vi.stubGlobal('location', { get pathname() { return real.pathname }, get search() { return real.search }, get hash() { return real.hash }, reload })
+    try {
+      vaultWithout('w1')
+      mount()
+      fireEvent.click(key())
+      fireEvent.click(confirm())
+      await waitFor(() => expect(h.remove).toHaveBeenCalledWith('w1'))
+      await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+      await new Promise((r) => setTimeout(r, 0))
+      expect(cacheStorage.keys).not.toHaveBeenCalled()
+      expect(cacheStorage.delete).not.toHaveBeenCalled()
+      expect(live.size).toBe(1)
+      expect(sw.getRegistrations).not.toHaveBeenCalled()
+      expect(registration.unregister).not.toHaveBeenCalled()
+      expect(reload).not.toHaveBeenCalled()
+    } finally {
+      vi.unstubAllGlobals()
+      delete (window.navigator as { serviceWorker?: unknown }).serviceWorker
+    }
+  })
+
+  it('a failed App PIN discard after the last wallet is a persistent error, not the success notice', async () => {
+    seed([W])
+    h.remove.mockResolvedValue({ emptied: true, appPin: 'failed' })
+    h.list.mockResolvedValue([])
+    mount()
+    fireEvent.click(key())
+    fireEvent.click(confirm())
+    await waitFor(() => expect(h.error).toHaveBeenCalledWith(REMOVE_PIN_NOT_DISCARDED))
+    expect(h.success).not.toHaveBeenCalled()
+  })
+
+  it('the shared remove function closes no lock and clears no cache inline; its finally owns the teardown', () => {
+    const files = ['src/components/wallet/ConfigureScreen.tsx', 'src/components/wallet/RemoveDialog.tsx', 'src/lib/remove-copy.ts']
+    for (const f of files) expect(readFileSync(f, 'utf8'), f).not.toMatch(/closeLock|queryClient\.clear|\.clear\(|outline-none|:focus\b/)
+    const shared = readFileSync('src/lib/remove-wallet.ts', 'utf8')
+    expect(shared).not.toMatch(/closeLock|queryClient\.clear|\.clear\(/)
+    expect(shared).toMatch(/finally\s*{[\s\S]*removeWalletData\(/)
+    expect(readFileSync('src/components/wallet/ConfigureScreen.tsx', 'utf8')).toMatch(/confirmRemoveWallet\(/)
   })
 })

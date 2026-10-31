@@ -1,4 +1,5 @@
 /** @vitest-environment jsdom */
+import { readFileSync } from 'node:fs'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
@@ -23,7 +24,7 @@ vi.mock('@/lib/crypto/keystore', () => ({
 
 import { ConfigureScreen } from '@/components/wallet/ConfigureScreen'
 import { TooltipProvider } from '@/components/ui/tooltip'
-import { RENAME_ERRORS, RENAME_WRITE_FAILED } from '@/components/wallet/rename-copy'
+import { RENAME_ERRORS, RENAME_HELP, RENAME_WRITE_FAILED } from '@/components/wallet/rename-copy'
 import { useAppStore } from '@/store/app-store'
 
 const base = { lockId: 'legacy', createdAt: 1, network: 'mainnet', algorithm: 'ed25519', openCheck: 'pin', signingCheck: 'standard' }
@@ -166,5 +167,68 @@ describe('Configure Name plate', () => {
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
     await waitFor(() => expect(document.activeElement).toBe(namePlate()))
     expect(h.rename).not.toHaveBeenCalled()
+  })
+
+  // Ported from the chooser card's Rename tests (Configure story 3): the same rules, on the surface that now owns them.
+  it('opens a titled dialog with the always-visible help, Cancel and Save name', () => {
+    mount()
+    open()
+    expect(screen.getByRole('dialog', { name: 'Rename wallet' })).toBeTruthy()
+    expect(field().value).toBe('Savings')
+    expect(screen.getByText(RENAME_HELP)).toBe(screen.getByText('Only on this device. Never sent to the ledger.'))
+    expect(screen.getByRole('button', { name: 'Cancel' })).toBeTruthy()
+    expect(save().disabled).toBe(true) // unchanged
+  })
+
+  it('an error is visible text tied to the field, and the help stays tied too', () => {
+    mount()
+    open()
+    type('   ')
+    expect(screen.queryByText(RENAME_ERRORS.empty)).toBeNull() // not before blur or submit
+    fireEvent.blur(field())
+    const err = screen.getByText(RENAME_ERRORS.empty)
+    expect(RENAME_ERRORS.empty).toBe('Give this wallet a name.')
+    expect(field().getAttribute('aria-invalid')).toBe('true')
+    expect(field().getAttribute('aria-describedby')).toContain(err.id)
+    expect(field().getAttribute('aria-describedby')).toContain(screen.getByText(RENAME_HELP).id)
+  })
+
+  it('Enter on an invalid name shows the error without a blur', () => {
+    mount()
+    open()
+    type(' ')
+    fireEvent.keyDown(field(), { key: 'Enter' })
+    expect(screen.getByText(RENAME_ERRORS.empty)).toBeTruthy()
+    expect(h.rename).not.toHaveBeenCalled()
+  })
+
+  it('a grandfathered duplicate left unchanged shows no error and closes silently', async () => {
+    const TWIN = { ...base, id: 'w3', seedId: 's3', label: 'savings', address: 'rC', network: 'devnet' }
+    useAppStore.setState({ wallets: [W, TWIN] } as never)
+    mount()
+    open()
+    fireEvent.blur(field())
+    expect(screen.queryByText(RENAME_ERRORS.duplicate)).toBeNull()
+    fireEvent.keyDown(field(), { key: 'Enter' })
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+    expect(h.rename).not.toHaveBeenCalled()
+    expect(h.success).not.toHaveBeenCalled()
+  })
+
+  it('Enter that confirms an IME composition does not submit', () => {
+    mount()
+    open()
+    type('Fresh')
+    fireEvent.keyDown(field(), { key: 'Enter', isComposing: true })
+    expect(h.rename).not.toHaveBeenCalled()
+  })
+
+  it('the dialog and renameWallet share the one rule, and the UI never builds a label', () => {
+    const dialog = readFileSync('src/components/wallet/RenameDialog.tsx', 'utf8')
+    const configure = readFileSync('src/components/wallet/ConfigureScreen.tsx', 'utf8')
+    const keystore = readFileSync('src/lib/crypto/keystore.ts', 'utf8')
+    expect(dialog).toMatch(/validateWalletName\(/)
+    expect(keystore).toMatch(/validateWalletName\(/)
+    expect(dialog + configure).not.toMatch(/outline-none|:focus\b/)
   })
 })

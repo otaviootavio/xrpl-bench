@@ -4,9 +4,8 @@ import { StatusLegend } from '@/components/ui/lamp'
 import { AddressLink } from '@/components/wallet/AddressLink'
 import { DEVNET_NOTICE } from '@/components/wallet/DevnetNotice'
 import { NO_OPEN_CHECK_ANSWER } from '@/components/wallet/check-words'
-import { REMOVE_LOCKED_REASON } from '@/components/wallet/remove-copy'
 import { NETWORKS } from '@/lib/xrpl/networks'
-import { configureWallet, enterWallet } from '@/store/app-store'
+import { enterWallet } from '@/store/app-store'
 import type { LockedGroup, OpenGroup, WalletGroup, WalletRow } from '@/store/wallet-groups'
 
 /** A key that wraps its legend rather than push a card past 320px or 200% text. */
@@ -22,7 +21,7 @@ function CardName({ children }: { children: string }) {
   )
 }
 
-function NetworkRow({ name, row, active, onRemove }: { name: string; row: WalletRow; active: boolean; onRemove: (walletId: string) => void }) {
+function NetworkRow({ name, row, active }: { name: string; row: WalletRow; active: boolean }) {
   const label = NETWORKS[row.network].label
   return (
     <li className="flex flex-col gap-1.5">
@@ -46,9 +45,6 @@ function NetworkRow({ name, row, active, onRemove }: { name: string; row: Wallet
             >
               Open
             </Button>
-            <Button type="button" variant="danger" size="sm" className={KEY} aria-label={`Remove ${name} on ${label}`} onClick={() => onRemove(row.walletId)}>
-              Remove
-            </Button>
           </div>
         </div>
       </div>
@@ -57,34 +53,7 @@ function NetworkRow({ name, row, active, onRemove }: { name: string; row: Wallet
   )
 }
 
-function RenameKey({ group, onRename }: { group: WalletGroup; onRename: (group: WalletGroup) => void }) {
-  return (
-    <Button
-      type="button"
-      variant="outline"
-      size="sm"
-      className={KEY}
-      data-rename-seed={group.seedId}
-      aria-label={`Rename ${group.label}`}
-      onClick={() => onRename(group)}
-    >
-      Rename
-    </Button>
-  )
-}
-
-function LockedCard({
-  group,
-  active,
-  onRename,
-  onRemove,
-}: {
-  group: LockedGroup
-  active: boolean
-  onRename: (group: WalletGroup) => void
-  onRemove: (walletId: string) => void
-}) {
-  const reasonId = `remove-reason-${group.seedId}`
+function LockedCard({ group, active }: { group: LockedGroup; active: boolean }) {
   return (
     <>
       <div className="flex flex-wrap items-start justify-between gap-x-3 gap-y-1">
@@ -107,25 +76,7 @@ function LockedCard({
         >
           Open
         </Button>
-        <RenameKey group={group} onRename={onRename} />
-        {/* `aria-disabled`, not `disabled`: it stays reachable and says why. It still routes to the
-            chooser's handler, which re-reads the lock and refuses (AD-46). */}
-        <Button
-          type="button"
-          variant="danger"
-          size="sm"
-          className={`${KEY} aria-disabled:cursor-not-allowed aria-disabled:opacity-60`}
-          aria-label={`Remove ${group.label}`}
-          aria-disabled="true"
-          aria-describedby={reasonId}
-          onClick={() => onRemove(group.entryWalletId)}
-        >
-          Remove
-        </Button>
       </div>
-      <p id={reasonId} className="text-sm text-muted-foreground">
-        {REMOVE_LOCKED_REASON}
-      </p>
     </>
   )
 }
@@ -139,15 +90,11 @@ function OpenCard({
   activeWalletId,
   lockFailed,
   onLock,
-  onRename,
-  onRemove,
 }: {
   group: OpenGroup
   activeWalletId: string | null
   lockFailed: boolean
   onLock: (group: OpenGroup) => void
-  onRename: (group: WalletGroup) => void
-  onRemove: (walletId: string) => void
 }) {
   const active = group.views.some((v) => v.walletId === activeWalletId)
   return (
@@ -161,22 +108,10 @@ function OpenCard({
       {active && <ActiveLegend />}
       <ul className="flex flex-col gap-2">
         {group.views.map((row) => (
-          <NetworkRow key={row.walletId} name={group.label} row={row} active={row.walletId === activeWalletId} onRemove={onRemove} />
+          <NetworkRow key={row.walletId} name={group.label} row={row} active={row.walletId === activeWalletId} />
         ))}
       </ul>
       <div className="flex flex-wrap gap-2">
-        {/* An open card acts on its entry view (AD-43); a locked card has no Configure. */}
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          className={KEY}
-          aria-label={`Configure ${group.label}`}
-          onClick={() => configureWallet(group.entryWalletId)}
-        >
-          Configure
-        </Button>
-        <RenameKey group={group} onRename={onRename} />
         {group.allowsLock && (
           <Button type="button" variant="outline" size="sm" className={KEY} aria-label={`Lock ${group.label}`} onClick={() => onLock(group)}>
             Lock
@@ -201,23 +136,18 @@ export function WalletCard({
   activeWalletId,
   lockFailed = false,
   onLock,
-  onRename,
-  onRemove,
 }: {
   group: WalletGroup
   activeWalletId: string | null
   lockFailed?: boolean
   onLock: (group: OpenGroup) => void
-  onRename: (group: WalletGroup) => void
-  /** Called with a Wallet id from a card or a row; the handler re-checks the lock. */
-  onRemove: (walletId: string) => void
 }) {
   return (
     <li data-seed-id={group.seedId} className="panel-plate flex flex-col gap-3 rounded-md px-4 pb-4 pt-3">
       {group.state === 'locked' ? (
-        <LockedCard group={group} active={group.entryWalletId === activeWalletId} onRename={onRename} onRemove={onRemove} />
+        <LockedCard group={group} active={group.entryWalletId === activeWalletId} />
       ) : (
-        <OpenCard group={group} activeWalletId={activeWalletId} lockFailed={lockFailed} onLock={onLock} onRename={onRename} onRemove={onRemove} />
+        <OpenCard group={group} activeWalletId={activeWalletId} lockFailed={lockFailed} onLock={onLock} />
       )}
     </li>
   )

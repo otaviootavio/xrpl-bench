@@ -86,6 +86,16 @@ describe('the Configure route (AD-32)', () => {
     expect(screen.queryByRole('heading', { name: 'Configure wallet' })).toBeNull()
   })
 
+  it('Back from Configure returns to the wallet it was opened from (the header key is the only way in)', async () => {
+    act(() => navigate('/wallets/a'))
+    act(() => navigate('/wallets/a/configure'))
+    mount()
+    expect(screen.getByRole('heading', { name: 'Configure wallet' })).toBeTruthy()
+    act(() => window.history.back())
+    await waitFor(() => expect(window.location.pathname).toBe('/wallets/a'))
+    expect(screen.queryByRole('heading', { name: 'Configure wallet' })).toBeNull()
+  })
+
   it('Edit checks opens the shipped path', async () => {
     act(() => navigate('/wallets/a/configure'))
     mount()

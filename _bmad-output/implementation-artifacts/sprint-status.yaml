@@ -153,7 +153,7 @@ development_status:
   19-4-settings-holds-only-what-belongs-to-the-app: done
   epic-19-retrospective: optional
 
-  epic-20: in-progress
+  epic-20: done
   20-1-a-step-shell-with-back-and-next: done
   20-2-label-and-network-then-the-recommended-setup-shortcut: done
   20-3-the-walk-one-question-per-step: done
@@ -161,7 +161,7 @@ development_status:
   20-5-create-or-import-is-the-first-question: done
   20-6-plain-wording-for-the-checks: done
   20-7-review-before-create-the-network-change-reset-and-a-reachabl: done
-  20-8-retire-the-old-form-rewrite-its-tests-and-check-it-in-a-real: backlog
+  20-8-retire-the-old-form-rewrite-its-tests-and-check-it-in-a-real: done
   epic-20-retrospective: optional
 
   epic-21: backlog

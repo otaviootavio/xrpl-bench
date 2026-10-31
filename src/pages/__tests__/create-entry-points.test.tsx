@@ -103,6 +103,20 @@ describe('first run', () => {
     expect(h.generateAndStoreWallet).not.toHaveBeenCalled()
   })
 
+  it('names its own leave action "Back to start", disabled while a wallet is being written, and it returns to the choice', async () => {
+    render(<Onboarding />)
+    await click('Create a new wallet')
+    expect(screen.queryByRole('button', { name: /^Back$/ })).toBeNull() // the quiz owns the only "Back"
+    const leave = screen.getByRole('button', { name: 'Back to start' }) as HTMLButtonElement
+    expect(leave.disabled).toBe(false)
+    const inProgress = h.flowProps.at(-1) as { onInProgressChange: (v: boolean) => void }
+    await act(async () => inProgress.onInProgressChange(true))
+    expect((screen.getByRole('button', { name: 'Back to start' }) as HTMLButtonElement).disabled).toBe(true)
+    await act(async () => inProgress.onInProgressChange(false))
+    await click('Back to start')
+    expect(screen.getByRole('button', { name: 'Create a new wallet' })).toBeTruthy()
+  })
+
   it('Import keeps its path: seed, then the PIN step that sets up the vault', async () => {
     render(<Onboarding />)
     await click('Import an existing wallet')

@@ -302,7 +302,7 @@ export function Onboarding() {
               {/* Commits to the store itself, after the seed backup. */}
               <CreateWalletFlow onInProgressChange={setCreating} onDone={(meta) => setActiveWalletId(meta.id)} />
               <Button variant="outline" onClick={() => setStep('choice')} disabled={creating}>
-                Back
+                Back to start
               </Button>
             </CardContent>
           </Card>

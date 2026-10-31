@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { ConfigPlate } from '@/components/wallet/ConfigPlate'
+import { RenameDialog } from '@/components/wallet/RenameDialog'
 import { ControlledNote } from '@/components/wallet/ControlledNote'
 import { MasterKeyControl } from '@/components/wallet/MasterKeyControl'
 import { OtherNetworksPlate } from '@/components/wallet/OtherNetworksPlate'
@@ -20,7 +21,8 @@ import {
 import { launchFromConfigure, peekConfigureFocusReturn } from '@/lib/configure-launch'
 import { useLockMinutesChanged } from '@/hooks/useLockMinutesChanged'
 import { usePrompts } from '@/hooks/usePrompts'
-import { setLockAutoLock, type WalletMeta } from '@/lib/crypto/keystore'
+import { renameWallet, setLockAutoLock, type WalletMeta } from '@/lib/crypto/keystore'
+import { notify } from '@/lib/notify'
 import { AUTO_LOCK_CHOICES } from '@/lib/crypto/policy'
 import { minutesLabel } from '@/lib/minutes-label'
 import { useAppStore } from '@/store/app-store'
@@ -111,6 +113,48 @@ function AutoLockRow({ lockId, minutes }: { lockId: string; minutes: number | nu
         <p className="text-xs text-muted-foreground">This lock is shared by {sharedBy} wallets. A change applies to all of them.</p>
       )}
     </div>
+  )
+}
+
+const NAME_PLATE = 'name'
+
+/**
+ * The wallet's name (FR-92). The rule, the write and the copy are the chooser card's:
+ * `RenameDialog` and `keystore.renameWallet`. A name is a property of the Seed, so a save
+ * replaces the keystore's metas for that Seed and every row of it shows the new name.
+ */
+function NamePlate({ wallet }: { wallet: WalletMeta }) {
+  const [renaming, setRenaming] = useState(false)
+  const wallets = useAppStore((s) => s.wallets)
+  const setWallets = useAppStore((s) => s.setWallets)
+  // One name per other Seed, not per row.
+  const others = [...new Map(wallets.filter((w) => w.seedId !== wallet.seedId).map((w) => [w.seedId, w.label])).values()]
+
+  async function save(seedId: string, name: string) {
+    const result = await renameWallet(seedId, name)
+    if (!result.ok) return result.reason
+    const { wallets: current } = useAppStore.getState()
+    // A Seed removed meanwhile is not brought back by its rename.
+    if (current.some((w) => w.seedId === seedId)) setWallets(current.filter((w) => w.seedId !== seedId).concat(result.metas))
+    setRenaming(false)
+    notify.success('Wallet renamed.')
+    return true as const
+  }
+
+  return (
+    <ConfigPlate title="Name" focusId={NAME_PLATE}>
+      <p className="min-w-0 break-words text-sm">{wallet.label}</p>
+      <Button type="button" variant="outline" size="sm" className={KEY} aria-label={`Rename ${wallet.label}`} onClick={() => setRenaming(true)}>
+        Rename
+      </Button>
+      <RenameDialog
+        target={renaming ? { seedId: wallet.seedId, name: wallet.label } : null}
+        others={others}
+        onSave={save}
+        onClose={() => setRenaming(false)}
+        returnFocusTo={() => document.querySelector<HTMLElement>(`[data-configure-plate="${NAME_PLATE}"]`)}
+      />
+    </ConfigPlate>
   )
 }
 
@@ -219,6 +263,7 @@ export function ConfigureScreen({ wallet }: { wallet: WalletMeta }) {
         </h1>
         <p className="min-w-0 break-words text-sm text-muted-foreground">{wallet.label}</p>
       </div>
+      <NamePlate wallet={wallet} />
       <ChecksPlate wallet={wallet} />
       <SeedPlate wallet={wallet} />
       {/* A wallet either operates another account or holds the Account Master Key, so this plate always has something to say. */}

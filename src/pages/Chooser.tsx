@@ -89,7 +89,8 @@ export function Chooser() {
 
   const onRename = useCallback((group: WalletGroup) => setRenaming({ seedId: group.seedId, name: group.label }), [])
 
-  // The one place a label reaches the store: the keystore's projection of the Seed it wrote.
+  // A label reaches the store here and in the Configure Name plate (ConfigureScreen `save`); the two must change together.
+  // It is the keystore's projection of the Seed it wrote.
   const saveName = useCallback(
     async (seedId: string, name: string) => {
       const result = await renameWallet(seedId, name)

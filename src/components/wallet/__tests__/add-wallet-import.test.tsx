@@ -192,21 +192,25 @@ describe('Import with every lock closed', () => {
     expect(screen.getByRole('radio', { name: 'Create a new wallet' })).toBeTruthy()
     expect(screen.queryByRole('button', { name: /^(Generate|Import)$/ })).toBeNull()
     const legends = () => Array.from(document.querySelectorAll('legend')).map((l) => l.textContent)
-    expect(screen.getByText('Step 1 of 4')).toBeTruthy()
+    expect(screen.getByText('Step 1 of 5')).toBeTruthy()
     typeSeed(SEED)
     await click(button('Next'))
     expect(document.querySelectorAll('dt').length).toBe(0)
     expect(screen.queryByRole('button', { name: 'Walk me through it' })).toBeNull()
     const seen: string[] = []
-    for (const n of [2, 3, 4]) {
-      expect(screen.getByText(`Step ${n} of 4`)).toBeTruthy()
+    for (const n of [2, 3, 4, 5]) {
+      expect(screen.getByText(`Step ${n} of 5`)).toBeTruthy()
       seen.push(screen.getByRole('heading', { level: 2 }).textContent ?? '', ...legends())
-      if (n < 4) {
+      if (n < 5) {
         expect(screen.queryByRole('button', { name: 'Import wallet' })).toBeNull()
         await click(button('Next'))
       }
     }
-    expect(seen).toEqual(['Node', 'Node', 'Authentication to open the wallet, and auto-lock', 'Authentication required to open the wallet', 'Auto-lock after inactivity', 'Authentication to sign a transaction', 'Authentication required to sign a transaction'])
+    expect(seen).toEqual(['Node', 'Node', 'Authentication to open the wallet, and auto-lock', 'Authentication required to open the wallet', 'Auto-lock after inactivity', 'Authentication to sign a transaction', 'Authentication required to sign a transaction', 'Review'])
+    // The Review for an import: no Seed Method, Passkey or Signature type row, and no Seed.
+    const terms = Array.from(document.querySelectorAll('dt')).map((dt) => dt.textContent)
+    expect(terms).toEqual(['Label', 'Network', 'Node', 'Authentication required to open the wallet', 'Auto-lock', 'Authentication required to sign a transaction'])
+    expect(document.body.textContent).not.toContain(SEED)
     expect(screen.queryByRole('button', { name: 'Next' })).toBeNull()
     expect(button('Import wallet')).toBeTruthy()
   })
@@ -219,6 +223,7 @@ describe('Import with every lock closed', () => {
     expect(seedInput().value).toBe(SEED) // still mounted, hidden
     expect(seedInput().closest('[hidden]')).not.toBeNull()
     expect(screen.queryByRole('button', { name: /Import wallet|Create wallet/ })).toBeNull()
+    await click(button('Next'))
     await click(button('Next'))
     await click(button('Next'))
     expect(screen.queryByRole('button', { name: /Create wallet/ })).toBeNull()
@@ -248,11 +253,11 @@ describe('the Seed field and step 1', () => {
     expect(next.getAttribute('aria-disabled')).toBe('true')
     expect(screen.getByText('Type your Seed to continue.')).toBeTruthy()
     await click(next)
-    expect(screen.getByText('Step 1 of 4')).toBeTruthy()
+    expect(screen.getByText('Step 1 of 5')).toBeTruthy()
     typeSeed(SEED)
     expect(button('Next').getAttribute('aria-disabled')).toBeNull()
     await click(button('Next'))
-    expect(screen.getByText('Step 2 of 4')).toBeTruthy()
+    expect(screen.getByText('Step 2 of 5')).toBeTruthy()
   })
 
   it('a Seed cleared by hand blocks Next again', async () => {
@@ -282,7 +287,7 @@ describe('the Seed field and step 1', () => {
     await openImport()
     await submit('garbage-not-a-seed')
     const reason = await screen.findByText(INVALID)
-    expect(screen.getByText('Step 1 of 4')).toBeTruthy()
+    expect(screen.getByText('Step 1 of 5')).toBeTruthy()
     expect(reason.closest('[hidden]')).toBeNull()
     expect(seedInput().getAttribute('aria-describedby')).toBe(reason.id)
     expect(button('Next').getAttribute('aria-disabled')).toBe('true') // the field was cleared
@@ -294,7 +299,7 @@ describe('the Seed field and step 1', () => {
     await openImport()
     await submit()
     const reason = await screen.findByText(DUPLICATE)
-    expect(screen.getByText('Step 1 of 4')).toBeTruthy()
+    expect(screen.getByText('Step 1 of 5')).toBeTruthy()
     expect(reason.closest('[hidden]')).toBeNull()
   })
 
@@ -303,7 +308,7 @@ describe('the Seed field and step 1', () => {
     await openImport()
     await submit()
     await screen.findByText('The policy said no.')
-    expect(screen.getByText('Step 4 of 4')).toBeTruthy()
+    expect(screen.getByText('Step 5 of 5')).toBeTruthy()
   })
 })
 
@@ -391,33 +396,37 @@ describe('the master-key warning', () => {
 })
 
 describe('the walk, to its last step', () => {
-  it('keeps the PIN and the Seed across Next and Back, and imports from step 4 with a changed answer', async () => {
+  it('keeps the PIN and the Seed across Next and Back, and imports from the Review with a changed answer', async () => {
     await openImport()
     typeSeed(SEED)
     await click(button('Next'))
     const pinField = () => document.querySelector('input[id$="-pin"]') as HTMLInputElement
     const pinHidden = () => pinField().closest('[hidden]') !== null
-    expect(screen.getByText('Step 2 of 4')).toBeTruthy()
+    expect(screen.getByText('Step 2 of 5')).toBeTruthy()
     expect(pinHidden()).toBe(true)
     await click(button('Next'))
-    expect(screen.getByText('Step 3 of 4')).toBeTruthy()
+    expect(screen.getByText('Step 3 of 5')).toBeTruthy()
     expect(pinHidden()).toBe(true)
     await click(button('Next'))
-    expect(screen.getByText('Step 4 of 4')).toBeTruthy()
+    expect(screen.getByText('Step 4 of 5')).toBeTruthy()
+    await click(screen.getByRole('radio', { name: /^App PIN only/ }))
+    await click(button('Next'))
+    expect(screen.getByText('Step 5 of 5')).toBeTruthy()
     expect(pinHidden()).toBe(false)
     pinField().value = '123456'
     expect(seedInput().value).toBe(SEED)
     // Back to step 2 and forward again: nothing typed is lost.
     await click(button('Back'))
     await click(button('Back'))
-    expect(screen.getByText('Step 2 of 4')).toBeTruthy()
+    await click(button('Back'))
+    expect(screen.getByText('Step 2 of 5')).toBeTruthy()
     expect(pinHidden()).toBe(true)
     await click(button('Next'))
     await click(button('Next'))
-    expect(screen.getByText('Step 4 of 4')).toBeTruthy()
+    await click(button('Next'))
+    expect(screen.getByText('Step 5 of 5')).toBeTruthy()
     expect(pinField().value).toBe('123456')
     expect(seedInput().value).toBe(SEED)
-    await click(screen.getByRole('radio', { name: /^App PIN only/ }))
     await click(button('Import wallet'))
     await waitFor(() => expect(h.importStoredWallet).toHaveBeenCalledTimes(1))
     expect(h.importDuplicateReason).toHaveBeenCalledWith(SEED)
@@ -503,7 +512,7 @@ describe('failures are visible, persistent text, and the Seed is cleared', () =>
     h.importStoredWallet.mockRejectedValue(new Error('disk full'))
     await openImport()
     await submit()
-    expect((await screen.findByRole('alert')).textContent).toBe('Could not import the wallet. Nothing was imported.')
+    expect((await screen.findByRole('alert')).textContent).toContain('Could not import the wallet. Nothing was imported.')
     expect(seedInput().value).toBe('')
     expect(h.startLockSession).not.toHaveBeenCalled()
     expect(setActiveWalletId).not.toHaveBeenCalled()
@@ -594,7 +603,7 @@ describe('Create or Import is the first question', () => {
   it('step 1 titles the question, selects Create, and shows no Seed field', async () => {
     render(<AddWalletScreen onClose={onClose} />)
     await screen.findByRole('radio', { name: 'Create a new wallet' })
-    expect(screen.getByText('Step 1 of 6')).toBeTruthy()
+    expect(screen.getByText('Step 1 of 7')).toBeTruthy()
     expect(screen.getByRole('heading', { level: 2 }).textContent).toBe('Create or import')
     expect(radio('Create a new wallet').checked).toBe(true)
     expect(radio('Import a wallet').checked).toBe(false)
@@ -603,13 +612,47 @@ describe('Create or Import is the first question', () => {
     expect(screen.queryByRole('button', { name: /^(Generate|Import)$/ })).toBeNull()
   })
 
-  it('choosing Import shows the Seed field above the Label, as Step 1 of 4, with focus on the radio', async () => {
+  it('choosing Import shows the Seed field above the Label, as Step 1 of 5, with focus on the radio', async () => {
     await openImport()
-    expect(screen.getByText('Step 1 of 4')).toBeTruthy()
+    expect(screen.getByText('Step 1 of 5')).toBeTruthy()
     expect(radio('Import a wallet').checked).toBe(true)
     expect(document.activeElement).toBe(radio('Import a wallet'))
     expect(seedInput().compareDocumentPosition(screen.getByLabelText('Label')) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     expect(screen.getByText('Type your Seed to continue.')).toBeTruthy()
+  })
+
+  it('changing Network on step 1 of Import keeps the Seed, shows the line, and the Review has the default rows', async () => {
+    await openImport()
+    typeSeed(SEED)
+    await click(button('Next'))
+    await click(button('Next'))
+    await click(screen.getByRole('radio', { name: /^No authentication required to open the wallet/ }))
+    await click(button('Back'))
+    await click(button('Back'))
+    await click(screen.getByRole('radio', { name: /^Devnet/ }))
+    expect(seedInput().value).toBe(SEED)
+    expect(screen.getByRole('status').textContent).toBe('The later questions start again.')
+    for (let guard = 0; guard < 6 && screen.queryByRole('button', { name: 'Next' }); guard++) await click(button('Next'))
+    const row = (term: string) => screen.getByText(term, { selector: 'dt' }).parentElement?.textContent ?? ''
+    expect(row('Node')).toContain('Built-in Nodes')
+    expect(row('Network')).toContain('Devnet')
+    expect(text()).not.toContain('No authentication required to open the wallet')
+  })
+
+  it('the Review says what the imported wallet holds: test funds on Testnet, real funds and a stamp on Mainnet', async () => {
+    await openImport()
+    typeSeed(SEED)
+    for (let guard = 0; guard < 6 && screen.queryByRole('button', { name: 'Next' }); guard++) await click(button('Next'))
+    expect(text()).toContain('This wallet holds test funds only.')
+    expect(screen.queryByText('Real funds')).toBeNull()
+    await click(button('Back'))
+    await click(button('Back'))
+    await click(button('Back'))
+    await click(button('Back'))
+    await click(screen.getByRole('radio', { name: /^Mainnet/ }))
+    for (let guard = 0; guard < 6 && screen.queryByRole('button', { name: 'Next' }); guard++) await click(button('Next'))
+    expect(text()).toContain('This wallet holds real funds. Nobody can recover its Seed for you.')
+    expect(screen.getByText('Real funds')).toBeTruthy()
   })
 
   it('choosing Create again puts focus on the Create radio', async () => {
@@ -621,14 +664,14 @@ describe('Create or Import is the first question', () => {
   it('no path control on any later step, on either path', async () => {
     await openImport()
     typeSeed(SEED)
-    for (let n = 2; n <= 4; n++) {
+    for (let n = 2; n <= 5; n++) {
       await click(button('Next'))
       noPath()
     }
     cleanup()
     render(<AddWalletScreen onClose={onClose} />)
     await screen.findByRole('radio', { name: 'Create a new wallet' })
-    for (let n = 2; n <= 6; n++) {
+    for (let n = 2; n <= 7; n++) {
       await click(button('Next'))
       noPath()
     }
@@ -643,7 +686,7 @@ describe('Create or Import is the first question', () => {
     await click(button('Back'))
     expect(seedInput().value).toBe(SEED)
     await click(radio('Create a new wallet'))
-    expect(screen.getByText('Step 1 of 6')).toBeTruthy()
+    expect(screen.getByText('Step 1 of 7')).toBeTruthy()
     expect((screen.getByLabelText('Label') as HTMLInputElement).value).toBe('')
     expect((screen.getByRole('radio', { name: /^Testnet/ }) as HTMLInputElement).checked).toBe(true)
     await click(radio('Import a wallet'))

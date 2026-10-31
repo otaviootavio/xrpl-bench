@@ -20,7 +20,7 @@ This document provides the epic and story breakdown for the Create-wallet Quiz, 
 
 New (PRD section 4.3):
 
-FR-91: The per-Wallet questions are asked one at a time, with no shortcut. Step 1 asks whether to create a new Wallet or import one, then the Label and Network. The walk asks Node, Seed Method (with the Passkey choice and domain warning), Signature type, Open Check with auto-lock, and Signing Check, each pre-selected and explained in plain words (ASD-STE100). A review step lists every answer with Change, holds Create wallet, and keeps the App PIN fields reachable. Back keeps every answer. Changing Network keeps legal answers and resets illegal ones with a polite announcement. An unavailable answer stays visible and `aria-disabled` with its reason as text. A failed Node test keeps the user on the Node step. Steps are named in text, focus moves to the step heading, motion respects reduced motion, and it works at 320px and 200% text. (Revised 2026-10-30.)
+FR-91: The per-Wallet questions are asked one at a time, with no shortcut. Step 1 asks whether to create a new Wallet or import one, then the Label and Network. The walk asks Node, Seed Method (with the Passkey choice and domain warning), Signature type, Open Check with auto-lock, and Signing Check, each pre-selected and explained in plain words (ASD-STE100). A review step lists every answer with Change, holds Create wallet, and keeps the App PIN fields reachable. Back keeps every answer, except that Network is locked once step 1 is left: later steps and the review show it as text, and changing it on step 1 resets every later answer with a polite status line. An unavailable answer stays visible and `aria-disabled` with its reason as text. A failed Node test keeps the user on the Node step. Steps are named in text, focus moves to the step heading, motion respects reduced motion, and it works at 320px and 200% text. (Revised 2026-10-30.)
 
 Amended:
 
@@ -59,7 +59,7 @@ UX-DR2: Focus moves to the new step's heading on Next and Back.
 UX-DR3: No step shows a read-only setup list and no Walk me through it button exists; Create wallet (Import wallet) appears only on the last step; on Mainnet the Open Check step names the forced rules in text.
 UX-DR4: Each question step reuses the existing `Choice` and `Axis` controls and their detail copy; an unavailable answer is `aria-disabled` with its reason as text.
 UX-DR5: The review step lists every answer with a Change action that returns to that question; after Change, Next returns to the review.
-UX-DR6: The Network-change reset line is visible text and is announced politely.
+UX-DR6: The Network-change status line on step 1 (later questions start again) is visible text and is announced politely. Network is plain text with no Change action on later steps and the review.
 UX-DR7: Actions stay reachable at 320px and 200% text through the screen footer; no step clips or scrolls sideways.
 UX-DR8: No new colour token; the existing panel vocabulary of `DESIGN.md`; the review step uses plate styling, not a dark readout well.
 UX-DR9: Step 1 asks Create or Import with the Label and Network; no Generate or Import switch shows on later steps.
@@ -286,7 +286,7 @@ As a user about to create a wallet,
 I want to see every answer once more, change any of them, and enter my App PIN where I can see it,
 So that nothing is created that I did not choose, and a missing PIN never fails silently.
 
-*A parked earlier attempt is in `_bmad-output/implementation-artifacts/wip-quiz-20-4-before-replan.patch`; its network-reset logic may be reused.*
+*A parked earlier attempt is in `_bmad-output/implementation-artifacts/wip-quiz-20-4-before-replan.patch`; only its preselection/defaultSigning may be reused; its reconcile logic is replaced by the Network lock.*
 
 **Acceptance Criteria:**
 
@@ -301,16 +301,21 @@ So that nothing is created that I did not choose, and a missing PIN never fails 
 
 **Given** an App PIN is needed and the review opens at 320px or 390px
 **When** the step renders
-**Then** the PIN fields are visible above the sticky footer without scrolling past it (UX-DR11)
+**Then** the PIN plate is the last block, directly above the sticky footer, and its fields are visible without scrolling past it (UX-DR11)
+**And** the answers are one "Your answers" plate with the create-consequence line as its last line, and no separate "Before you create" plate
 
 **Given** Create wallet is pressed with a missing or short PIN
 **When** the refusal shows
 **Then** focus moves to the PIN field and the reason is text beside it
 
-**Given** the user changes Network after later steps were answered
+**Given** the user is on a later step or the review
+**When** Network shows
+**Then** it is plain text with no Change action, and the review row shows "Locked" with the visible reason "To change it, go Back to step 1; the questions then start again." (FR-91, CAP-6)
+
+**Given** the user goes Back to step 1 and changes Network
 **When** the change is made
-**Then** answers still legal are kept and illegal ones reset to the new pre-selection (FR-91, CAP-6)
-**And** a visible line names what was reset and is announced politely (UX-DR6)
+**Then** every later answer resets to its pre-selection, as when Create or Import changes (FR-91, CAP-6)
+**And** a short status line on step 1 says the later questions start again and is announced politely (UX-DR6)
 
 **Given** the user chooses Create wallet on the review
 **When** creation runs

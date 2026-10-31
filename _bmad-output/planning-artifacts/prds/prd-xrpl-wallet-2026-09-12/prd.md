@@ -541,9 +541,13 @@ them choose every setting. It does not offer a shortcut.
   The Seed field is on step 1: Next is blocked until a Seed is typed, and a
   refused Seed returns the user to step 1 with the reason beside the field.
   Decided 2026-10-29.
-- **Back keeps every answer.** Changing Network keeps answers that are still
-  legal and resets the ones that are not to the new pre-selection, and says so in
-  visible text, announced politely (FR-55).
+- **Back keeps every answer, except when Network changes.** Network is chosen on
+  step 1 and is locked once the user leaves step 1. Later steps and the review
+  show it as plain text with no Change action; the review says to go Back to
+  step 1 to change it. Changing Network on step 1 resets every later answer to
+  its pre-selection, as changing Create or Import does, and a short polite status
+  line on step 1 says the later questions start again (FR-55). Nothing is kept or
+  reconciled. Decided 2026-10-30.
 - An unavailable answer stays visible and `aria-disabled` with its reason as
   visible text (FR-60, §9.1). It is never hidden, and the step does not skip it.
 - **A failed Node test keeps the user on the Node step** with the reason shown

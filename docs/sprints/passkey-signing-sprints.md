@@ -1,6 +1,6 @@
 # Passkey-Signing Sprint Plan
 
-**Status: planned, not built.** Sequencing for PRD §4.14 (FR-60..FR-78). The
+**Status: complete.** Stories 1 to 11 merged 2026-10-17 (PR #49); this file is kept as the sequencing record. Sequencing for PRD §4.14 (FR-60..FR-78). The
 contract is `_bmad-output/specs/spec-passkey-signing/SPEC.md` (13 capabilities)
 and its `check-rules.md`; the mechanism is
 `_bmad-output/planning-artifacts/architecture/architecture-xrpl-wallet-passkey-signing-2026-10-10/ARCHITECTURE-SPINE.md`

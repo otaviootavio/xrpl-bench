@@ -71,12 +71,11 @@ feature, and do not re-derive it.
 | [docs/sprints/bugfix-sprints.md](docs/sprints/bugfix-sprints.md) · [interface-sprints.md](docs/sprints/interface-sprints.md) | Complete. Kept as the record of what was found and decided. |
 | [docs/sprints/mobile-chrome-sprints.md](docs/sprints/mobile-chrome-sprints.md) | **Complete** (2026-09-09). A pale status bar above the dark panel on a dark-mode home-screen install: an installed PWA ignores the `media` form of `theme-color` and takes the manifest colour, which cannot carry a media query — and all four browser-surface hex literals had drifted from `--background` besides. `index.html` now writes one theme-color tag from a head script (the form an installed app *does* honour, so the bar follows the finish and a live switch); the manifest bakes dark as the floor; `check:contrast` measures all four literals. The Android install itself was not verifiable from this machine — see the file's Verification table. |
 | [_bmad-output/specs/spec-wallet-chooser/](_bmad-output/specs/spec-wallet-chooser/) | **Complete** (Epics 17 to 19, stories 1 to 17). The chooser, per-wallet Configure screen and a Settings reduced to app-level items (Address book, Version and updates, Remove all). Settings test mapping: `stories/17-settings-reduced-to-app-level.md`. The full real-browser pass and UX Key Flows 1 to 6 are run by the orchestrator. |
-| [docs/sprints/passkey-signing-sprints.md](docs/sprints/passkey-signing-sprints.md) | **Planned, not built** (Sprints 18–22). Per-Wallet key setup and passkey-gated signing, PRD §4.14. Contract: `_bmad-output/specs/spec-passkey-signing/`. |
+| [docs/sprints/passkey-signing-sprints.md](docs/sprints/passkey-signing-sprints.md) | **Complete** (stories 1 to 11, merged 2026-10-17, PR #49). Per-Wallet key setup and passkey-gated signing, PRD §4.14. Contract: `_bmad-output/specs/spec-passkey-signing/`. The file is kept as the sequencing record. |
 
-**All twelve epics are built; the passkey-signing plan above is the one open item.** The five tables above are the record of
-what was found, decided, and shipped, except the passkey-signing row, which is
-planned — read one before touching its area, because the reasoning is the
-load-bearing part.
+**Every plan above is built.** The tables above are the record of what was found,
+decided, and shipped — read one before touching its area, because the reasoning
+is the load-bearing part.
 
 ## Gates
 

@@ -166,7 +166,7 @@ development_status:
 
   epic-21: in-progress
   21-1-rename-is-a-section-of-configure: done
-  21-2-remove-is-a-section-of-configure: backlog
+  21-2-remove-is-a-section-of-configure: done
   21-3-chooser-cards-show-only-open-and-lock: backlog
   epic-21-retrospective: optional
 action_items:

@@ -164,8 +164,8 @@ development_status:
   20-8-retire-the-old-form-rewrite-its-tests-and-check-it-in-a-real: done
   epic-20-retrospective: optional
 
-  epic-21: backlog
-  21-1-rename-is-a-section-of-configure: backlog
+  epic-21: in-progress
+  21-1-rename-is-a-section-of-configure: done
   21-2-remove-is-a-section-of-configure: backlog
   21-3-chooser-cards-show-only-open-and-lock: backlog
   epic-21-retrospective: optional

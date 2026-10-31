@@ -24,7 +24,7 @@ import { useAppStore } from '@/store/app-store'
 import { navigate } from '@/lib/route'
 
 /** The fixed plate order of the Configure screen (EXPERIENCE: Exact strings).. */
-const PLATE_ORDER = ['Checks', 'Seed', 'Operating another account', 'Other networks', 'Node', 'Two-device signing']
+const PLATE_ORDER = ['Name', 'Checks', 'Seed', 'Operating another account', 'Other networks', 'Node', 'Two-device signing']
 
 const W = (id: string, lockId: string, extra = {}) =>
   ({ id, seedId: id, lockId, label: id, address: `r${id}`, createdAt: 1, network: 'testnet', algorithm: 'ed25519', openCheck: 'pin', signingCheck: 'standard', ...extra }) as never

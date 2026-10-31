@@ -1,18 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
-import { removeBodyFor, type RemoveBody } from '@/components/wallet/remove-copy'
-import { RemoveDialog, type RemoveTarget } from '@/components/wallet/RemoveDialog'
-import { RenameDialog, type RenameTarget } from '@/components/wallet/RenameDialog'
 import { WalletCard } from '@/components/wallet/WalletCard'
-import { renameWallet } from '@/lib/crypto/keystore'
 import { Button } from '@/components/ui/button'
 import { consumeAdded } from '@/lib/chooser-signals'
-import { notify } from '@/lib/notify'
 import { ADD_WALLET_PATH, navigate } from '@/lib/route'
-import { openWalletNow, confirmRemoveWallet } from '@/lib/remove-wallet'
 import { tearDownLock } from '@/lib/teardown'
 import { useAppStore } from '@/store/app-store'
-import { groupWalletsBySeed, type OpenGroup, type WalletGroup } from '@/store/wallet-groups'
+import { groupWalletsBySeed, type OpenGroup } from '@/store/wallet-groups'
 
 /**
  * The chooser (FR-79, FR-81, AD-36): one card per Seed, read from `wallets` and
@@ -29,11 +23,6 @@ export function Chooser() {
   const queryClient = useQueryClient()
   const [sharedNote, setSharedNote] = useState<string | null>(null)
   const [failedSeedId, setFailedSeedId] = useState<string | null>(null)
-  const setWallets = useAppStore((s) => s.setWallets)
-  const [renaming, setRenaming] = useState<RenameTarget | null>(null)
-  const [removing, setRemoving] = useState<RemoveTarget | null>(null)
-  // Set once a removal is confirmed: the card is gone, so focus goes to the h1, not the opener.
-  const removedRef = useRef(false)
   const statusRef = useRef<HTMLDivElement>(null)
   const headingRef = useRef<HTMLHeadingElement>(null)
   const previous = useRef<Map<string, string> | null>(null)
@@ -79,46 +68,6 @@ export function Chooser() {
     [groups, queryClient],
   )
 
-  const onRename = useCallback((group: WalletGroup) => setRenaming({ seedId: group.seedId, name: group.label }), [])
-
-  // A label reaches the store here and in the Configure Name plate (ConfigureScreen `save`); the two must change together.
-  // It is the keystore's projection of the Seed it wrote.
-  const saveName = useCallback(
-    async (seedId: string, name: string) => {
-      const result = await renameWallet(seedId, name)
-      if (!result.ok) return result.reason
-      const { wallets: current } = useAppStore.getState()
-      // A Seed removed meanwhile is not brought back by its rename.
-      if (current.some((w) => w.seedId === seedId)) setWallets(current.filter((w) => w.seedId !== seedId).concat(result.metas))
-      // Only this dialog: the user may have cancelled it and opened another card's since.
-      setRenaming((r) => (r?.seedId === seedId ? null : r))
-      notify.success('Wallet renamed.')
-      return true as const
-    },
-    [setWallets],
-  )
-
-  // AD-46: the key's `aria-disabled` stops nothing a keyboard can do, so the guard is here.
-  const onRemove = useCallback((walletId: string) => {
-    const wallet = openWalletNow(walletId)
-    if (!wallet) return
-    removedRef.current = false
-    setRemoving({ walletId, name: wallet.label, body: removeBodyFor(useAppStore.getState().wallets, walletId) })
-  }, [])
-
-  const confirmRemove = useCallback(
-    (walletId: string, shownBody: RemoveBody) =>
-      confirmRemoveWallet(queryClient, walletId, shownBody, {
-        refused: () => setRemoving(null),
-        settling: () => {
-          removedRef.current = true
-          setRemoving(null)
-        },
-        settled: () => headingRef.current?.focus(),
-      }),
-    [queryClient],
-  )
-
   // A failure is about an open card: once that card has flipped (Lock elsewhere, auto-lock) it is
   // cleared, so it cannot come back when the card is opened again. Adjusting state during render.
   if (failedSeedId !== null && !groups.some((g) => g.seedId === failedSeedId && g.state === 'open')) {
@@ -143,27 +92,12 @@ export function Chooser() {
             activeWalletId={activeWalletId}
             lockFailed={group.state === 'open' && group.seedId === failedSeedId}
             onLock={onLock}
-            onRename={onRename}
-            onRemove={onRemove}
           />
         ))}
       </ul>
       <Button type="button" variant="outline" className="h-auto min-h-8 w-full sm:w-fit whitespace-normal py-1 pointer-coarse:min-h-11" onClick={() => navigate(ADD_WALLET_PATH)}>
         Add wallet
       </Button>
-      <RemoveDialog
-        target={removing}
-        onConfirm={confirmRemove}
-        onClose={() => setRemoving(null)}
-        returnFocusTo={() => (removedRef.current ? headingRef.current : null)}
-      />
-      <RenameDialog
-        target={renaming}
-        others={renaming ? groups.filter((g) => g.seedId !== renaming.seedId).map((g) => g.label) : []}
-        onSave={saveName}
-        onClose={() => setRenaming(null)}
-        returnFocusTo={(seedId) => document.querySelector<HTMLElement>(`[data-rename-seed="${CSS.escape(seedId)}"]`)}
-      />
     </section>
   )
 }

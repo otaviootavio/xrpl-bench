@@ -101,7 +101,7 @@ vi.mock('../webauthn', async (importOriginal) => {
 import { putVaultMeta } from '../db'
 import { setUpVaultAuth } from '../auth'
 import { createLock, endAllLockSessions, endLockSession, extendLockSession, getLockInfo, openLock, restoreOpenLocks, setAutoLockMinutes } from '../lock'
-import { addNetworkView, generateAndStoreWallet, listWallets, migrateLegacyVault, openSigner, setLockAutoLock, unavailablePrompts } from '../keystore'
+import { generateAndStoreWallet, listWallets, migrateLegacyVault, openSigner, setLockAutoLock, unavailablePrompts } from '../keystore'
 import { aesDecrypt, aesEncrypt } from '../aes'
 
 const PIN = '123456'
@@ -420,16 +420,15 @@ describe('configuration errors are not wrong PINs', () => {
 })
 
 describe('policy when a Wallet joins an existing lock (AD-28)', () => {
-  it('refuses a Mainnet Wallet or view under a lock with no Open Check, or auto-lock under a minute; writes nothing', async () => {
+  it('refuses a Mainnet Wallet under a lock with no Open Check, or auto-lock under a minute; writes nothing', async () => {
     const none = ok(await createLock({ network: 'testnet', openCheck: 'none', autoLockMinutes: 5 }))
     await expect(generateAndStoreWallet('M', none.key, 'mainnet', none.id)).rejects.toThrow(/Open Check/)
     expect(h.state.stores.wallets.size).toBe(0)
 
     const short = ok(await createLock({ network: 'testnet', openCheck: 'pin', autoLockMinutes: 0.5 }, { pin: PIN }))
     await expect(generateAndStoreWallet('M', short.key, 'mainnet', short.id)).rejects.toThrow(/at least 1 minute/)
-    // Testnet under the same lock is fine; a Mainnet VIEW of it is not.
-    const t = await generateAndStoreWallet('T', short.key, 'testnet', short.id)
-    await expect(addNetworkView(t.meta.id, 'mainnet')).rejects.toThrow(/at least 1 minute/)
+    // Testnet under the same lock is fine.
+    await generateAndStoreWallet('T', short.key, 'testnet', short.id)
     expect((await listWallets()).length).toBe(1)
   })
 })

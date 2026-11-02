@@ -118,9 +118,10 @@ vi.mock('../webauthn', async (importOriginal) => {
 import { setUpVaultAuth } from '../auth'
 import { LEGACY_LOCK_ID } from '../db'
 import { discardUnusedAppPin, getLockInfo, openLock } from '../lock'
-import { addNetworkView, createStoredWallet, listWallets, openSigner, removeWallet, revealSeed, type CreateStoredWalletInput, type Prompts } from '../keystore'
+import { addControlledView, createStoredWallet, listWallets, openSigner, removeWallet, revealSeed, type CreateStoredWalletInput, type Prompts } from '../keystore'
+import * as keystore from '../keystore'
 import { aesDecrypt } from '../aes'
-import { putVaultMeta, getVaultMeta } from '../db'
+import { putVaultMeta, getVaultMeta, putStoredWallet, mutateStoredWallet } from '../db'
 
 const PIN = '123456'
 const pinPrompt = (pin: string | null): Prompts => ({ pin: async () => pin })
@@ -371,10 +372,10 @@ describe('atomic', () => {
   })
 })
 
-describe('a second view of a created Wallet', () => {
+describe('a controlled view of a created Wallet', () => {
   it('removing one view keeps the lock, which still opens the Seed', async () => {
     const { meta, seed } = ok(await createStoredWallet(base, { pin: PIN }))
-    const second = await addNetworkView(meta.id, 'devnet')
+    const second = await addControlledView(meta.id, { network: 'devnet', accountAddress: 'rControlledAccount1111111111111111' })
     await removeWallet(second.id)
     expect(h.state.stores.vault.get(`lock:${meta.lockId}`)).toBeDefined()
     const opened = ok(await openLock(meta.lockId, 'pin', { pin: PIN }))
@@ -622,5 +623,34 @@ describe('the name of a new Seed (AD-42, chooser story 11)', () => {
 
   it('replaces a name over 40 characters', async () => {
     expect((await create('x'.repeat(41))).label).toBe('Wallet')
+  })
+})
+
+describe('a Wallet has one Network for life (FR-93)', () => {
+  it('creation writes exactly one view, on the Network chosen', async () => {
+    for (const network of ['testnet', 'devnet'] as const) {
+      const { meta } = ok(await createStoredWallet({ ...base, network }, { pin: PIN }))
+      expect(recordOf(meta.id).views).toEqual([{ walletId: meta.id, network }])
+    }
+  })
+
+  it('keystore exports no addNetworkView', () => {
+    expect('addNetworkView' in keystore).toBe(false)
+  })
+
+  it('putStoredWallet and mutateStoredWallet refuse two plain views and leave the store unchanged', async () => {
+    const { meta } = ok(await createStoredWallet(base, { pin: PIN }))
+    const before = JSON.stringify(recordOf(meta.id))
+    const two = { ...recordOf(meta.id), views: [{ walletId: meta.id, network: 'testnet' }, { walletId: 'x', network: 'devnet' }] }
+    await expect(putStoredWallet(two)).rejects.toThrow(/one network/)
+    await expect(mutateStoredWallet(meta.id, (c) => ({ ...c, views: two.views }))).rejects.toThrow(/one network/)
+    expect(JSON.stringify(recordOf(meta.id))).toBe(before)
+  })
+
+  it('a plain view plus a controlled view is accepted', async () => {
+    const { meta } = ok(await createStoredWallet(base, { pin: PIN }))
+    const rec = recordOf(meta.id)
+    await putStoredWallet({ ...rec, views: [...rec.views, { walletId: 'c', network: 'testnet', accountAddress: 'rControlledAccount1111111111111111' }] })
+    expect(recordOf(meta.id).views).toHaveLength(2)
   })
 })

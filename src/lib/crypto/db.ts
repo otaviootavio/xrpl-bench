@@ -213,7 +213,15 @@ export async function listStoredWallets(): Promise<StoredWallet[]> {
   return db.getAll('wallets')
 }
 
+/** FR-93: a Wallet has one Network for life, so a record may hold at most one
+ * plain (non-controlled) view. Controlled views carry `accountAddress`. */
+function assertOneOwnView(wallet: StoredWallet): void {
+  const plain = (wallet.views ?? []).filter((v) => !v.accountAddress)
+  if (plain.length > 1) throw new Error('A wallet can only be on one network.')
+}
+
 export async function putStoredWallet(wallet: StoredWallet): Promise<void> {
+  assertOneOwnView(wallet)
   const db = await getDb()
   await db.put('wallets', wallet)
 }
@@ -272,8 +280,10 @@ export async function mutateStoredWallet(
     return
   }
   const next = change(current)
-  if (next) await tx.store.put(next)
-  else await tx.store.delete(id)
+  if (next) {
+    assertOneOwnView(next)
+    await tx.store.put(next)
+  } else await tx.store.delete(id)
   await done
 }
 

@@ -27,7 +27,6 @@ vi.mock('@/lib/crypto/keystore', () => ({
   removeWallet: vi.fn(),
   appPinResidue: () => h.appPinResidue(),
   revealSeed: vi.fn(),
-  addNetworkView: vi.fn(),
   setLockAutoLock: vi.fn(),
   describeCheckFailure: () => '',
 }))

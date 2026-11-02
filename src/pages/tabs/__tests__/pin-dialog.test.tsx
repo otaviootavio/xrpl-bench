@@ -27,7 +27,6 @@ vi.mock('@/lib/crypto/keystore', () => ({
   importAndStoreWallet: async () => {},
   listWallets: async () => [],
   removeWallet: async () => {},
-  addNetworkView: async () => ({}),
   setLockAutoLock: async () => ({ ok: true }),
   describeCheckFailure: () => 'failed',
   revealSeed: (...a: unknown[]) => h.revealSeed(...a),

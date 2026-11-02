@@ -9,7 +9,6 @@ import { removeBodyFor, type RemoveBody } from '@/components/wallet/remove-copy'
 import { RenameDialog } from '@/components/wallet/RenameDialog'
 import { ControlledNote } from '@/components/wallet/ControlledNote'
 import { MasterKeyControl } from '@/components/wallet/MasterKeyControl'
-import { OtherNetworksPlate } from '@/components/wallet/OtherNetworksPlate'
 import { TwoDeviceSign } from '@/components/wallet/TwoDeviceSign'
 import { WalletNodeSection } from '@/components/wallet/WalletNodeSection'
 import { RevealSeedControl } from '@/components/wallet/RevealSeedControl'
@@ -249,7 +248,7 @@ const REMOVE_KEY = 'remove'
 /**
  * Removing this wallet (FR-92, AD-46). The dialog, the copy and the removal itself are the chooser
  * card's, through `lib/remove-wallet`: the lock is re-checked from the store when Remove is pressed
- * and again at confirm. It acts on this one network view only.
+ * and again at confirm. It acts on this one Wallet only.
  */
 function RemovePlate({ wallet }: { wallet: WalletMeta }) {
   const [removing, setRemoving] = useState<RemoveTarget | null>(null)
@@ -318,7 +317,6 @@ export function ConfigureScreen({ wallet }: { wallet: WalletMeta }) {
       <SeedPlate wallet={wallet} />
       {/* A wallet either operates another account or holds the Account Master Key, so this plate always has something to say. */}
       <ControlPlate wallet={wallet} />
-      <OtherNetworksPlate wallet={wallet} />
       <ConfigPlate title="Node">
         <WalletNodeSection wallet={wallet} />
       </ConfigPlate>

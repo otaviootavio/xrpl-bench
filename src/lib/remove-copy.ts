@@ -13,12 +13,14 @@ export const REMOVE_FAILED = 'The wallet could not be removed completely. The Wa
 export type RemoveBody = 'sibling' | 'sole' | 'last'
 
 /** Which consequence the dialog states, read from the Wallets as they are now:
- * the last Wallet on the device, else another network view of the same Seed, else
+ * the last Wallet on the device, else a controlled account sharing the Seed, else
  * the Seed's only view. */
 export function removeBodyFor(wallets: readonly WalletMeta[], walletId: string): RemoveBody {
   if (wallets.length <= 1) return 'last'
-  const seedId = wallets.find((w) => w.id === walletId)?.seedId
-  return wallets.filter((w) => w.seedId === seedId).length > 1 ? 'sibling' : 'sole'
+  const target = wallets.find((w) => w.id === walletId)
+  const others = wallets.filter((w) => w.seedId === target?.seedId && w.id !== walletId)
+  const controlled = (w: WalletMeta) => w.address !== w.keyAddress
+  return others.length > 0 && (controlled(target as WalletMeta) || others.some(controlled)) ? 'sibling' : 'sole'
 }
 
 /** The dialog's sentences, in order. Exactly one of the three bodies, then the backup line. */

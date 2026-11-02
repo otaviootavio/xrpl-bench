@@ -75,7 +75,7 @@ vi.mock('idb', () => ({
 
 import { getDb, wipeVaultDatabase, putVaultMeta } from '../db'
 import {
-  addNetworkView,
+  addControlledView,
   listWallets,
   migrateLegacyVault,
   removeWallet,
@@ -251,13 +251,13 @@ describe('first decrypt resolves the algorithm', () => {
 })
 
 describe('Wallets as views over a Seed record', () => {
-  it('lists one Wallet per view, and "use on another network" adds a view with no new ciphertext', async () => {
+  it('lists one Wallet per view, and a controlled account adds a view with no new ciphertext', async () => {
     const w = Wallet.generate()
     const [r] = await seedLegacy(w)
     await migrateLegacyVault(INPUT)
 
-    const added = await addNetworkView('w1', 'testnet')
-    expect(added).toMatchObject({ seedId: 'w1', network: 'testnet', address: w.address })
+    const added = await addControlledView('w1', { network: 'testnet', accountAddress: 'rControlledAccount1111111111111111' })
+    expect(added).toMatchObject({ seedId: 'w1', network: 'testnet', address: 'rControlledAccount1111111111111111', keyAddress: w.address })
     expect(added.id).not.toBe('w1')
     expect(h.state.stores.wallets.size).toBe(1)
     expect(h.state.stores.wallets.get('w1').encryptedSeed).toEqual(r.encryptedSeed)
@@ -266,20 +266,13 @@ describe('Wallets as views over a Seed record', () => {
     expect(metas.map((m) => [m.id, m.network])).toEqual([['w1', 'mainnet'], [added.id, 'testnet']])
     // The new view unlocks the same Seed. (A reveal would re-pass the legacy lock's
     // Open Check, which this fixture has no PIN for; the choke point does not.)
-    expect(await openedAddress(added.id)).toBe(w.address)
-  })
-
-  it('rejects a network the Seed already has a view on', async () => {
-    await seedLegacy(Wallet.generate())
-    await migrateLegacyVault(INPUT)
-    await expect(addNetworkView('w1', 'mainnet')).rejects.toThrow(/already/)
-    expect((await listWallets()).length).toBe(1)
+    expect(await openedAddress(added.id)).toBe('rControlledAccount1111111111111111')
   })
 
   it('removing one view keeps the Seed; removing the last deletes it', async () => {
     await seedLegacy(Wallet.generate())
     await migrateLegacyVault(INPUT)
-    const added = await addNetworkView('w1', 'testnet')
+    const added = await addControlledView('w1', { network: 'testnet', accountAddress: 'rControlledAccount1111111111111111' })
 
     await removeWallet(added.id)
     expect(h.state.stores.wallets.has('w1')).toBe(true)
@@ -352,11 +345,11 @@ describe('review follow-ups', () => {
     expect(h.state.stores.wallets.get(meta.id)).toEqual(before)
   })
 
-  it('shows an unmigrated record on the fallback network without persisting it, and addNetworkView refuses it', async () => {
+  it('shows an unmigrated record on the fallback network without persisting it, and addControlledView refuses it', async () => {
     const [r] = await seedLegacy(Wallet.generate())
     expect((await listWallets()).map((m) => m.network)).toEqual(['testnet'])
     expect((await listWallets('mainnet')).map((m) => m.network)).toEqual(['mainnet'])
-    await expect(addNetworkView('w1', 'testnet')).rejects.toThrow(/not migrated yet/)
+    await expect(addControlledView('w1', { network: 'testnet', accountAddress: 'rControlledAccount1111111111111111' })).rejects.toThrow(/not migrated yet/)
     expect(h.state.stores.wallets.get('w1')).toEqual(r)
   })
 
@@ -380,7 +373,7 @@ describe('a Node is a field of one Wallet view (story 2)', () => {
   it('stores a node on that view only, touching no ciphertext, and clears it', async () => {
     const [r] = await seedLegacy(Wallet.generate())
     await migrateLegacyVault(INPUT)
-    const added = await addNetworkView('w1', 'testnet')
+    const added = await addControlledView('w1', { network: 'testnet', accountAddress: 'rControlledAccount1111111111111111' })
 
     const meta = await setWalletNode(added.id, 'wss://node.example.com')
     expect(meta.node).toBe('wss://node.example.com')
@@ -407,11 +400,5 @@ describe('a Node is a field of one Wallet view (story 2)', () => {
       await expect(setWalletNode('w1', bad)).rejects.toThrow(/wss:\/\//)
     }
     expect((await listWallets())[0].node).toBe('wss://node.example.com')
-  })
-
-  it('adds a Devnet view like any other network', async () => {
-    await seedLegacy(Wallet.generate())
-    await migrateLegacyVault(INPUT)
-    expect((await addNetworkView('w1', 'devnet')).network).toBe('devnet')
   })
 })

@@ -174,6 +174,7 @@ describe('importStoredWallet', () => {
     expect(rec.address).toBe(Wallet.fromSeed(SEED).address)
     expect(rec.algorithm).toBe('ed25519')
     expect(rec.lockId).toBe(meta.lockId)
+    expect(rec.views).toEqual([{ walletId: meta.id, network: 'testnet' }])
     expect(await aesDecrypt(openKey, rec.encryptedSeed.ivB64, rec.encryptedSeed.ciphertextB64)).toBe(SEED)
     expect(JSON.stringify([...h.state.stores.wallets.values(), ...h.state.stores.vault.values()])).not.toContain(SEED)
   })

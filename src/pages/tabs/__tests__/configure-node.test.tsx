@@ -30,7 +30,6 @@ vi.mock('@/lib/crypto/keystore', () => ({
   listWallets: (...a: unknown[]) => h.listWallets(...a),
   setWalletNode: (...a: unknown[]) => h.setWalletNode(...a),
   revealSeed: async () => ({ status: 'cancelled' }),
-  addNetworkView: async () => ({}),
   unavailablePrompts: { pin: async () => null },
   describeCheckFailure: () => 'x',
 }))

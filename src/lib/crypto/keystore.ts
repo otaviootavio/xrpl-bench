@@ -787,7 +787,7 @@ export interface RemoveWalletResult {
 }
 
 /** Removes one Wallet. Its Seed record goes with its last view and not before:
- * another network's view of the same Seed keeps working. The whole removal runs
+ * a controlled account's view of the same Seed keeps working. The whole removal runs
  * under `exclusiveVaultWrite`, so a create or import in flight finishes first and
  * the emptiness check below sees what it wrote (AD-46).
  *
@@ -1328,50 +1328,6 @@ export async function restorePasskeyWallet(
     },
     { pin, ...(options.confirmWrittenSeed ? { confirmWrittenSeed: options.confirmWrittenSeed } : {}) },
   )
-}
-
-/** "Use on another network": a second Wallet over the SAME Seed record — own
- * walletId, no new ciphertext. Rejects a network the Seed already has a view
- * on. */
-export async function addNetworkView(walletId: string, network: NetworkId): Promise<WalletMeta> {
-  const record = findSeedRecord(await listStoredWallets(), walletId)
-  if (!record) throw new Error('Wallet not found in local vault.')
-  if (!record.views || record.views.length === 0) {
-    throw new Error('This wallet is not migrated yet. Restart the app and try again.')
-  }
-  await assertLockAllowsNetwork(record.lockId ?? LEGACY_LOCK_ID, network)
-  if (record.seedMethod === 'passkey-derived') {
-    // A derived Seed gets no view that creation policy would have refused (AD-28).
-    const info = await getLockInfo(record.lockId ?? LEGACY_LOCK_ID)
-    let origin: string | undefined
-    try {
-      origin = getRpId()
-    } catch {
-      origin = undefined
-    }
-    const verdict = checkWalletRequest({
-      network,
-      seedMethod: 'passkey-derived',
-      openCheck: info.openCheck === 'none' ? 'none' : info.openCheck === 'passkey' ? 'passkey' : 'pin',
-      autoLockMinutes: info.autoLockMinutes,
-      signing: 'passkey',
-      passkey: 'unknown',
-      origin,
-    })
-    if (!verdict.ok) throw new Error(verdict.reason)
-  }
-  const newWalletId = crypto.randomUUID()
-  let added = false
-  await mutateStoredWallet(record.id, (current) => {
-    const views = viewsOf(current)
-    if (views.some((v) => v.network === network)) return current
-    added = true
-    return { ...current, views: [...views, { walletId: newWalletId, network }] }
-  })
-  if (!added) throw new Error('This wallet is already set up on that network.')
-  const meta = (await listWallets(network)).find((w) => w.id === newWalletId)
-  if (!meta) throw new Error('Wallet not found in local vault.')
-  return meta
 }
 
 /** Records that a Seed's key operates `accountAddress` as that Account's Regular

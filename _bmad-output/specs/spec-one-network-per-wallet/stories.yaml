@@ -1,0 +1,30 @@
+- id: "1"
+  title: "The duplicate key is address plus Network"
+  description: >-
+    CAP-2. Importing a Seed is refused only when its address is already on the device on the same Network; the same Seed on another Network is allowed as its own Wallet with its own lock.
+  invoke_dev_with: >-
+    Read CLAUDE.md, DESIGN.md, docs/agents/INDEX.md and docs/agents/verifying-your-work.md first. Fetch origin/dev before starting. Run the four gates: bun run lint, bun run build, bun run test, bun run check:contrast. Where UI changes, do a browser pass at 320, 390 and desktop widths in both themes and at 200% zoom. Stage by explicit path only. Not started: keystore.ts duplicateReasonFor (line 930) and importDuplicateReason (939) take the address only, and the writer calls duplicateReasonFor at line 1032; AddWalletScreen.tsx line 147 is the caller of the step probe. Add the Network to the key (reuse hasView with the key as the Account), pass the step-1 Network, re-run the probe when it changes, and change the reason text to name the Network and point nowhere (it now points to Other networks). A test must fail if the Network is dropped from the key. Keep the check before any prompt, lock write or ledger read (AD-39).
+- id: "2"
+  title: "A Wallet has one Network for life"
+  description: >-
+    CAP-1. Delete "Other networks" and addNetworkView; creation and import write exactly one view; Rename and Remove act on one Wallet, and the sibling-view confirm body stays only for a controlled account.
+  invoke_dev_with: >-
+    Read CLAUDE.md, DESIGN.md, docs/agents/INDEX.md and docs/agents/verifying-your-work.md first. Fetch origin/dev before starting. Run the four gates: bun run lint, bun run build, bun run test, bun run check:contrast. Where UI changes, do a browser pass at 320, 390 and desktop widths in both themes and at 200% zoom. Stage by explicit path only. Not started: addNetworkView is in keystore.ts (line 1332) and OtherNetworksPlate.tsx is mounted by ConfigureScreen.tsx; tests that touch them include configure-network-views.test.tsx, configure-shell.test.tsx, edit-checks.test.ts and derived-wallet.test.ts, which must be deleted or re-pointed, not left failing. Do NOT touch addControlledView, Operating another account or two-device signing, and do not rewrite the keystore (AD-47). A test fails if a record is written with two views that both lack accountAddress. Check remove-copy.ts for the confirm bodies.
+- id: "3"
+  title: "One card per Wallet with name, address and Network"
+  description: >-
+    CAP-3. listWalletCards replaces groupWalletsBySeed; each Wallet is one card showing name, address and Network, locked or open, with the locked variant typed to carry only walletId, lockId, label, address and network.
+  invoke_dev_with: >-
+    Read CLAUDE.md, DESIGN.md, docs/agents/INDEX.md and docs/agents/verifying-your-work.md first. Fetch origin/dev before starting. Run the four gates: bun run lint, bun run build, bun run test, bun run check:contrast. Where UI changes, do a browser pass at 320, 390 and desktop widths in both themes and at 200% zoom. Stage by explicit path only. Not started: store/wallet-groups.ts has LockedGroup with seedId and entryWalletId and OpenGroup with views[] rows; WalletCard.tsx and Chooser.tsx were polished on this branch (one Locked word, one row, single column) and must keep their rules (accessible names, 44px targets, aria-current, no new token). Keep walletIdsInChooserOrder and nextActiveWalletId. Every address through AddressLink with the card's network; Mainnet Real funds and Devnet Not stable as words. The chooser zero-read screen test must still pass, and a type-level or screen test must fail if the locked card is given a Node, check kind or balance.
+- id: "4"
+  title: "Open enters that Wallet"
+  description: >-
+    CAP-4. After unlocking, the user enters that Wallet; the return to the chooser for a Seed with several views and the entry-view rule are deleted.
+  invoke_dev_with: >-
+    Read CLAUDE.md, DESIGN.md, docs/agents/INDEX.md and docs/agents/verifying-your-work.md first. Fetch origin/dev before starting. Run the four gates: bun run lint, bun run build, bun run test, bun run check:contrast. Where UI changes, do a browser pass at 320, 390 and desktop widths in both themes and at 200% zoom. Stage by explicit path only. Partly done by story 3 (one walletId per card). Remaining: Unlock.tsx line 22 returns to the chooser when a Seed has more than one view; delete that and the entry-view logic in wallet-groups. A closed lock asks its Open Check and enters; an open lock is entered directly (FR-82, FR-83 unchanged). A controlled Wallet still opens through its key-holder's lock. Update the unlock tests.
+- id: "5"
+  title: "Mainnet Import states one neutral fact"
+  description: >-
+    CAP-5. The Review step of an Import on Mainnet shows one neutral sentence beside Real funds, and nothing blocks; the release note says older multi-network wallets are not supported.
+  invoke_dev_with: >-
+    Read CLAUDE.md, DESIGN.md, docs/agents/INDEX.md and docs/agents/verifying-your-work.md first. Fetch origin/dev before starting. Run the four gates: bun run lint, bun run build, bun run test, bun run check:contrast. Where UI changes, do a browser pass at 320, 390 and desktop widths in both themes and at 200% zoom. Stage by explicit path only. Not started. Sentence: "A Seed you used on another Network is the same key on Mainnet." (13 words; the wording is the spec's call for PRD open item 14, change only with the owner). Put it in check-words.ts beside the other plain wording, show it on the Review step (WalletQuestions.tsx ReviewStep) only for Import on Mainnet, keep it out of checkWalletRequest and out of every other path, and add a test that fails if it shows for Create, Testnet or Devnet. The release-note line is not in the repository: report it to the owner in the story's hand-back.

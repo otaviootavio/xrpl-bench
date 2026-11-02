@@ -1,5 +1,5 @@
 import { decodeSeed, ECDSA, Wallet } from 'xrpl'
-import { canonicalNodeUrl, type NetworkId } from '@/lib/xrpl/networks'
+import { canonicalNodeUrl, NETWORKS, type NetworkId } from '@/lib/xrpl/networks'
 import type { Signer, SigningHandle } from '@/lib/xrpl/writes'
 import { aesDecrypt, aesEncrypt } from './aes'
 import { deriveAesKeyFromBits, generateOrdinal, HKDF_INFO, isOrdinal, seedSalt, walletFromSeedPrf } from './derive'
@@ -922,34 +922,35 @@ export type ImportWalletContext = CreateWalletContext
 export type ImportStoredWalletResult = CheckResult<{ meta: WalletMeta; openKey: CryptoKey }> | { status: 'refused'; reason: string }
 
 const IMPORT_MALFORMED_REASON = 'That is not a valid Seed.'
-const IMPORT_DUPLICATE_REASON =
-  'This key is already on this device. To use it on another network, open the wallet and use Configure, Other networks.'
+function importDuplicateReasonText(network: NetworkId): string {
+  return `This key is already on this device on ${NETWORKS[network].label}.`
+}
 
 /** The one duplicate check, shared by the writer and the screen's probe so the two
- * cannot disagree: the same key is the same Account on every network, so it is held once. */
-async function duplicateReasonFor(address: string): Promise<string | null> {
-  return (await listStoredWallets()).some((w) => w.address === address) ? IMPORT_DUPLICATE_REASON : null
+ * cannot disagree: the key is the address plus the Network (FR-93, AD-39). */
+async function duplicateReasonFor(address: string, network: NetworkId): Promise<string | null> {
+  return hasView(await listStoredWallets(), network, address, address) ? importDuplicateReasonText(network) : null
 }
 
 /**
  * Asks, before any prompt or ledger read, whether this Seed's address is already on
- * the device (any network): the reason to show, or `null`. A value that is not a Seed
+ * the device on this Network: the reason to show, or `null`. A value that is not a Seed
  * is not a duplicate (the caller parses first). Reads only; the Seed is a parameter.
  */
-export async function importDuplicateReason(seed: string): Promise<string | null> {
+export async function importDuplicateReason(seed: string, network: NetworkId): Promise<string | null> {
   let address: string
   try {
     address = Wallet.fromSeed(seed).address
   } catch {
     return null
   }
-  return duplicateReasonFor(address)
+  return duplicateReasonFor(address, network)
 }
 
 /**
  * Imports a Seed as a Stored Seed Wallet on a NEW lock of its own (AD-39), held to at
  * least the strength Generate is: an Open Check of `none` is refused on every network.
- * Same writer and order as `createStoredWallet`; a duplicate address (any network) is
+ * Same writer and order as `createStoredWallet`; a duplicate address on the same Network is
  * refused before any prompt, credential or lock. No ledger read. The Seed is never
  * kept, logged, thrown or returned.
  */
@@ -1028,8 +1029,8 @@ async function writeNewStoredWallet(
   if ('refused' in obtained) return { status: 'refused', reason: obtained.refused }
   const { seed, address, algorithm } = obtained
   if (input.origin === 'imported') {
-    // The same key is the same Account on every network, so it is held once (AD-39).
-    const duplicate = await duplicateReasonFor(address)
+    // One Account is held once per Network (AD-39, FR-93).
+    const duplicate = await duplicateReasonFor(address, input.network)
     if (duplicate) return { status: 'refused', reason: duplicate }
     const blocked = await pinGate()
     if (blocked) return blocked

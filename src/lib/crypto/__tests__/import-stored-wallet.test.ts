@@ -212,16 +212,16 @@ describe('importStoredWallet', () => {
     expect(h.state.stores.wallets.get(meta.id).writtenSeedConfirmedAt).toBeTypeOf('number')
   })
 
-  it('refuses a duplicate address on any network before any prompt, credential or lock write', async () => {
+  it('refuses the same key on the same Network, naming it, before any prompt, credential or lock write', async () => {
     ok(await importStoredWallet({ ...base, network: 'testnet' }, { pin: PIN }))
     const lockWrites = vi.spyOn(lockModule, 'createLock')
     const confirm = vi.fn(async () => true)
-    for (const network of ['testnet', 'devnet', 'mainnet'] as const) {
-      const result = await importStoredWallet({ ...base, network, openCheck: 'passkey' }, { confirmWrittenSeed: confirm })
-      expect(result.status).toBe('refused')
-      expect(JSON.stringify(result)).toContain('Other networks')
-      expect(JSON.stringify(result)).not.toContain(SEED)
-    }
+    const result = await importStoredWallet({ ...base, network: 'testnet', openCheck: 'passkey' }, { confirmWrittenSeed: confirm })
+    expect(result.status).toBe('refused')
+    const text = JSON.stringify(result)
+    expect(text).toContain('Testnet')
+    expect(text).not.toContain('Other networks')
+    expect(text).not.toContain(SEED)
     expect(confirm).not.toHaveBeenCalled()
     expect(w.registers).toBe(0)
     expect(w.asserts).toBe(0)
@@ -230,24 +230,80 @@ describe('importStoredWallet', () => {
     expect(lockRecords()).toHaveLength(1)
   })
 
-  it('the duplicate probe reads only, and says exactly what the writer says', async () => {
-    expect(await importDuplicateReason(SEED)).toBeNull()
+  it('allows the same key on another Network as its own record, lock and ciphertext', async () => {
+    const first = ok(await importStoredWallet({ ...base, network: 'testnet' }, { pin: PIN })).meta
+    const before = JSON.stringify(h.state.stores.wallets.get(first.id))
+    const second = ok(await importStoredWallet({ ...base, network: 'mainnet' }, { pin: PIN })).meta
+    expect(second.id).not.toBe(first.id)
+    expect(second.lockId).not.toBe(first.lockId)
+    const a = h.state.stores.wallets.get(first.id)
+    const b = h.state.stores.wallets.get(second.id)
+    expect(b.encryptedSeed.ciphertextB64).not.toBe(a.encryptedSeed.ciphertextB64)
+    expect(JSON.stringify(a)).toBe(before)
+    expect(h.state.stores.wallets.size).toBe(2)
+    expect(lockRecords()).toHaveLength(2)
+  })
+
+  it('the duplicate probe reads only, and says exactly what the writer says for the same Network', async () => {
+    expect(await importDuplicateReason(SEED, 'testnet')).toBeNull()
     ok(await importStoredWallet(base, { pin: PIN }))
     const writes = h.state.stores.wallets.size
-    const probe = await importDuplicateReason(SEED)
-    const writer = await importStoredWallet({ ...base, network: 'devnet' }, { pin: PIN })
+    const probe = await importDuplicateReason(SEED, 'testnet')
+    const writer = await importStoredWallet({ ...base, network: 'testnet' }, { pin: PIN })
     expect(probe).toBeTypeOf('string')
     expect(writer).toEqual({ status: 'refused', reason: probe })
     expect(h.state.stores.wallets.size).toBe(writes)
+    // Another Network is not a duplicate.
+    expect(await importDuplicateReason(SEED, 'devnet')).toBeNull()
+    expect(await importDuplicateReason(SEED, 'mainnet')).toBeNull()
     // Not a Seed: not a duplicate, and never an echo of the value.
-    expect(await importDuplicateReason('not a seed')).toBeNull()
+    expect(await importDuplicateReason('not a seed', 'testnet')).toBeNull()
   })
 
-  it('a Generated wallet with the same key is a duplicate too', async () => {
+  it('a record holding a second view on another Network is a duplicate there too, and only there', async () => {
+    const address = Wallet.fromSeed(SEED).address
+    h.state.stores.wallets.set('w1', {
+      id: 'w1',
+      address,
+      label: 'Two views',
+      views: [
+        { walletId: 'w1', network: 'testnet' },
+        { walletId: 'w1-dev', network: 'devnet' },
+      ],
+    })
+    const reason = await importDuplicateReason(SEED, 'devnet')
+    expect(reason).toContain('Devnet')
+    expect(await importDuplicateReason(SEED, 'testnet')).toContain('Testnet')
+    const writer = await importStoredWallet({ ...base, network: 'devnet' }, { pin: PIN })
+    expect(writer).toEqual({ status: 'refused', reason })
+    expect(await importDuplicateReason(SEED, 'mainnet')).toBeNull()
+    ok(await importStoredWallet({ ...base, network: 'mainnet' }, { pin: PIN }))
+    expect(h.state.stores.wallets.size).toBe(2)
+  })
+
+  it('a legacy record with no views is a duplicate on its fallback Network (testnet) only', async () => {
+    h.state.stores.wallets.set('legacy', { id: 'legacy', address: Wallet.fromSeed(SEED).address, label: 'Legacy' })
+    expect(await importDuplicateReason(SEED, 'testnet')).toContain('Testnet')
+    expect((await importStoredWallet({ ...base, network: 'testnet' }, { pin: PIN })).status).toBe('refused')
+    expect(await importDuplicateReason(SEED, 'devnet')).toBeNull()
+    expect(await importDuplicateReason(SEED, 'mainnet')).toBeNull()
+    ok(await importStoredWallet({ ...base, network: 'devnet' }, { pin: PIN }))
+  })
+
+  it.each(['testnet', 'devnet', 'mainnet'] as const)('the reason names %s', async (network) => {
+    ok(await importStoredWallet({ ...base, network, autoLockMinutes: 5 }, { pin: PIN }))
+    const reason = await importDuplicateReason(SEED, network)
+    expect(reason).toContain(network[0].toUpperCase() + network.slice(1))
+    expect(reason!.split(' ').length).toBeLessThan(21)
+  })
+
+  it('a Generated wallet with the same key is a duplicate on the same Network only', async () => {
     const gen = ok(await createStoredWallet({ label: 'G', network: 'testnet', algorithm: 'ed25519', openCheck: 'pin', autoLockMinutes: 5, signing: 'standard', passkey: 'yes' }, { pin: PIN }))
     const result = await importStoredWallet({ ...base, seed: gen.seed }, { pin: PIN })
     expect(result.status).toBe('refused')
     expect(h.state.stores.wallets.size).toBe(1)
+    ok(await importStoredWallet({ ...base, seed: gen.seed, network: 'devnet' }, { pin: PIN }))
+    expect(h.state.stores.wallets.size).toBe(2)
   })
 
   it('a malformed Seed is refused with a reason that does not contain it', async () => {

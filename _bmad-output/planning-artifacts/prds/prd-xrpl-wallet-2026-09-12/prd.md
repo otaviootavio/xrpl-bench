@@ -676,6 +676,16 @@ the words on screen say which.
   opens with "These settings are for the whole app. Each wallet's own settings
   are inside that wallet."
 - **Update marker:** inside a Wallet the Wallets key carries it (FR-90).
+- **Revised 2026-11-02, after the owner's first look at the built screens.**
+  The words "Wallet" (tab) and "XRPL Bench" (key and page) above are replaced:
+  the chooser's key and page are **Global settings**, and the tab inside a
+  Wallet is **Local settings**. The Wallet's name is shown as its own element,
+  in the case the user typed, and not inside an upper-case heading, so it reads
+  as this Wallet's name. The identity plate also shows, read-only, what was
+  chosen when the Wallet was created: signature curve, Seed Method, Node, Open
+  Check and Signing Check. The app keeps one top bar; its hierarchy and spacing
+  are for the UX pass. The update marker keeps its place on the Wallets key
+  (FR-90), and the chooser key reads "Global settings, update available".
 
 ### 4.4 Sending Payments
 *Detail: `docs/user-stories/sending-payments.md`*

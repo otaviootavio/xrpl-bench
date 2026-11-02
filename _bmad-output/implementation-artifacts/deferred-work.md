@@ -443,3 +443,7 @@ Item 8 shipped as a refactor that preserves behaviour (`spec-sendtab-split.md`).
   summary: Decide whether the "No Open Check" detail should name the consequence (anyone holding the device can open the wallet), and whether "Opens without asking", "Signs without asking again" and "shown with no further prompt" should share one phrase.
   evidence: Reviewer observation, maybe-false; the current wording is the owner-approved verdict of issues 8e and 8g, so changing it is a spec change. Settled by an owner decision on the wording.
   resolved: 2026-10-19, the owner chose the "Nothing is asked" style for Standard, No Open Check and the seed reveal (spec memlog); consequence wording for No Open Check is still open.
+
+- source_spec: `_bmad-output/specs/spec-no-legacy-lock/stories/1-first-run-import-gets-its-own-lock.md`
+  summary: First-run Create (Onboarding `create` step) leaves the quiz's primary action below the fold at 320x568, at 100% and at 200% text.
+  evidence: Same card and inline action row as first-run Import before story 1's round 2 fix; measured on Import in a real browser (Next at y=1245, Import wallet at y=5963 against a scroll area ending at 451 at 200% text). Add wallet avoids it with a sticky ScreenFooter through `CreateWalletFlow`'s `actionHost`. Pre-existing and outside story 1's intent, so it was not fixed there; the same host wiring would fix it. Needs a browser pass on Create after the change.

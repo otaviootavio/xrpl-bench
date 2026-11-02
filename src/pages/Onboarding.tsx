@@ -1,67 +1,28 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { CreateWalletFlow } from '@/components/wallet/CreateWalletFlow'
+import { useSeedImport } from '@/components/wallet/useSeedImport'
 import { ChassisShell } from '@/components/ChassisShell'
-import { setUpVaultAuth, hasPasskeyRegistered } from '@/lib/crypto/auth'
-import { DEFAULT_AUTO_LOCK_MINUTES } from '@/lib/crypto/lock'
-import { LEGACY_LOCK_ID } from '@/lib/crypto/db'
+import { hasPasskeyRegistered } from '@/lib/crypto/auth'
 import { RemoveAllPlate } from '@/components/wallet/RemoveAllPlate'
-import { addressFromSeed, appPinResidue, parseSeedInput, importAndStoreWallet, listWallets, type WalletMeta } from '@/lib/crypto/keystore'
-import { checkBeforeImport, IMPORT_WARNING_COPY, INVALID_SEED_MESSAGE, type ImportWarning } from '@/lib/seed-import'
-import { useAppStore } from '@/store/app-store'
-import { NetworkChoice } from '@/components/wallet/NetworkChoice'
-import type { NetworkId } from '@/lib/xrpl/networks'
-import { useQueryClient } from '@tanstack/react-query'
+import { appPinResidue, type WalletMeta } from '@/lib/crypto/keystore'
 import { toast } from '@/lib/notify'
+import { useAppStore } from '@/store/app-store'
 import { BUILD, shortSha, sourceUrl } from '@/lib/build-info'
 import { ExternalLinkIcon } from 'lucide-react'
 
-type Step = 'choice' | 'create' | 'vault-setup' | 'import-seed' | 'import-warning'
+type Step = 'choice' | 'create' | 'import'
 
 /**
- * IMPORTANT: this component intentionally does NOT call the app store's
- * `openLock()`/`setWallets()`/`setActiveWalletId()` until the entire flow is
- * finished (any import warning dismissed; a new wallet's own flow, `CreateWalletFlow`,
- * commits only after its seed backup). App.tsx's top-level Gate switches to <Main> the instant
- * `wallets.length > 0`, so committing those earlier would skip
- * straight past the seed-backup screen — a real bug caught during browser
- * validation (the wallet's own account-onboarding.md US-6 requires an
- * explicit backup confirmation before continuing).
- *
- * Guardrail #3 also applies throughout: no seed — neither the generated one
- * (held by `CreateWalletFlow`) nor the one typed in to import — is ever held in
- * React state. Both live in refs and are cleared as soon as the flow that needs
- * them completes.
+ * `CreateWalletFlow` (Create and Import alike) opens the Wallet's own lock, then
+ * sets the wallet list, which is when the Gate flips to Main, then calls `onDone`,
+ * which selects the Wallet. Guardrail #3: no Seed is ever in React state; the
+ * generated one lives in the flow and the typed one in `useSeedImport`, in refs only.
  */
 export function Onboarding() {
   const [step, setStep] = useState<Step>('choice')
-  const [pin, setPin] = useState('')
-  const [pinConfirm, setPinConfirm] = useState('')
-  const [importWarning, setImportWarning] = useState<ImportWarning | null>(null)
-  const [busy, setBusy] = useState(false)
-  // A new Wallet is being written or backed up: leaving would strand it.
   const [creating, setCreating] = useState(false)
-
-  // Held locally until the flow completes — never written to the store early.
-  const [vaultKey, setVaultKey] = useState<CryptoKey | null>(null)
-
-  // Secrets: refs only, never state.
-  // Uncontrolled input — a controlled one would put the typed seed into React
-  // state on every keystroke.
-  const importSeedRef = useRef<HTMLInputElement | null>(null)
-  // The parsed Seed, taken from the input when the import step is left. It
-  // has to be copied out: the input belongs to the `import-seed` step's tree,
-  // so the moment the flow moves on to `vault-setup` React unmounts it and
-  // `importSeedRef.current` becomes null. Reading the input at vault-setup
-  // time — as this screen used to — read `''`, and import never got as far as
-  // the probe.
-  const pendingImportSeedRef = useRef<string | null>(null)
-  // The network the import was started for; check and write both use it.
-  const pendingImportNetworkRef = useRef<NetworkId>('testnet')
 
   // An App PIN or a failure count that outlived the last Wallet (a removal whose
   // discard failed, AD-46). Read through the keystore each time this step shows.
@@ -79,98 +40,7 @@ export function Onboarding() {
     }
   }, [step])
 
-  const queryClient = useQueryClient()
-  // The new Wallet's network, chosen here and fixed on its record (AD-19).
-  // Testnet is pre-selected: nothing real is at stake until it is changed.
-  const [network, setNewWalletNetwork] = useState<NetworkId>('testnet')
-  const setWallets = useAppStore((s) => s.setWallets)
   const setActiveWalletId = useAppStore((s) => s.setActiveWalletId)
-  const openLock = useAppStore((s) => s.openLock)
-
-  function commitToStore(key: CryptoKey, meta: WalletMeta, wallets: WalletMeta[]) {
-    // The lock first: the Gate shows Main the moment `wallets` is non-empty, and
-    // a Wallet whose lock is not yet open would flash its locked view.
-    openLock(LEGACY_LOCK_ID, key, DEFAULT_AUTO_LOCK_MINUTES)
-    setWallets(wallets)
-    setActiveWalletId(meta.id)
-  }
-
-  function clearSeeds() {
-    pendingImportSeedRef.current = null
-    if (importSeedRef.current) importSeedRef.current.value = ''
-  }
-
-  async function handleVaultSetup() {
-    if (pin.length < 6) {
-      toast.error('PIN must be at least 6 digits.')
-      return
-    }
-    if (pin !== pinConfirm) {
-      toast.error("PINs don't match.")
-      return
-    }
-    setBusy(true)
-    try {
-      const key = await setUpVaultAuth('xrpl-wallet-user', pin)
-      setVaultKey(key)
-
-      const seed = pendingImportSeedRef.current
-      if (!seed) {
-        // Unreachable through the UI — the import step only advances with
-        // a parsed Seed — but never write, or probe, without one.
-        toast.error(INVALID_SEED_MESSAGE)
-        setStep('import-seed')
-        return
-      }
-      // Detect a disabled master key BEFORE the import is completed — the
-      // resolved decision in docs/decisions.md says to warn *before*
-      // completing import, so nothing is written to the vault until the
-      // user has seen the warning and chosen to continue. An account that
-      // could not be read warns too (lib/seed-import.ts).
-      const importNetwork = pendingImportNetworkRef.current
-      const warning = await checkBeforeImport(queryClient, importNetwork, addressFromSeed(seed))
-      if (warning) {
-        setImportWarning(warning)
-        setStep('import-warning')
-        return
-      }
-      const meta = await importAndStoreWallet('My Wallet', seed, key, importNetwork)
-      const wallets = await listWallets(importNetwork)
-      clearSeeds()
-      commitToStore(key, meta, wallets)
-      toast.success('Wallet imported.')
-    } catch (err: any) {
-      toast.error(err?.message ?? 'Setup failed.')
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  /** The import is only actually written to the vault here, once the user has
-   * acknowledged the disabled-master-key warning. */
-  async function acceptImportWarning() {
-    const seed = pendingImportSeedRef.current
-    if (!vaultKey || !seed) return
-    setBusy(true)
-    try {
-      const meta = await importAndStoreWallet('My Wallet', seed, vaultKey, pendingImportNetworkRef.current)
-      const wallets = await listWallets(pendingImportNetworkRef.current)
-      clearSeeds()
-      setImportWarning(null)
-      commitToStore(vaultKey, meta, wallets)
-      toast.success('Wallet imported.')
-    } catch (err: any) {
-      toast.error(err?.message ?? 'Import failed.')
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  function cancelImportWarning() {
-    clearSeeds()
-    setImportWarning(null)
-    setStep('choice')
-  }
 
   if (step === 'choice') {
     return (
@@ -198,7 +68,7 @@ export function Onboarding() {
               </Button>
               <Button
                 variant="outline"
-                onClick={() => setStep('import-seed')}
+                onClick={() => setStep('import')}
               >
                 Import an existing wallet
               </Button>
@@ -228,64 +98,17 @@ export function Onboarding() {
     )
   }
 
-  if (step === 'import-seed') {
+  if (step === 'import') {
     return (
-      <ChassisShell maxWidthClassName="max-w-md">
-        <div className="flex min-h-full flex-col justify-center gap-6 p-6">
-          <Card>
-            <CardHeader>
-              <CardTitle as="h1">Import wallet</CardTitle>
-              <CardDescription>Enter your existing seed. It never leaves this device.</CardDescription>
-            </CardHeader>
-            <CardContent className="flex flex-col gap-3">
-              <NetworkChoice value={network} onChange={setNewWalletNetwork} disabled={busy} />
-              <Label htmlFor="seed">Seed</Label>
-              <Input id="seed" type="password" autoComplete="off" spellCheck={false} ref={importSeedRef} placeholder="s..." />
-              <Button
-                onClick={() => {
-                  const seed = parseSeedInput(importSeedRef.current?.value ?? '')
-                  if (seed) {
-                    pendingImportSeedRef.current = seed
-                    pendingImportNetworkRef.current = network
-                    setStep('vault-setup')
-                  } else {
-                    toast.error(INVALID_SEED_MESSAGE)
-                  }
-                }}
-              >
-                Continue
-              </Button>
-            </CardContent>
-          </Card>
-        </div>
-      </ChassisShell>
-    )
-  }
-
-  if (step === 'vault-setup') {
-    return (
-      <ChassisShell maxWidthClassName="max-w-md">
-        <div className="flex min-h-full flex-col justify-center gap-6 p-6">
-          <Card>
-            <CardHeader>
-              <CardTitle as="h1">Secure your wallet</CardTitle>
-              <CardDescription>
-                Set a PIN to unlock the app. If your device supports it, you'll also be able to register a passkey (Face ID/Touch
-                ID/Windows Hello) for faster unlocking — the PIN always works as a fallback.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="flex flex-col gap-3">
-              <Label htmlFor="pin">PIN (min 6 digits)</Label>
-              <Input id="pin" type="password" inputMode="numeric" autoComplete="new-password" value={pin} onChange={(e) => setPin(e.target.value)} />
-              <Label htmlFor="pin-confirm">Confirm PIN</Label>
-              <Input id="pin-confirm" type="password" inputMode="numeric" autoComplete="new-password" value={pinConfirm} onChange={(e) => setPinConfirm(e.target.value)} />
-              <Button onClick={handleVaultSetup} disabled={busy}>
-                {busy ? 'Setting up…' : 'Continue'}
-              </Button>
-            </CardContent>
-          </Card>
-        </div>
-      </ChassisShell>
+      <ImportStep
+        creating={creating}
+        onInProgressChange={setCreating}
+        onDone={(meta) => {
+          setActiveWalletId(meta.id)
+          toast.success('Wallet imported.')
+        }}
+        onBack={() => setStep('choice')}
+      />
     )
   }
 
@@ -311,28 +134,49 @@ export function Onboarding() {
     )
   }
 
-  if (step === 'import-warning' && importWarning) {
-    return (
-      <ChassisShell maxWidthClassName="max-w-md">
-        <div className="flex min-h-full flex-col justify-center gap-6 p-6">
-          <Alert variant="warning">
-            <AlertTitle>{IMPORT_WARNING_COPY[importWarning].title}</AlertTitle>
-            <AlertDescription>{IMPORT_WARNING_COPY[importWarning].body}</AlertDescription>
-          </Alert>
-          <div className="flex gap-2">
-            <Button variant="outline" onClick={cancelImportWarning} disabled={busy}>
-              Cancel import
-            </Button>
-            <Button onClick={acceptImportWarning} disabled={busy}>
-              {busy ? 'Importing…' : 'Import anyway'}
-            </Button>
-          </div>
-        </div>
-      </ChassisShell>
-    )
-  }
-
   return null
+}
+
+/**
+ * First-run Import: the creation flow with the Seed source Add wallet uses, so the
+ * first Wallet is made like any Wallet (its own lock, the App PIN on demand). A
+ * component of its own so the typed Seed is dropped when the step is left.
+ */
+function ImportStep({
+  creating,
+  onInProgressChange,
+  onDone,
+  onBack,
+}: {
+  creating: boolean
+  onInProgressChange: (inProgress: boolean) => void
+  onDone: (meta: WalletMeta) => void
+  onBack: () => void
+}) {
+  const { importSource, warningDialog } = useSeedImport()
+  // The flow's primary action renders in a sticky footer here, so it stays reachable at 320px and 200% text.
+  const [footerHost, setFooterHost] = useState<HTMLElement | null>(null)
+  return (
+    <ChassisShell maxWidthClassName="max-w-md">
+      <div className="flex min-h-full flex-col justify-center gap-6 p-6">
+        <Card>
+          <CardHeader>
+            <CardTitle as="h1">Import wallet</CardTitle>
+            <CardDescription>Answer each question, or keep the answer already chosen. Your seed never leaves this device.</CardDescription>
+          </CardHeader>
+          <CardContent className="flex flex-col gap-3">
+            <Button variant="outline" size="sm" className="h-auto min-h-8 w-fit max-w-full whitespace-normal py-1" onClick={onBack} disabled={creating}>
+              Back to start
+            </Button>
+            {/* Commits to the store itself, after the Wallet is written. */}
+            <CreateWalletFlow importSource={importSource} actionHost={footerHost} onInProgressChange={onInProgressChange} onDone={onDone} />
+            <div ref={setFooterHost} className="contents" />
+          </CardContent>
+        </Card>
+      </div>
+      {warningDialog}
+    </ChassisShell>
+  )
 }
 
 // A thin re-export of hasPasskeyRegistered() consumed by Unlock; kept here so

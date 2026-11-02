@@ -7,7 +7,7 @@ paradigm: 'layered, two sealed boundaries (inherited) — an app shell above two
 scope: 'The chooser as the home screen; per-wallet configuration; the Settings split; Import with its own lock; rename; the route table and history; what leaving a wallet does to lock, timer and cache. Inherits the whole-client and passkey-signing spines.'
 status: final
 created: '2026-10-19'
-updated: '2026-10-26'
+updated: '2026-11-02'
 binds: [AD-1, AD-3, AD-4, AD-5, AD-6, AD-8, AD-10, AD-13, AD-14, AD-15, AD-16, AD-18, AD-21, AD-22, AD-25, AD-26, AD-28]
 sources:
   - _bmad-output/planning-artifacts/prds/prd-xrpl-wallet-2026-09-12/prd.md   # FR-79..FR-90, FR-13, FR-14
@@ -20,7 +20,7 @@ companions: []
 
 # Architecture Spine — Wallet Chooser and Per-Wallet Configuration
 
-Inherits both parent spines (whole client AD-1..AD-17, passkey signing AD-18..AD-30) as binding and read-only. New decisions continue at **AD-31**. `[ADOPTED]` = settled by the owner (UX memlog, Resolved By The Owner, and the 2026-10-20 answers to Q1 to Q4) or by shipped code. `[ASSUMPTION]` = my call, awaiting the owner. Nothing here weakens an inherited AD; the places where it comes close are under *Conflicts For The Owner*.
+Inherits both parent spines (whole client AD-1..AD-17, passkey signing AD-18..AD-30) as binding and read-only. New decisions continue at **AD-31**. *Update 2026-11-02 (PRD FR-93, one Network per Wallet): AD-47 to AD-49 are new; AD-36, AD-39 and AD-43 are amended in place; the card is now a Wallet, not a Seed.* `[ADOPTED]` = settled by the owner (UX memlog, Resolved By The Owner, and the 2026-10-20 answers to Q1 to Q4) or by shipped code. `[ASSUMPTION]` = my call, awaiting the owner. Nothing here weakens an inherited AD; the places where it comes close are under *Conflicts For The Owner*.
 
 ## Design Paradigm
 
@@ -85,11 +85,11 @@ graph LR
 | AD-10 (explorer links) | main spine | Every address on a chooser row renders through `AddressLink` with an explicit `network`. |
 | AD-13, AD-14, AD-15 | main spine | A failed list or settings read is an error state, never empty, never a guard relaxed (AD-37). |
 | AD-16 (single teardown owner) | main spine | Every lock, leave and remove path goes through `lib/teardown.ts` (AD-38, AD-45, AD-46). |
-| AD-18 (Seed record vs Wallet view) | passkey spine | The name, the lock and the checks are properties of the Seed record; the chooser card is the Seed (AD-43). |
+| AD-18 (Seed record vs Wallet view) | passkey spine | The name, the lock and the checks are properties of the Seed record; the chooser card is one Wallet (AD-43, amended 2026-11-02). A Wallet has one Network for life (AD-47). |
 | AD-21 (one Open Key per lock) | passkey spine | An imported Seed gets its own lock (AD-39). |
 | AD-22 (no creation path bypasses keystore and policy) | passkey spine | Import goes through `keystore`; `importAndStoreWallet` is not a path for the chooser (AD-39). |
 | AD-25 (one App PIN, one failure count) | passkey spine | The chooser adds no PIN prompt and reveals nothing about attempts. The PIN and its failure count are deleted together, and only when no Wallet remains (AD-46). |
-| AD-26 (per-lock teardown; locked Wallet issues no read) | passkey spine | A locked card is its name and nothing else, enforced by type (AD-43). Leaving a wallet does not close its lock but mounts nothing for it (AD-38). |
+| AD-26 (per-lock teardown; locked Wallet issues no read) | passkey spine | A locked card is its name, address and Network and nothing else, enforced by type (AD-43, amended 2026-11-02); it issues no ledger read. Leaving a wallet does not close its lock but mounts nothing for it (AD-38). |
 | AD-28 (one policy function, Mainnet floor) | passkey spine | Import, auto-lock edits and every new lock pass `policy.ts` (AD-39, AD-44). |
 | CLAUDE.md, `docs/agents/keys-and-secrets.md`, `ledger-io.md`, `anti-patterns.md`, `docs/decisions.md` §3, §4, §12, §13 | repo | Money as strings; no secret in state, URL or storage; every ledger read through a keyed hook; a failed read is never an empty or current one; the shell survives every lock; nothing styles `:focus`. |
 
@@ -139,7 +139,7 @@ graph LR
 
 - **Binds:** chooser, `/settings`, add-wallet, the app-shell header; AD-4, AD-26, AD-10
 - **Prevents:** a locked wallet's network or address leaking through a hook that resolves to the last-used wallet (`NetworkPlate`, `useActiveNetwork`); a Testnet row linked to the Mainnet explorer because `AddressLink` defaults to the active network; an account-scoped key mounted for a wallet the user is not in.
-- **Rule:** The chooser side reads only `wallets` and `openLocks` from the store, through the grouping selector (AD-43). It mounts no hook that issues a ledger read, no `useActiveWallet`, `useActiveNetwork` or `useActiveNode`, no `NetworkPlate`, and no account-scoped key from the factory. Every `AddressLink` there passes `network` from its own row. The chooser makes no `lockInfo` read: the Open Check kind is on `WalletMeta`, and `Unlock` owns that read. No balance is shown. A screen-level test mounts the chooser with several open locks and fails if the query cache is non-empty or `getXrplClient` is called (parent convention: a rule governing what a screen may show gets a test that fails when it is removed).
+- **Rule:** The chooser side reads only `wallets` and `openLocks` from the store, through the grouping selector (AD-43). It mounts no hook that issues a ledger read, no `useActiveWallet`, `useActiveNetwork` or `useActiveNode`, no `NetworkPlate`, and no account-scoped key from the factory. Every `AddressLink` there passes `network` from its own card. *Amended 2026-11-02 (FR-93): a card, locked or open, shows its address and Network, read from `wallets` like its name; this is a device read, not a ledger read, so the budget is unchanged. The locked card still carries no Node, check kind or balance (AD-43).* The chooser makes no `lockInfo` read: the Open Check kind is on `WalletMeta`, and `Unlock` owns that read. No balance is shown. A screen-level test mounts the chooser with several open locks and fails if the query cache is non-empty or `getXrplClient` is called (parent convention: a rule governing what a screen may show gets a test that fails when it is removed).
 
 ### AD-37 — Gate has three outcomes, and a failed read is only ever the error
 
@@ -159,7 +159,7 @@ graph LR
 - **Prevents:** a Mainnet Seed under a no-check or weaker lock; an imported Seed sharing another wallet's lock (today it is written under the active wallet's open key); the same key held twice under two locks of different strength (a classic address is identical on every network, so a Seed already on the device as Mainnet could be re-imported "as Testnet" with no Open Check); a seed or an address reaching the ledger before the duplicate is known; two import paths with two lock models.
 - **Rule:**
   - `keystore.importStoredWallet(input, ctx)` sits beside `createStoredWallet` and shares its internal writer, so the order exists once: `checkWalletRequest`, duplicate check, the Signing Check credential, `createLock`, one `putStoredWallet`; any failure after the lock is written deletes the lock and discards an App PIN made for it. Input carries label, network, optional proven Node, Open Check, auto-lock, Signing Check and the Seed as a parameter; the result carries `meta` and the new lock's `openKey` and never the Seed. The caller holds the Seed in a ref and clears it in `finally`; the keystore retains none.
-  - **Duplicate check first.** A Seed whose address equals the `keyAddress` of any Seed record on the device, on any network, is refused with a plain reason pointing to Configure, Other networks. It runs before any prompt, before any lock write, and before `checkBeforeImport`, so re-importing a locked wallet's Seed issues no ledger read carrying its address.
+  - **Duplicate check first.** *Amended 2026-11-02 (FR-93, AD-47):* a Seed is refused only when its address equals the `keyAddress` of a Seed record that already has a view of that address **on the same Network**: the key is `(keyAddress, network)`, the existing `hasView` triple with the key as the Account. The same Seed on a different Network is allowed, as its own record, ciphertext and lock. The reason is a plain one-line text that names the Network and points nowhere (no "Other networks"). `importDuplicateReason(seed, network)` takes the Network chosen on quiz step 1. It runs before any prompt, before any lock write, and before `checkBeforeImport`, so re-importing a locked wallet's Seed issues no ledger read carrying its address.
   - The policy function treats an imported Seed as at least Mainnet-strength: **Open Check `none` is refused for an import on every network** `[ADOPTED]` (a key that is imported may hold real funds this device cannot see). The Mainnet floor (Open Check required, auto-lock at least one minute) applies unchanged. **The written-Seed confirmation applies to an import exactly as to creation** `[ADOPTED]`: `requiresWrittenSeed` decides, with no import exemption, and `importStoredWallet` takes `ctx.confirmWrittenSeed` and calls it after the Seed is parsed and before any credential, lock or Wallet is written (a missing callback where it is required is `refused`, `false` is `cancelled`).
   - The new lock is opened at commit, as Generate does, and the wallet is not selected or entered (AD-34, AD-40). `importAndStoreWallet` has exactly one caller after this change, Onboarding (see Deferred); the chooser side may not call it. A test fails if it does.
 
@@ -185,15 +185,17 @@ graph LR
 - **Prevents:** the dialog and the keystore disagreeing about what a valid name is; two Seeds that a locked card cannot tell apart (a locked card has only its name, AD-26).
 - **Rule:** `validateWalletName(raw, others)` is the only place the rule lives. Normalise: NFC, trim, collapse inner whitespace. Valid: 1 to 40 code points `[ASSUMPTION: limit]`; not equal, compared case-insensitively on the normalised form, to the name of any **other Seed** (sibling views share a name and never collide). It returns a verdict with a reason code; the strings are the UX spine's. The UI renders the verdict; `renameWallet` and both creation functions re-run it against the stored records (a best-effort guard across tabs, not a security boundary). An unchanged name closes the dialog with no write. Creation applies the same rule and replaces an empty or colliding default with an auto-suffixed one (`uniqueDefaultName`, same module) `[ASSUMPTION; UX OQ-8]`. Existing duplicates are grandfathered and checked only when changed.
 
-### AD-43 — One card per Seed, computed by one pure selector, with a locked card typed to carry a name only
+### AD-43 — One card per Wallet, computed by one pure selector, with a locked card typed to carry name, address and Network only
 
-- **Binds:** `src/store/wallet-groups.ts`, chooser, Open and Configure keys; AD-26, AD-18
-- **Prevents:** a locked card rendering a network or address because a builder had the whole `WalletMeta` to hand; card order changing with storage order (the `wallets` store is keyed by random UUID, so `getAll` order is unrelated to creation); Configure acting on a Seed with no view; two groupings.
+*Amended 2026-11-02 (FR-93, FR-81). It was one card per Seed with a name-only locked variant.*
+
+- **Binds:** `src/store/wallet-groups.ts`, chooser, Open and Configure keys; AD-26, AD-18, AD-47
+- **Prevents:** a locked card rendering a Node, a check kind or a balance because a builder had the whole `WalletMeta` to hand; card order changing with storage order (the `wallets` store is keyed by random UUID, so `getAll` order is unrelated to creation); Configure acting on a Wallet that has no card; two groupings.
 - **Rule:**
-  - `groupWalletsBySeed(wallets, openLocks, activeWalletId)` is the only grouping. Order is Seed `createdAt` ascending, then `seedId`, never storage order and never by state.
-  - Its output is a discriminated union. The **locked** variant carries `seedId`, `lockId`, `label` and `entryWalletId` and nothing else: no address, network, Node or check kind. The **open** variant carries `label`, `lockId`, whether the Open Check allows Lock, and one row per view (`walletId`, `network`, `address`, Node presence). The component cannot render what the type does not hold.
-  - Open and Configure always carry **one walletId**, never a `seedId`. The entry view is the group's view equal to `activeWalletId` if it has one, else the first view (the one whose `walletId` equals `seedId`, else earliest). `[ASSUMPTION; UX OQ-14]` A multi-row card has one Configure key acting on that view; a per-row Configure is deferred.
-  - After unlocking a Seed with more than one view the app returns to the chooser through `leaveToChooser()`, so Mainnet is never entered by default `[ASSUMPTION; UX OQ-6]`; a single-view Seed stays in its shell.
+  - `listWalletCards(wallets, openLocks, activeWalletId)` replaces `groupWalletsBySeed` and is the only selector. There is one card per Wallet (per `walletId`), so a Seed with a controlled view (AD-47) shows one card for each. Order is Seed `createdAt` ascending, then `seedId`, then the view's own position, never storage order and never by state.
+  - Its output is a discriminated union. The **locked** variant carries `walletId`, `lockId`, `label`, `address` and `network` and nothing else: no Node, no check kind, no balance, no Account other than `address`. The **open** variant adds whether the Open Check allows Lock and whether a Node is set. The component cannot render what the type does not hold.
+  - Open, Lock and Configure carry one `walletId`. There is no entry-view rule and no network row.
+  - After unlocking the user enters that Wallet. The return to the chooser to pick a network is deleted, and a Mainnet Wallet is entered only by choosing its own card and passing its own Open Check (FR-82, FR-93).
 
 ### AD-44 — Auto-lock is edited in per-wallet configuration, by the one writer that re-proves the Open Check
 
@@ -216,6 +218,25 @@ graph LR
   - **The emptiness check and the discard are one unit.** They run in one IndexedDB transaction across the wallet, lock and vault-meta stores, or under a single-flight guard shared with `createStoredWallet` and `importStoredWallet`, so a create or import in flight cannot have its PIN or verifier deleted under it, and cannot silently turn a typed PIN into the new App PIN without the two-entry confirmation.
   - **A failed discard is reported and recoverable.** The teardown scope runs in `finally`, so `session`, `activeWalletId` and the caches are cleared even when the keystore step throws. If `discardAppPin` fails after the last Wallet is gone, Gate shows Onboarding, where the chooser's Settings key does not exist; so Onboarding offers Remove all wallets from this device whenever a PIN or a non-zero count remains, and the removal reports `The wallet was removed, but the App PIN could not be removed.` The teardown owner calls the keystore and never writes vault meta itself. A crash between the two writes leaves today's state, a PIN with no Wallet, the safe direction. The last-wallet dialog body names the PIN.
 
+### AD-47 — A Wallet has one Network for life; views stay only to carry a controlled account
+
+- **Binds:** `keystore.ts` (`addNetworkView`, `createStoredWallet`, `importStoredWallet`, `addControlledView`), `db.ts` (`StoredWallet.views`), Configure; AD-18, AD-21, AD-39
+- **Prevents:** a Testnet and a Mainnet Wallet under one lock and one Open Check (the Mainnet floor, FR-65, would then govern a Testnet view or fail to govern a Mainnet one); a Network changed under a Wallet's recorded address; a second code path that adds a view with no creation policy.
+- **Rule:** `[ADOPTED]` The stored shape stays "Seed record plus views" (AD-18); no new record type and no rewrite of the lock, check or teardown paths. Creating or importing writes exactly one view, with the Network chosen on quiz step 1 (FR-91), and no keystore function changes a view's `network` afterwards. `addNetworkView` and the Configure section "Other networks" are deleted. The same Seed on two Networks is two Seed records, made by two separate creations or imports, each with its own ciphertext and its own lock (AD-39). The only view added to an existing record is a **controlled view** (`addControlledView`, FR-75): it carries `accountAddress`, has no key of its own and so is opened by the lock of the Wallet that holds the key. That is the one case where two Wallets share a lock, and it is unchanged. A test fails if a record can be written with two views that both lack `accountAddress`.
+- **Rejected:** one record per Wallet with no views. It is cleaner on paper but rewrites `findSeedRecord`, edit-checks, removal and the control flow, and "no migration" saves almost none of it, because only multi-network records are affected.
+
+### AD-48 — No backward compatibility: the update carries no code for an old store
+
+- **Binds:** update flow (FR-48, FR-49), `keystore.listWallets`; AD-37, AD-47
+- **Prevents:** compatibility code written for a store only the owner has; a half-understood old record that Gate reads as empty.
+- **Rule:** `[ADOPTED]` Owner, 2026-11-02: nobody else uses the app, so nothing is migrated and nothing reads an old multi-network record. The build adds no migration, no reset screen and no handling for that shape. The owner removes the wallets on their own device (Remove all, Settings, FR-89) before running the new build, after backing up any Seed that matters. The changelog (FR-49) says in one line that older multi-network wallets are not supported. The legacy paths for records with no `views` or the shared legacy lock stay out of this change; deleting them is a separate cleanup, and a rewrite of the keystore is allowed but not required (AD-47).
+
+### AD-49 — The duplicate key and the Mainnet Import notice
+
+- **Binds:** `importDuplicateReason`, `CreateWalletFlow` step 1 and Review; AD-39, AD-40
+- **Prevents:** the Seed field probing the device against the wrong key because the Network is chosen after it; a notice that blocks.
+- **Rule:** The duplicate probe in step 1 of the quiz runs with the Network already chosen on the same step, and re-runs when the Network changes. The Mainnet Import notice (FR-93) is text on the Review step and gates nothing; it is not an input to `checkWalletRequest`.
+
 ## Lock Lifecycle
 
 ```mermaid
@@ -236,7 +257,7 @@ stateDiagram-v2
 
 | Concern | Convention |
 | --- | --- |
-| Naming | Routes and screens as in AD-32. The chooser card is a **Seed card**; its rows are **network rows**. UI words are the PRD glossary's. |
+| Naming | Routes and screens as in AD-32. The chooser card is a **Wallet card**; there are no network rows (AD-43). UI words are the PRD glossary's. |
 | Ids | A route carries a walletId (a view), never a `seedId`, a lock id or a name. A card operation that must name a Seed passes a `seedId` in memory only. |
 | Selection | One field, `activeWalletId`; one derived value, `enteredWalletId(route, activeWalletId)`. |
 | Store writes | A screen never writes a `WalletMeta` field. Label and lock changes come from a keystore result (AD-41, AD-44). |
@@ -269,7 +290,7 @@ Deployment and operations are unchanged (parent AD-17): a static shell, only `/`
 
 | Area | Lives in | Governed by | PRD |
 | --- | --- | --- | --- |
-| Chooser, one card per Seed | `store/wallet-groups.ts`, `pages/Chooser.tsx` | AD-36, AD-43, AD-26 | FR-79, FR-81 |
+| Chooser, one card per Wallet | `store/wallet-groups.ts`, `pages/Chooser.tsx` | AD-36, AD-43, AD-26, AD-47 | FR-79, FR-81, FR-93 |
 | Open, leave, Back, boot | `lib/route.ts`, `pages/AppShell.tsx` | AD-32, AD-33, AD-34 | FR-79, FR-82, FR-83 |
 | Lock stays open on leave; auto-lock | `hooks/useAutoLock.ts`, `lib/teardown.ts` | AD-31, AD-35, AD-38 | FR-10, FR-11, FR-12, FR-83, FR-84 |
 | Add wallet: Generate and Import | `keystore.importStoredWallet`, `createStoredWallet`, `AddWalletScreen` | AD-39, AD-40, AD-28 | FR-87, FR-65 |
@@ -283,7 +304,9 @@ Deployment and operations are unchanged (parent AD-17): a static shell, only `/`
 
 None of these is applied as an override.
 
-- **RESOLVED (owner Q1): flagging Mainnet on the chooser against AD-26.** A locked card shows the name only; AD-26 is unamended. AD-43 makes it a type.
+- **RESOLVED (owner Q1), then OVERRIDDEN by the owner 2026-11-02 (FR-93): the locked card.** It now shows name, address and Network. The parent AD-26 forbids a ledger read for a locked Wallet and does not forbid showing these, so no inherited AD is weakened; AD-43 stays a type and carries exactly these three.
+- **RESOLVED (owner 2026-11-02): "Open always asks the Open Check" (FR-93) against FR-82 and FR-83.** Confirmed as FR-82 and FR-83 are written: a closed lock asks its Open Check, an open one is entered directly.
+- **EXCEPTION (not a conflict): a controlled Wallet shares its key-holder's lock** (AD-47). It conflicts with "each Wallet has its own lock" only for FR-75's controlled accounts, which stay as built until the planned Signer and Transmitter work.
 - **CONFLICT (near): the route carrying a walletId against AD-6.** AD-6 keeps selection in the store. AD-32 and AD-34 keep it there and make the route an input that must agree, never a second owner. No AD is weakened.
 - **DEVIATION from the UX spine (not from an inherited AD): `/settings` on a cold start.** UX keeps `/settings` on boot and rewrites everything else; AD-32 rewrites it too, because only `/` is guaranteed to be served by the static shell and the owner's rule is "always the chooser". `[ASSUMPTION]` Reversing it needs a served `/settings`.
 - **DEVIATION from the UX spine: Lock inside a wallet "replaces the entry with `/`".** AD-33 uses `leaveToChooser()` instead, which leaves no dead entry. `[ASSUMPTION; UX OQ-11]`.
@@ -297,6 +320,8 @@ None of these is applied as an override.
 None. Q5, Q6 and Q7 were answered by the owner on 2026-10-26 and are recorded in AD-44, AD-39 (Deferred) and AD-46. No item is open. Build-time checks for Story 18.2: the exact fields `discardAppPin` clears match `VaultMeta` in `db.ts`, and the single-transaction or single-flight choice is made against the real create and import paths.
 
 ## Deferred
+
+- **Signer Wallet and Transmitter Wallet (raised 2026-11-02).** An offline Signer Wallet with no Network or Node, made in the quiz, paired with a Transmitter Wallet on another device. It would replace controlled views (AD-47) and two-device QR signing. Needs its own PRD, UX and architecture pass; see PRD §6.3.
 
 - **Shared-lock auto-lock (was Q5, answered).** Ships as disclosed in AD-44. Revisit if a Mainnet wallet is found sharing a lock with one the user wants left alone.
 - **Onboarding import on the keystore path (was Q6, answered: every import gets its own lock).** Onboarding keeps `importAndStoreWallet` under the legacy lock; two import lock models coexist until it moves, as its own story after Epic 17 (PRD open question 13). Then delete `importAndStoreWallet`.

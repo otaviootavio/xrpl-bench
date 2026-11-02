@@ -6,7 +6,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 
 /**
- * The Configure counterpart of the Settings auto-lock tests in `settings-locks.test.tsx`
+ * The Wallet tab counterpart of the Settings auto-lock tests in `settings-locks.test.tsx`
  * (test design R12, Story 16, AD-44): the Checks plate's Auto-lock row changes ONE
  * lock's minutes through `setLockAutoLock`, shows the policy's refusal as persistent
  * text, says when the lock is shared, and shares its success handler with Edit checks.
@@ -70,7 +70,7 @@ vi.mock('@/components/ui/select', () => ({
   },
 }))
 
-import { ConfigureScreen } from '@/components/wallet/ConfigureScreen'
+import { WalletTab } from '@/pages/tabs/WalletTab'
 import { WalletScreens } from '../../WalletScreens'
 import { useRoute } from '@/hooks/useRoute'
 import { isTaskRoute, navigate } from '@/lib/route'
@@ -88,7 +88,7 @@ let qc: QueryClient
 function Host() {
   const route = useRoute()
   if (isTaskRoute(route)) return <WalletScreens route={route} />
-  return <ConfigureScreen wallet={useAppStore.getState().wallets.find((w) => w.id === 'a') as never} />
+  return <WalletTab wallet={useAppStore.getState().wallets.find((w) => w.id === 'a') as never} />
 }
 function renderConfigure() {
   qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
@@ -118,7 +118,7 @@ afterEach(cleanup)
 
 const select = () => screen.getByTestId('auto-lock-select')
 
-describe('Configure auto-lock', () => {
+describe('Wallet tab auto-lock', () => {
   it('shows the lock\'s current minutes from the lockInfo read', async () => {
     h.minutes.X = 15
     renderConfigure()
@@ -199,7 +199,7 @@ describe('Configure auto-lock', () => {
   })
 })
 
-describe('Configure auto-lock on a shared lock', () => {
+describe('Wallet tab auto-lock on a shared lock', () => {
   it('says so with the count of distinct Seeds on the lock', async () => {
     const wallets = ['a', 'b', 'c'].map((id) => ({ ...A, id, seedId: id, lockId: 'legacy' }))
     // A second view of the same Seed does not add to the count.
@@ -217,7 +217,7 @@ describe('Configure auto-lock on a shared lock', () => {
 })
 
 describe('One success handler for the minutes', () => {
-  it('Configure control and an Edit checks minutes-only commit each set the window once and invalidate lockInfo once', async () => {
+  it('Wallet tab control and an Edit checks minutes-only commit each set the window once and invalidate lockInfo once', async () => {
     const set = vi.spyOn(useAppStore.getState(), 'setLockMinutes')
     useAppStore.setState({ setLockMinutes: set } as never)
     renderConfigure()
@@ -267,8 +267,8 @@ describe('Edit checks refreshes the lockInfo read on every committed edit', () =
 })
 
 describe('the legacy app-store minutes', () => {
-  it('no Configure file reads or writes autoLockMinutes of the app store', () => {
-    for (const f of ['src/components/wallet/ConfigureScreen.tsx', 'src/hooks/useLockMinutesChanged.ts']) {
+  it('no Wallet tab file reads or writes autoLockMinutes of the app store', () => {
+    for (const f of ['src/pages/tabs/WalletTab.tsx', 'src/hooks/useLockMinutesChanged.ts']) {
       const src = readFileSync(f, 'utf8')
       expect(src).not.toMatch(/s\.autoLockMinutes|setAutoLockMinutes|state\.autoLockMinutes/)
     }

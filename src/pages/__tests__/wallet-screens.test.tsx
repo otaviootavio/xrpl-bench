@@ -46,10 +46,10 @@ describe('WalletScreens', () => {
     ['edit-checks', 'edit checks for a'],
     ['two-device', 'two device for a'],
     ['control', 'control for a'],
-  ] as const)('%s is always labelled `Back to Configure`: the only way in is the Configure screen', (screenName, text) => {
+  ] as const)('%s is always labelled `Back to Wallet`: the only way in is the Wallet tab', (screenName, text) => {
     window.history.replaceState(null, '', `/wallets/a/x`)
     mount({ screen: screenName, walletId: 'a' })
-    expect(screen.getByText(text).getAttribute('data-back')).toBe('Back to Configure')
+    expect(screen.getByText(text).getAttribute('data-back')).toBe('Back to Wallet')
   })
 
   it.each([

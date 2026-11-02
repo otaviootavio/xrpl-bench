@@ -30,7 +30,7 @@ vi.mock('@/lib/master-key', async (importOriginal) => {
   return { ...actual, setMasterKey: (...a: unknown[]) => h.setMasterKey(...a) }
 })
 
-import { ConfigureScreen } from '@/components/wallet/ConfigureScreen'
+import { WalletTab } from '@/pages/tabs/WalletTab'
 import { useAppStore } from '@/store/app-store'
 
 const base = { seedId: 's', lockId: 'l', createdAt: 1, network: 'testnet', algorithm: 'ed25519', seedMethod: 'stored', openCheck: 'pin', signingCheck: 'standard' } as const
@@ -44,7 +44,7 @@ const click = async (el: HTMLElement) => act(async () => void fireEvent.click(el
 const mount = (w: unknown) =>
   render(
     <QueryClientProvider client={new QueryClient()}>
-      <ConfigureScreen wallet={w as never} />
+      <WalletTab wallet={w as never} />
     </QueryClientProvider>,
   )
 const action = (name: RegExp | string) => screen.getByRole('button', { name })

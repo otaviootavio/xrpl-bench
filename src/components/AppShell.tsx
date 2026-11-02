@@ -8,7 +8,6 @@ import { Chooser } from '@/pages/Chooser'
 import { SettingsScreen } from '@/pages/SettingsScreen'
 import { Main } from '@/pages/Main'
 import { AddWalletScreen } from '@/components/wallet/AddWalletScreen'
-import { ConfigureScreen } from '@/components/wallet/ConfigureScreen'
 import { useRoute } from '@/hooks/useRoute'
 import { useUpdateMarker } from '@/hooks/useUpdateMarker'
 import { useAutoLock } from '@/hooks/useAutoLock'
@@ -62,16 +61,14 @@ export function AppShell() {
   const activeWalletId = useAppStore((s) => s.activeWalletId)
   const activeWallet = useAppStore((s) => s.wallets.find((w) => w.id === s.activeWalletId) ?? null)
   const activeExists = activeWallet !== null
-  const activeOpen = useAppStore((s) => s.wallets.some((w) => w.id === s.activeWalletId && w.lockId in s.openLocks))
   const queryClient = useQueryClient()
   useAutoLock(walletInView(route, activeWalletId))
   useClearCacheOnLock()
 
   // An in-wallet shell renders only for the wallet that is active and exists
   // (AD-32); anything else is an unreachable location and lands on the chooser.
-  // Configure also needs its lock open: unlike the shell it has no Unlock view of its own.
-  const shellRoute = route.screen === 'wallet' || route.screen === 'configure'
-  const shellReachable = shellRoute && route.walletId === activeWalletId && activeExists && (route.screen !== 'configure' || activeOpen)
+  const shellRoute = route.screen === 'wallet'
+  const shellReachable = shellRoute && route.walletId === activeWalletId && activeExists
   const chooserSide = !isWalletScreen(route) || (shellRoute && !shellReachable)
   const walletSide = isWalletScreen(route)
   useEffect(() => {
@@ -142,8 +139,6 @@ export function AppShell() {
           <AddWalletScreen onClose={leaveScreen} />
         ) : chooserSide ? (
           <Chooser />
-        ) : route.screen === 'configure' && activeWallet ? (
-          <ConfigureScreen key={activeWallet.id} wallet={activeWallet} />
         ) : (
           <Main />
         )}

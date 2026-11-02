@@ -24,14 +24,15 @@ describe('parseRoute', () => {
     expect(parseRoute('/settings')).toEqual({ screen: 'settings' })
     expect(parseRoute(ADD_WALLET_PATH)).toEqual({ screen: 'add-wallet' })
     expect(parseRoute('/wallets/a')).toEqual({ screen: 'wallet', walletId: 'a' })
-    expect(parseRoute('/wallets/a/configure')).toEqual({ screen: 'configure', walletId: 'a' })
+    // The retired Configure path is no alias: it parses to the chooser.
+    expect(parseRoute('/wallets/a/configure')).toEqual({ screen: 'chooser' })
     expect(parseRoute('/wallets/a/checks')).toEqual({ screen: 'edit-checks', walletId: 'a' })
     expect(parseRoute('/wallets/a/two-device')).toEqual({ screen: 'two-device', walletId: 'a' })
     expect(parseRoute('/wallets/a/control')).toEqual({ screen: 'control', walletId: 'a' })
   })
 
   it('round-trips a Wallet id through its path', () => {
-    for (const screen of ['wallet', 'configure', 'edit-checks', 'two-device', 'control'] as const) {
+    for (const screen of ['wallet', 'edit-checks', 'two-device', 'control'] as const) {
       expect(parseRoute(walletScreenPath(screen, 'a b/c'))).toEqual({ screen, walletId: 'a b/c' })
     }
   })
@@ -46,7 +47,7 @@ describe('parseRoute', () => {
 
 describe('isWalletScreen', () => {
   it('splits in-wallet from chooser-side screens', () => {
-    const inWallet = ['wallet', 'configure', 'edit-checks', 'two-device', 'control'] as const
+    const inWallet = ['wallet', 'edit-checks', 'two-device', 'control'] as const
     for (const screen of inWallet) expect(isWalletScreen({ screen, walletId: 'a' })).toBe(true)
     const outside: Route[] = [{ screen: 'chooser' }, { screen: 'settings' }, { screen: 'add-wallet' }]
     for (const route of outside) expect(isWalletScreen(route)).toBe(false)
@@ -66,7 +67,6 @@ describe('isTaskRoute', () => {
       { screen: 'chooser' },
       { screen: 'settings' },
       { screen: 'wallet', walletId: 'a' },
-      { screen: 'configure', walletId: 'a' },
     ]
     for (const route of others) expect(isTaskRoute(route)).toBe(false)
   })
@@ -175,7 +175,7 @@ describe('history', () => {
   it('leaveToChooser unwinds the whole depth in one go and notifies', async () => {
     navigate('/settings')
     navigate(walletScreenPath('wallet', 'a'))
-    navigate(walletScreenPath('configure', 'a'))
+    navigate(walletScreenPath('edit-checks', 'a'))
     const go = vi.spyOn(window.history, 'go')
     seen.mockClear()
     leaveToChooser()
@@ -189,7 +189,7 @@ describe('history', () => {
 
   it('leaveToChooser with an overlay open adds the overlay entry to the unwind', async () => {
     navigate(walletScreenPath('wallet', 'a'))
-    navigate(walletScreenPath('configure', 'a'))
+    navigate(walletScreenPath('edit-checks', 'a'))
     const release = pushOverlay(() => undefined)
     const go = vi.spyOn(window.history, 'go')
     leaveToChooser()
@@ -234,7 +234,7 @@ describe('history', () => {
   it('a screen pushed while an overlay is open counts the overlay entry, so one unwind reaches /', async () => {
     navigate(walletScreenPath('wallet', 'a'))
     const release = pushOverlay(() => undefined)
-    navigate(walletScreenPath('configure', 'a'))
+    navigate(walletScreenPath('edit-checks', 'a'))
     expect(window.history.state).toEqual({ screen: true, depth: 3 })
     const go = vi.spyOn(window.history, 'go')
     leaveToChooser()
@@ -261,7 +261,6 @@ describe('history', () => {
 describe('enteredWalletId (AD-34)', () => {
   it.each([
     [{ screen: 'wallet', walletId: 'a' }, 'a'],
-    [{ screen: 'configure', walletId: 'a' }, 'a'],
     [{ screen: 'edit-checks', walletId: 'a' }, 'a'],
     [{ screen: 'two-device', walletId: 'a' }, 'a'],
     [{ screen: 'control', walletId: 'a' }, 'a'],

@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 /**
  * Story 17 (AD-45): Settings is ONE component, `AppSettings`, with the Address book, Version and
- * updates, and Remove all wallets from this device. The in-wallet Settings tab renders it directly.
+ * updates, and Remove all wallets from this device. `/settings` renders it; the in-wallet tab is now the Wallet tab (Epic 23).
  * Real: Main, AppSettings, RemoveAllPlate, the app store. Faked: persistence, the vault, the ledger
  * hooks, the other five tabs, the update hook and the build stamp.
  */
@@ -31,6 +31,7 @@ vi.mock('@/pages/tabs/SendTab', () => ({ SendTab: () => <p>tab</p> }))
 vi.mock('@/pages/tabs/ReceiveTab', () => ({ ReceiveTab: () => <p>tab</p> }))
 vi.mock('@/pages/tabs/HistoryTab', () => ({ HistoryTab: () => <p>tab</p> }))
 vi.mock('@/pages/tabs/TrustLinesTab', () => ({ TrustLinesTab: () => <p>tab</p> }))
+vi.mock('@/pages/tabs/WalletTab', () => ({ WalletTab: () => <p>wallet tab</p> }))
 
 import { Main } from '@/pages/Main'
 import { AppSettings } from '@/pages/AppSettings'
@@ -112,36 +113,32 @@ describe('AppSettings holds only what belongs to the app', () => {
   })
 })
 
-describe('the in-wallet Settings tab is that same component', () => {
-  async function openSettingsTab() {
+describe('the in-wallet tab list has a Wallet tab and no Settings tab (CAP-1, AD-51)', () => {
+  it('lists Balances, Send, Receive, History, Tokens, Wallet in that order, and no Settings', async () => {
     wrap(<Main />)
-    const tab = await screen.findByRole('tab', { name: 'Settings' })
+    await screen.findAllByRole('tab')
+    expect(screen.getAllByRole('tab').map((t) => t.textContent)).toEqual(['Balances', 'Send', 'Receive', 'History', 'Tokens', 'Wallet'])
+    expect(screen.queryByRole('tab', { name: /Settings/ })).toBeNull()
+  })
+
+  it('the Wallet tab carries no app-level plate', async () => {
+    wrap(<Main />)
+    const tab = await screen.findByRole('tab', { name: 'Wallet' })
     await act(async () => {
       fireEvent.mouseDown(tab, { button: 0, ctrlKey: false })
     })
-    await screen.findByRole('heading', { name: 'Address book' })
-  }
-
-  it('shows the three app-level items and none of the per-wallet controls', async () => {
-    await openSettingsTab()
-    expectOnlyAppLevel()
-    expect(screen.getByRole('heading', { level: 1, name: 'Settings' })).toBeTruthy()
+    await screen.findByText('wallet tab')
+    expect(screen.queryByRole('heading', { name: 'Address book' })).toBeNull()
+    expect(screen.queryByRole('heading', { name: 'Version' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Remove all wallets from this device' })).toBeNull()
   })
 
-  it('shows exactly one copy of each plate: one component, never two mounted', async () => {
-    await openSettingsTab()
-    expect(screen.getAllByRole('heading', { name: 'Version' })).toHaveLength(1)
-    expect(screen.getAllByRole('heading', { name: 'Address book' })).toHaveLength(1)
-    expect(screen.getAllByRole('button', { name: 'Remove all wallets from this device' })).toHaveLength(1)
-  })
-
-  it('Main renders AppSettings directly, and no SettingsTab exists to be mounted beside it', () => {
+  it('Main no longer imports AppSettings or the update marker; /settings is the only mount of the component', () => {
     const main = readFileSync('src/pages/Main.tsx', 'utf8')
-    expect(main).toMatch(/import \{ AppSettings \} from '\.\/AppSettings'/)
-    expect(main).toMatch(/Panel: AppSettings/)
-    expect(main).not.toMatch(/SettingsTab/)
+    expect(main).not.toMatch(/AppSettings/)
+    expect(main).not.toMatch(/useUpdateMarker|Lamp/)
+    expect(main).toMatch(/Panel: WalletPanel/)
     expect(existsSync('src/pages/tabs/SettingsTab.tsx')).toBe(false)
-    // /settings (chooser side) is the only other mount of the component.
     expect(readFileSync('src/pages/SettingsScreen.tsx', 'utf8')).toMatch(/<AppSettings \/>/)
   })
 })

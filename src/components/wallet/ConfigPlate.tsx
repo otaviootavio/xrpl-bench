@@ -1,7 +1,7 @@
 import { useId, type ReactNode } from 'react'
 
 /**
- * One concern of the Configure screen (`config-section`): a `card-plate` with a
+ * One concern of the Wallet tab (`config-section`): a `card-plate` with a
  * placard title that is the plate's h2. One concern per plate; the screen owns
  * the order. `focusId` makes the plate itself a focus target (not a tab stop) for a dialog
  * whose opener unmounted.

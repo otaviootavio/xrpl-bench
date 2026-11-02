@@ -7,7 +7,7 @@ import { leaveScreen } from '@/lib/route'
  * `/settings` (AD-36): the app-level Settings as a routed, chooser-side screen.
  * It holds `AppSettings` and nothing else, so it works with no wallet open and
  * mounts no ledger read, no `useActive*` and no `NetworkPlate`. The in-wallet
- * Settings tab is a different surface; the two are never mounted together.
+ * Wallet tab is a different surface; the two are never mounted together.
  */
 export function SettingsScreen() {
   return (

@@ -17,7 +17,6 @@ export type Route =
   | { screen: 'settings' }
   | { screen: 'add-wallet' }
   | { screen: 'wallet'; walletId: string }
-  | { screen: 'configure'; walletId: string }
   | { screen: 'edit-checks'; walletId: string }
   | { screen: 'two-device'; walletId: string }
   | { screen: 'control'; walletId: string }
@@ -29,7 +28,6 @@ export const ADD_WALLET_PATH = '/wallets/new'
 /** The path segment after `/wallets/:id` for each in-wallet screen ('' is the wallet itself). */
 const SEGMENTS = {
   wallet: '',
-  configure: 'configure',
   'edit-checks': 'checks',
   'two-device': 'two-device',
   control: 'control',
@@ -45,7 +43,6 @@ export function walletScreenPath(screen: WalletScreen, walletId: string): string
 export function isWalletScreen(route: Route): route is Extract<Route, { walletId: string }> {
   return (
     route.screen === 'wallet' ||
-    route.screen === 'configure' ||
     route.screen === 'edit-checks' ||
     route.screen === 'two-device' ||
     route.screen === 'control'

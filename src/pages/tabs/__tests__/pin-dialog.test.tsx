@@ -50,7 +50,7 @@ vi.mock('@/hooks/useAppUpdate', () => ({
 }))
 vi.mock('@/lib/build-info', () => ({ BUILD: { version: '0.0.0', commitSha: 'x', builtAt: '' }, shortSha: 'x', sourceUrl: '#', formatBuiltAt: () => '' }))
 
-import { ConfigureScreen } from '@/components/wallet/ConfigureScreen'
+import { WalletTab } from '@/pages/tabs/WalletTab'
 import { TrustLinesTab } from '../TrustLinesTab'
 import { PinPromptProvider } from '@/components/wallet/PinPromptDialog'
 import { TooltipProvider } from '@/components/ui/tooltip'
@@ -78,7 +78,7 @@ afterEach(cleanup)
 
 describe('reveal behind a PIN Signing Check', () => {
   async function reveal() {
-    renderWithPrompts(<ConfigureScreen wallet={W as never} />)
+    renderWithPrompts(<WalletTab wallet={W as never} />)
     fireEvent.click(screen.getByRole('button', { name: 'Reveal seed' }))
     fireEvent.click(await screen.findByRole('button', { name: 'Show my seed' }))
   }

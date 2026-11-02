@@ -36,7 +36,7 @@ vi.mock('@/lib/crypto/keystore', () => ({
 vi.mock('@/hooks/useAccountState', () => ({ useAccountState: () => ({ isError: false, data: undefined }) }))
 vi.mock('@/components/wallet/RevealSeedControl', () => ({ RevealSeedControl: () => <button>Reveal seed</button> }))
 
-import { ConfigureScreen } from '@/components/wallet/ConfigureScreen'
+import { WalletTab } from '@/pages/tabs/WalletTab'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { useAppStore } from '@/store/app-store'
 
@@ -51,7 +51,7 @@ function mount(wallet: Record<string, unknown>) {
   render(
     <QueryClientProvider client={qc}>
       <TooltipProvider>
-        <ConfigureScreen wallet={wallet as never} />
+        <WalletTab wallet={wallet as never} />
       </TooltipProvider>
     </QueryClientProvider>,
   )

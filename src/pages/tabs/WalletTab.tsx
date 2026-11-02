@@ -4,6 +4,8 @@ import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { ConfigPlate } from '@/components/wallet/ConfigPlate'
+import { AddressDisplay } from '@/components/wallet/AddressDisplay'
+import { NetworkPlate } from '@/components/wallet/NetworkPlate'
 import { RemoveDialog, type RemoveTarget } from '@/components/wallet/RemoveDialog'
 import { removeBodyFor, type RemoveBody } from '@/components/wallet/remove-copy'
 import { RenameDialog } from '@/components/wallet/RenameDialog'
@@ -19,7 +21,7 @@ import {
   openCheckWords,
   signingWords,
 } from '@/components/wallet/check-words'
-import { launchFromConfigure, peekConfigureFocusReturn } from '@/lib/configure-launch'
+import { launchFromConfigure, peekConfigureFocusReturn, clearConfigureFocusReturn } from '@/lib/configure-launch'
 import { useLockMinutesChanged } from '@/hooks/useLockMinutesChanged'
 import { usePrompts } from '@/hooks/usePrompts'
 import { renameWallet, setLockAutoLock, type WalletMeta } from '@/lib/crypto/keystore'
@@ -274,7 +276,7 @@ function RemovePlate({ wallet }: { wallet: WalletMeta }) {
     })
 
   return (
-    <ConfigPlate title="Remove">
+    <ConfigPlate title="Remove this wallet">
       <p className="text-sm text-muted-foreground">Remove this wallet on {network} from this device.</p>
       <Button type="button" variant="danger" size="sm" className={KEY} data-configure-key={REMOVE_KEY} aria-label={`Remove ${wallet.label} on ${network}`} onClick={press}>
         Remove
@@ -290,28 +292,51 @@ function RemovePlate({ wallet }: { wallet: WalletMeta }) {
 }
 
 /**
- * Per-wallet configuration (FR-88): one routed screen, a plate per concern in a
- * fixed order. The app shell mounts it only for the active Wallet whose lock is
- * open (AD-32); this component trusts that and reads no other Wallet.
+ * Who this wallet is: its Name, its Network in words and its full Address. The wallet header shows
+ * no address, so it is repeated here for a user checking which account these settings belong to.
  */
-export function ConfigureScreen({ wallet }: { wallet: WalletMeta }) {
-  const headingRef = useRef<HTMLHeadingElement | null>(null)
+function IdentityPlate({ wallet }: { wallet: WalletMeta }) {
+  return (
+    <ConfigPlate title="This wallet">
+      <dl className="flex flex-col gap-2 text-sm">
+        <div className="min-w-0">
+          <dt className="panel-legend">Name</dt>
+          <dd className="mt-0.5 break-words">{wallet.label}</dd>
+        </div>
+        <div className="min-w-0">
+          <dt className="panel-legend">Network</dt>
+          <dd className="mt-0.5 break-words">{NETWORKS[wallet.network].label}</dd>
+        </div>
+      </dl>
+      <AddressDisplay address={wallet.address} />
+    </ConfigPlate>
+  )
+}
 
-  // Landing: the key that opened the task screen we came back from, else the screen's own heading.
+/**
+ * The Wallet tab (FR-88, CAP-1): this wallet's own settings, a plate per concern in a fixed order,
+ * in one column and with no jump list. `Main` mounts it only inside `OpenWallet`, so the lock is
+ * open (AD-32); this component trusts that and reads no other Wallet. App-level plates (Remove all,
+ * Version) are not here: they belong to `/settings`.
+ */
+export function WalletTab({ wallet }: { wallet: WalletMeta }) {
+  // Landing: only when a task screen opened from this tab has just returned, put focus on the key
+  // that opened it. A plain tab selection never moves focus off the tab list. The pending return
+  // is cleared on the next tick, so a dev double mount still sees it and a later visit does not.
   useEffect(() => {
     const returnKey = peekConfigureFocusReturn()
-    const target = returnKey ? document.querySelector<HTMLElement>(`[data-configure-key="${CSS.escape(returnKey)}"]`) : null
-    ;(target ?? headingRef.current)?.focus()
+    if (returnKey) document.querySelector<HTMLElement>(`[data-configure-key="${CSS.escape(returnKey)}"]`)?.focus()
+    const timer = setTimeout(clearConfigureFocusReturn, 0)
+    return () => clearTimeout(timer)
   }, [])
 
   return (
     <div className="mx-auto flex w-full min-w-0 max-w-lg flex-col gap-4">
-      <div className="flex flex-col gap-1">
-        <h1 ref={headingRef} tabIndex={-1} className="font-legend text-base font-semibold uppercase leading-tight tracking-[0.08em]">
-          Configure wallet
-        </h1>
-        <p className="min-w-0 break-words text-sm text-muted-foreground">{wallet.label}</p>
+      <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
+        <h1 className="min-w-0 break-words font-legend text-base font-semibold uppercase leading-tight tracking-[0.08em]">Settings for {wallet.label}</h1>
+        <NetworkPlate />
       </div>
+      <IdentityPlate wallet={wallet} />
       <NamePlate wallet={wallet} />
       <ChecksPlate wallet={wallet} />
       <SeedPlate wallet={wallet} />

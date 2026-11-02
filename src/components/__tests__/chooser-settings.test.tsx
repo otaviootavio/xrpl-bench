@@ -144,12 +144,10 @@ describe('one marker predicate', () => {
     expect(screen.getByText(word)).toBeTruthy()
   })
 
-  it('the in-wallet Settings tab marker and the chooser key agree', async () => {
-    // Main reads the same hook: the real Main is not loaded here, so its source is pinned instead.
+  it('the in-wallet tab list carries no update marker (story 3 moves it to the Wallets key)', async () => {
     const { readFileSync } = await import('node:fs')
     const main = readFileSync(`${process.cwd()}/src/pages/Main.tsx`, 'utf8')
-    expect(main).toContain("useUpdateMarker } from '@/hooks/useUpdateMarker'")
-    expect(main).not.toMatch(/updateReady\s*&&\s*!declined/)
+    expect(main).not.toMatch(/useUpdateMarker|Lamp/)
     expect(typeof Main).toBe('function')
   })
 })

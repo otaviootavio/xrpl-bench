@@ -1,5 +1,6 @@
 import { useId, type ReactNode } from 'react'
 import type { OptionState } from '@/lib/crypto/policy'
+import { cn } from '@/lib/utils'
 import { Radio } from '@/components/ui/radio'
 
 /** The radio and fieldset the creation flow and the edit dialog both render a
@@ -30,11 +31,12 @@ export function Choice({
   const hasText = !state.available || !!state.note || !!detail
   return (
     <div className="flex flex-col gap-0.5">
-      <label className="flex items-start gap-2 text-sm pointer-coarse:min-h-11 pointer-coarse:items-center">
+      <label className={cn('flex items-start gap-2 text-sm pointer-coarse:min-h-11 pointer-coarse:items-center', !state.available && 'cursor-not-allowed text-muted-foreground')}>
         <Radio
           name={name}
           checked={checked}
           disabled={disabled}
+          className="aria-disabled:cursor-not-allowed aria-disabled:opacity-55"
           aria-disabled={state.available ? undefined : true}
           aria-describedby={hasText ? textId : undefined}
           onChange={() => {

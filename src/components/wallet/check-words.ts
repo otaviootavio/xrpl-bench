@@ -41,4 +41,4 @@ export const importMainnetFact = (network: string, imported: boolean): string | 
   imported && network === 'mainnet' ? IMPORT_MAINNET_FACT : null
 
 /** The Review's Network row note: the row has no Change button, so it says where to change it and what that costs. */
-export const NETWORK_LOCKED_NOTE = 'Locked. To change it, go Back to step 1; the questions then start again.'
+export const NETWORK_LOCKED_NOTE = 'Locked. To pick another Network, go Back to step 1. The later questions are then asked again.'

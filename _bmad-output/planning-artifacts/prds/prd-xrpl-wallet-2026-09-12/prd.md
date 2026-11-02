@@ -137,7 +137,7 @@ restated only to the depth an FR needs; the full set lives in
   chooser opens on no Wallet.*
 - **Chooser** — *planned (FR-79).* The first screen: one card per Seed, showing
   names and lock states only.
-- **Configure screen** — *planned (FR-88); to become the Wallet's Settings tab (FR-94).* One screen per open Wallet holding
+- **Configure screen** — *planned (FR-88); to become the Wallet tab (FR-94).* One screen per open Wallet holding
   everything that belongs to that Wallet alone.
 - **Account Master Key** — an XRPL Account's own master key pair, the one its
   address is derived from. Distinct from the app's **Master Key** below. Where a
@@ -482,7 +482,7 @@ every lock is closed.
   own change (§10).*
 
 #### FR-88: A Configure screen for each Wallet
-*Planned change (FR-94, decided 2026-11-02): there is no separate Configure screen or header key. Everything below is the Settings tab inside the Wallet, which is that Wallet's own settings. Back and the Wallets key behave as FR-83 says.*
+*Planned change (FR-94, decided 2026-11-02): there is no separate Configure screen or header key. Everything below is the Wallet tab inside the Wallet, which is that Wallet's own settings. Back and the Wallets key behave as FR-83 says.*
 
 Each open Wallet has one Configure screen for everything that belongs to that
 Wallet alone, reached from its card and from the Wallet's header. *Planned change (FR-92): reached from the Wallet's header only, and it also holds Rename and Remove. Planned change (FR-93): no "Other networks" section.*
@@ -497,7 +497,7 @@ Wallet alone, reached from its card and from the Wallet's header. *Planned chang
   its Back returns to Configure.
 
 #### FR-89: Settings holds only what belongs to the app
-*Planned change (FR-94): the Address Book leaves it (it is the Wallet's, FR-45). Settings is reached from the chooser only; inside a Wallet the Settings tab is that Wallet's own settings.*
+*Planned change (FR-94): the Address Book leaves it (it is the Wallet's, FR-45). Settings is reached from the chooser only, by the XRPL Bench key; inside a Wallet the Wallet tab is that Wallet's own settings.*
 
 Settings contains the Address Book (FR-45), Version and updates (§4.12), and
 Remove all Wallets from this device. It holds no per-Wallet control, no Lock now
@@ -509,7 +509,9 @@ and no auto-lock.
 
 #### FR-90: The update marker is visible on the chooser
 When an update is waiting (FR-48), the chooser's Settings key says so in its
-name and in visible text.
+name and in visible text. *Planned change (FR-94): that key is "XRPL Bench".
+Inside a Wallet the header's Wallets key says "Wallets, update available" in its
+name and with the lamp. The update is accepted only on the chooser.*
 - It is never a modal or a redirect, and an update the user declined does not
   light it again.
 
@@ -581,7 +583,7 @@ them choose every setting. It does not offer a shortcut.
   reworking it. Decided 2026-10-29.
 
 #### FR-92: Rename and Remove live on the Wallet's Configure screen
-*Planned change (FR-94): they are sections of the Wallet's Settings tab, and the Wallet's header has no Configure key.*
+*Planned change (FR-94): they are sections of the Wallet tab, and the Wallet's header has no Configure key.*
 
 *Planned, not built. Decided 2026-10-30. Changes FR-81, FR-85, FR-86 and FR-88.*
 
@@ -646,12 +648,15 @@ A Wallet is one address on one Network, for its whole life.
 
 A setting belongs either to one Wallet or to the app as a whole, never both, and
 the words on screen say which.
-- **Inside a Wallet, the Settings tab is that Wallet's own settings.** It holds
+- **Inside a Wallet, the Wallet tab is that Wallet's own settings.** Its page
+  heading is "Settings for <name>", with the Network beside it (Mainnet "Real
+  funds", Devnet "Not stable"). It holds
   what the Configure screen holds (Name, Checks with auto-lock, Seed, Operating
   another account, Node, Two-device signing, Remove this Wallet) and that
   Wallet's Address Book. The separate Configure screen and the header's
   Configure key are gone.
-- **On the chooser, Settings is XRPL Bench's.** It holds Version and updates
+- **On the chooser, the key is "XRPL Bench" and its page "XRPL Bench
+  settings".** It holds Version and updates
   (§4.12, FR-90) and Remove all Wallets from this device (FR-89), and no
   Address Book and no per-Wallet control. It is reached from the chooser only.
   Nothing app-wide, such as "Remove all Wallets", is shown inside a Wallet.
@@ -660,8 +665,17 @@ the words on screen say which.
   the Wallet removes its entries (FR-13).
 - **No backward compatibility.** Entries in the old shared Address Book are not
   migrated. The owner clears their own device.
-- *Open (§10, item 15): the order of the plates and the words that tell the user
-  "this Wallet" from "XRPL Bench" are for the UX pass.*
+- **Plate order in the Wallet tab (decided 2026-11-02):** identity (name and
+  Network, not a setting), Name, Address Book, Checks with auto-lock, Seed,
+  Operating another account, Node, Two-device signing, Remove this Wallet last.
+  One column on a phone, with no jump list.
+- **Words (decided 2026-11-02):** the chooser's plate is "All wallets on this
+  device" with the action "Remove all wallets from this device", and says how
+  many Wallets go and that the App PIN goes. The Wallet's plate is "Remove this
+  wallet" and names that Wallet and its Address Book. The chooser's Settings
+  opens with "These settings are for the whole app. Each wallet's own settings
+  are inside that wallet."
+- **Update marker:** inside a Wallet the Wallets key carries it (FR-90).
 
 ### 4.4 Sending Payments
 *Detail: `docs/user-stories/sending-payments.md`*
@@ -1172,7 +1186,7 @@ for its Account. The Wallet's existing key keeps working.
 - An Account has one Regular Key. If one is already set, adding another replaces it, and the confirm step says in plain words that the old key stops working. *Decided 2026-10-11.*
 
 #### FR-77: Turn off the Account Master Key, from the Wallet's Configure screen
-From the Wallet's Configure screen (FR-88; the Settings tab until then), the user can turn off the Account Master Key of a Wallet
+From the Wallet's Configure screen (FR-88; the Settings tab until then, the Wallet tab after FR-94), the user can turn off the Account Master Key of a Wallet
 whose Account has a Regular Key, and turn it back on.
 - It is offered only once a Regular Key is set on the Account and validated
   (FR-22). Otherwise the control is `aria-disabled` with the reason in visible
@@ -1526,10 +1540,10 @@ for §4.14. All three were answered by Otavio on 2026-10-10.
     *Owner: Otavio. Revisit: after Epics 17 to 19, as its own story.*
 14. **Exact wording of the Mainnet Import sentence** (FR-93). Neutral, one fact,
     under 21 words. *Owner: Otavio. Revisit: in the FR-93 spec.*
-15. **Plate order and "this Wallet" against "XRPL Bench" wording** (FR-94). Which
-    order the Settings tab keeps (the Configure order, with the Address Book
-    where) and the words that say whose a setting is. *Owner: Otavio. Revisit:
-    in the UX pass, before the FR-94 spec.*
+15. **Plate order and "this Wallet" against "XRPL Bench" wording** (FR-94).
+    *Answered 2026-11-02 in the UX pass: see FR-94 (order, words, update marker).
+    Open only: an Address Book longer than 10 entries shows the first 10 and
+    "Show all N", the limit being the UX pass's default.*
 
 **Defects in the authoritative inputs, reported and not repaired.** These are not
 open questions about the product — they are places where a document this PRD

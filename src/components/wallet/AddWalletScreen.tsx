@@ -144,7 +144,7 @@ export function AddWalletScreen({ onClose }: { onClose: () => void }) {
       pendingSeedRef.current = seed
       try {
         // Before any prompt and before any ledger read: a duplicate stops here.
-        const duplicate = await importDuplicateReason(seed)
+        const duplicate = await importDuplicateReason(seed, network)
         if (duplicate) return { status: 'refused', reason: duplicate, at: 'seed' }
         if (!mountedRef.current) return { status: 'cancelled' } // left meanwhile: no ledger read for an abandoned address
         const warning = await checkBeforeImport(queryClient, network, addressFromSeed(seed), node)

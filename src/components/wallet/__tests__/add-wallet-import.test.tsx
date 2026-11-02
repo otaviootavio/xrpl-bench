@@ -11,7 +11,7 @@ import { readFileSync } from 'node:fs'
  */
 const SEED = 'sEdTM1uX8pu2do5XvTnutH6HsouMaM2'
 const ADDRESS = 'rG31cLyErnqeVj2eomEjBZtq7PYaupGYzL'
-const DUPLICATE = 'This key is already on this device. To use it on another network, open the wallet and use Configure, Other networks.'
+const DUPLICATE = 'This key is already on this device on Testnet.'
 const INVALID = 'That seed looks invalid. Double-check and try again.'
 
 const h = vi.hoisted(() => ({
@@ -165,9 +165,17 @@ describe('Import with every lock closed', () => {
     await waitFor(() => expect(onClose).toHaveBeenCalled())
     const order = [h.importDuplicateReason, h.checkBeforeImport, h.importStoredWallet].map((m) => m.mock.invocationCallOrder[0])
     expect(order).toEqual([...order].sort((a, b) => a - b))
-    expect(h.importDuplicateReason).toHaveBeenCalledWith(SEED)
+    expect(h.importDuplicateReason).toHaveBeenCalledWith(SEED, 'testnet')
     expect(h.checkBeforeImport.mock.calls[0][1]).toBe('testnet')
     expect(h.checkBeforeImport.mock.calls[0][2]).toBe(ADDRESS)
+  })
+
+  it('the duplicate probe gets the Network chosen on step 1', async () => {
+    await openImport()
+    await click(screen.getByRole('radio', { name: /^Devnet/ }))
+    await submit()
+    await waitFor(() => expect(h.importDuplicateReason).toHaveBeenCalled())
+    expect(h.importDuplicateReason).toHaveBeenCalledWith(SEED, 'devnet')
   })
 
   it.each([['Devnet', 'devnet'], ['Testnet', 'testnet']] as const)('the chosen network (%s) reaches the master-key check and the keystore', async (label, network) => {
@@ -429,7 +437,7 @@ describe('the walk, to its last step', () => {
     expect(seedInput().value).toBe(SEED)
     await click(button('Import wallet'))
     await waitFor(() => expect(h.importStoredWallet).toHaveBeenCalledTimes(1))
-    expect(h.importDuplicateReason).toHaveBeenCalledWith(SEED)
+    expect(h.importDuplicateReason).toHaveBeenCalledWith(SEED, 'testnet')
     expect(h.checkBeforeImport).toHaveBeenCalledTimes(1)
     expect(h.importStoredWallet.mock.calls[0][0]).toMatchObject({ seed: SEED, network: 'testnet', signing: 'pin' })
   })

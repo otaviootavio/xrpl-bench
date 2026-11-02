@@ -5,7 +5,7 @@ import { act, waitFor, cleanup, fireEvent, render, screen } from '@testing-libra
 
 /**
  * Story 5: both ways to make a new Wallet open the creation flow, and neither
- * writes a Wallet itself. Onboarding's Import keeps its own path.
+ * writes a Wallet itself. Onboarding's Import renders it with the shared Seed source.
  */
 const h = vi.hoisted(() => ({
   setUpVaultAuth: vi.fn(async () => ({}) as CryptoKey),
@@ -116,14 +116,25 @@ describe('first run', () => {
     expect(screen.getByRole('button', { name: 'Create a new wallet' })).toBeTruthy()
   })
 
-  it('Import keeps its path: seed, then the PIN step that sets up the vault', async () => {
+  it('the Import step\'s "Back to start" is disabled while a wallet is being written, and enabled again after', async () => {
     render(<Onboarding />)
     await click('Import an existing wallet')
-    expect(screen.getByLabelText('Seed')).toBeTruthy()
-    expect(screen.queryByText('the creation flow')).toBeNull()
-    ;(document.getElementById('seed') as HTMLInputElement).value = 'sSeed'
-    await click('Continue')
-    expect(screen.getByLabelText(/PIN \(min 6 digits\)/)).toBeTruthy()
+    const inProgress = h.flowProps.at(-1) as { onInProgressChange: (v: boolean) => void }
+    await act(async () => inProgress.onInProgressChange(true))
+    expect((screen.getByRole('button', { name: 'Back to start' }) as HTMLButtonElement).disabled).toBe(true)
+    await act(async () => inProgress.onInProgressChange(false))
+    expect((screen.getByRole('button', { name: 'Back to start' }) as HTMLButtonElement).disabled).toBe(false)
+  })
+
+  it('Import opens the same flow with the shared Seed source, sets up no vault, and leaves pathChoice unset', async () => {
+    render(<Onboarding />)
+    await click('Import an existing wallet')
+    expect(screen.getByText('the creation flow')).toBeTruthy()
+    const props = h.flowProps.at(-1) as { importSource?: unknown; pathChoice?: unknown }
+    expect(props.importSource).toBeTruthy()
+    expect(props.pathChoice).toBeUndefined()
+    expect(h.setUpVaultAuth).not.toHaveBeenCalled()
+    expect(screen.getByRole('button', { name: 'Back to start' })).toBeTruthy()
   })
 })
 

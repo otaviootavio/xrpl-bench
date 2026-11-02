@@ -72,25 +72,25 @@ describe('the Wallet tab', () => {
     expect(screen.getByRole('button', { name: 'Reveal seed' })).toBeTruthy()
   })
 
-  it('the identity plate shows the setup read-only, in the quiz words, with keys that move focus to the plate', () => {
+  it('the identity plate shows only what no plate can change, read-only, in the quiz words', () => {
     useAppStore.setState({ wallets: [W('a', 'X', { algorithm: 'secp256k1', openCheck: 'pin', signingCheck: 'standard', seedMethod: 'stored' })], activeWalletId: 'a' } as never)
     mount()
     const identity = screen.getByRole('region', { name: 'This wallet' })
     const text = identity.textContent ?? ''
-    for (const w of ['Signature type', 'secp256k1', 'Seed Method', 'Stored Seed', 'Node', 'Built-in Nodes', 'Authentication required to open the wallet', 'App PIN', 'Authentication required to sign a transaction', 'Nothing is asked for signing']) expect(text).toContain(w)
+    for (const w of ['Signature type', 'secp256k1', 'Seed Method', 'Stored Seed']) expect(text).toContain(w)
     expect(within(identity).getAllByText('Fixed at creation')).toHaveLength(2)
-    fireEvent.click(within(identity).getByRole('button', { name: 'Node, for the Node' }))
-    expect(document.activeElement).toBe(document.querySelector('[data-configure-plate="node"]'))
-    fireEvent.click(within(identity).getByRole('button', { name: 'Checks, for the Signing Check' }))
-    expect(document.activeElement).toBe(document.querySelector('[data-configure-plate="checks"]'))
+    // The Node and the two checks are shown once, by their own plates, not again here.
+    for (const w of ['Built-in Nodes', 'Authentication required to open the wallet', 'Authentication required to sign a transaction']) expect(text).not.toContain(w)
+    // Only the address keys remain: no key that moves focus to another plate.
+    expect(within(identity).queryByRole('button', { name: /^(Node|Checks)/ })).toBeNull()
   })
 
-  it('says unknown for an unresolved curve, and the custom Node address', () => {
+  it('says unknown for an unresolved curve', () => {
     useAppStore.setState({ wallets: [W('a', 'X', { algorithm: 'unresolved', node: 'wss://node.example' })], activeWalletId: 'a' } as never)
     mount()
     const text = screen.getByRole('region', { name: 'This wallet' }).textContent ?? ''
     expect(text).toContain('Unknown')
-    expect(text).toContain('wss://node.example')
+    expect(text).not.toContain('wss://node.example')
   })
 
   it.each([

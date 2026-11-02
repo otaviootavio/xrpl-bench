@@ -194,7 +194,7 @@ export function PathChoice({ group, path }: { group: string; path: PathChoicePro
   }, [])
   return (
     <div ref={box}>
-      <Axis legend="Create or import">
+      <Axis legend="Create or import" hideLegend>
         <Choice name={`${group}-path`} checked={path.value === 'create'} label="Create a new wallet" state={{ available: true }} disabled={path.disabled} onSelect={() => path.onChange('create')} />
         <Choice name={`${group}-path`} checked={path.value === 'import'} label="Import a wallet" state={{ available: true }} disabled={path.disabled} onSelect={() => path.onChange('import')} />
       </Axis>

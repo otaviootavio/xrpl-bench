@@ -73,6 +73,13 @@ describe('the Review lists every answer once', () => {
     }
   })
 
+  it('with a path, Create or import is the first row and Change goes to step 1', () => {
+    const rows = answerRows(PROPS, 'import')
+    expect(rows[0]).toEqual({ step: 'name-network', term: 'Create or import', value: 'Import a wallet' })
+    expect(answerRows(PROPS, 'create')[0].value).toBe('Create a new wallet')
+    expect(rows.length).toBe(answerRows(PROPS).length + 1)
+  })
+
   it('lists Label and Network first, then each question in walk order, with Passkey only when Passkey-Derived', () => {
     expect(answerRows(PROPS).map((r) => [r.step, r.term])).toEqual([
       ['name-network', 'Label'],

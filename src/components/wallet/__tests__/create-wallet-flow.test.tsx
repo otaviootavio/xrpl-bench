@@ -232,11 +232,12 @@ describe('Label and Network, then the walk', () => {
     expect(screen.queryByText('Recommended')).toBeNull()
   })
 
-  it('Network: Testnet shows on step 2 and not on step 1', async () => {
+  it('Network line shows on no question step on Testnet', async () => {
     await mountCollapsed()
     expect(screen.queryByText('Network: Testnet')).toBeNull()
     await click(nextButton())
-    expect(screen.getByText('Network: Testnet')).toBeTruthy()
+    expect(screen.queryByText('Network: Testnet')).toBeNull()
+    expect(screen.queryByText('Real funds')).toBeNull()
   })
 
   it('step 2 of 7 is the Node question: no list, no other radios, no Create wallet, no Walk me through it', async () => {

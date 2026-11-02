@@ -53,36 +53,48 @@ function NetworkRow({ name, row, active }: { name: string; row: WalletRow; activ
   )
 }
 
-function LockedCard({ group, active }: { group: LockedGroup; active: boolean }) {
+/** Name, then its one state word (and "Active" beside it): the head every card opens with. */
+function CardHead({ name, tone, state, active }: { name: string; tone: 'neutral' | 'live'; state: string; active: boolean }) {
   return (
-    <>
-      <div className="flex flex-wrap items-start justify-between gap-x-3 gap-y-1">
-        <CardName>{group.label}</CardName>
-        <StatusLegend tone="neutral">
-          Locked
-        </StatusLegend>
+    <div className="flex min-w-0 flex-col gap-1.5">
+      <CardName>{name}</CardName>
+      <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+        <StatusLegend tone={tone}>{state}</StatusLegend>
+        {active && <ActiveLegend />}
       </div>
-      {active && <ActiveLegend />}
-      <p className="text-sm text-muted-foreground">Locked.</p>
-      <div className="flex flex-wrap gap-2">
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          className={KEY}
-          aria-label={`Open ${group.label}`}
-          aria-current={active ? 'true' : undefined}
-          onClick={() => enterWallet(group.entryWalletId)}
-        >
-          Open
-        </Button>
-      </div>
-    </>
+    </div>
   )
 }
 
 function ActiveLegend() {
-  return <span className="font-legend text-[0.6875rem] font-semibold uppercase tracking-[0.1em] text-muted-foreground">Active</span>
+  return (
+    <>
+      <span aria-hidden="true" className="text-muted-foreground">
+        ·
+      </span>
+      <span className="font-legend text-[0.6875rem] font-semibold uppercase tracking-[0.1em] text-muted-foreground">Active</span>
+    </>
+  )
+}
+
+/** A locked card is one row: who it is and that it is locked on the left, the one key on the right. */
+function LockedCard({ group, active }: { group: LockedGroup; active: boolean }) {
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-3">
+      <CardHead name={group.label} tone="neutral" state="Locked" active={active} />
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        className={KEY}
+        aria-label={`Open ${group.label}`}
+        aria-current={active ? 'true' : undefined}
+        onClick={() => enterWallet(group.entryWalletId)}
+      >
+        Open
+      </Button>
+    </div>
+  )
 }
 
 function OpenCard({
@@ -99,13 +111,7 @@ function OpenCard({
   const active = group.views.some((v) => v.walletId === activeWalletId)
   return (
     <>
-      <div className="flex flex-wrap items-start justify-between gap-x-3 gap-y-1">
-        <CardName>{group.label}</CardName>
-        <StatusLegend tone="live">
-          Open
-        </StatusLegend>
-      </div>
-      {active && <ActiveLegend />}
+      <CardHead name={group.label} tone="live" state="Open" active={active} />
       <ul className="flex flex-col gap-2">
         {group.views.map((row) => (
           <NetworkRow key={row.walletId} name={group.label} row={row} active={row.walletId === activeWalletId} />

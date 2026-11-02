@@ -108,11 +108,12 @@ describe('the cards', () => {
     expect(screen.getByText('Choose a wallet to open. Each one has its own lock.')).toBeTruthy()
   })
 
-  it('a locked card shows its name, the Locked lamp word, `Locked.` and Open; no address, network or stamp', () => {
+  it('a locked card shows its name, the Locked lamp word once, and Open; no address, network or stamp', () => {
     mount()
     const card = screen.getByRole('heading', { level: 2, name: 'Alpha' }).closest('li') as HTMLElement
     expect(within(card).getByText('Locked', { selector: 'span' })).toBeTruthy()
-    expect(within(card).getByText('Locked.')).toBeTruthy()
+    expect(within(card).queryByText('Locked.')).toBeNull()
+    expect(within(card).getAllByText('Locked')).toHaveLength(1)
     const open = within(card).getByRole('button', { name: 'Open Alpha' })
     expect(open.textContent).toBe('Open')
     expect(card.textContent).not.toMatch(/mainnet|testnet|devnet|real funds|not stable/i)
@@ -198,7 +199,8 @@ describe('the cards', () => {
       useAppStore.getState().closeLock('LA')
     })
     const card = screen.getByRole('heading', { name: 'Alpha' }).closest('li') as HTMLElement
-    expect(within(card).getByText('Locked.')).toBeTruthy()
+    expect(within(card).queryByText('Locked.')).toBeNull()
+    expect(within(card).getAllByText('Locked')).toHaveLength(1)
     expect(card.textContent).not.toMatch(/mainnet|real funds/i)
     expect(window.location.pathname).toBe('/')
     expect(names()).toEqual(['Alpha', 'Beta', 'Gamma'])
@@ -241,7 +243,7 @@ describe('the Lock key', () => {
     expect(key.textContent).toBe('Lock')
     fireEvent.click(key)
     expect(tearDownLock).toHaveBeenCalledWith(expect.anything(), 'LA')
-    expect(within(card('Alpha')).getByText('Locked.')).toBeTruthy()
+    expect(within(card('Alpha')).getAllByText('Locked')).toHaveLength(1)
     expect(within(card('Alpha')).queryByRole('button', { name: /^Lock / })).toBeNull()
     expect(status()).toBe('Alpha: Locked.')
     expect(document.activeElement).toBe(screen.getByRole('heading', { level: 1 }))
@@ -260,7 +262,7 @@ describe('the Lock key', () => {
     act(() => useAppStore.getState().openLock('LS', KEY, 5))
     mount()
     fireEvent.click(within(card('Alpha')).getByRole('button', { name: 'Lock Alpha' }))
-    expect(within(card('Beta')).getByText('Locked.')).toBeTruthy()
+    expect(within(card('Beta')).getAllByText('Locked')).toHaveLength(1)
     expect(screen.getByText('Locking Alpha also locked Beta: they share one lock.')).toBeTruthy()
     expect(status()).toBe('Alpha: Locked. Beta: Locked.')
   })

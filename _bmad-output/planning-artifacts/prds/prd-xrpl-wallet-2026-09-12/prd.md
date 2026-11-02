@@ -2,7 +2,7 @@
 title: XRPL Bench
 status: draft
 created: 2026-09-12
-updated: 2026-10-29
+updated: 2026-11-02
 ---
 
 # PRD: XRPL Bench
@@ -344,7 +344,7 @@ requirement exists to prevent.
   but does not lock it. Locking stays a separate action.*
 
 ### 4.3 Multi-Wallet Management
-*Detail: `docs/user-stories/multi-wallet-management.md`. FR-79 to FR-90: `_bmad-output/specs/spec-wallet-chooser/SPEC.md`. FR-91: planned, no spec yet.*
+*Detail: `docs/user-stories/multi-wallet-management.md`. FR-79 to FR-90: `_bmad-output/specs/spec-wallet-chooser/SPEC.md`. FR-91: planned, no spec yet. FR-92, FR-93: planned (2026-10-30, 2026-11-02).*
 
 #### FR-13: Add, list, and remove Wallets
 The user can hold several independent Wallets and remove any of them.
@@ -394,6 +394,8 @@ chooser.
 - This is FR-59's rule applied to the Wallet list.
 
 #### FR-81: A locked Wallet is a name and nothing else
+*Planned change (FR-93, decided 2026-11-02): a card, locked or open, shows its name, its address and its Network, with the Mainnet "Real funds" stamp where it applies. Nothing else shows while locked: no Node, no kind of check, no balance. Trade-off: someone who sees the screen learns the address and the Network, never a key. The "looks like a locked Testnet Wallet" bullet and the "row per network" bullet end with it.*
+
 On the chooser a Wallet whose lock is closed shows its name, that it is
 locked, and nothing more: no address, no network, no Node, no kind of check.
 - A locked Mainnet Wallet looks like a locked Testnet Wallet. Telling them
@@ -406,6 +408,8 @@ locked, and nothing more: no address, no network, no Node, no kind of check.
   chooser.
 
 #### FR-82: Open a Wallet
+*Planned change (FR-93): Open asks the Wallet's own Open Check while its lock is closed. After unlocking, the user enters that Wallet; there is no return to the chooser to pick a network. A Mainnet Wallet is entered only by choosing its own card and passing its own Open Check.*
+
 The user opens a Wallet from its card, or from one network row of its card.
 - A locked Wallet shows its own Open Check first (FR-65). An open one is
   entered directly.
@@ -437,7 +441,7 @@ The user can lock an open Wallet from the chooser without entering it.
 *Planned change (FR-92): renaming moves from the chooser card to the Wallet's Configure screen.*
 
 The user can rename a Wallet from the chooser. The name belongs to the Seed, so
-every network row under the card shows it.
+every network row under the card shows it. *Planned change (FR-93): the name belongs to the one Wallet.*
 - A name is 1 to 40 characters and cannot match, ignoring case, another
   Seed's name. Names that already collide on a device are left as they are.
 - Renaming asks for no lock, changes no key and no check, and sends nothing to
@@ -446,7 +450,7 @@ every network row under the card shows it.
   is kept.
 
 #### FR-86: Remove a Wallet from the chooser
-*Planned change (FR-92): removing moves from the chooser card to the Wallet's Configure screen.*
+*Planned change (FR-92): removing moves from the chooser card to the Wallet's Configure screen. Planned change (FR-93): a Wallet is one Network, so the "sibling network view stays" body ends. The sibling body stays for a controlled account that shares the key (FR-75), and the others are unchanged.*
 
 The user can remove one Wallet view from the chooser, only while that Wallet's
 own lock is open.
@@ -468,6 +472,8 @@ every lock is closed.
   every network, applies the Mainnet floor (FR-65) and the written-Seed
   confirmation (FR-72), and refuses a Seed whose address is already on the
   device before asking for anything or reading the ledger.
+- *Planned change (FR-93): the refusal narrows to the same address on the same
+  Network. The same Seed on a different Network is allowed, as a separate Wallet.*
 - A failed import leaves no lock behind. The Seed is never kept past the
   operation (NFR-2).
 - *Known gap: the first-run import (§4.1) still uses the shared lock until its
@@ -475,7 +481,7 @@ every lock is closed.
 
 #### FR-88: A Configure screen for each Wallet
 Each open Wallet has one Configure screen for everything that belongs to that
-Wallet alone, reached from its card and from the Wallet's header. *Planned change (FR-92): reached from the Wallet's header only, and it also holds Rename and Remove.*
+Wallet alone, reached from its card and from the Wallet's header. *Planned change (FR-92): reached from the Wallet's header only, and it also holds Rename and Remove. Planned change (FR-93): no "Other networks" section.*
 - It holds, in this order: Checks (with auto-lock, FR-10), Seed (reveal,
   FR-69), Operating another account (FR-75, FR-77), Other networks (FR-61), Node
   (FR-61) and Two-device signing (FR-78).
@@ -583,6 +589,49 @@ while its lock is open. The card has no Configure, Rename or Remove.
 - A locked card shows its name and nothing else (FR-81), with Open.
 - Removing the last Wallet still returns the app to first run and deletes the
   App PIN (FR-13). Remove all, in Settings (FR-89), is unchanged.
+- *Planned change (FR-93): the card also shows address and Network, so "a name and nothing else" reads as FR-81 now says.*
+
+#### FR-93: One network per Wallet
+*Planned, not built. Decided 2026-11-02. Changes FR-38, FR-61, FR-81, FR-82, FR-85, FR-86, FR-88 and FR-92.*
+
+A Wallet is one address on one Network, for its whole life.
+- **The Network cannot change after creation.** There is no switch, no "add a
+  network" and no "Other networks" in Configure.
+- **The same Seed can be two Wallets**, on two Networks. There is no flow for
+  it: the user creates a Wallet, then imports the same Seed on the other
+  Network, and each is its own Wallet. The app does not stop this, and does not
+  make it feel natural: no "use on another network" key, no shortcut, no
+  default. The same address on the *same* Network is still refused, since
+  it would be one Account twice. Confirmed 2026-11-02.
+- **Each Wallet has its own lock, Open Check and auto-lock**, even when two
+  Wallets share a Seed. Opening one never opens another, and a closed lock
+  asks its own Open Check (FR-82).
+- **The chooser card shows the name, the address and the Network** of each
+  Wallet (FR-81), with "Real funds" on Mainnet, so the user sees which Network
+  they are about to enter before they open it.
+- **A Mainnet Wallet is a different Wallet, not a setting.** It is made like
+  any Wallet, by the normal creation flow (FR-91): Create for a new Seed, or
+  Import for one the user holds, with Mainnet chosen at step 1 and confirmed on
+  the review step with the "Real funds" warning. There is no native move from
+  Testnet to Mainnet. The danger this rule guards against is a Testnet Seed
+  reused on Mainnet.
+- **Import on Mainnet states one fact, and gives no opinion.** One plain
+  sentence on the review step, beside "Real funds", says a Seed used on another
+  Network is the same key on Mainnet. It does not say "do not", and it blocks
+  nothing. The app cannot see a Seed used elsewhere.
+- **No backward compatibility.** Nothing reads a Wallet made by an older build,
+  including a Seed on several networks. Nobody but the owner uses the app yet, so
+  the owner removes their wallets before running this build, with any Seed that
+  matters backed up first.
+- **Controlled accounts and two-device signing are not changed by this
+  requirement.** A Wallet that operates another Account through a Regular Key
+  (FR-75, FR-77) and the QR signing round (FR-78) keep working as built. A
+  controlled Wallet has no key of its own, so it opens with the lock of the
+  Wallet that holds the key: the one exception to "its own lock", until the
+  planned Signer and Transmitter work (§6.3).
+- The quiz (FR-91) is unchanged: it already asks one Network at step 1 and locks
+  it. Rename, Remove, the Mainnet floor (FR-65) and FR-13's removal rules are
+  unchanged.
 
 ### 4.4 Sending Payments
 *Detail: `docs/user-stories/sending-payments.md`*
@@ -747,6 +796,7 @@ tag where one was present. Amounts follow FR-57.
 
 #### FR-38: Switch Active Network
 The user can switch between Mainnet and Testnet.
+- *Planned change (FR-93): there is no switch. A Wallet's Network is fixed at creation, so this requirement ends when FR-93 is built.*
 - *Planned change (FR-61): Devnet becomes a third Network, and each Wallet is
   created on one Network and one Node.*
 - Switching never leaves data from the previous Network on screen.
@@ -899,6 +949,8 @@ Creating a Wallet asks, in this order:
   visible text (§9.1). It is never hidden.
 
 #### FR-61: Network and Node per Wallet
+*Planned change (FR-93): a Wallet has exactly one Network, fixed at creation. A Seed on several networks, one card with a row per network, and the Configure section "Other networks" no longer exist. The Node can still be changed.*
+
 The user picks Mainnet, Testnet, or Devnet, then a Node: one from a built-in list
 for that Network, or a custom one added after a connection test.
 - The connection test passes only if the Node answers **and** reports the
@@ -1181,6 +1233,14 @@ this PRD previously failed to state.
   and changes to FR-10, FR-13, FR-14 and FR-77. Epics 17 to 19. Spec:
   `_bmad-output/specs/spec-wallet-chooser/SPEC.md`.
 
+- **Signer Wallet and Transmitter Wallet** — *raised 2026-11-02, not specified.*
+  An offline Signer Wallet has no Network and no Node, and is made in the
+  creation quiz with its own questions. It is paired with a Transmitter Wallet
+  on another device that builds and sends the transaction. This would replace
+  today's Controlling Wallet and two-device QR signing (FR-75, FR-78), which are
+  built and stay as they are until then. Needs its own PRD pass, UX and
+  architecture before any spec. FR-93 does not wait for it.
+
 ## 7. Success Metrics
 
 Calibrated to a single-operator product holding real funds: the metrics that
@@ -1428,6 +1488,8 @@ for §4.14. All three were answered by Otavio on 2026-10-10.
 13. **Should the first-run import (§4.1) give its Wallet its own lock?** FR-87
     says every import does. The first-run flow still uses the shared lock.
     *Owner: Otavio. Revisit: after Epics 17 to 19, as its own story.*
+14. **Exact wording of the Mainnet Import sentence** (FR-93). Neutral, one fact,
+    under 21 words. *Owner: Otavio. Revisit: in the FR-93 spec.*
 
 **Defects in the authoritative inputs, reported and not repaired.** These are not
 open questions about the product — they are places where a document this PRD

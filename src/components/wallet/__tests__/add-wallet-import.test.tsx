@@ -1,7 +1,7 @@
 /** @vitest-environment jsdom */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
-import { readFileSync } from 'node:fs'
+import { readFileSync, readdirSync } from 'node:fs'
 
 /**
  * Chooser story 13 (AD-39, AD-40): Add wallet > Import is the creation flow in
@@ -664,6 +664,33 @@ describe('Create or Import is the first question', () => {
     expect(screen.getByText('Real funds')).toBeTruthy()
   })
 
+  it('the Review states the Mainnet fact beside Real funds on Mainnet only, and Import wallet still imports', async () => {
+    const FACT = 'A Seed you used on another Network is the same key on Mainnet.'
+    for (const label of ['Testnet', 'Devnet']) {
+      cleanup()
+      await openImport()
+      await click(screen.getByRole('radio', { name: new RegExp(`^${label}`) }))
+      typeSeed(SEED)
+      for (let guard = 0; guard < 6 && screen.queryByRole('button', { name: 'Next' }); guard++) await click(button('Next'))
+      expect(button('Import wallet'), label).toBeTruthy()
+      expect(text(), label).not.toContain(FACT)
+    }
+    cleanup()
+    await openImport()
+    await click(screen.getByRole('radio', { name: /^Mainnet/ }))
+    await submit()
+    await waitFor(() => expect(h.importStoredWallet).toHaveBeenCalledTimes(1))
+    expect(h.importStoredWallet.mock.calls[0][0]).toMatchObject({ network: 'mainnet' })
+    cleanup()
+    await openImport()
+    await click(screen.getByRole('radio', { name: /^Mainnet/ }))
+    typeSeed(SEED)
+    for (let guard = 0; guard < 6 && screen.queryByRole('button', { name: 'Next' }); guard++) await click(button('Next'))
+    const fact = screen.getByText(FACT)
+    expect(fact.closest('section')).toBe(screen.getByText('Real funds').closest('section'))
+    expect(fact.getAttribute('role')).toBeNull()
+  })
+
   it('choosing Create again puts focus on the Create radio', async () => {
     await openImport()
     await click(radio('Create a new wallet'))
@@ -771,5 +798,20 @@ describe('first-run Onboarding', () => {
     await click(screen.getByRole('button', { name: 'Back to start' }))
     expect(await screen.findByRole('button', { name: 'Create a new wallet' })).toBeTruthy()
     expect(screen.queryByRole('button', { name: /^Back$/ })).toBeNull()
+  })
+})
+
+describe('the Mainnet fact is display only', () => {
+  it('its sentence is written once in check-words.ts and no policy file under src/lib/crypto mentions it', () => {
+    const sentence = 'A Seed you used on another Network is the same key on Mainnet.'
+    const words = readFileSync('src/components/wallet/check-words.ts', 'utf8')
+    expect(words.split(sentence).length - 1).toBe(1)
+    const dir = 'src/lib/crypto'
+    for (const f of readdirSync(dir, { recursive: true }) as string[]) {
+      if (!/\.tsx?$/.test(f) || /__tests__|\.test\./.test(f)) continue
+      const src = readFileSync(`${dir}/${f}`, 'utf8')
+      expect(src, f).not.toContain(sentence)
+      expect(src, f).not.toMatch(/IMPORT_MAINNET_FACT|importMainnetFact/)
+    }
   })
 })

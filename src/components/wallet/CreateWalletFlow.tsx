@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { createConsequence } from '@/components/wallet/check-words'
+import { createConsequence, importMainnetFact } from '@/components/wallet/check-words'
 import { RENAME_ERRORS } from '@/components/wallet/rename-copy'
 import {
   NameAndNetworkStep,
@@ -700,6 +700,8 @@ function CreateWalletForm({ capability, onDone, onInProgressChange, defaultLabel
     </p>
   )
 
+  const fact = importMainnetFact(network, !!importSource)
+
   return (
     <QuizShell steps={quizSteps} index={quizIndex} onIndex={goToIndex} busy={busy} actionHost={actionHost} finalAction={createButton}>
       {pathChoice && quizIndex === 0 && <PathChoice group={group} path={{ ...pathChoice, disabled: pathChoice.disabled || busy }} />}
@@ -722,10 +724,13 @@ function CreateWalletForm({ capability, onDone, onInProgressChange, defaultLabel
           onChange={changeAnswer}
           disabled={busy}
           footer={
-            <p id={`${group}-consequence`} className={network === 'mainnet' ? 'flex flex-wrap items-center gap-2 text-base font-semibold' : 'flex flex-wrap items-center gap-2 text-sm'}>
-              {network === 'mainnet' && <Badge variant="warning">Real funds</Badge>}
-              {createConsequence(network, !!importSource)}
-            </p>
+            <>
+              <p id={`${group}-consequence`} className={network === 'mainnet' ? 'flex flex-wrap items-center gap-2 text-base font-semibold' : 'flex flex-wrap items-center gap-2 text-sm'}>
+                {network === 'mainnet' && <Badge variant="warning">Real funds</Badge>}
+                {createConsequence(network, !!importSource)}
+              </p>
+              {fact && <p className="text-sm text-muted-foreground">{fact}</p>}
+            </>
           }
         />
       )}

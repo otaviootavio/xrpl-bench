@@ -113,12 +113,28 @@ describe('the Review and the Network reset line use short sentences', () => {
       ...(['pin', 'passkey', 'none'] as const).map((openCheck) => answerRows({ ...props('testnet'), openCheck }).find((r) => r.term === words.OPEN_CHECK_QUESTION)!.value),
       NETWORK_RESET_NOTE,
       words.NETWORK_LOCKED_NOTE,
+      words.IMPORT_MAINNET_FACT,
       ...(['mainnet', 'testnet', 'devnet'] as const).flatMap((n) => [words.createConsequence(n, false), words.createConsequence(n, true)]),
       ...answerRows({ ...props('testnet') }).map((r) => r.note ?? ''),
     ]
     for (const text of texts) {
       for (const s of sentences(text)) expect(wordCount(s), s).toBeLessThan(21)
       expect(text).not.toMatch(/sign(s|ing)? (data|message)/i)
+    }
+  })
+})
+
+describe('the Mainnet Import fact', () => {
+  it('is the one agreed sentence', () => {
+    expect(words.IMPORT_MAINNET_FACT).toBe('A Seed you used on another Network is the same key on Mainnet.')
+  })
+
+  it('shows for an Import on Mainnet only', () => {
+    for (const network of ['mainnet', 'testnet', 'devnet']) {
+      for (const imported of [true, false]) {
+        const expected = network === 'mainnet' && imported ? words.IMPORT_MAINNET_FACT : null
+        expect(words.importMainnetFact(network, imported), `${network} ${imported}`).toBe(expected)
+      }
     }
   })
 })

@@ -35,5 +35,10 @@ export function createConsequence(network: string, imported: boolean): string {
   return 'This wallet holds test funds only.'
 }
 
+/** One neutral fact on an Import's Review for Mainnet. Display only: it feeds no check and blocks nothing. */
+export const IMPORT_MAINNET_FACT = 'A Seed you used on another Network is the same key on Mainnet.'
+export const importMainnetFact = (network: string, imported: boolean): string | null =>
+  imported && network === 'mainnet' ? IMPORT_MAINNET_FACT : null
+
 /** The Review's Network row note: the row has no Change button, so it says where to change it and what that costs. */
 export const NETWORK_LOCKED_NOTE = 'Locked. To change it, go Back to step 1; the questions then start again.'

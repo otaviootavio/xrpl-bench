@@ -3,7 +3,8 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-libra
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-const h = vi.hoisted(() => ({ verifyNode: vi.fn(), retireNode: vi.fn(), setWalletNode: vi.fn(), listWallets: vi.fn() }))
+const h = vi.hoisted(() => ({ update: { updateReady: false, declined: false }, verifyNode: vi.fn(), retireNode: vi.fn(), setWalletNode: vi.fn(), listWallets: vi.fn() }))
+vi.mock('@/hooks/useAppUpdate', () => ({ useAppUpdate: () => h.update }))
 vi.mock('idb-keyval', () => ({ get: async () => undefined, set: async () => {}, del: async () => {} }))
 vi.mock('@/lib/crypto/lock', () => ({ endLockSession: async () => {}, endAllLockSessions: async () => {}, getLockInfo: async () => ({ id: 'legacy', openCheck: 'pin', autoLockMinutes: 5, pin: true, passkey: false }) }))
 vi.mock('@/lib/xrpl/client', () => ({ verifyNode: h.verifyNode, retireNode: h.retireNode }))

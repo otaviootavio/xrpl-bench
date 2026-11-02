@@ -3,7 +3,8 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-libra
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-const h = vi.hoisted(() => ({ order: [] as string[] }))
+const h = vi.hoisted(() => ({ order: [] as string[], update: { updateReady: false, declined: false } }))
+vi.mock('@/hooks/useAppUpdate', () => ({ useAppUpdate: () => h.update }))
 vi.mock('idb-keyval', () => ({ get: async () => undefined, set: async () => {}, del: async () => {} }))
 vi.mock('@/lib/crypto/lock', () => ({ endLockSession: async () => {}, endAllLockSessions: async () => {}, extendLockSession: async () => {} }))
 vi.mock('@/lib/crypto/auth', () => ({ wipeVault: async () => {} }))
@@ -34,9 +35,37 @@ function mount() {
 
 beforeEach(() => {
   h.order.length = 0
+  h.update = { updateReady: false, declined: false }
   window.history.replaceState(null, '', '/')
 })
 afterEach(() => cleanup())
+
+describe('the update marker on the Wallets key (CAP-4)', () => {
+  it.each([
+    ['open', { X: OPEN }],
+    ['locked', {}],
+  ])('an update waits, wallet %s: the key reads "Wallets, update available" with no Install control', (_n, locks) => {
+    h.update = { updateReady: true, declined: false }
+    useAppStore.setState({ wallets: [W('a', 'X')], activeWalletId: 'a', openLocks: locks } as never)
+    mount()
+    const key = screen.getByRole('button', { name: 'Wallets, update available' })
+    expect(key.textContent).toBe('Wallets, update available')
+    expect(screen.queryByRole('button', { name: /install|apply|restart/i })).toBeNull()
+  })
+
+  it('a declined release leaves the key unmarked', () => {
+    h.update = { updateReady: true, declined: true }
+    useAppStore.setState({ wallets: [W('a', 'X')], activeWalletId: 'a', openLocks: {} } as never)
+    mount()
+    expect(screen.getByRole('button', { name: 'Wallets' }).textContent).toBe('Wallets')
+  })
+
+  it('no update waiting: no marker', () => {
+    useAppStore.setState({ wallets: [W('a', 'X')], activeWalletId: 'a', openLocks: {} } as never)
+    mount()
+    expect(screen.getByRole('button', { name: 'Wallets' }).textContent).toBe('Wallets')
+  })
+})
 
 describe('the wallet header (AD-45)', () => {
   it('open lock: nameplate, Wallets key, network and Lock; no picker', () => {

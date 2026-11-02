@@ -1,15 +1,17 @@
 import { ArrowLeftIcon, LockIcon } from 'lucide-react'
 import { useQueryClient } from '@tanstack/react-query'
 import { Button } from '@/components/ui/button'
+import { Lamp } from '@/components/ui/lamp'
 import { useActiveWallet, useWalletIsOpen } from '@/store/app-store'
 import { NetworkPlate } from '@/components/wallet/NetworkPlate'
 import { useLeaveBlocked } from '@/hooks/useRoute'
+import { useUpdateMarker } from '@/hooks/useUpdateMarker'
 import { leaveToChooser } from '@/lib/route'
 import { tearDownLock } from '@/lib/teardown'
 
 /**
  * The wallet header (AD-45): the chassis nameplate, the Wallets key back to the
- * chooser, and — only for an open lock — the network and the Lock key. A locked
+ * chooser (marked when an update waits, never an Install control), and — only for an open lock — the network and the Lock key. A locked
  * wallet's header is the nameplate and the Wallets key alone. There is no wallet
  * picker: switching is the Wallets key, then Open (docs/decisions.md §6.12).
  *
@@ -22,6 +24,7 @@ export function AppHeader() {
   const wallet = useActiveWallet()
   const open = useWalletIsOpen(wallet?.id)
   const blocked = useLeaveBlocked()
+  const marked = useUpdateMarker()
 
   return (
     <header className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2 border-b border-border bg-background px-4 py-2.5">
@@ -38,14 +41,15 @@ export function AppHeader() {
             variant="outline"
             aria-disabled={blocked || undefined}
             aria-describedby={blocked ? 'wallets-key-reason' : undefined}
-            className="aria-disabled:cursor-not-allowed aria-disabled:opacity-60"
+            className="h-auto min-h-8 max-w-full whitespace-normal py-1 pointer-coarse:min-h-11 aria-disabled:cursor-not-allowed aria-disabled:opacity-60"
             onClick={() => {
               if (blocked) return
               leaveToChooser()
             }}
           >
             <ArrowLeftIcon aria-hidden="true" />
-            Wallets
+            {marked ? 'Wallets, update available' : 'Wallets'}
+            {marked && <Lamp tone="caution" className="ml-1" />}
           </Button>
           {blocked && (
             <p id="wallets-key-reason" className="text-xs leading-snug text-muted-foreground">

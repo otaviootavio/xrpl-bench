@@ -14,6 +14,7 @@ import { useAppStore } from '@/store/app-store'
  * is cleared here field by field. Reads no wallet and no ledger.
  */
 export function RemoveAllPlate({ children }: { /** A line above the key, for a screen that needs to say why it is here. */ children?: ReactNode }) {
+  const walletCount = useAppStore((s) => s.wallets.length)
   const closeAllLocks = useAppStore((s) => s.closeAllLocks)
   const queryClient = useQueryClient()
   const [confirmResetAll, setConfirmResetAll] = useState(false)
@@ -38,10 +39,14 @@ export function RemoveAllPlate({ children }: { /** A line above the key, for a s
     <>
       <Card>
         <CardHeader>
-          <CardTitle>This device</CardTitle>
+          <CardTitle>All wallets on this device</CardTitle>
         </CardHeader>
         <CardContent className="flex flex-col gap-4">
           {children}
+          <div className="flex flex-col gap-1 text-sm leading-snug">
+            <p>{walletCount === 0 ? 'No wallet is stored here.' : `This removes ${walletCount} ${walletCount === 1 ? 'wallet' : 'wallets'}.`}</p>
+            <p>It also removes the App PIN, if you set one.</p>
+          </div>
           <Button variant="danger" className="h-auto min-h-9 w-fit max-w-full whitespace-normal py-2 text-left pointer-coarse:min-h-11" onClick={() => setConfirmResetAll(true)}>
             Remove all wallets from this device
           </Button>

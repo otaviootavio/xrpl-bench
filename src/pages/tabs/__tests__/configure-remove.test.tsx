@@ -47,9 +47,9 @@ import { useAppStore } from '@/store/app-store'
 const useAppStoreRef = useAppStore
 const KEY = {} as CryptoKey
 const base = { lockId: 'L1', createdAt: 1, algorithm: 'ed25519', openCheck: 'pin', signingCheck: 'standard' }
-const W = { ...base, id: 'w1', seedId: 's1', label: 'Savings', address: 'rA', network: 'testnet' }
-const SIBLING = { ...base, id: 'w1b', seedId: 's1', label: 'Savings', address: 'rA2', network: 'devnet' }
-const OTHER = { ...base, id: 'w2', seedId: 's2', label: 'Travel', address: 'rB', network: 'mainnet', lockId: 'other' }
+const W = { ...base, id: 'w1', seedId: 's1', label: 'Savings', address: 'rA', keyAddress: 'rA', network: 'testnet' }
+const SIBLING = { ...base, id: 'w1b', seedId: 's1', label: 'Savings', address: 'rA2', keyAddress: 'rA', network: 'devnet' }
+const OTHER = { ...base, id: 'w2', seedId: 's2', label: 'Travel', address: 'rB', keyAddress: 'rB', network: 'mainnet', lockId: 'other' }
 const state = () => useAppStore.getState()
 
 function seed(wallets: unknown[], openLocks = ['L1']) {
@@ -98,7 +98,7 @@ describe('Configure Remove plate', () => {
   })
 
   it.each([
-    ['a sibling view remains', [W, SIBLING, OTHER], [REMOVE_SIBLING, REMOVE_BACKUP]],
+    ['a controlled account shares the Seed', [W, SIBLING, OTHER], [REMOVE_SIBLING, REMOVE_BACKUP]],
     ['the only view of the Seed', [W, OTHER], [REMOVE_SOLE, REMOVE_BACKUP]],
     ['the last wallet', [W], [REMOVE_LAST, REMOVE_SOLE, REMOVE_BACKUP]],
   ])('the confirm body when %s', (_n, wallets, sentences) => {
@@ -117,7 +117,7 @@ describe('Configure Remove plate', () => {
     expect(dialog().textContent).toMatch(/App PIN/)
   })
 
-  it('sibling view: removes that view only, leaves before the store write, keeps the Seed and its lock', async () => {
+  it('controlled sibling: removes that view only, leaves before the store write, keeps the Seed and its lock', async () => {
     vaultWithout('w1')
     mount()
     fireEvent.click(key())

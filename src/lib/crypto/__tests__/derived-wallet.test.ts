@@ -88,7 +88,6 @@ import { openLock } from '../lock'
 import { seedSalt } from '../derive'
 import {
   createDerivedWallet,
-  addNetworkView,
   createStoredWallet,
   listWallets,
   openSigner,
@@ -593,28 +592,6 @@ describe('rpId recording and replay on the existing paths', () => {
     const signer = ok(await openSigner(meta.id, { openKey: null, prompts }))
     const signed = signer.sign({ TransactionType: 'Payment', Account: meta.address, Destination: 'rPT1Sjq2YGrBMTttX4GZHjKu9dyfzbpAYe', Amount: '1', Fee: '12', Sequence: 1 } as any)
     expect(signed.tx_blob.length).toBeGreaterThan(0)
-  })
-})
-
-describe('a Mainnet view of a derived Seed goes through policy', () => {
-  it('is refused at a b-cdn.net origin, and when the origin is unknown', async () => {
-    const { meta } = ok(await createDerivedWallet(base, { pin: PIN }))
-    vi.stubGlobal('location', { hostname: 'x.b-cdn.net' })
-    await expect(addNetworkView(meta.id, 'mainnet')).rejects.toThrow(/temporary web address/)
-    vi.stubGlobal('location', { hostname: '' })
-    await expect(addNetworkView(meta.id, 'mainnet')).rejects.toThrow(/could not be determined/)
-    expect(recordOf(meta.id).views).toHaveLength(1)
-  })
-
-  it('is allowed on a custom domain with an App PIN Open Check, and refused for a passkey-only one', async () => {
-    const pinned = ok(await createDerivedWallet(base, { pin: PIN }))
-    const passkeyOnly = ok(await createDerivedWallet({ ...base, openCheck: 'passkey' }))
-    vi.stubGlobal('location', { hostname: 'wallet.example.com' })
-    expect((await addNetworkView(pinned.meta.id, 'mainnet')).network).toBe('mainnet')
-    await expect(addNetworkView(passkeyOnly.meta.id, 'mainnet')).rejects.toThrow(/written, confirmed Seed/)
-    // Testnet-to-Devnet is unaffected at any origin.
-    vi.stubGlobal('location', { hostname: 'x.b-cdn.net' })
-    expect((await addNetworkView(passkeyOnly.meta.id, 'devnet')).network).toBe('devnet')
   })
 })
 

@@ -88,7 +88,7 @@ const rec = (id: string, label: string, extra: Partial<StoredWallet> = {}): Stor
     encryptedSeed: { ivB64: 'iv', ciphertextB64: `ct-${id}` },
     views: [
       { walletId: id, network: 'testnet' },
-      { walletId: `${id}2`, network: 'devnet' },
+      { walletId: `${id}2`, network: 'devnet', accountAddress: `rAcct${id}` },
     ],
     ...extra,
   }) as StoredWallet

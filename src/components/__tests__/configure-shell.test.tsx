@@ -24,7 +24,7 @@ import { useAppStore } from '@/store/app-store'
 import { navigate } from '@/lib/route'
 
 /** The fixed plate order of the Configure screen (EXPERIENCE: Exact strings).. */
-const PLATE_ORDER = ['Name', 'Checks', 'Seed', 'Operating another account', 'Other networks', 'Node', 'Two-device signing', 'Remove']
+const PLATE_ORDER = ['Name', 'Checks', 'Seed', 'Operating another account', 'Node', 'Two-device signing', 'Remove']
 
 const W = (id: string, lockId: string, extra = {}) =>
   ({ id, seedId: id, lockId, label: id, address: `r${id}`, createdAt: 1, network: 'testnet', algorithm: 'ed25519', openCheck: 'pin', signingCheck: 'standard', ...extra }) as never
@@ -56,6 +56,8 @@ describe('the Configure route (AD-32)', () => {
     mount()
     expect(screen.getByRole('heading', { level: 1, name: 'Configure wallet' })).toBeTruthy()
     expect(screen.getAllByRole('heading', { level: 2 }).map((n) => n.textContent)).toEqual(PLATE_ORDER)
+    expect(screen.queryByText('Other networks')).toBeNull()
+    expect(screen.queryByRole('button', { name: /^Use on / })).toBeNull()
     expect(screen.getByText('wallet-header')).toBeTruthy()
     expect(screen.queryByText('wallet shell')).toBeNull()
     expect(await screen.findByRole('button', { name: 'Edit checks' })).toBeTruthy()

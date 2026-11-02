@@ -1,20 +1,20 @@
 /**
- * A one-shot signal from Add wallet to the Chooser (AD-40): which Seed card was
+ * A one-shot signal from Add wallet to the Chooser (AD-40): which Wallet card was
  * just created, so the Chooser can put focus on its h2 when it mounts. Module
  * state, not store or route: nothing here is a secret, and a cold start (nothing
- * announced) consumes nothing. A seedId only, never a name.
+ * announced) consumes nothing. A walletId only, never a name.
  */
 let added: string | null = null
 
-export function announceAdded(seedId: string): void {
-  added = seedId
+export function announceAdded(walletId: string): void {
+  added = walletId
 }
 
-/** Returns the announced seedId once, then nothing until the next announcement. */
+/** Returns the announced walletId once, then nothing until the next announcement. */
 export function consumeAdded(): string | null {
-  const seedId = added
+  const walletId = added
   added = null
-  return seedId
+  return walletId
 }
 
 /** Drops an announcement the Chooser never saw (the user went elsewhere). */

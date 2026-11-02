@@ -190,7 +190,7 @@ export function AddWalletScreen({ onClose }: { onClose: () => void }) {
           {...(mode === 'import' ? { importSource } : {})}
           onDone={(meta) => {
             // Adding selects and enters nothing: the Chooser focuses the new card.
-            announceAdded(meta.seedId)
+            announceAdded(meta.id)
             toast.success('Wallet added.')
             onClose()
           }}

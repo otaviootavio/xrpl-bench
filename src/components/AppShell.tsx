@@ -89,13 +89,13 @@ export function AppShell() {
     if (before?.walletId && route.screen === 'chooser') {
       leaveWallet(queryClient, before.walletId)
       // A new card's h2 may already hold focus (a finished add): keep it.
-      if (!document.activeElement?.closest('[data-seed-id]')) document.getElementById('chooser-heading')?.focus()
+      if (!document.activeElement?.closest('[data-wallet-id]')) document.getElementById('chooser-heading')?.focus()
     } else if (before?.route.screen === 'settings' && route.screen === 'chooser') {
       // The Wallets key on /settings unmounted with the screen: land on the h1, not on the document.
       document.getElementById('chooser-heading')?.focus()
     } else if (before?.route.screen === 'add-wallet' && route.screen === 'chooser') {
       // Back or a finished add. A new card's h2 already took focus on the Chooser's mount: keep it.
-      if (!document.activeElement?.closest('[data-seed-id]')) document.getElementById('chooser-heading')?.focus()
+      if (!document.activeElement?.closest('[data-wallet-id]')) document.getElementById('chooser-heading')?.focus()
     } else if (before?.route.screen === 'chooser' && route.screen === 'wallet') {
       // Entering a wallet from the Chooser: the main region, as the skip link's target (UX-DR10).
       document.getElementById('main-content')?.focus()

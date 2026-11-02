@@ -173,7 +173,7 @@ development_status:
   epic-22: in-progress
   22-1-the-duplicate-key-is-address-plus-network: done
   22-2-a-wallet-has-one-network-for-life: done
-  22-3-one-card-per-wallet-with-name-address-and-network: backlog
+  22-3-one-card-per-wallet-with-name-address-and-network: done
   22-4-open-enters-that-wallet: backlog
   22-5-mainnet-import-states-one-neutral-fact: backlog
   epic-22-retrospective: optional

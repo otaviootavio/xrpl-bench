@@ -150,7 +150,7 @@ describe('Import with every lock closed', () => {
     expect(input).toMatchObject({ seed: SEED, network: 'testnet', openCheck: 'pin', signing: 'standard' })
     expect(ctx).toMatchObject({ pin: '123456', appPinExpected: true })
     expect(typeof ctx.confirmWrittenSeed).toBe('function')
-    expect(consumeAdded()).toBe('seed-new')
+    expect(consumeAdded()).toBe('w-new')
     expect(noticeText()).toContain('Wallet added.')
     // Never selects or enters the wallet.
     expect(setActiveWalletId).not.toHaveBeenCalled()

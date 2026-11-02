@@ -209,7 +209,7 @@ describe('AppShell route switch and guards (AD-32, AD-36)', () => {
     })
     act(() => void vi.advanceTimersByTime(50))
     expect(document.activeElement).toBe(screen.getByRole('heading', { level: 2, name: 'b' }))
-    expect(document.activeElement?.closest('[data-seed-id]')?.getAttribute('data-seed-id')).toBe('b')
+    expect(document.activeElement?.closest('[data-wallet-id]')?.getAttribute('data-wallet-id')).toBe('b')
     act(() => navigate('/wallets/new'))
     act(() => leaveScreen())
     act(() => void vi.advanceTimersByTime(50))

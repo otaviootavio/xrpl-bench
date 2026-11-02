@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { ConfigPlate } from '@/components/wallet/ConfigPlate'
+import { AddressBookPlate } from '@/components/wallet/AddressBookPlate'
 import { AddressDisplay } from '@/components/wallet/AddressDisplay'
 import { NetworkPlate } from '@/components/wallet/NetworkPlate'
 import { RemoveDialog, type RemoveTarget } from '@/components/wallet/RemoveDialog'
@@ -277,7 +278,9 @@ function RemovePlate({ wallet }: { wallet: WalletMeta }) {
 
   return (
     <ConfigPlate title="Remove this wallet">
-      <p className="text-sm text-muted-foreground">Remove this wallet on {network} from this device.</p>
+      <p className="text-sm text-muted-foreground">
+        Remove {wallet.label} on {network} and its Address Book from this device.
+      </p>
       <Button type="button" variant="danger" size="sm" className={KEY} data-configure-key={REMOVE_KEY} aria-label={`Remove ${wallet.label} on ${network}`} onClick={press}>
         Remove
       </Button>
@@ -338,6 +341,7 @@ export function WalletTab({ wallet }: { wallet: WalletMeta }) {
       </div>
       <IdentityPlate wallet={wallet} />
       <NamePlate wallet={wallet} />
+      <AddressBookPlate walletId={wallet.id} />
       <ChecksPlate wallet={wallet} />
       <SeedPlate wallet={wallet} />
       {/* A wallet either operates another account or holds the Account Master Key, so this plate always has something to say. */}

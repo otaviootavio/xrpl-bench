@@ -172,6 +172,12 @@ export function leaveWallet(queryClient: QueryClient, walletId: string): void {
  */
 export function removeWalletData(queryClient: QueryClient, removed: WalletMeta, remaining: readonly WalletMeta[]): void {
   const others = remaining.filter((w) => w.id !== removed.id)
+  // This wallet's saved addresses go with it (AD-50); a throw must not stop the rest of the scope.
+  try {
+    useAppStore.getState().removeAddressBook(removed.id)
+  } catch {
+    // fewer saved addresses only means more warnings
+  }
   const { openLocks } = useAppStore.getState()
   const stillHeld = others.some((w) => w.lockId in openLocks && w.network === removed.network && w.address === removed.address)
   if (!stillHeld) removeAccountScoped(queryClient, removed.network, removed.address)

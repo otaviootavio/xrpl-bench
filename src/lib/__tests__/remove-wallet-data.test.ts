@@ -93,6 +93,43 @@ describe('removeWalletData (AD-46)', () => {
     expect(has(qc, 'rA')).toBe(false)
   })
 
+  it('deletes the removed Wallet\'s Address Book list and no other (AD-50), including a view of the same Seed', () => {
+    const [a, b] = [W('a', 'LA', 'rA'), W('b', 'LA', 'rA2', { seedId: 'a' })]
+    useAppStore.setState({
+      wallets: [a, b],
+      openLocks: { LA: OPEN },
+      addressBook: { a: [{ address: 'rX' }], b: [{ address: 'rY' }] },
+    } as never)
+    removeWalletData(seeded('rA', 'rB'), a, [b])
+    expect(state().addressBook).toEqual({ b: [{ address: 'rY' }] })
+  })
+
+  it('does not throw when the removed Wallet had no list', () => {
+    const [a, b] = [W('a', 'LA', 'rA'), W('b', 'LB', 'rB')]
+    useAppStore.setState({ wallets: [a, b], openLocks: { LA: OPEN, LB: OPEN }, addressBook: { b: [{ address: 'rY' }] } } as never)
+    expect(() => removeWalletData(seeded('rA', 'rB'), a, [b])).not.toThrow()
+    expect(state().addressBook).toEqual({ b: [{ address: 'rY' }] })
+  })
+
+  it('still finishes the rest of the scope when removing the list throws', () => {
+    const [a, b] = [W('a', 'LA', 'rA'), W('b', 'LB', 'rB')]
+    useAppStore.setState({ wallets: [a, b], openLocks: { LA: OPEN, LB: OPEN } } as never)
+    const spy = vi.spyOn(state(), 'removeAddressBook').mockImplementation(() => {
+      throw new Error('boom')
+    })
+    const qc = seeded('rA', 'rB')
+    expect(() => removeWalletData(qc, a, [b])).not.toThrow()
+    expect(has(qc, 'rA')).toBe(false)
+    spy.mockRestore()
+  })
+
+  it('the chooser tree and /settings read no Address Book (AD-36)', async () => {
+    const { readFileSync } = await import('node:fs')
+    for (const f of ['src/pages/AppSettings.tsx', 'src/pages/Chooser.tsx', 'src/components/wallet/WalletCard.tsx']) {
+      expect(readFileSync(f, 'utf8'), f).not.toMatch(/addressBook|useAddressBook|AddressBookPlate/)
+    }
+  })
+
   it('never writes vault meta: it imports nothing that does', async () => {
     const { readFileSync } = await import('node:fs')
     const text = readFileSync('src/lib/teardown.ts', 'utf8')

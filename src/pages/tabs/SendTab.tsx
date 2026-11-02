@@ -11,7 +11,7 @@ import { TxLink } from '@/components/wallet/AddressLink'
 import { TxStatusBadge } from '@/components/wallet/TxStatusBadge'
 import { QueryErrorState } from '@/components/wallet/QueryErrorState'
 import { DevnetNotice } from '@/components/wallet/DevnetNotice'
-import { useAppStore, useActiveWallet, useActiveNetwork, useActiveNode, useWalletOpenKey } from '@/store/app-store'
+import { useAppStore, useActiveWallet, useActiveNetwork, useActiveNode, useWalletOpenKey, useAddressBook } from '@/store/app-store'
 import type { NetworkId } from '@/lib/xrpl/networks'
 import { ReadingValue } from '@/components/wallet/ReadingValue'
 import { useSpendableBalance } from '@/hooks/useSpendableBalance'
@@ -66,7 +66,8 @@ export function SendTab() {
   const vaultKey = useWalletOpenKey(wallet?.id)
   // The PIN dialog, for a Wallet whose Signing Check is the App PIN.
   const { prompts, promptOpen } = useYieldingPrompts()
-  const addressBook = useAppStore((s) => s.addressBook)
+  // Only the sending Wallet's own list decides the warning (AD-50).
+  const addressBook = useAddressBook(wallet?.id)
   const addAddressBookEntry = useAppStore((s) => s.addAddressBookEntry)
   const queryClient = useQueryClient()
 
@@ -446,7 +447,7 @@ export function SendTab() {
         // The pair actually paid, on the network it was submitted on — the
         // tag that was signed, as text — and no label: nothing here knows a
         // name for it, and a truncated address is not one.
-        if (!isKnownDestination) addAddressBookEntry(counterparty)
+        if (!isKnownDestination) addAddressBookEntry(wallet.id, counterparty)
       } else if (result.status === 'expired') {
         toast.warning('This transaction expired before validating. It was not applied — you can retry.', { action: 'send' })
       } else if (result.status === 'claimed') {

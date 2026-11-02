@@ -94,7 +94,7 @@ describe('Configure Remove plate', () => {
     expect(key().textContent).toBe('Remove')
     expect(key().className).toMatch(/border-destructive\/55/)
     expect(key().className).not.toMatch(/(^|\s)bg-destructive(\s|$)/)
-    expect(within(plate).getByText('Remove this wallet on Testnet from this device.')).toBeTruthy()
+    expect(within(plate).getByText('Remove Savings on Testnet and its Address Book from this device.')).toBeTruthy()
   })
 
   it.each([

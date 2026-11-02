@@ -54,7 +54,7 @@ describe('Gate — legacy vault migration at app start', () => {
   it('runs after hydration, with the hydrated network and auto-lock, and before listWallets', async () => {
     h.idb.set(
       'xrpl-wallet-app-state',
-      JSON.stringify({ state: { network: 'mainnet', autoLockMinutes: 15, wallets: [], addressBook: [] }, version: 0 }),
+      JSON.stringify({ state: { network: 'mainnet', autoLockMinutes: 15, wallets: [], addressBook: {} }, version: 0 }),
     )
     await mountApp()
     await waitFor(() => expect(h.list).toHaveBeenCalled())

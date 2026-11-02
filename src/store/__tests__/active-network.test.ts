@@ -8,7 +8,7 @@ vi.mock('@/lib/crypto/lock', () => ({ endLockSession: async () => {}, endAllLock
 import { mergePersistedAppState, useAppStore, useActiveNetwork, useActiveNode } from '../app-store'
 
 const base = { label: 'W', address: 'rA', createdAt: 1, algorithm: 'ed25519', openCheck: 'pin', signingCheck: 'standard' }
-const current: Parameters<typeof mergePersistedAppState>[1] = { network: 'testnet', wallets: [], activeWalletId: null, addressBook: [], autoLockMinutes: 5, declinedUpdateVersions: [] }
+const current: Parameters<typeof mergePersistedAppState>[1] = { network: 'testnet', wallets: [], activeWalletId: null, addressBook: {}, autoLockMinutes: 5, declinedUpdateVersions: [] }
 
 describe('legacy persisted state is normalised on merge', () => {
   it('a Wallet meta without node keeps built-in Nodes; devnet is accepted; unknown network falls back to the persisted one', () => {

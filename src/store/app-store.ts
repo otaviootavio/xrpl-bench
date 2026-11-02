@@ -18,9 +18,10 @@ interface AppState {
   network: NetworkId
   wallets: WalletMeta[]
   activeWalletId: string | null
-  /** Identity is the `(address, destination tag)` pair — see
+  /** One list per Wallet, keyed by `WalletMeta.id` (AD-50). Identity inside a
+   * list is the `(network, address, destination tag)` triple — see
    * `store/address-book.ts`, the one place that decides it (AD-6). */
-  addressBook: AddressBookEntry[]
+  addressBook: Record<string, AddressBookEntry[]>
   /** NOT read by anything (AD-26): each lock's auto-lock minutes live on its
    * lock record. Kept only as the migration's input — the value a pre-story-4
    * build had persisted becomes the legacy lock's minutes — and so a rolled-back
@@ -51,7 +52,10 @@ interface AppState {
 
   setWallets: (wallets: WalletMeta[]) => void
   setActiveWalletId: (id: string | null) => void
-  addAddressBookEntry: (entry: AddressBookEntry) => void
+  /** Saves under the sending Wallet only; ignored if that Wallet is gone. */
+  addAddressBookEntry: (walletId: string, entry: AddressBookEntry) => void
+  /** Deletes one Wallet's list (teardown). Never throws. */
+  removeAddressBook: (walletId: string) => void
   declineUpdateVersion: (id: string) => void
   setTxInFlight: (inFlight: boolean) => void
   /** Records a lock as open and starts its expiry. */
@@ -126,7 +130,7 @@ const PERSISTED_DEFAULTS: PersistedAppState = {
   network: 'testnet',
   wallets: [],
   activeWalletId: null,
-  addressBook: [],
+  addressBook: {},
   autoLockMinutes: 5,
   declinedUpdateVersions: [],
 }
@@ -163,6 +167,39 @@ function normaliseWallets(persisted: unknown, persistedNetwork: unknown, fallbac
 }
 
 /**
+ * Per-Wallet Address Book (AD-50). An old array-shaped book, or anything that is
+ * not a plain object, reads as `{}` (AD-48: no migration of the array). Each
+ * stored list is cleaned with `migrateAddressBook`. Total, never throws; a
+ * `__proto__` key is skipped and the map is built with `Object.fromEntries`.
+ */
+function normaliseAddressBook(persisted: unknown): Record<string, AddressBookEntry[]> {
+  if (!persisted || typeof persisted !== 'object' || Array.isArray(persisted)) return {}
+  try {
+    return Object.fromEntries(
+      Object.entries(persisted as Record<string, unknown>)
+        .filter(([id]) => id !== '__proto__')
+        .map(([id, list]) => [id, migrateAddressBook(list)] as const),
+    )
+  } catch {
+    return {}
+  }
+}
+
+/** The one shared empty list: a fresh `[]` per selector call re-renders forever. */
+const EMPTY_ADDRESS_BOOK: readonly AddressBookEntry[] = Object.freeze([])
+
+/** One Wallet's list, or the shared frozen empty one (no Wallet, no list, or an
+ * unhydrated store). Own-property read, so `__proto__` or `constructor` ids find nothing. */
+export function selectAddressBook(walletId: string | null | undefined) {
+  return (s: Pick<AppState, 'addressBook'>): readonly AddressBookEntry[] =>
+    walletId && Object.prototype.hasOwnProperty.call(s.addressBook, walletId) ? s.addressBook[walletId] : EMPTY_ADDRESS_BOOK
+}
+
+export function useAddressBook(walletId: string | null | undefined): readonly AddressBookEntry[] {
+  return useAppStore(selectAddressBook(walletId))
+}
+
+/**
  * Reads the persisted slice into the current shape, on every hydration — the
  * Address Book migration (Epic 9).
  *
@@ -194,7 +231,7 @@ export function mergePersistedAppState<S extends PersistedAppState>(persisted: u
   return {
     ...current,
     ...(state as Partial<PersistedAppState>),
-    addressBook: migrateAddressBook(state.addressBook),
+    addressBook: normaliseAddressBook(state.addressBook),
     wallets: normaliseWallets(state.wallets, state.network, current.network, current.wallets),
   }
 }
@@ -242,7 +279,18 @@ export const useAppStore = create<AppState>()(
 
       setWallets: (wallets) => set({ wallets }),
       setActiveWalletId: (activeWalletId) => set({ activeWalletId }),
-      addAddressBookEntry: (entry) => set((s) => ({ addressBook: upsertAddressBookEntry(s.addressBook, entry) })),
+      addAddressBookEntry: (walletId, entry) =>
+        set((s) => {
+          // A removal mid-send must not resurrect the key.
+          if (!s.wallets.some((w) => w.id === walletId)) return s
+          const current = Object.prototype.hasOwnProperty.call(s.addressBook, walletId) ? s.addressBook[walletId] : []
+          return { addressBook: { ...s.addressBook, [walletId]: upsertAddressBookEntry(current, entry) } }
+        }),
+      removeAddressBook: (walletId) =>
+        set((s) => {
+          if (!Object.prototype.hasOwnProperty.call(s.addressBook, walletId)) return s
+          return { addressBook: Object.fromEntries(Object.entries(s.addressBook).filter(([id]) => id !== walletId)) }
+        }),
       declineUpdateVersion: (id) =>
         set((s) => (s.declinedUpdateVersions.includes(id) ? s : { declinedUpdateVersions: [...s.declinedUpdateVersions, id] })),
       setTxInFlight: (txInFlight) => set({ txInFlight }),

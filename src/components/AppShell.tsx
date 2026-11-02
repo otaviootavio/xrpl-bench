@@ -24,7 +24,7 @@ export function walletInView(route: Route, activeWalletId: string | null): strin
 }
 
 /**
- * The chooser-side header: the nameplate and the Settings key, nothing that reads
+ * The chooser-side header: the nameplate and the XRPL Bench key, nothing that reads
  * a wallet (AD-36). The key's name and text carry the update marker (never a
  * modal, never a redirect); the lamp is aria-hidden and the words carry it.
  */
@@ -45,7 +45,7 @@ function SettingsKey() {
       className="h-auto min-h-8 max-w-full whitespace-normal py-1 pointer-coarse:min-h-11"
       onClick={() => navigate(SETTINGS_PATH)}
     >
-      {marked ? 'Settings, update available' : 'Settings'}
+      {marked ? 'XRPL Bench, update available' : 'XRPL Bench'}
       {marked && <Lamp tone="caution" className="ml-1" />}
     </Button>
   )
@@ -97,7 +97,7 @@ export function AppShell() {
       // Entering a wallet from the Chooser: the main region, as the skip link's target (UX-DR10).
       document.getElementById('main-content')?.focus()
     } else if (before?.route.screen === 'chooser' && route.screen === 'settings') {
-      // The Settings key unmounted with the chooser: the screen names itself.
+      // The XRPL Bench key unmounted with the chooser: the screen names itself.
       document.getElementById('settings-heading')?.focus()
     }
     // An announced add the Chooser never saw (Add wallet was opened from a wallet's Settings) must not move focus later.

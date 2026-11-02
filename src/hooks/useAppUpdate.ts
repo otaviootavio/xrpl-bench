@@ -38,7 +38,7 @@ let updateSW: UpdateSW | null = null
  * or security-marked release additionally raises a real Annunciator notice —
  * reachable from any tab, exactly the surface S16/S17 built for this. Module
  * state, not component state, because `useAppUpdate` is called from both
- * `useUpdateMarker` (the chooser's Settings key) and `AppSettings`; without this, each mounted caller would raise its
+ * `useUpdateMarker` (the chooser's XRPL Bench key and the Wallets key) and `AppSettings`; without this, each mounted caller would raise its
  * own copy of the same notice.
  */
 let insistentNoticeCommit: string | null = null

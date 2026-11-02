@@ -1181,7 +1181,7 @@ test runner cannot resolve at all, mockable or not — behind a one-line
 indirection, `src/lib/sw-register.ts`; the hook now imports `registerSW` from
 there instead of the virtual module directly.
 
-**Amended (chooser story 17, AD-45; Epic 23 story 1).** `SettingsTab` no longer exists, and the in-wallet Settings tab is now the Wallet tab (this wallet's own settings; the Configure screen, route and header key are retired with no alias). `AppSettings` (Version and updates, Remove all; the Address Book moved to the Wallet tab in Epic 23 story 2) is served by `/settings` only. `useAppUpdate` is now called
+**Amended (chooser story 17, AD-45; Epic 23 story 1).** `SettingsTab` no longer exists, and the in-wallet Settings tab is now the Wallet tab (this wallet's own settings; the Configure screen, route and header key are retired with no alias). `AppSettings` (Version and updates, Remove all; the Address Book moved to the Wallet tab in Epic 23 story 2) is served by `/settings` only. **Epic 23 story 3:** the chooser key and the `/settings` page are named "XRPL Bench" (h1 "XRPL Bench settings"), the Remove all plate is "All wallets on this device" with the wallet count and the App PIN stated, and the update marker moved to the wallet header's Wallets key ("Wallets, update available", open or locked wallet; applying stays in `/settings`). `useAppUpdate` is now called
 from `useUpdateMarker` and `AppSettings`; the per-release module-scoped notice
 guard and the pre-unlock build stamp (§10.2) are unchanged.
 

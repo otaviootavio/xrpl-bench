@@ -178,10 +178,10 @@ development_status:
   22-5-mainnet-import-states-one-neutral-fact: done
   epic-22-retrospective: optional
 
-  epic-23: in-progress
+  epic-23: done
   23-1-the-wallet-tab-holds-this-wallet-s-settings: done
   23-2-the-address-book-belongs-to-a-wallet: done
-  23-3-xrpl-bench-s-settings-and-the-update-marker-on-the-wallets-k: backlog
+  23-3-xrpl-bench-s-settings-and-the-update-marker-on-the-wallets-k: done
   epic-23-retrospective: optional
 action_items:
   - id: "epic-5-retro-item-1-make-send-s-token-path-fail-closed-on-a"

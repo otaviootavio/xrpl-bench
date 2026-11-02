@@ -140,6 +140,18 @@ describe('first run after a removal whose App PIN discard failed (AD-46)', () =>
     expect(screen.getByRole('button', { name: 'Erase everything' })).toBeTruthy()
   })
 
+  it('the plate reads "All wallets on this device", the screen\'s line, "No wallet is stored here." and the PIN sentence; never "removes 0"', async () => {
+    h.appPinResidue.mockResolvedValue(true)
+    useAppStore.setState({ wallets: [] } as never) // first run has no wallet
+    render(<Onboarding />)
+    await waitFor(() => expect(offer()).not.toBeNull())
+    expect(screen.getByText('All wallets on this device')).toBeTruthy()
+    expect(screen.getByText(/left over from a wallet that was removed/)).toBeTruthy()
+    expect(screen.getByText('No wallet is stored here.')).toBeTruthy()
+    expect(screen.getByText('It also removes the App PIN, if you set one.')).toBeTruthy()
+    expect(screen.queryByText(/removes 0/)).toBeNull()
+  })
+
   it('offers nothing on a clean device', async () => {
     render(<Onboarding />)
     await waitFor(() => expect(h.appPinResidue).toHaveBeenCalled())

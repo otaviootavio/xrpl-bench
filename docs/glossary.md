@@ -59,5 +59,5 @@ These are the words the chooser spec uses. They are not in PRD §3 yet.
 | **Card** | One Seed on the chooser. A locked card shows its name and nothing else. |
 | **View** | One Wallet of a Seed on one Network. A card has one row per view. |
 | **Wallet tab** | The sixth in-wallet tab, replacing the Configure screen and its header key (Epic 23, story 1). It holds this wallet's own settings: identity, Name, Checks, Seed, Operating another account, Node, Two-device signing, Remove this wallet. App-level items stay on `/settings`. |
-| **Settings** | After the split, only what belongs to the whole device. |
+| **XRPL Bench settings** | The chooser key and the `/settings` page (formerly "Settings"): only what belongs to the whole device — Version and updates, and "All wallets on this device". The update marker shows on this key and on the wallet header's Wallets key. |
 | **Enter / leave a wallet** | Going into a wallet's tabs, or back to the chooser. Leaving does not close the wallet's lock. |

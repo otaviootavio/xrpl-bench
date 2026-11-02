@@ -92,38 +92,38 @@ afterEach(() => {
   useAppStore.getState().closeAllLocks()
 })
 
-describe('the Chooser header Settings key', () => {
-  it('shows the nameplate and a Settings key', () => {
+describe('the Chooser header XRPL Bench key', () => {
+  it('shows the nameplate and an XRPL Bench key', () => {
     mount()
-    expect(screen.getByText('XRPL Bench')).toBeTruthy()
-    const key = screen.getByRole('button', { name: 'Settings' })
-    expect(key.textContent).toBe('Settings')
+    expect(screen.getAllByText('XRPL Bench')).toHaveLength(2)
+    const key = screen.getByRole('button', { name: 'XRPL Bench' })
+    expect(key.textContent).toBe('XRPL Bench')
   })
 
-  it('reads "Settings, update available" as text and name when an update waits', () => {
+  it('reads "XRPL Bench, update available" as text and name when an update waits', () => {
     h.update = { updateReady: true, declined: false }
     mount()
-    const key = screen.getByRole('button', { name: 'Settings, update available' })
-    expect(key.textContent).toBe('Settings, update available')
+    const key = screen.getByRole('button', { name: 'XRPL Bench, update available' })
+    expect(key.textContent).toBe('XRPL Bench, update available')
   })
 
   it('a declined release does not relight it', () => {
     h.update = { updateReady: true, declined: true }
     mount()
-    expect(screen.getByRole('button', { name: 'Settings' }).textContent).toBe('Settings')
+    expect(screen.getByRole('button', { name: 'XRPL Bench' }).textContent).toBe('XRPL Bench')
   })
 
-  it('opens /settings: h1 Settings, the app-level plates, a Wallets back key; Back returns to the chooser', async () => {
+  it('opens /settings: h1 XRPL Bench settings, the app-level plates, a Wallets back key; Back returns to the chooser', async () => {
     mount()
-    fireEvent.click(screen.getByRole('button', { name: 'Settings' }))
+    fireEvent.click(screen.getByRole('button', { name: 'XRPL Bench' }))
     expect(window.location.pathname).toBe('/settings')
-    expect(screen.getByRole('heading', { level: 1, name: 'Settings' })).toBeTruthy()
+    expect(screen.getByRole('heading', { level: 1, name: 'XRPL Bench settings' })).toBeTruthy()
     await waitFor(() => expect(document.activeElement?.id).toBe('settings-heading')) // the pressed key unmounted
     expect(screen.getByRole('heading', { name: 'Version' })).toBeTruthy()
     expect(screen.queryByRole('heading', { name: /^Address book$/i })).toBeNull()
     expect(screen.getByRole('button', { name: /remove all wallets from this device/i })).toBeTruthy()
     // The key is the chooser's; the settings screen offers the Wallets back key instead.
-    expect(screen.queryByRole('button', { name: 'Settings' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'XRPL Bench' })).toBeNull()
     await act(async () => void fireEvent.click(screen.getByRole('button', { name: 'Wallets' })))
     await waitFor(() => expect(window.location.pathname).toBe('/'))
     expect(screen.getByRole('heading', { level: 1, name: 'Wallets' })).toBeTruthy()
@@ -145,7 +145,7 @@ describe('one marker predicate', () => {
     expect(screen.getByText(word)).toBeTruthy()
   })
 
-  it('the in-wallet tab list carries no update marker (story 3 moves it to the Wallets key)', async () => {
+  it('the in-wallet tab list carries no update marker (it sits on the Wallets key)', async () => {
     const { readFileSync } = await import('node:fs')
     const main = readFileSync(`${process.cwd()}/src/pages/Main.tsx`, 'utf8')
     expect(main).not.toMatch(/useUpdateMarker|Lamp/)
@@ -160,7 +160,7 @@ describe('/settings reads no wallet and no ledger (AD-36)', () => {
     mount()
     h.walletHooks.mockClear()
     act(() => navigate('/settings'))
-    expect(screen.getByRole('heading', { level: 1, name: 'Settings' })).toBeTruthy()
+    expect(screen.getByRole('heading', { level: 1, name: 'XRPL Bench settings' })).toBeTruthy()
     expect(qc.getQueryCache().getAll()).toHaveLength(0)
     expect(h.getXrplClient).not.toHaveBeenCalled()
     expect(h.walletHooks).not.toHaveBeenCalled()
@@ -176,6 +176,30 @@ describe('/settings reads no wallet and no ledger (AD-36)', () => {
     // `Main` (the tab's owner) is chooser-side absent: one copy of the component, the one /settings mounts.
     expect(screen.queryByText('wallet-content')).toBeNull()
     expect(screen.getAllByRole('heading', { name: 'Version' })).toHaveLength(1)
+  })
+})
+
+describe('the All wallets on this device plate', () => {
+  it.each([
+    [1, 'This removes 1 wallet.'],
+    [3, 'This removes 3 wallets.'],
+  ])('%i wallet(s): states the count and the App PIN, with no ledger request', (n, line) => {
+    useAppStore.setState({ wallets: Array.from({ length: n }, (_, i) => W(`w${i}`, `L${i}`)), activeWalletId: 'w0', openLocks: {} } as never)
+    mount()
+    act(() => navigate('/settings'))
+    expect(screen.getByText('All wallets on this device')).toBeTruthy()
+    expect(screen.getByText(line)).toBeTruthy()
+    expect(screen.getByText('It also removes the App PIN, if you set one.')).toBeTruthy()
+    expect(screen.getByText(/^These settings are for the whole app\./)).toBeTruthy()
+    expect(h.getXrplClient).not.toHaveBeenCalled()
+    expect(qc.getQueryCache().getAll()).toHaveLength(0)
+  })
+
+  it('shows no Address Book and no per-wallet control', () => {
+    mount()
+    act(() => navigate('/settings'))
+    expect(screen.queryByRole('heading', { name: /address book/i })).toBeNull()
+    expect(screen.queryByRole('button', { name: /rename|remove wallet|configure|auto-lock/i })).toBeNull()
   })
 })
 

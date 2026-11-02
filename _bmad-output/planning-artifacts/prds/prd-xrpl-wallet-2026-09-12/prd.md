@@ -137,7 +137,7 @@ restated only to the depth an FR needs; the full set lives in
   chooser opens on no Wallet.*
 - **Chooser** — *planned (FR-79).* The first screen: one card per Seed, showing
   names and lock states only.
-- **Configure screen** — *planned (FR-88).* One screen per open Wallet holding
+- **Configure screen** — *planned (FR-88); to become the Wallet's Settings tab (FR-94).* One screen per open Wallet holding
   everything that belongs to that Wallet alone.
 - **Account Master Key** — an XRPL Account's own master key pair, the one its
   address is derived from. Distinct from the app's **Master Key** below. Where a
@@ -344,7 +344,7 @@ requirement exists to prevent.
   but does not lock it. Locking stays a separate action.*
 
 ### 4.3 Multi-Wallet Management
-*Detail: `docs/user-stories/multi-wallet-management.md`. FR-79 to FR-90: `_bmad-output/specs/spec-wallet-chooser/SPEC.md`. FR-91: planned, no spec yet. FR-92, FR-93: planned (2026-10-30, 2026-11-02).*
+*Detail: `docs/user-stories/multi-wallet-management.md`. FR-79 to FR-90: `_bmad-output/specs/spec-wallet-chooser/SPEC.md`. FR-91: planned, no spec yet. FR-92, FR-93, FR-94: planned (2026-10-30, 2026-11-02).*
 
 #### FR-13: Add, list, and remove Wallets
 The user can hold several independent Wallets and remove any of them.
@@ -357,6 +357,8 @@ The user can hold several independent Wallets and remove any of them.
 - *Planned change (FR-79 to FR-87): adding, renaming and removing a Wallet move
   to the chooser. Removing the last Wallet also deletes the App PIN, since
   nothing on the device uses it any more, and the confirm step says so.*
+- *Planned change (FR-94): removing a Wallet also removes that Wallet's Address
+  Book entries, and the confirm step says so.*
 
 #### FR-14: Exactly one Active Wallet
 The Active Wallet is the one the user last chose to open. Every read and every
@@ -480,6 +482,8 @@ every lock is closed.
   own change (§10).*
 
 #### FR-88: A Configure screen for each Wallet
+*Planned change (FR-94, decided 2026-11-02): there is no separate Configure screen or header key. Everything below is the Settings tab inside the Wallet, which is that Wallet's own settings. Back and the Wallets key behave as FR-83 says.*
+
 Each open Wallet has one Configure screen for everything that belongs to that
 Wallet alone, reached from its card and from the Wallet's header. *Planned change (FR-92): reached from the Wallet's header only, and it also holds Rename and Remove. Planned change (FR-93): no "Other networks" section.*
 - It holds, in this order: Checks (with auto-lock, FR-10), Seed (reveal,
@@ -493,6 +497,8 @@ Wallet alone, reached from its card and from the Wallet's header. *Planned chang
   its Back returns to Configure.
 
 #### FR-89: Settings holds only what belongs to the app
+*Planned change (FR-94): the Address Book leaves it (it is the Wallet's, FR-45). Settings is reached from the chooser only; inside a Wallet the Settings tab is that Wallet's own settings.*
+
 Settings contains the Address Book (FR-45), Version and updates (§4.12), and
 Remove all Wallets from this device. It holds no per-Wallet control, no Lock now
 and no auto-lock.
@@ -575,6 +581,8 @@ them choose every setting. It does not offer a shortcut.
   reworking it. Decided 2026-10-29.
 
 #### FR-92: Rename and Remove live on the Wallet's Configure screen
+*Planned change (FR-94): they are sections of the Wallet's Settings tab, and the Wallet's header has no Configure key.*
+
 *Planned, not built. Decided 2026-10-30. Changes FR-81, FR-85, FR-86 and FR-88.*
 
 A Wallet's card on the chooser has two actions at most: **Open**, and **Lock**
@@ -633,6 +641,28 @@ A Wallet is one address on one Network, for its whole life.
   it. Rename, Remove, the Mainnet floor (FR-65) and FR-13's removal rules are
   unchanged.
 
+#### FR-94: Every setting is the Wallet's or XRPL Bench's
+*Planned, not built. Decided 2026-11-02. Changes FR-13, FR-21, FR-45, FR-88, FR-89 and FR-92.*
+
+A setting belongs either to one Wallet or to the app as a whole, never both, and
+the words on screen say which.
+- **Inside a Wallet, the Settings tab is that Wallet's own settings.** It holds
+  what the Configure screen holds (Name, Checks with auto-lock, Seed, Operating
+  another account, Node, Two-device signing, Remove this Wallet) and that
+  Wallet's Address Book. The separate Configure screen and the header's
+  Configure key are gone.
+- **On the chooser, Settings is XRPL Bench's.** It holds Version and updates
+  (§4.12, FR-90) and Remove all Wallets from this device (FR-89), and no
+  Address Book and no per-Wallet control. It is reached from the chooser only.
+  Nothing app-wide, such as "Remove all Wallets", is shown inside a Wallet.
+- **The Address Book belongs to a Wallet (FR-45).** It shows only that Wallet's
+  addresses, the first-time warning (FR-21) tests only against it, and removing
+  the Wallet removes its entries (FR-13).
+- **No backward compatibility.** Entries in the old shared Address Book are not
+  migrated. The owner clears their own device.
+- *Open (§10, item 15): the order of the plates and the words that tell the user
+  "this Wallet" from "XRPL Bench" are for the UX pass.*
+
 ### 4.4 Sending Payments
 *Detail: `docs/user-stories/sending-payments.md`*
 
@@ -673,6 +703,8 @@ incomplete destination.
 #### FR-21: First-time-destination warning
 Sending to an address not in the Address Book shows a "you haven't sent here
 before" step.
+- *Planned change (FR-94): "the Address Book" is the sending Wallet's own. An
+  address another Wallet sent to is new to this one.*
 
 #### FR-22: Submitted vs. validated distinction
 The app never reports a submitted transaction as final.
@@ -850,6 +882,10 @@ reported, not repaired; see `addendum.md` §7.*
 The user can label addresses locally.
 - Labels are device-local. There is no on-chain and no synced component.
 - The Address Book is what FR-21 tests "first time" against.
+- *Planned change (FR-94): the Address Book belongs to a Wallet. Each Wallet
+  shows only the addresses it sent to, and its entries are removed with it. A
+  Wallet is one Network (FR-93), so an entry's Network is its Wallet's. Nothing
+  is migrated from the shared book (no backward compatibility).*
 
 ### 4.12 App Versioning and User-Controlled Updates
 *Detail: `docs/user-stories/app-versioning-and-updates.md`*
@@ -1490,6 +1526,10 @@ for §4.14. All three were answered by Otavio on 2026-10-10.
     *Owner: Otavio. Revisit: after Epics 17 to 19, as its own story.*
 14. **Exact wording of the Mainnet Import sentence** (FR-93). Neutral, one fact,
     under 21 words. *Owner: Otavio. Revisit: in the FR-93 spec.*
+15. **Plate order and "this Wallet" against "XRPL Bench" wording** (FR-94). Which
+    order the Settings tab keeps (the Configure order, with the Address Book
+    where) and the words that say whose a setting is. *Owner: Otavio. Revisit:
+    in the UX pass, before the FR-94 spec.*
 
 **Defects in the authoritative inputs, reported and not repaired.** These are not
 open questions about the product — they are places where a document this PRD

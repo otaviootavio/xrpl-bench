@@ -89,17 +89,17 @@ describe('Main with the real Wallet tab', () => {
         </PromptsContext.Provider>
       </QueryClientProvider>,
     )
-    const walletTab = screen.getByRole('tab', { name: 'Wallet' })
+    const walletTab = screen.getByRole('tab', { name: 'Local settings' })
     fireEvent.mouseDown(walletTab)
     fireEvent.click(walletTab)
-    await waitFor(() => expect(screen.getByRole('tab', { name: 'Wallet' }).getAttribute('aria-selected')).toBe('true'))
+    await waitFor(() => expect(screen.getByRole('tab', { name: 'Local settings' }).getAttribute('aria-selected')).toBe('true'))
 
     fireEvent.click(await screen.findByRole('button', { name: 'Edit checks' }))
     const back = await screen.findByRole('button', { name: /Back to Wallet/ })
     expect(back.textContent).toBe('Back to Wallet')
     fireEvent.click(back)
 
-    await waitFor(() => expect(screen.getByRole('tab', { name: 'Wallet' }).getAttribute('aria-selected')).toBe('true'))
+    await waitFor(() => expect(screen.getByRole('tab', { name: 'Local settings' }).getAttribute('aria-selected')).toBe('true'))
     const key = await screen.findByRole('button', { name: 'Edit checks' })
     await waitFor(() => expect(document.activeElement).toBe(key))
   })

@@ -15,7 +15,7 @@ import { useActiveWallet, useActiveNetwork, useActiveNode, useWalletIsOpen } fro
 import { useIncomingPaymentNotifications } from '@/hooks/useIncomingPaymentNotifications'
 import { useAccountLiveUpdates } from '@/hooks/useAccountLiveUpdates'
 
-/** The Wallet tab for the active Wallet; `OpenWallet` mounts it, so the lock is open. */
+/** The Local settings tab for the active Wallet; `OpenWallet` mounts it, so the lock is open. */
 function WalletPanel() {
   const wallet = useActiveWallet()
   return wallet ? <WalletTab key={wallet.id} wallet={wallet} /> : null
@@ -24,7 +24,7 @@ function WalletPanel() {
 /**
  * The six functions, in a fixed order that never changes with state.
  *
- * Each panel carries its own `<h1>` naming the screen (the Wallet tab's is visible and names the wallet). The product name in the
+ * Each panel carries its own `<h1>` naming the screen (the Local settings tab's is visible and names the wallet). The product name in the
  * header is a constant and therefore cannot be the document's heading: with it
  * as the `<h1>`, the accessibility outline read identically on all six tabs and
  * never said where you were (docs/decisions.md §6.4). Radix unmounts inactive
@@ -32,8 +32,8 @@ function WalletPanel() {
  *
  * That heading is visually hidden because the selected tab already states the
  * screen on screen, with `aria-selected` — a visible duplicate would be
- * redundant ink on a dense panel. The outline needs the node; the eye does not. The Wallet tab is the
- * exception: its h1 reads "Settings for <name>" and is on screen, because it says whose settings follow.
+ * redundant ink on a dense panel. The outline needs the node; the eye does not. The Local settings tab is the
+ * exception: its h1 is on screen as the fixed label "Local settings" and the wallet's name as its own span, because it says whose settings follow.
  */
 const PANELS = [
   { value: 'balances', label: 'Balances', heading: 'Balances', Panel: BalancesTab },
@@ -41,7 +41,7 @@ const PANELS = [
   { value: 'receive', label: 'Receive', heading: 'Receive a payment', Panel: ReceiveTab },
   { value: 'history', label: 'History', heading: 'Transaction history', Panel: HistoryTab },
   { value: 'trustlines', label: 'Tokens', heading: 'Tokens and trust lines', Panel: TrustLinesTab },
-  { value: 'wallet', label: 'Wallet', heading: null, Panel: WalletPanel },
+  { value: 'wallet', label: 'Local settings', heading: null, Panel: WalletPanel },
 ] as const
 
 /** The six panels and every ledger hook behind them. Mounted ONLY while the
@@ -54,7 +54,7 @@ function OpenWallet() {
   useIncomingPaymentNotifications(network, wallet?.address ?? null, node)
   useAccountLiveUpdates(network, wallet?.address ?? null, node)
   const route = useRoute()
-  // Held here, not in `Tabs`, so the tab the user left (Wallet) is the one a
+  // Held here, not in `Tabs`, so the tab the user left (Local settings) is the one a
   // screen returns to; the live hooks above stay mounted behind the screen.
   const [tab, setTab] = useState<string>(isTaskRoute(route) ? 'wallet' : 'balances')
   // A task screen left by the Wallets key, Lock or auto-lock must not leave its focus-return key behind.

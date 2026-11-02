@@ -15,6 +15,7 @@ import { MasterKeyControl } from '@/components/wallet/MasterKeyControl'
 import { TwoDeviceSign } from '@/components/wallet/TwoDeviceSign'
 import { WalletNodeSection } from '@/components/wallet/WalletNodeSection'
 import { RevealSeedControl } from '@/components/wallet/RevealSeedControl'
+import { formatAlgorithm, formatNode, formatSeedMethod, QUESTION_TERMS } from '@/components/wallet/walk-questions'
 import {
   NO_OPEN_CHECK_DETAIL,
   OPEN_CHECK_QUESTION,
@@ -42,6 +43,10 @@ const KEY = 'h-auto min-h-8 w-fit max-w-full whitespace-normal py-1 pointer-coar
 
 /** The data-attribute a task screen's return lands on. */
 const EDIT_CHECKS_KEY = 'edit-checks'
+
+/** The plates a setup line's key moves focus to (`ConfigPlate` `focusId`). */
+const CHECKS_PLATE = 'checks'
+const NODE_PLATE = 'node'
 
 /**
  * The lock's auto-lock minutes (AD-44). The keystore re-proves the lock's Open Check
@@ -170,7 +175,7 @@ function ChecksPlate({ wallet }: { wallet: WalletMeta }) {
   const signing = wallet.seedMethod === 'passkey-derived' ? 'passkey' : wallet.signingCheck
 
   return (
-    <ConfigPlate title="Checks">
+    <ConfigPlate title="Checks" focusId={CHECKS_PLATE}>
       {lock.isError ? (
         // A failed read is never shown as "no check" or as a current one.
         <>
@@ -294,30 +299,62 @@ function RemovePlate({ wallet }: { wallet: WalletMeta }) {
   )
 }
 
+/** Moves focus to a plate the same way a dialog's return does (`data-configure-plate`, no second pattern). */
+function focusPlate(id: string) {
+  document.querySelector<HTMLElement>(`[data-configure-plate="${CSS.escape(id)}"]`)?.focus()
+}
+
+const noStop = (text: string) => text.replace(/\.$/, '')
+
+/** One read-only line of what was chosen at creation: its legend, its words, and where it can be changed. */
+function SetupLine({ term, value, keyLabel, keyHint, onKey }: { term: string; value: string; keyLabel?: string; keyHint?: string; onKey?: () => void }) {
+  return (
+    <div className="flex min-w-0 flex-wrap items-center justify-between gap-x-3 gap-y-1">
+      <div className="min-w-0 flex-1 basis-40">
+        <dt className="panel-legend">{term}</dt>
+        <dd className="mt-0.5 break-words">{value}</dd>
+      </div>
+      {keyLabel && onKey ? (
+        <Button type="button" variant="outline" size="sm" className={KEY} aria-label={`${keyLabel}, for ${keyHint ?? term}`} onClick={onKey}>
+          {keyLabel}
+        </Button>
+      ) : (
+        <span className="text-xs text-muted-foreground">Fixed at creation</span>
+      )}
+    </div>
+  )
+}
+
 /**
- * Who this wallet is: its Name, its Network in words and its full Address. The wallet header shows
- * no address, so it is repeated here for a user checking which account these settings belong to.
+ * Who this wallet is: its full Address, and what was chosen when it was created, read-only from the
+ * `WalletMeta` (no ledger read). The name and the Network are in the page heading, so they are not
+ * repeated. The curve and the Seed Method have no plate, so they say so in words; the rest have a key
+ * that moves focus to the plate where they change. The words are the quiz's (`walk-questions`, `check-words`).
  */
 function IdentityPlate({ wallet }: { wallet: WalletMeta }) {
+  const signing = wallet.seedMethod === 'passkey-derived' ? 'passkey' : wallet.signingCheck
   return (
     <ConfigPlate title="This wallet">
-      <dl className="flex flex-col gap-2 text-sm">
-        <div className="min-w-0">
-          <dt className="panel-legend">Name</dt>
-          <dd className="mt-0.5 break-words">{wallet.label}</dd>
-        </div>
-        <div className="min-w-0">
-          <dt className="panel-legend">Network</dt>
-          <dd className="mt-0.5 break-words">{NETWORKS[wallet.network].label}</dd>
-        </div>
-      </dl>
       <AddressDisplay address={wallet.address} />
+      <dl className="flex flex-col gap-2.5 text-sm">
+        <SetupLine term={QUESTION_TERMS['Signature type']} value={wallet.algorithm === 'unresolved' ? 'Unknown' : formatAlgorithm(wallet.algorithm)} />
+        <SetupLine term={QUESTION_TERMS['Seed Method']} value={formatSeedMethod(wallet.seedMethod)} />
+        <SetupLine
+          term={QUESTION_TERMS.Node}
+          value={formatNode(wallet.node ? 'custom' : 'builtin', wallet.node ?? null)}
+          keyLabel="Node"
+          keyHint="the Node"
+          onKey={() => focusPlate(NODE_PLATE)}
+        />
+        <SetupLine term={QUESTION_TERMS['Open Check']} value={noStop(openCheckWords(wallet.openCheck))} keyLabel="Checks" keyHint="the Open Check" onKey={() => focusPlate(CHECKS_PLATE)} />
+        <SetupLine term={QUESTION_TERMS['Signing Check']} value={noStop(signingWords(signing))} keyLabel="Checks" keyHint="the Signing Check" onKey={() => focusPlate(CHECKS_PLATE)} />
+      </dl>
     </ConfigPlate>
   )
 }
 
 /**
- * The Wallet tab (FR-88, CAP-1): this wallet's own settings, a plate per concern in a fixed order,
+ * The Local settings tab (FR-88, CAP-1): this wallet's own settings, a plate per concern in a fixed order,
  * in one column and with no jump list. `Main` mounts it only inside `OpenWallet`, so the lock is
  * open (AD-32); this component trusts that and reads no other Wallet. App-level plates (Remove all,
  * Version) are not here: they belong to `/settings`.
@@ -335,8 +372,12 @@ export function WalletTab({ wallet }: { wallet: WalletMeta }) {
 
   return (
     <div className="mx-auto flex w-full min-w-0 max-w-lg flex-col gap-4">
-      <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
-        <h1 className="min-w-0 break-words font-legend text-base font-semibold uppercase leading-tight tracking-[0.08em]">Settings for {wallet.label}</h1>
+      <div className="flex flex-wrap items-end justify-between gap-x-3 gap-y-1">
+        {/* One h1: the fixed label and the wallet's name as two spans, so the name keeps the case the user typed. */}
+        <h1 className="min-w-0 break-words leading-tight">
+          <span className="panel-legend block">Local settings</span>{' '}
+          <span className="mt-0.5 block break-words text-lg font-semibold">{wallet.label}</span>
+        </h1>
         <NetworkPlate />
       </div>
       <IdentityPlate wallet={wallet} />
@@ -346,7 +387,7 @@ export function WalletTab({ wallet }: { wallet: WalletMeta }) {
       <SeedPlate wallet={wallet} />
       {/* A wallet either operates another account or holds the Account Master Key, so this plate always has something to say. */}
       <ControlPlate wallet={wallet} />
-      <ConfigPlate title="Node">
+      <ConfigPlate title="Node" focusId={NODE_PLATE}>
         <WalletNodeSection wallet={wallet} />
       </ConfigPlate>
       <ConfigPlate title="Two-device signing">

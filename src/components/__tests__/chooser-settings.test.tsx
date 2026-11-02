@@ -92,38 +92,38 @@ afterEach(() => {
   useAppStore.getState().closeAllLocks()
 })
 
-describe('the Chooser header XRPL Bench key', () => {
-  it('shows the nameplate and an XRPL Bench key', () => {
+describe('the Chooser header Global settings key', () => {
+  it('shows the nameplate and a Global settings key', () => {
     mount()
-    expect(screen.getAllByText('XRPL Bench')).toHaveLength(2)
-    const key = screen.getByRole('button', { name: 'XRPL Bench' })
-    expect(key.textContent).toBe('XRPL Bench')
+    expect(screen.getAllByText('XRPL Bench')).toHaveLength(1)
+    const key = screen.getByRole('button', { name: 'Global settings' })
+    expect(key.textContent).toBe('Global settings')
   })
 
-  it('reads "XRPL Bench, update available" as text and name when an update waits', () => {
+  it('reads "Global settings, update available" as text and name when an update waits', () => {
     h.update = { updateReady: true, declined: false }
     mount()
-    const key = screen.getByRole('button', { name: 'XRPL Bench, update available' })
-    expect(key.textContent).toBe('XRPL Bench, update available')
+    const key = screen.getByRole('button', { name: 'Global settings, update available' })
+    expect(key.textContent).toBe('Global settings, update available')
   })
 
   it('a declined release does not relight it', () => {
     h.update = { updateReady: true, declined: true }
     mount()
-    expect(screen.getByRole('button', { name: 'XRPL Bench' }).textContent).toBe('XRPL Bench')
+    expect(screen.getByRole('button', { name: 'Global settings' }).textContent).toBe('Global settings')
   })
 
-  it('opens /settings: h1 XRPL Bench settings, the app-level plates, a Wallets back key; Back returns to the chooser', async () => {
+  it('opens /settings: h1 Global settings, the app-level plates, a Wallets back key; Back returns to the chooser', async () => {
     mount()
-    fireEvent.click(screen.getByRole('button', { name: 'XRPL Bench' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Global settings' }))
     expect(window.location.pathname).toBe('/settings')
-    expect(screen.getByRole('heading', { level: 1, name: 'XRPL Bench settings' })).toBeTruthy()
+    expect(screen.getByRole('heading', { level: 1, name: 'Global settings' })).toBeTruthy()
     await waitFor(() => expect(document.activeElement?.id).toBe('settings-heading')) // the pressed key unmounted
     expect(screen.getByRole('heading', { name: 'Version' })).toBeTruthy()
     expect(screen.queryByRole('heading', { name: /^Address book$/i })).toBeNull()
     expect(screen.getByRole('button', { name: /remove all wallets from this device/i })).toBeTruthy()
     // The key is the chooser's; the settings screen offers the Wallets back key instead.
-    expect(screen.queryByRole('button', { name: 'XRPL Bench' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Global settings' })).toBeNull()
     await act(async () => void fireEvent.click(screen.getByRole('button', { name: 'Wallets' })))
     await waitFor(() => expect(window.location.pathname).toBe('/'))
     expect(screen.getByRole('heading', { level: 1, name: 'Wallets' })).toBeTruthy()
@@ -160,7 +160,7 @@ describe('/settings reads no wallet and no ledger (AD-36)', () => {
     mount()
     h.walletHooks.mockClear()
     act(() => navigate('/settings'))
-    expect(screen.getByRole('heading', { level: 1, name: 'XRPL Bench settings' })).toBeTruthy()
+    expect(screen.getByRole('heading', { level: 1, name: 'Global settings' })).toBeTruthy()
     expect(qc.getQueryCache().getAll()).toHaveLength(0)
     expect(h.getXrplClient).not.toHaveBeenCalled()
     expect(h.walletHooks).not.toHaveBeenCalled()

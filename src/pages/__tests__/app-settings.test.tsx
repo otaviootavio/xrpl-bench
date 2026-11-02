@@ -118,13 +118,13 @@ describe('the in-wallet tab list has a Wallet tab and no Settings tab (CAP-1, AD
   it('lists Balances, Send, Receive, History, Tokens, Wallet in that order, and no Settings', async () => {
     wrap(<Main />)
     await screen.findAllByRole('tab')
-    expect(screen.getAllByRole('tab').map((t) => t.textContent)).toEqual(['Balances', 'Send', 'Receive', 'History', 'Tokens', 'Wallet'])
+    expect(screen.getAllByRole('tab').map((t) => t.textContent)).toEqual(['Balances', 'Send', 'Receive', 'History', 'Tokens', 'Local settings'])
     expect(screen.queryByRole('tab', { name: /Settings/ })).toBeNull()
   })
 
   it('the Wallet tab carries no app-level plate', async () => {
     wrap(<Main />)
-    const tab = await screen.findByRole('tab', { name: 'Wallet' })
+    const tab = await screen.findByRole('tab', { name: 'Local settings' })
     await act(async () => {
       fireEvent.mouseDown(tab, { button: 0, ctrlKey: false })
     })

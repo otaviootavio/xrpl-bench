@@ -175,6 +175,12 @@ describe('the questions and their pre-selected answers', () => {
       ['Step 5 of 7', 'Authentication to open the wallet, and auto-lock', ['Authentication required to open the wallet', 'Auto-lock after inactivity']],
       ['Step 6 of 7', 'Authentication to sign a transaction', ['Authentication required to sign a transaction']],
     ])
+    // A heading above already names Node, Seed Method, Signature type and both checks: their legends are for assistive tech only.
+    for (const title of [GENERATE_STEPS[1], GENERATE_STEPS[2], GENERATE_STEPS[3], GENERATE_STEPS[4], GENERATE_STEPS[5]]) {
+      goToStep(title)
+      const first = document.querySelector('legend')!
+      expect(first.className).toContain('sr-only')
+    }
     // The last walk question shows Next; Create wallet waits for the Review.
     expect(screen.getByRole('button', { name: 'Next' })).toBeTruthy()
     expect(screen.queryByRole('button', { name: /Create wallet/ })).toBeNull()
@@ -825,7 +831,8 @@ describe('Passkey-Derived Seed (story 6)', () => {
     expect(screen.queryByText(/depends on the app's domain/)).toBeNull()
     await click(radioNamed(/^Passkey-Derived Seed/))
     expect(screen.getByText(/depends on the app's domain/)).toBeTruthy()
-    expect(screen.getByText(/tied to localhost/)).toBeTruthy()
+    expect(screen.getByText(/only works at this web address/)).toBeTruthy()
+    expect(screen.getByText('localhost').className).toContain('font-mono')
     expect(screen.getByText(/Controlling Wallet/)).toBeTruthy()
     expect(radioNamed(/^Create a new passkey/).checked).toBe(true)
     expect(radioNamed(/^Use an existing passkey/).checked).toBe(false)
@@ -1353,7 +1360,7 @@ describe('the Network lock and reset (story 20.7)', () => {
     await mount()
     goToStep('Review')
     const dt = screen.getByText('Network', { selector: 'dt' })
-    expect(dt.parentElement?.textContent).toContain('Locked. To change it, go Back to step 1; the questions then start again.')
+    expect(dt.parentElement?.textContent).toContain('Locked. To pick another Network, go Back to step 1. The later questions are then asked again.')
     expect(screen.queryByRole('button', { name: 'Change Network' })).toBeNull()
     expect(screen.getByRole('button', { name: 'Change Label' })).toBeTruthy()
     for (let i = 0; i < 6; i++) fireEvent.click(screen.getByRole('button', { name: /^Back/ }))

@@ -212,7 +212,7 @@ export function NodeQuestion(p: WalletQuestionsProps) {
   return (
     <>
       <Lead>The Node is the server this wallet reads the ledger from and sends its transactions to.</Lead>
-      <Axis legend="Node">
+      <Axis legend="Node" hideLegend>
         <Choice
           name={`${group}-node`}
           checked={p.nodeMode === 'builtin'}
@@ -264,7 +264,7 @@ export function SeedMethodQuestion(p: WalletQuestionsProps) {
   const { group, options } = p
   return (
     <>
-      <Axis legend="Seed Method">
+      <Axis legend="Seed Method" hideLegend>
         <Choice
           name={`${group}-seed`}
           checked={p.seedMethod === 'stored'}
@@ -306,7 +306,13 @@ export function SeedMethodQuestion(p: WalletQuestionsProps) {
           <Alert variant="warning">
             <AlertTitle>This Seed depends on the app's domain</AlertTitle>
             <AlertDescription>
-              {p.origin ? `Your passkey is tied to ${p.origin}. ` : 'Your passkey is tied to the address this app is served from. '}
+              {p.origin ? (
+                <>
+                  Your passkey only works at this web address: <span className="break-all font-mono">{p.origin}</span>. It does not work from another address.{' '}
+                </>
+              ) : (
+                'Your passkey only works at the web address this app is served from. It does not work from another address. '
+              )}
               If the app's domain ever changes, this wallet cannot be opened from the passkey. It could then be recovered only with a written Seed or a Controlling Wallet.
             </AlertDescription>
           </Alert>
@@ -321,7 +327,7 @@ export function SignatureTypeQuestion(p: WalletQuestionsProps) {
   return (
     <>
       <Lead>The signature type is fixed once the wallet exists. Most wallets and services accept either.</Lead>
-      <Axis legend="Signature type">
+      <Axis legend="Signature type" hideLegend>
         <Choice name={`${group}-algo`} checked={p.algorithm === 'ed25519'} label="Ed25519" state={{ available: true }} onSelect={() => p.onAlgorithm('ed25519')} />
         <Choice name={`${group}-algo`} checked={p.algorithm === 'secp256k1'} label="secp256k1" state={{ available: true }} onSelect={() => p.onAlgorithm('secp256k1')} />
       </Axis>
@@ -335,7 +341,7 @@ export function OpenCheckQuestion(p: WalletQuestionsProps) {
     <>
       <Lead>The Open Check is what is asked to open this wallet. Auto-lock closes it again after a while without use.</Lead>
       {p.network === 'mainnet' && <p className="text-sm">On Mainnet an Open Check is required, and auto-lock is at least 1 minute.</p>}
-      <Axis legend={OPEN_CHECK_QUESTION}>
+      <Axis legend={OPEN_CHECK_QUESTION} hideLegend>
         <Choice name={`${group}-open`} checked={p.openCheck === 'pin'} label="App PIN" detail="Asks for your App PIN to open the wallet." state={options.openCheck.pin} onSelect={() => p.onOpenCheck('pin')} />
         <Choice name={`${group}-open`} checked={p.openCheck === 'passkey'} label="Passkey" detail="Asks for your passkey to open the wallet." state={options.openCheck.passkey} onSelect={() => p.onOpenCheck('passkey')} />
         <Choice
@@ -367,7 +373,7 @@ export function OpenCheckQuestion(p: WalletQuestionsProps) {
 export function SigningCheckQuestion(p: WalletQuestionsProps) {
   const { group, options } = p
   return (
-    <Axis legend={SIGNING_CHECK_QUESTION}>
+    <Axis legend={SIGNING_CHECK_QUESTION} hideLegend>
       <Choice
         name={`${group}-sign`}
         checked={p.signing === 'standard'}

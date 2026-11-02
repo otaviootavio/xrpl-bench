@@ -24,7 +24,11 @@ const signingHandleFor = vi.fn()
 const invalidateQueries = vi.fn()
 const addAddressBookEntry = vi.fn()
 let network: 'mainnet' | 'testnet' = 'testnet'
-let addressBook: { address: string; network?: string; destinationTag?: string; label?: string }[] = []
+type Entry = { address: string; network?: string; destinationTag?: string; label?: string }
+/** The active wallet ('w1') list, and the lists of any other wallets, by id. */
+let addressBook: Entry[] = []
+let otherBooks: Record<string, Entry[]> = {}
+const useAddressBook = vi.fn((id: string) => ({ w1: addressBook, ...otherBooks })[id] ?? [])
 
 vi.mock('@/hooks/useDestinationInfo', () => ({ useDestinationInfo: (...a: unknown[]) => useDestinationInfo(...a) }))
 vi.mock('@/hooks/useRecommendedFee', () => ({ useRecommendedFee: () => useRecommendedFee() }))
@@ -58,7 +62,8 @@ vi.mock('@/components/wallet/AddressLink', () => ({
 let activeNode: string | undefined
 vi.mock('@/store/app-store', () => ({
   useAppStore: (selector: (s: Record<string, unknown>) => unknown) =>
-    selector({ network, vaultKey: {}, addressBook, addAddressBookEntry }),
+    selector({ network, vaultKey: {}, addressBook: {}, addAddressBookEntry }),
+  useAddressBook: (id: string) => useAddressBook(id),
   useWalletOpenKey: () => ({}),
   useActiveNetwork: () => network,
   useActiveNode: () => activeNode,
@@ -92,6 +97,7 @@ function info() {
 
 beforeEach(() => {
   addressBook = []
+  otherBooks = {}
   network = 'testnet'
   activeNode = undefined
   vi.useFakeTimers()
@@ -180,6 +186,14 @@ describe('SendTab — the first-send warning is decided on the pair', () => {
 
     expect(screen.getByRole('button', { name: 'Confirm and send' })).toBeTruthy()
     expect(anyFirstSendWarning()).toBeNull()
+  })
+
+  it("reads the active wallet's own list: the same pair saved under another wallet still warns", () => {
+    otherBooks = { w2: [{ address: EXCHANGE, network: 'testnet', destinationTag: '1' }] }
+    review('1')
+
+    expect(useAddressBook).toHaveBeenCalledWith('w1')
+    expect(screen.getByText("You haven't sent here before")).toBeTruthy()
   })
 
   it('keeps the original address warning for an address never sent to', () => {
@@ -274,7 +288,9 @@ describe('SendTab — the warning is decided on the network too', () => {
     await confirm()
 
     expect(addAddressBookEntry).toHaveBeenCalledOnce()
-    expect(addAddressBookEntry.mock.calls[0][0]).toEqual({ network: 'testnet', address: EXCHANGE, destinationTag: undefined })
+    expect(addAddressBookEntry.mock.calls[0][1]).toEqual({ network: 'testnet', address: EXCHANGE, destinationTag: undefined })
+    // Saved under the sending Wallet's id (AD-50).
+    expect(addAddressBookEntry.mock.calls[0][0]).toBe('w1')
   })
 
   it('writes the network it submitted on', async () => {
@@ -283,7 +299,7 @@ describe('SendTab — the warning is decided on the network too', () => {
     await confirm()
 
     expect(submitXrpPayment).toHaveBeenCalledWith('mainnet', expect.anything(), expect.objectContaining({ destinationTag: 3 }), undefined)
-    expect(addAddressBookEntry.mock.calls[0][0]).toMatchObject({ network: 'mainnet', address: EXCHANGE, destinationTag: '3' })
+    expect(addAddressBookEntry.mock.calls[0][1]).toMatchObject({ network: 'mainnet', address: EXCHANGE, destinationTag: '3' })
   })
 })
 
@@ -318,7 +334,7 @@ describe('SendTab — the entry a send writes', () => {
 
     expect(submitXrpPayment).toHaveBeenCalledWith('testnet', expect.anything(), expect.objectContaining({ destinationTag: 42 }), undefined)
     expect(addAddressBookEntry).toHaveBeenCalledOnce()
-    const [entry] = addAddressBookEntry.mock.calls[0]
+    const [, entry] = addAddressBookEntry.mock.calls[0]
     expect(entry.address).toBe(EXCHANGE)
     expect(entry.network).toBe('testnet')
     expect(entry.destinationTag).toBe('42')
@@ -348,7 +364,7 @@ describe('SendTab — the entry a send writes', () => {
     review('')
     await confirm()
 
-    const [entry] = addAddressBookEntry.mock.calls[0]
+    const [, entry] = addAddressBookEntry.mock.calls[0]
     expect(entry.destinationTag).toBeUndefined()
     expect(entry.label).toBeUndefined()
   })
@@ -359,7 +375,7 @@ describe('SendTab — the entry a send writes', () => {
     await confirm()
 
     expect(addAddressBookEntry).toHaveBeenCalledOnce()
-    expect(addAddressBookEntry.mock.calls[0][0].destinationTag).toBe('2')
+    expect(addAddressBookEntry.mock.calls[0][1].destinationTag).toBe('2')
   })
 
   it('writes nothing for a pair already in the book', async () => {

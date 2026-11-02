@@ -1,10 +1,10 @@
 /** @vitest-environment jsdom */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { cleanup, render, screen, within } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 
 /**
- * Story 9.2 — the Address Book list in Settings.
+ * Story 9.2, moved by Epic 23 story 23.2 — the Address Book plate in the Wallet tab (AD-50).
  *
  * - A row renders the address once, through `AddressLink`, plus the tag when
  *   there is one; a label only when a human gave one. Nothing renders a
@@ -13,7 +13,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
  *   the identity function — a duplicate key is the defect this change would
  *   otherwise introduce.
  *
- * Real: `AppSettings` and the app store. Faked: the persistence sink and the
+ * Real: `AddressBookPlate` and the app store. Faked: the persistence sink and the
  * modules Settings needs but this list does not (same set as
  * `settings-full-reset.test.tsx`).
  */
@@ -52,7 +52,7 @@ vi.mock('@/lib/build-info', () => ({
   formatBuiltAt: () => '',
 }))
 
-import { AppSettings } from '@/pages/AppSettings'
+import { AddressBookPlate, ADDRESS_BOOK_CAP } from '@/components/wallet/AddressBookPlate'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { useAppStore } from '@/store/app-store'
 import { accountExplorerUrl } from '@/lib/xrpl/networks'
@@ -65,7 +65,7 @@ function renderSettings() {
   render(
     <QueryClientProvider client={qc}>
       <TooltipProvider>
-        <AppSettings />
+        <AddressBookPlate walletId="w1" />
       </TooltipProvider>
     </QueryClientProvider>,
   )
@@ -74,7 +74,7 @@ function renderSettings() {
 /** The Address Book card's own subtree, so a stray match elsewhere in
  * Settings cannot satisfy an assertion about the list. */
 function addressBookCard(): HTMLElement {
-  return screen.getByText('Address book').closest('[data-slot="card"]') as HTMLElement
+  return screen.getByRole('region', { name: 'Address Book' })
 }
 
 /** Each `dt` legend with the text of the value it names. */
@@ -86,7 +86,7 @@ let consoleError: ReturnType<typeof vi.spyOn>
 
 beforeEach(() => {
   consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
-  useAppStore.setState({ addressBook: [], wallets: [], activeWalletId: null, network: 'testnet' } as never)
+  useAppStore.setState({ addressBook: {}, wallets: [], activeWalletId: null, network: 'testnet' } as never)
 })
 
 afterEach(() => {
@@ -94,10 +94,49 @@ afterEach(() => {
   consoleError.mockRestore()
 })
 
-describe('Settings — the Address Book list', () => {
+describe('Wallet tab — the Address Book plate', () => {
+  it('lists only this wallet\'s own entries, never another wallet\'s', () => {
+    useAppStore.setState({ addressBook: { w1: [{ address: EXCHANGE }], w2: [{ address: OTHER }] } } as never)
+    renderSettings()
+    expect(within(addressBookCard()).getByText(EXCHANGE)).toBeTruthy()
+    expect(within(addressBookCard()).queryByText(OTHER)).toBeNull()
+  })
+
+  it('shows the first 10 and "Show all N" for 14; pressing it lists all 14 and offers "Show first 10"', () => {
+    const entries = Array.from({ length: 14 }, (_, i) => ({ address: EXCHANGE, destinationTag: String(i + 1) }))
+    useAppStore.setState({ addressBook: { w1: entries } } as never)
+    renderSettings()
+    expect(addressBookCard().querySelectorAll('dl')).toHaveLength(ADDRESS_BOOK_CAP)
+    const key = within(addressBookCard()).getByRole('button', { name: 'Show all 14' })
+    expect(key.getAttribute('aria-expanded')).toBe('false')
+    // The first 10 in stored order.
+    expect([...addressBookCard().querySelectorAll('dl')].map((dl) => legendsIn(dl).find(([t]) => t === 'Destination tag')?.[1])).toEqual(
+      entries.slice(0, 10).map((e) => e.destinationTag),
+    )
+    fireEvent.click(key)
+    expect(addressBookCard().querySelectorAll('dl')).toHaveLength(14)
+    const back = within(addressBookCard()).getByRole('button', { name: 'Show first 10' })
+    expect(back.getAttribute('aria-expanded')).toBe('true')
+    fireEvent.click(back)
+    expect(addressBookCard().querySelectorAll('dl')).toHaveLength(10)
+  })
+
+  it.each([10, 0])('has no Show all key for %i entries', (n) => {
+    useAppStore.setState({ addressBook: { w1: Array.from({ length: n }, (_, i) => ({ address: EXCHANGE, destinationTag: String(i) })) } } as never)
+    renderSettings()
+    expect(within(addressBookCard()).queryByRole('button')).toBeNull()
+  })
+
+  it('shows all 11 behind the key', () => {
+    useAppStore.setState({ addressBook: { w1: Array.from({ length: 11 }, (_, i) => ({ address: EXCHANGE, destinationTag: String(i) })) } } as never)
+    renderSettings()
+    expect(addressBookCard().querySelectorAll('dl')).toHaveLength(10)
+    expect(within(addressBookCard()).getByRole('button', { name: 'Show all 11' })).toBeTruthy()
+  })
+
   it('renders two entries at one address as two rows with unique keys', () => {
     useAppStore.setState({
-      addressBook: [{ address: EXCHANGE, destinationTag: '1' }, { address: EXCHANGE, destinationTag: '2' }, { address: EXCHANGE }],
+      addressBook: { w1: [{ address: EXCHANGE, destinationTag: '1' }, { address: EXCHANGE, destinationTag: '2' }, { address: EXCHANGE }] },
     } as never)
     renderSettings()
 
@@ -112,7 +151,7 @@ describe('Settings — the Address Book list', () => {
   })
 
   it('shows the address once, in full, and no label invented from it', () => {
-    useAppStore.setState({ addressBook: [{ address: EXCHANGE }] } as never)
+    useAppStore.setState({ addressBook: { w1: [{ address: EXCHANGE }] } } as never)
     renderSettings()
 
     const card = addressBookCard()
@@ -122,7 +161,7 @@ describe('Settings — the Address Book list', () => {
   })
 
   it('names the tag in words, so it is told apart from the address by more than colour', () => {
-    useAppStore.setState({ addressBook: [{ address: EXCHANGE, destinationTag: '12345' }] } as never)
+    useAppStore.setState({ addressBook: { w1: [{ address: EXCHANGE, destinationTag: '12345' }] } } as never)
     renderSettings()
 
     const card = addressBookCard()
@@ -132,7 +171,7 @@ describe('Settings — the Address Book list', () => {
   })
 
   it('shows no tag legend for a tagless entry recorded on a network', () => {
-    useAppStore.setState({ addressBook: [{ address: OTHER, network: 'testnet' }] } as never)
+    useAppStore.setState({ addressBook: { w1: [{ address: OTHER, network: 'testnet' }] } } as never)
     renderSettings()
 
     expect(within(addressBookCard()).queryByText('Destination tag')).toBeNull()
@@ -140,7 +179,7 @@ describe('Settings — the Address Book list', () => {
   })
 
   it('says "Not recorded" for both the network and the tag of an entry saved before networks were recorded', () => {
-    useAppStore.setState({ addressBook: [{ address: OTHER }] } as never)
+    useAppStore.setState({ addressBook: { w1: [{ address: OTHER }] } } as never)
     renderSettings()
 
     expect(legendsIn(addressBookCard())).toContainEqual(['Network', 'Not recorded'])
@@ -148,7 +187,7 @@ describe('Settings — the Address Book list', () => {
   })
 
   it('an entry with a tag but no recorded network shows its tag and "Network: Not recorded"', () => {
-    useAppStore.setState({ addressBook: [{ address: OTHER, destinationTag: '1' }] } as never)
+    useAppStore.setState({ addressBook: { w1: [{ address: OTHER, destinationTag: '1' }] } } as never)
     renderSettings()
 
     const legends = legendsIn(addressBookCard())
@@ -160,7 +199,7 @@ describe('Settings — the Address Book list', () => {
   it("lists every network's entries, each with its Network legend and its own explorer link", () => {
     useAppStore.setState({
       network: 'mainnet',
-      addressBook: [{ address: EXCHANGE }, { address: EXCHANGE, network: 'testnet' }, { address: EXCHANGE, network: 'mainnet' }],
+      addressBook: { w1: [{ address: EXCHANGE }, { address: EXCHANGE, network: 'testnet' }, { address: EXCHANGE, network: 'mainnet' }] },
     } as never)
     renderSettings()
 
@@ -180,7 +219,7 @@ describe('Settings — the Address Book list', () => {
   })
 
   it('shows a human label when there is one', () => {
-    useAppStore.setState({ addressBook: [{ address: OTHER, label: 'Landlord' }] } as never)
+    useAppStore.setState({ addressBook: { w1: [{ address: OTHER, label: 'Landlord' }] } } as never)
     renderSettings()
 
     expect(within(addressBookCard()).getByText('Landlord')).toBeTruthy()

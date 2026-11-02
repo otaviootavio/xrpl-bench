@@ -21,7 +21,7 @@ import { clearConfigureFocusReturn } from '@/lib/configure-launch'
 import { useAppStore } from '@/store/app-store'
 
 /** The fixed plate order of the Wallet tab. `Account` is the h2 inside the identity plate's address plate. */
-const PLATE_ORDER = ['This wallet', 'Account', 'Name', 'Checks', 'Seed', 'Operating another account', 'Node', 'Two-device signing', 'Remove this wallet']
+const PLATE_ORDER = ['This wallet', 'Account', 'Name', 'Address Book', 'Checks', 'Seed', 'Operating another account', 'Node', 'Two-device signing', 'Remove this wallet']
 
 const W = (id: string, lockId: string, extra = {}) =>
   ({ id, seedId: id, lockId, label: id, address: `r${id}`, createdAt: 1, network: 'testnet', algorithm: 'ed25519', openCheck: 'pin', signingCheck: 'standard', ...extra }) as never
@@ -49,7 +49,7 @@ afterEach(() => {
 })
 
 describe('the Wallet tab', () => {
-  it('h1 reads Settings for <name> with the Network words; then the nine headings (Account and eight plates) in the fixed order', async () => {
+  it('h1 reads Settings for <name> with the Network words; then the ten headings (Account and nine plates) in the fixed order', async () => {
     mount()
     expect(screen.getByRole('heading', { level: 1, name: 'Settings for a' })).toBeTruthy()
     expect(screen.getAllByRole('heading', { level: 1 })).toHaveLength(1)
@@ -80,7 +80,8 @@ describe('the Wallet tab', () => {
     expect(screen.queryByText(/Remove all wallets/)).toBeNull()
     expect(screen.queryByRole('heading', { name: 'Version' })).toBeNull()
     expect(screen.queryByText(/update available/i)).toBeNull()
-    expect(screen.queryByRole('heading', { name: 'Address book' })).toBeNull()
+    // Its own Address Book plate is not an app-level plate: it is this wallet's (AD-50), and sits after Name.
+    expect(screen.getByRole('heading', { name: 'Address Book' })).toBeTruthy()
   })
 
   it('Edit checks opens the shipped path', async () => {

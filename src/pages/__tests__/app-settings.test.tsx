@@ -5,7 +5,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 /**
- * Story 17 (AD-45): Settings is ONE component, `AppSettings`, with the Address book, Version and
+ * Story 17 (AD-45): Settings is ONE component, `AppSettings`, with Version and
  * updates, and Remove all wallets from this device. `/settings` renders it; the in-wallet tab is now the Wallet tab (Epic 23).
  * Real: Main, AppSettings, RemoveAllPlate, the app store. Faked: persistence, the vault, the ledger
  * hooks, the other five tabs, the update hook and the build stamp.
@@ -57,7 +57,8 @@ const DELETED_NAMES: Array<[string, RegExp]> = [
 ]
 
 function expectOnlyAppLevel() {
-  expect(screen.getByRole('heading', { name: 'Address book' })).toBeTruthy()
+  // The Address Book is a Wallet-tab plate, not an app-level one (AD-50).
+  expect(screen.queryByRole('heading', { name: /^Address book$/i })).toBeNull()
   expect(screen.getByRole('heading', { name: 'Version' })).toBeTruthy()
   expect(screen.getByRole('button', { name: /^Remove all wallets from this device$/ })).toBeTruthy()
   // Nothing else holds a heading: the per-wallet Wallets and Security plates are gone.
@@ -74,7 +75,7 @@ function expectOnlyAppLevel() {
 beforeEach(() => {
   h.wipeVault.mockReset().mockResolvedValue(undefined)
   window.history.replaceState(null, '', '/wallets/a')
-  useAppStore.setState({ wallets: [W('a', 'X'), W('b', 'Y')], activeWalletId: 'a', openLocks: {}, addressBook: [] } as never)
+  useAppStore.setState({ wallets: [W('a', 'X'), W('b', 'Y')], activeWalletId: 'a', openLocks: {}, addressBook: {} } as never)
   useAppStore.getState().openLock('X', {} as CryptoKey, 5)
 })
 afterEach(() => {

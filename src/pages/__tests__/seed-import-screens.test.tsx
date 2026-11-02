@@ -78,7 +78,7 @@ vi.mock('@/store/app-store', () => ({
       setWallets: setWalletsMock,
       activeWalletId: null,
       setActiveWalletId,
-      addressBook: [],
+      addressBook: {},
       openLocks: {},
       setLockMinutes: vi.fn(),
       closeAllLocks: vi.fn(),

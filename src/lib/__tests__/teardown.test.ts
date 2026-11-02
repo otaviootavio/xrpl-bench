@@ -81,7 +81,7 @@ async function seedStore() {
   useAppStore.setState({ network: 'mainnet' })
   s.setWallets([{ id: 'w1', label: 'Savings', address: 'rAliceAddressLabelThatMustNotSurvive' } as never])
   s.setActiveWalletId('w1')
-  s.addAddressBookEntry({ address: 'rBobCounterpartyThatMustNotSurvive', label: 'Bob — landlord' })
+  s.addAddressBookEntry('w1', { address: 'rBobCounterpartyThatMustNotSurvive', label: 'Bob — landlord' })
   useAppStore.setState({ autoLockMinutes: 30 })
   s.declineUpdateVersion('deadbeef')
   await flush()
@@ -118,12 +118,12 @@ describe('tearDownAllLocalState — "remove everything" (G-13)', () => {
     }
     if (onDisk !== undefined) {
       const { state } = JSON.parse(onDisk)
-      expect(state).toMatchObject({ wallets: [], activeWalletId: null, addressBook: [], autoLockMinutes: 5, declinedUpdateVersions: [] })
+      expect(state).toMatchObject({ wallets: [], activeWalletId: null, addressBook: {}, autoLockMinutes: 5, declinedUpdateVersions: [] })
     }
 
     const s = useAppStore.getState()
     expect(s.wallets).toEqual([])
-    expect(s.addressBook).toEqual([])
+    expect(s.addressBook).toEqual({})
     expect(s.autoLockMinutes).toBe(5)
     expect(s.declinedUpdateVersions).toEqual([])
   })

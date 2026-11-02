@@ -119,7 +119,8 @@ describe('the Chooser header Settings key', () => {
     expect(window.location.pathname).toBe('/settings')
     expect(screen.getByRole('heading', { level: 1, name: 'Settings' })).toBeTruthy()
     await waitFor(() => expect(document.activeElement?.id).toBe('settings-heading')) // the pressed key unmounted
-    for (const t of ['Address book', 'Version']) expect(screen.getByRole('heading', { name: t })).toBeTruthy()
+    expect(screen.getByRole('heading', { name: 'Version' })).toBeTruthy()
+    expect(screen.queryByRole('heading', { name: /^Address book$/i })).toBeNull()
     expect(screen.getByRole('button', { name: /remove all wallets from this device/i })).toBeTruthy()
     // The key is the chooser's; the settings screen offers the Wallets back key instead.
     expect(screen.queryByRole('button', { name: 'Settings' })).toBeNull()

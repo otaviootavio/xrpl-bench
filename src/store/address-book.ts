@@ -17,6 +17,8 @@ import { NETWORK_IDS, type NetworkId } from '@/lib/xrpl/networks'
  * no tag, its tag reads as "not recorded", never as "tagless" — a pre-Epic-9
  * send to `(EXCHANGE, tag 5)` stored only `{ address: EXCHANGE }`.
  *
+ * The book is stored per Wallet (`app-store.ts`, AD-50); these helpers act on one list.
+ *
  * Every call site that decides identity goes through `sameCounterparty`,
  * `counterpartyKey` or `suppressesFirstSendWarning` below. Comparing
  * `.address` directly to decide whether two entries are the same is the

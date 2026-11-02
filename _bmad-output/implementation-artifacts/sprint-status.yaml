@@ -29,7 +29,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 # - Retrospective appends its action items to action_items; the status view surfaces open ones
 generated: 09-15-2026 21:01
-last_updated: '11-02-2026 14:22'
+last_updated: '11-02-2026 16:42'
 project: xrpl-wallet
 project_key: NOKEY
 tracking_system: file-system
@@ -177,6 +177,12 @@ development_status:
   22-4-open-enters-that-wallet: done
   22-5-mainnet-import-states-one-neutral-fact: done
   epic-22-retrospective: optional
+
+  epic-23: backlog
+  23-1-the-wallet-tab-holds-this-wallet-s-settings: backlog
+  23-2-the-address-book-belongs-to-a-wallet: backlog
+  23-3-xrpl-bench-s-settings-and-the-update-marker-on-the-wallets-k: backlog
+  epic-23-retrospective: optional
 action_items:
   - id: "epic-5-retro-item-1-make-send-s-token-path-fail-closed-on-a"
     epic: 5

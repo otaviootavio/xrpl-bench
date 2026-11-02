@@ -12,10 +12,10 @@ import { NETWORKS } from '@/lib/xrpl/networks'
 
 /**
  * The app-level Settings plates: Address book, Version and updates, and Remove
- * all wallets from this device. Served by `/settings` (the chooser side) and by
- * the in-wallet Settings tab (`Main`), never both at once. It reads no wallet and no
+ * all wallets from this device. Served by `/settings` only (CAP-1, AD-51); the
+ * in-wallet Wallet tab holds this wallet's own settings and none of these. It reads no wallet and no
  * ledger: no `useActive*`, no account-scoped query, no lock read (AD-36). Do not
- * add one; a per-wallet control belongs in Configure, and a per-app one here.
+ * add one; a per-wallet control belongs in the Wallet tab, and a per-app one here.
  */
 export function AppSettings() {
   const addressBook = useAppStore((s) => s.addressBook)

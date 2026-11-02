@@ -90,7 +90,7 @@ describe('AppShell mounts the lifecycle once, above the route switch (AD-31)', (
     expect(h.mounts).toEqual({ auto: 1, clear: 1 })
     act(() => navigate('/settings'))
     act(() => navigate('/wallets/a'))
-    act(() => navigate('/wallets/a/configure'))
+    act(() => navigate('/wallets/a/checks'))
     act(() => resetToHome())
     expect(h.mounts).toEqual({ auto: 1, clear: 1 })
     expect(h.unmounts).toEqual({ auto: 0, clear: 0 })
@@ -163,7 +163,14 @@ describe('AppShell route switch and guards (AD-32, AD-36)', () => {
     expect(document.activeElement).toBe(document.getElementById('main-content'))
   })
 
-  it.each(['/wallets/zzz', '/wallets/b', '/wallets/zzz/configure', '/wallets/b/configure'])(
+  it('the retired /wallets/a/configure path is no route: the chooser shows, with no wallet content', () => {
+    mount()
+    act(() => navigate('/wallets/a/configure'))
+    expect(screen.getByRole('heading', { level: 1, name: 'Wallets' })).toBeTruthy()
+    expect(screen.queryByText('content')).toBeNull()
+  })
+
+  it.each(['/wallets/zzz', '/wallets/b'])(
     'a mismatched deep link %s is reset to the chooser',
     (path) => {
       useAppStore.setState({ wallets: [W('a', 'X'), W('b', 'Y')] } as never)

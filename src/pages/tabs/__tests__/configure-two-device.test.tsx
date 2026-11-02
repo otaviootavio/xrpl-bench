@@ -4,10 +4,10 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testi
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 
 /**
- * The Configure counterpart of the Settings row of `two-device-sign.test.tsx`, and the Node
+ * The Wallet tab counterpart of the Settings row of `two-device-sign.test.tsx`, and the Node
  * and Let another wallet sign launches (test design R12): the Two-device signing plate opens
- * the shipped screen with the label `Back to Configure`, Back returns to Configure with
- * focus on the opener. The Settings tab no longer launches any of them (Story 17).
+ * the shipped screen with the label `Back to Wallet`, Back returns to the Wallet tab with
+ * focus on the opener. The app-level Settings no longer launches any of them (Story 17).
  */
 import { encodeUnsigned } from '@/lib/qr-codec'
 
@@ -48,7 +48,7 @@ vi.mock('@/lib/build-info', () => ({ BUILD: { version: '0.0.0', commitSha: 'x', 
 vi.mock('@/components/wallet/RevealSeedControl', () => ({ RevealSeedControl: () => <button>Reveal seed</button> }))
 
 import { WalletScreens } from '../../WalletScreens'
-import { ConfigureScreen } from '@/components/wallet/ConfigureScreen'
+import { WalletTab } from '@/pages/tabs/WalletTab'
 import { useRoute } from '@/hooks/useRoute'
 import { isTaskRoute, navigate } from '@/lib/route'
 import { TooltipProvider } from '@/components/ui/tooltip'
@@ -64,9 +64,9 @@ const OPEN = { key: {} as CryptoKey, autoLockMinutes: 5 }
 function Host() {
   const route = useRoute()
   if (isTaskRoute(route)) return <WalletScreens route={route} />
-  return <ConfigureScreen wallet={useAppStore.getState().wallets[0] as never} />
+  return <WalletTab wallet={useAppStore.getState().wallets[0] as never} />
 }
-function renderAt(_at: 'configure') {
+function renderAt() {
   render(
     <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
       <PromptsContext.Provider value={{ pin: async () => '123456' }}>
@@ -88,9 +88,9 @@ beforeEach(() => {
 })
 afterEach(cleanup)
 
-describe('Configure: Node and Two-device signing plates', () => {
+describe('Wallet tab: Node and Two-device signing plates', () => {
   it('mounts the shipped Node section and the two-device entry, each in its own plate', () => {
-    renderAt('configure')
+    renderAt()
     const node = screen.getByRole('region', { name: 'Node' })
     // The section itself, not just the plate's heading: its custom-Node field.
     expect(within(node).getByLabelText(/Custom Node/i)).toBeTruthy()
@@ -98,26 +98,26 @@ describe('Configure: Node and Two-device signing plates', () => {
     expect(plate.querySelector('[data-testid="two-device-sign"]')).toBeTruthy()
   })
 
-  it('Sign with two devices opens its screen with `Back to Configure`; Back returns with focus on the key', async () => {
-    navigate('/wallets/a/configure')
-    renderAt('configure')
+  it('Sign with two devices opens its screen with `Back to Wallet`; Back returns with focus on the key', async () => {
+    navigate('/wallets/a')
+    renderAt()
     fireEvent.click(screen.getByRole('button', { name: 'Sign with two devices' }))
     expect(window.location.pathname).toBe('/wallets/a/two-device')
-    const back = await screen.findByRole('button', { name: /Back to Configure/ })
-    expect(back.textContent).toBe('Back to Configure')
+    const back = await screen.findByRole('button', { name: /Back to Wallet/ })
+    expect(back.textContent).toBe('Back to Wallet')
     fireEvent.click(back)
-    await waitFor(() => expect(window.location.pathname).toBe('/wallets/a/configure'))
+    await waitFor(() => expect(window.location.pathname).toBe('/wallets/a'))
     const key = await screen.findByRole('button', { name: 'Sign with two devices' })
     await waitFor(() => expect(document.activeElement).toBe(key))
   })
 
-  it('Let another wallet sign opens the control screen with `Back to Configure` and focus returns to its key', async () => {
-    navigate('/wallets/a/configure')
-    renderAt('configure')
+  it('Let another wallet sign opens the control screen with `Back to Wallet` and focus returns to its key', async () => {
+    navigate('/wallets/a')
+    renderAt()
     fireEvent.click(screen.getByRole('button', { name: 'Let another wallet sign' }))
     expect(window.location.pathname).toBe('/wallets/a/control')
-    fireEvent.click(await screen.findByRole('button', { name: /Back to Configure/ }))
-    await waitFor(() => expect(window.location.pathname).toBe('/wallets/a/configure'))
+    fireEvent.click(await screen.findByRole('button', { name: /Back to Wallet/ }))
+    await waitFor(() => expect(window.location.pathname).toBe('/wallets/a'))
     const key = await screen.findByRole('button', { name: 'Let another wallet sign' })
     await waitFor(() => expect(document.activeElement).toBe(key))
   })
@@ -125,10 +125,10 @@ describe('Configure: Node and Two-device signing plates', () => {
 
 /**
  * Story 17 (R12): the build / offline / busy-lock flows of `two-device-sign.test.tsx`, which
- * the Settings row used to be the only full-screen way into, driven through the Configure plate:
- * every screen here is the one the Two-device signing plate opened, labelled `Back to Configure`.
+ * the Settings row used to be the only full-screen way into, driven through the Wallet tab plate:
+ * every screen here is the one the Two-device signing plate opened, labelled `Back to Wallet`.
  */
-describe('Configure: Two-device signing flows through the plate', () => {
+describe('Wallet tab: Two-device signing flows through the plate', () => {
   const VALID = 'rG31cLyErnqeVj2eomEjBZtq7PYaupGYzL'
   const state = (extra: Record<string, unknown> = {}) => ({
     exists: true, address: 'rA', balanceDrops: '50000000', ownerCount: 0, sequence: 1, requireDestTag: false, disableMasterKey: false, ...extra,
@@ -140,10 +140,10 @@ describe('Configure: Two-device signing flows through the plate', () => {
 
   async function openScreen(wallet: Record<string, unknown> = A) {
     useAppStore.setState({ wallets: [wallet] } as never)
-    navigate('/wallets/a/configure')
-    renderAt('configure')
+    navigate('/wallets/a')
+    renderAt()
     fireEvent.click(screen.getByRole('button', { name: 'Sign with two devices' }))
-    await screen.findByRole('button', { name: 'Back to Configure' })
+    await screen.findByRole('button', { name: 'Back to Wallet' })
   }
   async function buildOnline() {
     h.buildUnsigned.mockResolvedValue(builtOk)
@@ -203,7 +203,7 @@ describe('Configure: Two-device signing flows through the plate', () => {
     expect(btn('Build another')).toBeTruthy()
   })
 
-  it('busy lock: Back to Configure cannot be used while a return is submitted, submits once, and works after', async () => {
+  it('busy lock: Back to Wallet cannot be used while a return is submitted, submits once, and works after', async () => {
     h.account = { isError: false, data: state() }
     await openScreen()
     let finish: (v: unknown) => void = () => {}
@@ -213,15 +213,15 @@ describe('Configure: Two-device signing flows through the plate', () => {
     await click(btn('Use the pasted text'))
     await click(btn('Use the pasted text'))
     expect(h.submitReturned).toHaveBeenCalledTimes(1)
-    expect((btn('Back to Configure') as HTMLButtonElement).disabled).toBe(true)
-    await click(btn('Back to Configure'))
+    expect((btn('Back to Wallet') as HTMLButtonElement).disabled).toBe(true)
+    await click(btn('Back to Wallet'))
     expect(window.location.pathname).toBe('/wallets/a/two-device')
     expect(screen.getByText(/Checking and sending/)).toBeTruthy()
     await act(async () => finish({ status: 'expired', reason: 'This transaction expired before it validated.' }))
     await waitFor(() => expect(screen.getByText(/expired before it validated/)).toBeTruthy())
-    expect((btn('Back to Configure') as HTMLButtonElement).disabled).toBe(false)
-    await click(btn('Back to Configure'))
-    await waitFor(() => expect(window.location.pathname).toBe('/wallets/a/configure'))
+    expect((btn('Back to Wallet') as HTMLButtonElement).disabled).toBe(false)
+    await click(btn('Back to Wallet'))
+    await waitFor(() => expect(window.location.pathname).toBe('/wallets/a'))
     const key = await screen.findByRole('button', { name: 'Sign with two devices' })
     await waitFor(() => expect(document.activeElement).toBe(key))
   })

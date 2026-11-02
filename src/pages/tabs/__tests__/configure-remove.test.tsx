@@ -37,7 +37,7 @@ vi.mock('@/lib/crypto/keystore', () => ({
   renameWallet: async () => ({ ok: true, metas: [] }),
 }))
 
-import { ConfigureScreen } from '@/components/wallet/ConfigureScreen'
+import { WalletTab } from '@/pages/tabs/WalletTab'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { REMOVE_BACKUP, REMOVE_DONE, REMOVE_FAILED, REMOVE_LAST, REMOVE_PIN_NOT_DISCARDED, REMOVE_SIBLING, REMOVE_SOLE } from '@/components/wallet/remove-copy'
 import { queryKeys } from '@/lib/xrpl/query-keys'
@@ -61,7 +61,7 @@ function mount() {
   const utils = render(
     <QueryClientProvider client={queryClient}>
       <TooltipProvider>
-        <ConfigureScreen wallet={W as never} />
+        <WalletTab wallet={W as never} />
       </TooltipProvider>
     </QueryClientProvider>,
   )
@@ -87,7 +87,7 @@ describe('Configure Remove plate', () => {
   it('is the last plate, after Two-device signing, in plate styling, with a danger key named for its network', () => {
     mount()
     const titles = screen.getAllByRole('heading', { level: 2 }).map((n) => n.textContent)
-    expect(titles[titles.length - 1]).toBe('Remove')
+    expect(titles[titles.length - 1]).toBe('Remove this wallet')
     expect(titles.indexOf('Two-device signing')).toBe(titles.length - 2)
     const plate = key().closest('[data-slot="config-plate"]') as HTMLElement
     expect(plate.className).toMatch(/panel-plate/)
@@ -340,11 +340,11 @@ describe('Configure Remove plate', () => {
   })
 
   it('the shared remove function closes no lock and clears no cache inline; its finally owns the teardown', () => {
-    const files = ['src/components/wallet/ConfigureScreen.tsx', 'src/components/wallet/RemoveDialog.tsx', 'src/lib/remove-copy.ts']
+    const files = ['src/pages/tabs/WalletTab.tsx', 'src/components/wallet/RemoveDialog.tsx', 'src/lib/remove-copy.ts']
     for (const f of files) expect(readFileSync(f, 'utf8'), f).not.toMatch(/closeLock|queryClient\.clear|\.clear\(|outline-none|:focus\b/)
     const shared = readFileSync('src/lib/remove-wallet.ts', 'utf8')
     expect(shared).not.toMatch(/closeLock|queryClient\.clear|\.clear\(/)
     expect(shared).toMatch(/finally\s*{[\s\S]*removeWalletData\(/)
-    expect(readFileSync('src/components/wallet/ConfigureScreen.tsx', 'utf8')).toMatch(/confirmRemoveWallet\(/)
+    expect(readFileSync('src/pages/tabs/WalletTab.tsx', 'utf8')).toMatch(/confirmRemoveWallet\(/)
   })
 })

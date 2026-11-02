@@ -470,8 +470,8 @@ the master key, two-device signing, Node, Remove, Add wallet) and the Security
 plate (auto-lock, Lock now). Each lives once elsewhere — the chooser card (Open,
 Rename, Lock, Remove, Add wallet) or the Configure screen (checks and auto-lock,
 Seed, operating another account, other networks, Node, two-device signing) —
-and Settings, from the chooser (`/settings`) and from inside a wallet (the
-Settings tab), is the one `AppSettings` component: Address book, Version and
+and Settings, served only at `/settings` (the in-wallet tab is the Wallet tab,
+not Settings), is the one `AppSettings` component: Address book, Version and
 updates, Remove all wallets from this device. The wrapping rule survives in
 Configure's keys. Story 17 deleted these entry points only after each Settings
 test was mapped to a Configure or chooser test (the mapping is attached to
@@ -1181,9 +1181,7 @@ test runner cannot resolve at all, mockable or not — behind a one-line
 indirection, `src/lib/sw-register.ts`; the hook now imports `registerSW` from
 there instead of the virtual module directly.
 
-**Amended (chooser story 17, AD-45).** `SettingsTab` no longer exists: the Settings
-tab is `AppSettings` (Address book, Version and updates, Remove all), the same
-component `/settings` serves, never both mounted. `useAppUpdate` is now called
+**Amended (chooser story 17, AD-45; Epic 23 story 1).** `SettingsTab` no longer exists, and the in-wallet Settings tab is now the Wallet tab (this wallet's own settings; the Configure screen, route and header key are retired with no alias). `AppSettings` (Address book, Version and updates, Remove all) is served by `/settings` only. `useAppUpdate` is now called
 from `useUpdateMarker` and `AppSettings`; the per-release module-scoped notice
 guard and the pre-unlock build stamp (§10.2) are unchanged.
 

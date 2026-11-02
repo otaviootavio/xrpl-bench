@@ -4,10 +4,10 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 
 /**
- * The Configure counterpart of `settings-edit-checks.test.tsx` (test design R12):
+ * The Wallet tab counterpart of `settings-edit-checks.test.tsx` (test design R12):
  * Edit checks is offered by the Checks plate, the committed edit swaps the lock the
- * same way, and Back from the task screen says `Back to Configure` and returns to
- * Configure. The Settings tab no longer opens it (Story 17): `Back to Configure` is the only label.
+ * same way, and Back from the task screen says `Back to Wallet` and returns to
+ * the Wallet tab. The app-level Settings no longer opens it (Story 17): `Back to Wallet` is the only label.
  * The auto-lock Select scenario of that file moved with auto-lock itself (Story 16).
  */
 const h = vi.hoisted(() => ({
@@ -62,7 +62,7 @@ vi.mock('@/lib/build-info', () => ({
 }))
 
 import { WalletScreens } from '../../WalletScreens'
-import { ConfigureScreen } from '@/components/wallet/ConfigureScreen'
+import { WalletTab } from '@/pages/tabs/WalletTab'
 import { useRoute } from '@/hooks/useRoute'
 import { isTaskRoute, navigate } from '@/lib/route'
 import { TooltipProvider } from '@/components/ui/tooltip'
@@ -75,15 +75,15 @@ const B = { ...base, id: 'b', seedId: 'b', lockId: 'Y', label: 'Beta', address: 
 const OPEN = { key: {} as CryptoKey, autoLockMinutes: 5 }
 const PROMPTS = { pin: async () => '123456' }
 
-/** Configure, or the routed task screen its keys navigate to (what the shell does). */
+/** The Wallet tab, or the routed task screen its keys navigate to (what the shell does). */
 function Host() {
   const route = useRoute()
   if (isTaskRoute(route)) return <WalletScreens route={route} />
   const wallet = useAppStore.getState().wallets.find((w) => w.id === 'a')
-  return <ConfigureScreen wallet={wallet as never} />
+  return <WalletTab wallet={wallet as never} />
 }
 
-function renderAt(_at: 'configure') {
+function renderAt() {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   render(
     <QueryClientProvider client={qc}>
@@ -107,27 +107,27 @@ afterEach(cleanup)
 
 const openEditChecks = () => fireEvent.click(screen.getByRole('button', { name: 'Edit checks' }))
 
-describe('Configure: Edit checks', () => {
+describe('Wallet tab: Edit checks', () => {
   it('the Checks plate has one Edit checks key, for this wallet only', () => {
-    renderAt('configure')
+    renderAt()
     expect(screen.getAllByRole('button', { name: 'Edit checks' })).toHaveLength(1)
   })
 
-  it('opens the shipped screen at its path, with the label `Back to Configure`', async () => {
-    navigate('/wallets/a/configure')
-    renderAt('configure')
+  it('opens the shipped screen at its path, with the label `Back to Wallet`', async () => {
+    navigate('/wallets/a')
+    renderAt()
     openEditChecks()
     expect(window.location.pathname).toBe('/wallets/a/checks')
-    const back = await screen.findByRole('button', { name: /Back to Configure/ })
-    expect(back.textContent).toBe('Back to Configure')
+    const back = await screen.findByRole('button', { name: /Back to Wallet/ })
+    expect(back.textContent).toBe('Back to Wallet')
   })
 
-  it('Back returns to Configure and focus lands on the Edit checks key', async () => {
-    navigate('/wallets/a/configure')
-    renderAt('configure')
+  it('Back returns to the Wallet tab and focus lands on the Edit checks key', async () => {
+    navigate('/wallets/a')
+    renderAt()
     openEditChecks()
-    fireEvent.click(await screen.findByRole('button', { name: /Back to Configure/ }))
-    await waitFor(() => expect(window.location.pathname).toBe('/wallets/a/configure'))
+    fireEvent.click(await screen.findByRole('button', { name: /Back to Wallet/ }))
+    await waitFor(() => expect(window.location.pathname).toBe('/wallets/a'))
     const key = await screen.findByRole('button', { name: 'Edit checks' })
     await waitFor(() => expect(document.activeElement).toBe(key))
   })
@@ -137,7 +137,7 @@ describe('Configure: Edit checks', () => {
     const moved = { ...A, lockId: 'Z', openCheck: 'passkey' }
     h.listed = [moved, B]
     h.edited = { meta: moved, changed: true, previousLockId: 'X', openKey: KEY, autoLockMinutes: 5, previousLockRemoved: true }
-    renderAt('configure')
+    renderAt()
     openEditChecks()
     fireEvent.click(await screen.findByRole('button', { name: /commit edit for a/ }))
     await waitFor(() => expect(Object.keys(useAppStore.getState().openLocks)).toEqual(['Z']))
@@ -153,7 +153,7 @@ describe('Configure: Edit checks', () => {
     useAppStore.setState({ wallets: [legacyA, B], openLocks: { legacy: OPEN } } as never)
     h.listed = [moved, B]
     h.edited = { meta: moved, changed: true, previousLockId: 'legacy', openKey: KEY, autoLockMinutes: 5, previousLockRemoved: false }
-    renderAt('configure')
+    renderAt()
     openEditChecks()
     fireEvent.click(await screen.findByRole('button', { name: /commit edit for a/ }))
     await waitFor(() => expect(Object.keys(useAppStore.getState().openLocks).sort()).toEqual(['Z', 'legacy']))
@@ -163,7 +163,7 @@ describe('Configure: Edit checks', () => {
     useAppStore.setState({ openLocks: { X: OPEN, Y: OPEN } } as never)
     h.edited = { meta: A, changed: true, previousLockId: 'X', autoLockMinutes: 15, previousLockRemoved: false }
     h.listed = [A, B]
-    renderAt('configure')
+    renderAt()
     openEditChecks()
     fireEvent.click(await screen.findByRole('button', { name: /commit edit for a/ }))
     await waitFor(() => expect(useAppStore.getState().openLocks.X.autoLockMinutes).toBe(15))
@@ -175,7 +175,7 @@ describe('Configure: Edit checks', () => {
     const KEY = { type: 'new-key' } as unknown as CryptoKey
     h.startLockSession.mockRejectedValueOnce(new Error('idb down'))
     h.edited = { meta: { ...A, lockId: 'Z' }, changed: true, previousLockId: 'X', openKey: KEY, autoLockMinutes: 5, previousLockRemoved: true }
-    renderAt('configure')
+    renderAt()
     openEditChecks()
     fireEvent.click(await screen.findByRole('button', { name: /commit edit for a/ }))
     await waitFor(() => expect(useAppStore.getState().openLocks.X).toBeUndefined())

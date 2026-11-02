@@ -11,7 +11,7 @@ import { toast } from '@/lib/notify'
 import { queryKeys } from '@/lib/xrpl/query-keys'
 import { useActiveNetwork, useAppStore } from '@/store/app-store'
 
-const BACK_LABEL = 'Back to Configure'
+const BACK_LABEL = 'Back to Wallet'
 
 /**
  * The routed task screens (mobile dialogs S2). Mounted by `Main` only while the
@@ -30,7 +30,7 @@ export function WalletScreens({ route }: { route: TaskRoute }) {
   const closeLock = useAppStore((s) => s.closeLock)
   const lockMinutesChanged = useLockMinutesChanged()
 
-  // A task screen is opened only from Configure and returns there; the label never carries a wallet name.
+  // A task screen is opened only from the Wallet tab and returns there; the label never carries a wallet name.
   const backLabel = BACK_LABEL
 
   const target = wallets.find((w) => w.id === route.walletId) ?? null
@@ -57,7 +57,7 @@ export function WalletScreens({ route }: { route: TaskRoute }) {
         openLock(meta.lockId, edited.openKey, edited.autoLockMinutes)
         await queryClient.invalidateQueries({ queryKey: queryKeys.lockInfo(meta.lockId) })
       } else if (edited.changed) {
-        // Same-lock edit: the minutes part is the shared handler the Configure control also uses.
+        // Same-lock edit: the minutes part is the shared handler the Wallet tab's control also uses.
         await lockMinutesChanged(meta.lockId, edited.autoLockMinutes)
       } else {
         // Nothing changed: the read the screens show is still refreshed, as it always was.

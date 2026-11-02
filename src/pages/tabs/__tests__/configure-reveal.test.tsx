@@ -32,7 +32,7 @@ vi.mock('@/components/wallet/SeedReveal', () => ({
   },
 }))
 
-import { ConfigureScreen } from '@/components/wallet/ConfigureScreen'
+import { WalletTab } from '@/pages/tabs/WalletTab'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { useAppStore } from '@/store/app-store'
 
@@ -42,7 +42,7 @@ function mount(wallet: Record<string, unknown> = W) {
   return render(
     <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
       <TooltipProvider>
-        <ConfigureScreen wallet={wallet as never} />
+        <WalletTab wallet={wallet as never} />
       </TooltipProvider>
     </QueryClientProvider>,
   )

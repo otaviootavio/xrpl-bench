@@ -22,7 +22,7 @@ vi.mock('@/lib/crypto/keystore', () => ({
   renameWallet: (id: string, name: string) => h.rename(id, name),
 }))
 
-import { ConfigureScreen } from '@/components/wallet/ConfigureScreen'
+import { WalletTab } from '@/pages/tabs/WalletTab'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { RENAME_ERRORS, RENAME_HELP, RENAME_WRITE_FAILED } from '@/components/wallet/rename-copy'
 import { useAppStore } from '@/store/app-store'
@@ -34,14 +34,14 @@ const OTHER = { ...base, id: 'w2', seedId: 's2', label: 'Travel', address: 'rB' 
 
 function Screen() {
   const wallet = useAppStore((s) => s.wallets.find((w) => w.id === 'w1'))
-  return <ConfigureScreen wallet={wallet as never} />
+  return <WalletTab wallet={wallet as never} />
 }
 
 function mount(fixed = false) {
   return render(
     <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
       <TooltipProvider>
-        {fixed ? <ConfigureScreen wallet={W as never} /> : <Screen />}
+        {fixed ? <WalletTab wallet={W as never} /> : <Screen />}
       </TooltipProvider>
     </QueryClientProvider>,
   )
@@ -61,10 +61,10 @@ beforeEach(() => {
 afterEach(cleanup)
 
 describe('Configure Name plate', () => {
-  it('is the first section, above Checks, and shows the name', () => {
+  it('sits after This wallet and Account, above Checks, and shows the name', () => {
     mount()
     const titles = screen.getAllByRole('heading', { level: 2 }).map((n) => n.textContent)
-    expect(titles[0]).toBe('Name')
+    expect(titles[2]).toBe('Name')
     expect(titles.indexOf('Name')).toBeLessThan(titles.indexOf('Checks'))
     expect(within(namePlate()).getByText('Savings')).toBeTruthy()
   })
@@ -225,7 +225,7 @@ describe('Configure Name plate', () => {
 
   it('the dialog and renameWallet share the one rule, and the UI never builds a label', () => {
     const dialog = readFileSync('src/components/wallet/RenameDialog.tsx', 'utf8')
-    const configure = readFileSync('src/components/wallet/ConfigureScreen.tsx', 'utf8')
+    const configure = readFileSync('src/pages/tabs/WalletTab.tsx', 'utf8')
     const keystore = readFileSync('src/lib/crypto/keystore.ts', 'utf8')
     expect(dialog).toMatch(/validateWalletName\(/)
     expect(keystore).toMatch(/validateWalletName\(/)

@@ -1,14 +1,14 @@
 /** @vitest-environment jsdom */
 import { afterEach, describe, expect, it } from 'vitest'
 import { blockLeaving } from '../route'
-import { launchFromConfigure, peekConfigureFocusReturn, resetConfigureFocusReturn } from '../configure-launch'
+import { launchFromConfigure, peekConfigureFocusReturn, clearConfigureFocusReturn } from '../configure-launch'
 
 afterEach(() => {
-  resetConfigureFocusReturn()
+  clearConfigureFocusReturn()
   window.history.replaceState(null, '', '/')
 })
 
-describe('the Configure launch', () => {
+describe('the Wallet-tab launch', () => {
   it('a launch navigates and remembers the key to focus on return', () => {
     launchFromConfigure('/wallets/a/checks', 'edit-checks')
     expect(peekConfigureFocusReturn()).toBe('edit-checks')
@@ -16,22 +16,22 @@ describe('the Configure launch', () => {
   })
 
   it('a navigation a leave-blocker refused leaves nothing behind', () => {
-    window.history.replaceState(null, '', '/wallets/a/configure')
+    window.history.replaceState(null, '', '/wallets/a')
     const release = blockLeaving()
     launchFromConfigure('/wallets/a/checks', 'edit-checks')
     release()
-    expect(window.location.pathname).toBe('/wallets/a/configure')
+    expect(window.location.pathname).toBe('/wallets/a')
     expect(peekConfigureFocusReturn()).toBeNull()
   })
 
-  it('resetting the focus return lands the next entry fresh', () => {
+  it('clearing the focus return lands the next entry fresh', () => {
     launchFromConfigure('/wallets/a/checks', 'edit-checks')
-    resetConfigureFocusReturn()
+    clearConfigureFocusReturn()
     expect(peekConfigureFocusReturn()).toBeNull()
   })
 
-  it('keeps no one-shot marker: the Back label is always `Back to Configure`', async () => {
+  it('keeps no one-shot marker: the Back label is always `Back to Wallet`', async () => {
     const mod = await import('../configure-launch')
-    expect(Object.keys(mod).sort()).toEqual(['launchFromConfigure', 'peekConfigureFocusReturn', 'resetConfigureFocusReturn'])
+    expect(Object.keys(mod).sort()).toEqual(['clearConfigureFocusReturn', 'launchFromConfigure', 'peekConfigureFocusReturn'])
   })
 })

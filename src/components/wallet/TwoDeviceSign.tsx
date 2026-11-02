@@ -37,8 +37,8 @@ const KINDS: { kind: TwoDeviceKind; label: string }[] = [
   { kind: 'master-key', label: 'Master key' },
 ]
 
-/** The entry to the two-device screen, mounted by the Configure screen, which passes `configureKey`:
- * the screen opens through `launchFromConfigure` (label `Back to Configure`, focus returns to this key). */
+/** The entry to the two-device screen, mounted by the Wallet tab, which passes `configureKey`:
+ * the screen opens through `launchFromConfigure` (label `Back to Wallet`, focus returns to this key). */
 export function TwoDeviceSign({ wallet, configureKey }: { wallet: WalletMeta; configureKey: string }) {
   const path = walletScreenPath('two-device', wallet.id)
   return (

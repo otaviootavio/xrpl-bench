@@ -15,7 +15,7 @@ import { MasterKeyControl } from '@/components/wallet/MasterKeyControl'
 import { TwoDeviceSign } from '@/components/wallet/TwoDeviceSign'
 import { WalletNodeSection } from '@/components/wallet/WalletNodeSection'
 import { RevealSeedControl } from '@/components/wallet/RevealSeedControl'
-import { formatAlgorithm, formatNode, formatSeedMethod, QUESTION_TERMS } from '@/components/wallet/walk-questions'
+import { formatAlgorithm, formatSeedMethod, QUESTION_TERMS } from '@/components/wallet/walk-questions'
 import {
   NO_OPEN_CHECK_DETAIL,
   OPEN_CHECK_QUESTION,
@@ -43,10 +43,6 @@ const KEY = 'h-auto min-h-8 w-fit max-w-full whitespace-normal py-1 pointer-coar
 
 /** The data-attribute a task screen's return lands on. */
 const EDIT_CHECKS_KEY = 'edit-checks'
-
-/** The plates a setup line's key moves focus to (`ConfigPlate` `focusId`). */
-const CHECKS_PLATE = 'checks'
-const NODE_PLATE = 'node'
 
 /**
  * The lock's auto-lock minutes (AD-44). The keystore re-proves the lock's Open Check
@@ -175,7 +171,7 @@ function ChecksPlate({ wallet }: { wallet: WalletMeta }) {
   const signing = wallet.seedMethod === 'passkey-derived' ? 'passkey' : wallet.signingCheck
 
   return (
-    <ConfigPlate title="Checks" focusId={CHECKS_PLATE}>
+    <ConfigPlate title="Checks">
       {lock.isError ? (
         // A failed read is never shown as "no check" or as a current one.
         <>
@@ -299,55 +295,32 @@ function RemovePlate({ wallet }: { wallet: WalletMeta }) {
   )
 }
 
-/** Moves focus to a plate the same way a dialog's return does (`data-configure-plate`, no second pattern). */
-function focusPlate(id: string) {
-  document.querySelector<HTMLElement>(`[data-configure-plate="${CSS.escape(id)}"]`)?.focus()
-}
-
-const noStop = (text: string) => text.replace(/\.$/, '')
-
-/** One read-only line of what was chosen at creation: its legend, its words, and where it can be changed. */
-function SetupLine({ term, value, keyLabel, keyHint, onKey }: { term: string; value: string; keyLabel?: string; keyHint?: string; onKey?: () => void }) {
+/** One read-only line of what was chosen at creation and cannot change: its legend and its words. */
+function SetupLine({ term, value }: { term: string; value: string }) {
   return (
     <div className="flex min-w-0 flex-wrap items-center justify-between gap-x-3 gap-y-1">
       <div className="min-w-0 flex-1 basis-40">
         <dt className="panel-legend">{term}</dt>
         <dd className="mt-0.5 break-words">{value}</dd>
       </div>
-      {keyLabel && onKey ? (
-        <Button type="button" variant="outline" size="sm" className={KEY} aria-label={`${keyLabel}, for ${keyHint ?? term}`} onClick={onKey}>
-          {keyLabel}
-        </Button>
-      ) : (
-        <span className="text-xs text-muted-foreground">Fixed at creation</span>
-      )}
+      <span className="text-xs text-muted-foreground">Fixed at creation</span>
     </div>
   )
 }
 
 /**
- * Who this wallet is: its full Address, and what was chosen when it was created, read-only from the
- * `WalletMeta` (no ledger read). The name and the Network are in the page heading, so they are not
- * repeated. The curve and the Seed Method have no plate, so they say so in words; the rest have a key
- * that moves focus to the plate where they change. The words are the quiz's (`walk-questions`, `check-words`).
+ * Who this wallet is: its full Address, and the two choices made at creation that no plate can change,
+ * read-only from the `WalletMeta` (no ledger read). The name and the Network are in the page heading,
+ * so they are not repeated, and the Node and the two checks are not repeated either: their own plates
+ * below show them. The words are the quiz's (`walk-questions`).
  */
 function IdentityPlate({ wallet }: { wallet: WalletMeta }) {
-  const signing = wallet.seedMethod === 'passkey-derived' ? 'passkey' : wallet.signingCheck
   return (
     <ConfigPlate title="This wallet">
       <AddressDisplay address={wallet.address} />
       <dl className="flex flex-col gap-2.5 text-sm">
         <SetupLine term={QUESTION_TERMS['Signature type']} value={wallet.algorithm === 'unresolved' ? 'Unknown' : formatAlgorithm(wallet.algorithm)} />
         <SetupLine term={QUESTION_TERMS['Seed Method']} value={formatSeedMethod(wallet.seedMethod)} />
-        <SetupLine
-          term={QUESTION_TERMS.Node}
-          value={formatNode(wallet.node ? 'custom' : 'builtin', wallet.node ?? null)}
-          keyLabel="Node"
-          keyHint="the Node"
-          onKey={() => focusPlate(NODE_PLATE)}
-        />
-        <SetupLine term={QUESTION_TERMS['Open Check']} value={noStop(openCheckWords(wallet.openCheck))} keyLabel="Checks" keyHint="the Open Check" onKey={() => focusPlate(CHECKS_PLATE)} />
-        <SetupLine term={QUESTION_TERMS['Signing Check']} value={noStop(signingWords(signing))} keyLabel="Checks" keyHint="the Signing Check" onKey={() => focusPlate(CHECKS_PLATE)} />
       </dl>
     </ConfigPlate>
   )
@@ -387,7 +360,7 @@ export function WalletTab({ wallet }: { wallet: WalletMeta }) {
       <SeedPlate wallet={wallet} />
       {/* A wallet either operates another account or holds the Account Master Key, so this plate always has something to say. */}
       <ControlPlate wallet={wallet} />
-      <ConfigPlate title="Node" focusId={NODE_PLATE}>
+      <ConfigPlate title="Node">
         <WalletNodeSection wallet={wallet} />
       </ConfigPlate>
       <ConfigPlate title="Two-device signing">

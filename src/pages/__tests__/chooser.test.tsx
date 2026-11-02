@@ -233,6 +233,29 @@ describe('Open', () => {
     expect(useAppStore.getState().activeWalletId).toBe('c2')
     expect(window.location.pathname).toBe('/wallets/c2')
   })
+
+  it('on an open card enters that Wallet directly, no prompt', () => {
+    act(() => {
+      useAppStore.getState().openLock('LA', KEY, 5)
+    })
+    mount()
+    fireEvent.click(screen.getByRole('button', { name: 'Open Alpha on Mainnet' }))
+    expect(useAppStore.getState().activeWalletId).toBe('a')
+    expect(window.location.pathname).toBe('/wallets/a')
+  })
+
+  it('on a key-holder and a controlled Wallet of one Seed, each Open enters its own card', () => {
+    act(() => {
+      useAppStore.getState().openLock('LC', KEY, 5)
+    })
+    mount()
+    fireEvent.click(screen.getByRole('button', { name: 'Open Gamma on Testnet' }))
+    expect(useAppStore.getState().activeWalletId).toBe('c')
+    expect(window.location.pathname).toBe('/wallets/c')
+    fireEvent.click(screen.getByRole('button', { name: 'Open Epsilon on Mainnet' }))
+    expect(useAppStore.getState().activeWalletId).toBe('c3')
+    expect(window.location.pathname).toBe('/wallets/c3')
+  })
 })
 
 

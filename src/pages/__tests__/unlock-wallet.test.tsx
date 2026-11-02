@@ -155,7 +155,7 @@ describe('the locked-Wallet view', () => {
     await waitFor(() => expect(useAppStore.getState().openLocks.L1).toBeDefined())
   })
 
-  describe('after a successful unlock (FR-82)', () => {
+  describe('after a successful unlock: no return to the chooser (FR-82, FR-93)', () => {
     const view = (id: string, network: string) => ({ ...(WALLET as object), id, network })
     async function unlockWithPin() {
       h.openLock.mockResolvedValue({ status: 'ok', value: { key: KEY, autoLockMinutes: 7 } })
@@ -173,21 +173,42 @@ describe('the locked-Wallet view', () => {
       expect(window.location.pathname).toBe('/wallets/w1')
     })
 
-    it('a Seed with several views returns to the chooser, entering no view', async () => {
+    it('a Seed with several views stays on the Wallet that was opened', async () => {
       useAppStore.setState({ wallets: [view('w1', 'mainnet'), view('w2', 'testnet')] as never, activeWalletId: 'w1' })
       navigate('/wallets/w1')
       await unlockWithPin()
-      await waitFor(() => expect(window.location.pathname).toBe('/'))
+      await new Promise((r) => setTimeout(r, 50))
+      expect(window.location.pathname).toBe('/wallets/w1')
       expect(useAppStore.getState().openLocks.L1).toBeDefined()
     })
 
-    it('a lock with no Open Check returns a multi-view Seed to the chooser too', async () => {
+    it('a controlled Wallet on a shared lock stays on the controlled Wallet', async () => {
+      const controlled = { ...view('w2', 'testnet'), accountAddress: 'rControlled' }
+      useAppStore.setState({ wallets: [view('w1', 'testnet'), controlled] as never, activeWalletId: 'w2' })
+      navigate('/wallets/w2')
+      h.openLock.mockResolvedValue({ status: 'ok', value: { key: KEY, autoLockMinutes: 7 } })
+      const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+      render(
+        <QueryClientProvider client={qc}>
+          <Unlock wallet={controlled as never} />
+        </QueryClientProvider>,
+      )
+      fireEvent.change(await screen.findByLabelText('PIN'), { target: { value: '123456' } })
+      fireEvent.click(screen.getByRole('button', { name: /unlock with pin/i }))
+      await waitFor(() => expect(useAppStore.getState().openLocks.L1).toBeDefined())
+      await new Promise((r) => setTimeout(r, 50))
+      expect(window.location.pathname).toBe('/wallets/w2')
+    })
+
+    it('a lock with no Open Check auto-opens and stays on the Wallet, no return to the chooser', async () => {
       h.info = { id: 'L1', openCheck: 'none', autoLockMinutes: 5, pin: false, passkey: false }
       h.openLock.mockResolvedValue({ status: 'ok', value: { key: KEY, autoLockMinutes: 5 } })
       useAppStore.setState({ wallets: [view('w1', 'mainnet'), view('w2', 'testnet')] as never })
       navigate('/wallets/w1')
       renderUnlock()
-      await waitFor(() => expect(window.location.pathname).toBe('/'))
+      await waitFor(() => expect(useAppStore.getState().openLocks.L1).toBeDefined())
+      await new Promise((r) => setTimeout(r, 50))
+      expect(window.location.pathname).toBe('/wallets/w1')
     })
   })
 })

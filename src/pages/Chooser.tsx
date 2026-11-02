@@ -6,72 +6,72 @@ import { consumeAdded } from '@/lib/chooser-signals'
 import { ADD_WALLET_PATH, navigate } from '@/lib/route'
 import { tearDownLock } from '@/lib/teardown'
 import { useAppStore } from '@/store/app-store'
-import { groupWalletsBySeed, type OpenGroup } from '@/store/wallet-groups'
+import { listWalletCards, type OpenCard } from '@/store/wallet-groups'
 
 /**
- * The chooser (FR-79, FR-81, AD-36): one card per Seed, read from `wallets` and
- * `openLocks` through the one grouping selector and nothing else. It mounts no
+ * The chooser (FR-79, FR-81, AD-36): one card per Wallet, read from `wallets` and
+ * `openLocks` through the one card selector and nothing else. It mounts no
  * ledger hook, no `useActiveWallet`/`useActiveNetwork`/`useActiveNode`, no
  * `NetworkPlate` and no `lockInfo` read, and shows no balance. Do not add one:
- * a locked card is typed to hold a name only.
+ * a locked card is typed to hold a name, address and Network only.
  */
 export function Chooser() {
   const wallets = useAppStore((s) => s.wallets)
   const openLocks = useAppStore((s) => s.openLocks)
   const activeWalletId = useAppStore((s) => s.activeWalletId)
-  const groups = useMemo(() => groupWalletsBySeed(wallets, openLocks, activeWalletId), [wallets, openLocks, activeWalletId])
+  const cards = useMemo(() => listWalletCards(wallets, openLocks), [wallets, openLocks])
   const queryClient = useQueryClient()
   const [sharedNote, setSharedNote] = useState<string | null>(null)
-  const [failedSeedId, setFailedSeedId] = useState<string | null>(null)
+  const [failedWalletId, setFailedWalletId] = useState<string | null>(null)
   const statusRef = useRef<HTMLDivElement>(null)
   const headingRef = useRef<HTMLHeadingElement>(null)
   const previous = useRef<Map<string, string> | null>(null)
 
   // Add wallet announced the card it made: focus its h2, once. A cold start announced nothing.
   useEffect(() => {
-    const seedId = consumeAdded()
-    if (!seedId) return
+    const walletId = consumeAdded()
+    if (!walletId) return
     // The card is not there (a failed refresh): the h1 still names the screen.
-    const card = document.querySelector<HTMLElement>(`[data-seed-id="${CSS.escape(seedId)}"] h2`)
+    const card = document.querySelector<HTMLElement>(`[data-wallet-id="${CSS.escape(walletId)}"] h2`)
     ;(card ?? headingRef.current)?.focus()
   }, [])
 
   // One polite region for every lock-state change, whatever caused it. Written
   // to the node, not held in state; nothing is announced on first render.
   useEffect(() => {
-    const now = new Map(groups.map((g) => [g.seedId, g.state]))
+    const now = new Map(cards.map((c) => [c.walletId, c.state]))
     const before = previous.current
     previous.current = now
     if (!before || !statusRef.current) return
     const said: string[] = []
-    for (const g of groups) {
-      const was = before.get(g.seedId)
+    for (const g of cards) {
+      const was = before.get(g.walletId)
       if (was && was !== g.state) said.push(`${g.label}: ${g.state === 'locked' ? 'Locked' : 'Open'}.`)
     }
     if (said.length > 0) statusRef.current.textContent = said.join(' ')
-  }, [groups])
+  }, [cards])
 
   const onLock = useCallback(
-    (group: OpenGroup) => {
-      const others = groups.filter((g) => g.lockId === group.lockId && g.seedId !== group.seedId).map((g) => g.label)
+    (card: OpenCard) => {
+      const others = cards.filter((g) => g.lockId === card.lockId && g.walletId !== card.walletId).map((g) => g.label)
       try {
-        tearDownLock(queryClient, group.lockId)
+        tearDownLock(queryClient, card.lockId)
       } catch {
-        setFailedSeedId(group.seedId)
+        setFailedWalletId(card.walletId)
         setSharedNote(null) // an earlier "also locked" line would misdescribe this failure
         return
       }
-      setFailedSeedId((id) => (id === group.seedId ? null : id)) // another card's failure stays
-      setSharedNote(others.length > 0 ? `Locking ${group.label} also locked ${others.join(', ')}: they share one lock.` : null)
+      setFailedWalletId((id) => (id === card.walletId ? null : id)) // another card's failure stays
+      setSharedNote(others.length > 0 ? `Locking ${card.label} also locked ${others.join(', ')}: they share one lock.` : null)
       headingRef.current?.focus()
     },
-    [groups, queryClient],
+    [cards, queryClient],
   )
 
   // A failure is about an open card: once that card has flipped (Lock elsewhere, auto-lock) it is
   // cleared, so it cannot come back when the card is opened again. Adjusting state during render.
-  if (failedSeedId !== null && !groups.some((g) => g.seedId === failedSeedId && g.state === 'open')) {
-    setFailedSeedId(null)
+  if (failedWalletId !== null && !cards.some((g) => g.walletId === failedWalletId && g.state === 'open')) {
+    setFailedWalletId(null)
   }
 
   return (
@@ -85,12 +85,12 @@ export function Chooser() {
         <div ref={statusRef} role="status" aria-live="polite" className="sr-only" />
       </div>
       <ul className="flex flex-col gap-3">
-        {groups.map((group) => (
+        {cards.map((card) => (
           <WalletCard
-            key={group.seedId}
-            group={group}
+            key={card.walletId}
+            card={card}
             activeWalletId={activeWalletId}
-            lockFailed={group.state === 'open' && group.seedId === failedSeedId}
+            lockFailed={card.state === 'open' && card.walletId === failedWalletId}
             onLock={onLock}
           />
         ))}

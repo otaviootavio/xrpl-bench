@@ -1,42 +1,35 @@
 import type { WalletMeta } from '@/lib/crypto/keystore'
 
-/** One view of a Seed, as an open card shows it. */
-export interface WalletRow {
+type NetworkId = WalletMeta['network']
+
+/** A closed lock: the five things a card may show and nothing else (AD-43, AD-26, FR-93).
+ * Do not add a field (no Node, check kind or balance): the chooser cannot render what this type does not hold. */
+export interface LockedCard {
+  state: 'locked'
   walletId: string
-  network: WalletMeta['network']
+  lockId: string
+  label: string
   address: string
+  network: NetworkId
+}
+
+export interface OpenCard extends Omit<LockedCard, 'state'> {
+  state: 'open'
+  /** This Wallet's Open Check is not `none`. */
+  allowsLock: boolean
   hasNode: boolean
 }
 
-/** A closed lock: a name and the ids needed to enter, nothing else (AD-43, AD-26).
- * Do not add a field: the chooser cannot render what this type does not hold. */
-export interface LockedGroup {
-  state: 'locked'
-  seedId: string
-  lockId: string
-  label: string
-  entryWalletId: string
-}
-
-export interface OpenGroup {
-  state: 'open'
-  seedId: string
-  lockId: string
-  label: string
-  entryWalletId: string
-  /** The entry view's Open Check is not `none`. */
-  allowsLock: boolean
-  views: WalletRow[]
-}
-
-export type WalletGroup = LockedGroup | OpenGroup
+export type WalletCardData = LockedCard | OpenCard
 
 const byCreated = (a: WalletMeta, b: WalletMeta) =>
   a.createdAt - b.createdAt || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0)
 
-/** Every Wallet's id in chooser order: Seeds by `createdAt` then `seedId`, each Seed's
- * views in view order (AD-43). The same order `groupWalletsBySeed` lays the cards in. */
-export function walletIdsInChooserOrder(wallets: readonly WalletMeta[]): string[] {
+const byText = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0)
+
+/** Every Wallet in chooser order: Seeds by `createdAt` then `seedId`, each Seed's views in
+ * view order (AD-43). The one ordering `listWalletCards` and `walletIdsInChooserOrder` share. */
+function inChooserOrder(wallets: readonly WalletMeta[]): WalletMeta[] {
   const bySeed = new Map<string, WalletMeta[]>()
   for (const w of wallets) {
     const list = bySeed.get(w.seedId)
@@ -45,8 +38,13 @@ export function walletIdsInChooserOrder(wallets: readonly WalletMeta[]): string[
   }
   return [...bySeed]
     .map(([seedId, list]) => ({ seedId, views: [...list].sort(byCreated) }))
-    .sort((a, b) => a.views[0].createdAt - b.views[0].createdAt || (a.seedId < b.seedId ? -1 : a.seedId > b.seedId ? 1 : 0))
-    .flatMap((g) => g.views.map((v) => v.id))
+    .sort((a, b) => a.views[0].createdAt - b.views[0].createdAt || byText(a.seedId, b.seedId))
+    .flatMap((g) => g.views)
+}
+
+/** Every Wallet's id in chooser order, the order `listWalletCards` lays the cards in. */
+export function walletIdsInChooserOrder(wallets: readonly WalletMeta[]): string[] {
+  return inChooserOrder(wallets).map((w) => w.id)
 }
 
 /**
@@ -65,43 +63,21 @@ export function nextActiveWalletId(
   return left[0] ?? null
 }
 
-/** One group per Seed, ordered by Seed `createdAt` then `seedId` (AD-43). Pure. */
-export function groupWalletsBySeed(
-  wallets: readonly WalletMeta[],
-  openLocks: Readonly<Record<string, unknown>>,
-  activeWalletId: string | null,
-): WalletGroup[] {
-  const bySeed = new Map<string, WalletMeta[]>()
-  for (const w of wallets) {
-    const list = bySeed.get(w.seedId)
-    if (list) list.push(w)
-    else bySeed.set(w.seedId, [w])
-  }
-  const groups: { seedId: string; createdAt: number; group: WalletGroup }[] = []
-  for (const [seedId, list] of bySeed) {
-    const views = [...list].sort(byCreated)
-    const entry =
-      views.find((v) => v.id === activeWalletId) ?? views.find((v) => v.id === seedId) ?? views[0]
-    const isOpen = Object.prototype.hasOwnProperty.call(openLocks, entry.lockId)
-    const group: WalletGroup = isOpen
+/** One card per Wallet, in chooser order (AD-43, FR-93). Pure; a lock is open when the Wallet's own `lockId` is. */
+export function listWalletCards(wallets: readonly WalletMeta[], openLocks: Readonly<Record<string, unknown>>): WalletCardData[] {
+  return inChooserOrder(wallets).map((w): WalletCardData =>
+    Object.prototype.hasOwnProperty.call(openLocks, w.lockId)
       ? {
           state: 'open',
-          seedId,
-          lockId: entry.lockId,
-          label: entry.label,
-          entryWalletId: entry.id,
-          allowsLock: entry.openCheck !== 'none',
-          views: views.map((v) => ({
-            walletId: v.id,
-            network: v.network,
-            address: v.address,
-            hasNode: v.node !== undefined && v.node !== '',
-          })),
+          walletId: w.id,
+          lockId: w.lockId,
+          label: w.label,
+          address: w.address,
+          network: w.network,
+          allowsLock: w.openCheck !== 'none',
+          hasNode: w.node !== undefined && w.node !== '',
         }
       : // Explicit fields, not a spread: a field added for the open variant must not reach a locked card.
-        { state: 'locked', seedId, lockId: entry.lockId, label: entry.label, entryWalletId: entry.id }
-    groups.push({ seedId, createdAt: views[0].createdAt, group })
-  }
-  groups.sort((a, b) => a.createdAt - b.createdAt || (a.seedId < b.seedId ? -1 : a.seedId > b.seedId ? 1 : 0))
-  return groups.map((g) => g.group)
+        { state: 'locked', walletId: w.id, lockId: w.lockId, label: w.label, address: w.address, network: w.network },
+  )
 }

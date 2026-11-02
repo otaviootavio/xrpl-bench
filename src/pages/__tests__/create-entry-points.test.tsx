@@ -175,7 +175,7 @@ describe('Add wallet from the chooser: the routed screen', () => {
   it('the screen cannot be left while a Wallet is being written or backed up, then returns to the chooser when done', async () => {
     render(<Host />)
     await addWallet()
-    const props = h.flowProps.at(-1) as { onInProgressChange: (b: boolean) => void; onDone: (meta: { seedId: string }) => void }
+    const props = h.flowProps.at(-1) as { onInProgressChange: (b: boolean) => void; onDone: (meta: { id: string }) => void }
     await act(async () => props.onInProgressChange(true))
     expect((screen.getByRole('button', { name: 'Wallets' }) as HTMLButtonElement).disabled).toBe(true)
     expect((h.flowProps.at(-1) as { pathChoice: { disabled: boolean } }).pathChoice.disabled).toBe(true)
@@ -188,7 +188,7 @@ describe('Add wallet from the chooser: the routed screen', () => {
     expect(screen.getByText('the creation flow')).toBeTruthy()
     await act(async () => {
       props.onInProgressChange(false)
-      props.onDone({ seedId: 'w-new' })
+      props.onDone({ id: 'w-new' })
     })
     await waitFor(() => expect(screen.queryByText('the creation flow')).toBeNull())
     expect(window.location.pathname).toBe('/')
@@ -212,9 +212,9 @@ describe('Add wallet at the app shell (chooser story 11)', () => {
     useAppStore.setState({ openLocks: {} } as never)
     const onClose = vi.fn()
     render(<AddWalletScreen onClose={onClose} />)
-    const props = h.flowProps.at(-1) as { onDone: (meta: { seedId: string }) => void }
-    act(() => props.onDone({ seedId: 'seed-9' }))
-    expect(consumeAdded()).toBe('seed-9')
+    const props = h.flowProps.at(-1) as { onDone: (meta: { id: string }) => void }
+    act(() => props.onDone({ id: 'w-9' }))
+    expect(consumeAdded()).toBe('w-9')
     expect(consumeAdded()).toBeNull() // one-shot
     expect(toast.success).toHaveBeenCalledWith('Wallet added.')
     expect(onClose).toHaveBeenCalledTimes(1)

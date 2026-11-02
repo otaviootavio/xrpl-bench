@@ -48,6 +48,7 @@ function mount() {
   )
   return { queryClient, ...utils }
 }
+const cards = () => Array.from(document.querySelectorAll<HTMLElement>('li[data-wallet-id]'))
 const names = () => screen.getAllByRole('heading', { level: 2 }).map((n) => n.textContent)
 
 beforeEach(() => {
@@ -57,8 +58,8 @@ beforeEach(() => {
       W('a', 'a', 'LA', 'Alpha', 'mainnet', 1),
       W('b', 'b', 'LB', 'Beta', 'testnet', 2),
       W('c', 'c', 'LC', 'Gamma', 'testnet', 3),
-      W('c2', 'c', 'LC', 'Gamma', 'devnet', 4),
-      W('c3', 'c', 'LC', 'Gamma', 'mainnet', 5),
+      W('c2', 'c', 'LC', 'Delta', 'devnet', 4),
+      W('c3', 'c', 'LC', 'Epsilon', 'mainnet', 5),
     ],
     activeWalletId: 'b',
     openLocks: {},
@@ -87,7 +88,7 @@ describe('the chooser reads nothing from the ledger (AD-36)', () => {
     expect(document.body.textContent).not.toMatch(/balance|XRP\b/i)
   })
 
-  it('every address link goes to its own row\'s explorer, whatever network is active', () => {
+  it('every address link goes to its own card\'s explorer, locked or open, whatever network is active', () => {
     act(() => {
       useAppStore.getState().openLock('LC', KEY, 5)
       useAppStore.setState({ network: 'testnet' } as never)
@@ -96,7 +97,15 @@ describe('the chooser reads nothing from the ledger (AD-36)', () => {
     for (const [id, network] of [['c', 'testnet'], ['c2', 'devnet'], ['c3', 'mainnet']] as const) {
       const address = `r${id.toUpperCase()}ADDRESS${'x'.repeat(12)}`
       const link = document.querySelector<HTMLAnchorElement>(`a[href="${accountExplorerUrl(network, address)}"]`)
-      expect(link, `${network} row`).not.toBeNull()
+      expect(link, `${network} card`).not.toBeNull()
+    }
+  })
+
+  it('locked cards link each address to their own explorer too', () => {
+    mount()
+    for (const [id, network] of [['a', 'mainnet'], ['b', 'testnet'], ['c2', 'devnet']] as const) {
+      const address = `r${id.toUpperCase()}ADDRESS${'x'.repeat(12)}`
+      expect(document.querySelector(`a[href="${accountExplorerUrl(network, address)}"]`), `${network} locked card`).not.toBeNull()
     }
   })
 })
@@ -108,75 +117,75 @@ describe('the cards', () => {
     expect(screen.getByText('Choose a wallet to open. Each one has its own lock.')).toBeTruthy()
   })
 
-  it('a locked card shows its name, the Locked lamp word once, and Open; no address, network or stamp', () => {
+  it('a locked card shows name, Locked once, address link, Network word and one Open key', () => {
     mount()
-    const card = screen.getByRole('heading', { level: 2, name: 'Alpha' }).closest('li') as HTMLElement
+    const card = screen.getByRole('heading', { level: 2, name: 'Beta' }).closest('li') as HTMLElement
     expect(within(card).getByText('Locked', { selector: 'span' })).toBeTruthy()
     expect(within(card).queryByText('Locked.')).toBeNull()
     expect(within(card).getAllByText('Locked')).toHaveLength(1)
-    const open = within(card).getByRole('button', { name: 'Open Alpha' })
+    expect(within(card).getByText('Testnet')).toBeTruthy()
+    expect(card.querySelector('a')?.getAttribute('href')).toBe(accountExplorerUrl('testnet', `rBADDRESS${'x'.repeat(12)}`))
+    expect(card.textContent).not.toMatch(/real funds|not stable/i)
+    const open = within(card).getByRole('button', { name: 'Open Beta on Testnet' })
     expect(open.textContent).toBe('Open')
-    expect(card.textContent).not.toMatch(/mainnet|testnet|devnet|real funds|not stable/i)
-    expect(card.textContent).not.toContain('ADDRESS') // the fixture address of every wallet carries it
-    expect(card.querySelector('a')).toBeNull()
     expect(within(card).getAllByRole('button').map((b) => b.textContent)).toEqual(['Open'])
   })
 
-  it('a locked Mainnet card renders exactly like a locked Testnet card', () => {
-    const render1 = (network: Net) => {
-      useAppStore.setState({ wallets: [W('x', 'x', 'LX', 'Same', network, 1)], activeWalletId: null })
-      const { container, unmount } = mount()
-      const html = container.innerHTML
-      unmount()
-      return html
-    }
-    expect(render1('mainnet')).toBe(render1('testnet'))
+  it('a locked Mainnet card says Real funds as text and a locked Devnet card says Not stable with its notice', () => {
+    mount()
+    const alpha = screen.getByRole('heading', { level: 2, name: 'Alpha' }).closest('li') as HTMLElement
+    expect(within(alpha).getByText('Mainnet')).toBeTruthy()
+    expect(within(alpha).getByText('Real funds')).toBeTruthy()
+    const delta = screen.getByRole('heading', { level: 2, name: 'Delta' }).closest('li') as HTMLElement
+    expect(within(delta).getByText('Devnet')).toBeTruthy()
+    expect(within(delta).getByText('Not stable')).toBeTruthy()
+    expect(within(delta).getByText(DEVNET_NOTICE)).toBeTruthy()
   })
 
-  it('an open card has a row per view in view order with word, stamp and notice', () => {
+  it('one Seed with three Networks is three cards, no network rows', () => {
     act(() => {
       useAppStore.getState().openLock('LC', KEY, 5)
     })
     mount()
-    const card = screen.getByRole('heading', { level: 2, name: 'Gamma' }).closest('li') as HTMLElement
-    expect(within(card).getByText('Open', { selector: 'span' })).toBeTruthy()
-    const rows = within(card).getAllByRole('listitem')
-    expect(rows.map((r) => r.querySelector('span')?.textContent)).toEqual(['Testnet', 'Devnet', 'Mainnet'])
-    expect(within(rows[0]).queryByText(/real funds|not stable/i)).toBeNull()
-    expect(within(rows[1]).getByText('Not stable')).toBeTruthy()
-    expect(within(rows[1]).getByText(DEVNET_NOTICE)).toBeTruthy()
-    expect(within(rows[2]).getByText('Real funds')).toBeTruthy()
-    expect(within(card).getByRole('button', { name: 'Open Gamma on Mainnet' })).toBeTruthy()
-    expect(within(card).getByRole('button', { name: 'Open Gamma on Devnet' }).textContent).toBe('Open')
-    expect(within(card).queryByRole('button', { name: 'Open Gamma' })).toBeNull()
+    expect(cards()).toHaveLength(5)
+    const gamma = screen.getByRole('heading', { level: 2, name: 'Gamma' }).closest('li') as HTMLElement
+    expect(within(gamma).queryAllByRole('listitem')).toEqual([])
+    expect(within(gamma).getByText('Open', { selector: 'span' })).toBeTruthy()
+    const delta = screen.getByRole('heading', { level: 2, name: 'Delta' }).closest('li') as HTMLElement
+    expect(within(delta).getByText('Not stable')).toBeTruthy()
+    expect(within(delta).getByText(DEVNET_NOTICE)).toBeTruthy()
+    const eps = screen.getByRole('heading', { level: 2, name: 'Epsilon' }).closest('li') as HTMLElement
+    expect(within(eps).getByText('Real funds')).toBeTruthy()
+    expect(within(eps).getByRole('button', { name: 'Open Epsilon on Mainnet' })).toBeTruthy()
+    expect(within(eps).getByRole('button', { name: 'Lock Epsilon on Mainnet' })).toBeTruthy()
   })
 
   it('card order follows creation and never changes with lock state', () => {
     mount()
-    expect(names()).toEqual(['Alpha', 'Beta', 'Gamma'])
+    expect(names()).toEqual(['Alpha', 'Beta', 'Gamma', 'Delta', 'Epsilon'])
     act(() => {
       useAppStore.getState().openLock('LC', KEY, 5)
     })
-    expect(names()).toEqual(['Alpha', 'Beta', 'Gamma'])
+    expect(names()).toEqual(['Alpha', 'Beta', 'Gamma', 'Delta', 'Epsilon'])
     act(() => {
       useAppStore.getState().openLock('LA', KEY, 5)
     })
     act(() => {
       useAppStore.setState({ activeWalletId: 'c3' })
     })
-    expect(names()).toEqual(['Alpha', 'Beta', 'Gamma'])
+    expect(names()).toEqual(['Alpha', 'Beta', 'Gamma', 'Delta', 'Epsilon'])
   })
 
-  it('the active wallet\'s card says Active and its entry Open key is aria-current', () => {
+  it('the active wallet\'s card says Active and its Open key is aria-current', () => {
     mount()
     expect(screen.getAllByText('Active')).toHaveLength(1)
     const beta = screen.getByRole('heading', { name: 'Beta' }).closest('li') as HTMLElement
     expect(within(beta).getByText('Active')).toBeTruthy()
-    expect(within(beta).getByRole('button', { name: 'Open Beta' }).getAttribute('aria-current')).toBe('true')
-    expect(screen.getByRole('button', { name: 'Open Alpha' }).hasAttribute('aria-current')).toBe(false)
+    expect(within(beta).getByRole('button', { name: 'Open Beta on Testnet' }).getAttribute('aria-current')).toBe('true')
+    expect(screen.getByRole('button', { name: 'Open Alpha on Mainnet' }).hasAttribute('aria-current')).toBe(false)
   })
 
-  it('on an open card only the active view\'s row is current', () => {
+  it('on a Seed\'s cards only the active Wallet\'s card is current', () => {
     act(() => {
       useAppStore.getState().openLock('LC', KEY, 5)
     })
@@ -185,8 +194,8 @@ describe('the cards', () => {
     })
     mount()
     expect(screen.getAllByText('Active')).toHaveLength(1)
-    expect(screen.getByRole('button', { name: 'Open Gamma on Devnet' }).getAttribute('aria-current')).toBe('true')
-    expect(screen.getByRole('button', { name: 'Open Gamma on Mainnet' }).hasAttribute('aria-current')).toBe(false)
+    expect(screen.getByRole('button', { name: 'Open Delta on Devnet' }).getAttribute('aria-current')).toBe('true')
+    expect(screen.getByRole('button', { name: 'Open Epsilon on Mainnet' }).hasAttribute('aria-current')).toBe(false)
   })
 
   it('a lock that expires flips its card to Locked in place and moves nobody', () => {
@@ -201,26 +210,26 @@ describe('the cards', () => {
     const card = screen.getByRole('heading', { name: 'Alpha' }).closest('li') as HTMLElement
     expect(within(card).queryByText('Locked.')).toBeNull()
     expect(within(card).getAllByText('Locked')).toHaveLength(1)
-    expect(card.textContent).not.toMatch(/mainnet|real funds/i)
+    expect(within(card).getByText('Real funds')).toBeTruthy() // the Network stays on a locked card
     expect(window.location.pathname).toBe('/')
-    expect(names()).toEqual(['Alpha', 'Beta', 'Gamma'])
+    expect(names()).toEqual(['Alpha', 'Beta', 'Gamma', 'Delta', 'Epsilon'])
   })
 })
 
 describe('Open', () => {
-  it('on a locked card selects and enters the Seed\'s entry view', () => {
+  it('on a locked card selects and enters that Wallet', () => {
     mount()
-    fireEvent.click(screen.getByRole('button', { name: 'Open Alpha' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Open Alpha on Mainnet' }))
     expect(useAppStore.getState().activeWalletId).toBe('a')
     expect(window.location.pathname).toBe('/wallets/a')
   })
 
-  it('on a network row enters exactly that view', () => {
+  it('on a card of a shared Seed enters exactly that Wallet', () => {
     act(() => {
       useAppStore.getState().openLock('LC', KEY, 5)
     })
     mount()
-    fireEvent.click(screen.getByRole('button', { name: 'Open Gamma on Devnet' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Open Delta on Devnet' }))
     expect(useAppStore.getState().activeWalletId).toBe('c2')
     expect(window.location.pathname).toBe('/wallets/c2')
   })
@@ -239,7 +248,7 @@ describe('the Lock key', () => {
     act(() => useAppStore.getState().openLock('LA', KEY, 5))
     mount()
     expect(status()).toBe('')
-    const key = within(card('Alpha')).getByRole('button', { name: 'Lock Alpha' })
+    const key = within(card('Alpha')).getByRole('button', { name: 'Lock Alpha on Mainnet' })
     expect(key.textContent).toBe('Lock')
     fireEvent.click(key)
     expect(tearDownLock).toHaveBeenCalledWith(expect.anything(), 'LA')
@@ -247,7 +256,7 @@ describe('the Lock key', () => {
     expect(within(card('Alpha')).queryByRole('button', { name: /^Lock / })).toBeNull()
     expect(status()).toBe('Alpha: Locked.')
     expect(document.activeElement).toBe(screen.getByRole('heading', { level: 1 }))
-    expect(names()).toEqual(['Alpha', 'Beta', 'Gamma'])
+    expect(names()).toEqual(['Alpha', 'Beta', 'Gamma', 'Delta', 'Epsilon'])
   })
 
   it('the Chooser never closes a lock or clears the cache inline', () => {
@@ -261,10 +270,18 @@ describe('the Lock key', () => {
     useAppStore.setState({ wallets: [W('a', 'a', 'LS', 'Alpha', 'mainnet', 1), W('b', 'b', 'LS', 'Beta', 'testnet', 2)] })
     act(() => useAppStore.getState().openLock('LS', KEY, 5))
     mount()
-    fireEvent.click(within(card('Alpha')).getByRole('button', { name: 'Lock Alpha' }))
+    fireEvent.click(within(card('Alpha')).getByRole('button', { name: 'Lock Alpha on Mainnet' }))
     expect(within(card('Beta')).getAllByText('Locked')).toHaveLength(1)
     expect(screen.getByText('Locking Alpha also locked Beta: they share one lock.')).toBeTruthy()
     expect(status()).toBe('Alpha: Locked. Beta: Locked.')
+  })
+
+  it('locking a card whose Seed has sibling cards on the same lock names them and announces each', () => {
+    act(() => useAppStore.getState().openLock('LC', KEY, 5))
+    mount()
+    fireEvent.click(within(card('Gamma')).getByRole('button', { name: 'Lock Gamma on Testnet' }))
+    expect(screen.getByText('Locking Gamma also locked Delta, Epsilon: they share one lock.')).toBeTruthy()
+    expect(status()).toBe('Gamma: Locked. Delta: Locked. Epsilon: Locked.')
   })
 
   it('no Open Check: no Lock key, the reason is shown; a locked card shows neither', () => {
@@ -283,10 +300,10 @@ describe('the Lock key', () => {
     })
     mount()
     t.fail = true
-    fireEvent.click(within(card('Alpha')).getByRole('button', { name: 'Lock Alpha' }))
+    fireEvent.click(within(card('Alpha')).getByRole('button', { name: 'Lock Alpha on Mainnet' }))
     expect(within(card('Alpha')).getByRole('alert').textContent).toBe('Could not lock this wallet. It is still open.')
     expect(within(card('Beta')).queryByRole('alert')).toBeNull()
-    expect(within(card('Alpha')).getByRole('button', { name: 'Lock Alpha' })).toBeTruthy()
+    expect(within(card('Alpha')).getByRole('button', { name: 'Lock Alpha on Mainnet' })).toBeTruthy()
     expect(status()).toBe('')
   })
 
@@ -294,10 +311,10 @@ describe('the Lock key', () => {
     act(() => useAppStore.getState().openLock('LA', KEY, 5))
     mount()
     t.fail = true
-    fireEvent.click(within(card('Alpha')).getByRole('button', { name: 'Lock Alpha' }))
+    fireEvent.click(within(card('Alpha')).getByRole('button', { name: 'Lock Alpha on Mainnet' }))
     expect(within(card('Alpha')).getByRole('alert')).toBeTruthy()
     t.fail = false
-    fireEvent.click(within(card('Alpha')).getByRole('button', { name: 'Lock Alpha' }))
+    fireEvent.click(within(card('Alpha')).getByRole('button', { name: 'Lock Alpha on Mainnet' }))
     expect(screen.queryByRole('alert')).toBeNull()
   })
 
@@ -305,7 +322,7 @@ describe('the Lock key', () => {
     act(() => useAppStore.getState().openLock('LA', KEY, 5))
     mount()
     t.fail = true
-    fireEvent.click(within(card('Alpha')).getByRole('button', { name: 'Lock Alpha' }))
+    fireEvent.click(within(card('Alpha')).getByRole('button', { name: 'Lock Alpha on Mainnet' }))
     expect(within(card('Alpha')).getByRole('alert')).toBeTruthy()
     act(() => useAppStore.getState().closeLock('LA'))
     act(() => useAppStore.getState().openLock('LA', KEY, 5))
@@ -317,7 +334,7 @@ describe('the Lock key', () => {
     act(() => useAppStore.getState().openLock('LS', KEY, 5))
     mount()
     t.fail = true
-    fireEvent.click(within(card('Alpha')).getByRole('button', { name: 'Lock Alpha' }))
+    fireEvent.click(within(card('Alpha')).getByRole('button', { name: 'Lock Alpha on Mainnet' }))
     expect(screen.queryByText(/also locked/)).toBeNull()
     expect(document.activeElement).not.toBe(screen.getByRole('heading', { level: 1 }))
   })
@@ -331,9 +348,9 @@ describe('the Lock key', () => {
       useAppStore.getState().openLock('LC', KEY, 5)
     })
     mount()
-    fireEvent.click(within(card('Alpha')).getByRole('button', { name: 'Lock Alpha' }))
+    fireEvent.click(within(card('Alpha')).getByRole('button', { name: 'Lock Alpha on Mainnet' }))
     expect(screen.getByText(/Locking Alpha also locked Beta/)).toBeTruthy()
-    fireEvent.click(within(card('Gamma')).getByRole('button', { name: 'Lock Gamma' }))
+    fireEvent.click(within(card('Gamma')).getByRole('button', { name: 'Lock Gamma on Testnet' }))
     expect(screen.queryByText(/also locked/)).toBeNull()
   })
 
@@ -350,7 +367,6 @@ describe('the Lock key', () => {
 
 
 describe('a card holds only Open and Lock (Configure story 3, FR-92)', () => {
-  const cards = () => Array.from(document.querySelectorAll<HTMLElement>('li[data-seed-id]'))
   const labels = (el: HTMLElement) => within(el).queryAllByRole('button').map((b) => b.getAttribute('aria-label'))
 
   it('no card variant renders a Configure, Rename or Remove control, or the locked-card remove reason', () => {
@@ -359,8 +375,8 @@ describe('a card holds only Open and Lock (Configure story 3, FR-92)', () => {
         W('a', 'a', 'LA', 'Alpha', 'mainnet', 1), // locked
         W('b', 'b', 'LB', 'Beta', 'testnet', 2, { openCheck: 'none' }), // open, no Open Check
         W('c', 'c', 'LC', 'Gamma', 'testnet', 3), // open, three views
-        W('c2', 'c', 'LC', 'Gamma', 'devnet', 4),
-        W('c3', 'c', 'LC', 'Gamma', 'mainnet', 5),
+        W('c2', 'c', 'LC', 'Delta', 'devnet', 4),
+        W('c3', 'c', 'LC', 'Epsilon', 'mainnet', 5),
       ],
     })
     act(() => {
@@ -368,7 +384,7 @@ describe('a card holds only Open and Lock (Configure story 3, FR-92)', () => {
       useAppStore.getState().openLock('LC', KEY, 5)
     })
     mount()
-    expect(cards()).toHaveLength(3)
+    expect(cards()).toHaveLength(5)
     for (const name of ['Configure', 'Rename', 'Remove']) {
       expect(screen.queryAllByRole('button', { name: new RegExp(`^${name}`) }), name).toEqual([])
     }
@@ -379,17 +395,16 @@ describe('a card holds only Open and Lock (Configure story 3, FR-92)', () => {
 
   it('a locked card has exactly one key, Open', () => {
     mount()
-    expect(cards().map(labels)).toEqual([['Open Alpha'], ['Open Beta'], ['Open Gamma']])
+    expect(cards().map(labels)).toEqual([['Open Alpha on Mainnet'], ['Open Beta on Testnet'], ['Open Gamma on Testnet'], ['Open Delta on Devnet'], ['Open Epsilon on Mainnet']])
     expect(within(cards()[0]).getAllByRole('button').map((b) => b.textContent)).toEqual(['Open'])
   })
 
-  it('an open card has only Open per network row, then Lock; with no Open Check, Open only', () => {
+  it('an open card has Open then Lock, one card per Wallet; with no Open Check, Open only', () => {
     useAppStore.setState({
       wallets: [
         W('b', 'b', 'LB', 'Beta', 'testnet', 2, { openCheck: 'none' }),
         W('c', 'c', 'LC', 'Gamma', 'testnet', 3),
-        W('c2', 'c', 'LC', 'Gamma', 'devnet', 4),
-        W('c3', 'c', 'LC', 'Gamma', 'mainnet', 5),
+        W('c2', 'c', 'LC', 'Delta', 'devnet', 4),
       ],
     })
     act(() => {
@@ -397,9 +412,16 @@ describe('a card holds only Open and Lock (Configure story 3, FR-92)', () => {
       useAppStore.getState().openLock('LC', KEY, 5)
     })
     mount()
-    const [beta, gamma] = cards()
+    const [beta, gamma, delta] = cards()
     expect(labels(beta)).toEqual(['Open Beta on Testnet'])
-    expect(labels(gamma)).toEqual(['Open Gamma on Testnet', 'Open Gamma on Devnet', 'Open Gamma on Mainnet', 'Lock Gamma'])
+    expect(labels(gamma)).toEqual(['Open Gamma on Testnet', 'Lock Gamma on Testnet'])
+    expect(labels(delta)).toEqual(['Open Delta on Devnet', 'Lock Delta on Devnet'])
+  })
+
+  it('the locked path names no Node, Open Check or balance in the card source', () => {
+    const code = (f: string) => readFileSync(f, 'utf8').replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '')
+    const src = code('src/components/wallet/WalletCard.tsx') + code('src/pages/Chooser.tsx')
+    expect(src).not.toMatch(/\.node\b|\bnode:|openCheck|balance/i)
   })
 
   it('the card source holds no Configure, Rename or Remove handler and no dialog host', () => {
@@ -424,7 +446,7 @@ describe('Add wallet from the chooser (chooser story 11)', () => {
     first.unmount()
     act(() => announceAdded('b'))
     mount()
-    const card = document.querySelector('[data-seed-id="b"]')
+    const card = document.querySelector('[data-wallet-id="b"]')
     expect(card).not.toBeNull()
     expect(document.activeElement).toBe(card?.querySelector('h2'))
     expect(document.activeElement?.getAttribute('tabindex')).toBe('-1')

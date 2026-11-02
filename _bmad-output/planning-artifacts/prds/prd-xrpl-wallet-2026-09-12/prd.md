@@ -320,9 +320,8 @@ The app locks after inactivity — default 5 minutes, user-configurable to
   required and never below 1 minute.*
 - *Planned change (FR-83, FR-88): time spent on the chooser counts as
   inactivity for every Wallet, and auto-lock is set on the Wallet's Configure
-  screen, not in Settings. Wallets that predate per-Wallet locks share one lock
-  and keep the minutes it already has (5 by default); a change to it applies to
-  every Wallet on that lock, which the Configure screen states with the count.*
+  screen, not in Settings.* *Superseded in part by FR-95: no Wallet predates
+  per-Wallet locks, so no lock is shared and no count is stated.*
 
 #### FR-11: Auto-lock on backgrounding
 The app locks immediately on backgrounding on coarse-pointer devices, and after a
@@ -344,7 +343,7 @@ requirement exists to prevent.
   but does not lock it. Locking stays a separate action.*
 
 ### 4.3 Multi-Wallet Management
-*Detail: `docs/user-stories/multi-wallet-management.md`. FR-79 to FR-90: `_bmad-output/specs/spec-wallet-chooser/SPEC.md`. FR-91: planned, no spec yet. FR-92, FR-93, FR-94: planned (2026-10-30, 2026-11-02).*
+*Detail: `docs/user-stories/multi-wallet-management.md`. FR-79 to FR-90: `_bmad-output/specs/spec-wallet-chooser/SPEC.md`. FR-91: planned, no spec yet. FR-92, FR-93, FR-94, FR-95: planned (2026-10-30, 2026-11-02).*
 
 #### FR-13: Add, list, and remove Wallets
 The user can hold several independent Wallets and remove any of them.
@@ -478,8 +477,8 @@ every lock is closed.
   Network. The same Seed on a different Network is allowed, as a separate Wallet.*
 - A failed import leaves no lock behind. The Seed is never kept past the
   operation (NFR-2).
-- *Known gap: the first-run import (§4.1) still uses the shared lock until its
-  own change (§10).*
+- *Known gap, closed by FR-95: the first-run import (§4.1) still uses the shared
+  lock until FR-95 is built.*
 
 #### FR-88: A Configure screen for each Wallet
 *Planned change (FR-94, decided 2026-11-02): there is no separate Configure screen or header key. Everything below is the Wallet tab inside the Wallet, which is that Wallet's own settings. Back and the Wallets key behave as FR-83 says.*
@@ -686,6 +685,28 @@ the words on screen say which.
   Check and Signing Check. The app keeps one top bar; its hierarchy and spacing
   are for the UX pass. The update marker keeps its place on the Wallets key
   (FR-90), and the chooser key reads "Global settings, update available".
+
+#### FR-95: No legacy lock, no backward compatibility
+*Planned, not built. Decided 2026-11-02. Supersedes FR-74 and the shared-lock
+notes under FR-10 and FR-87. Builds on FR-93's "No backward compatibility".*
+
+The product has not launched and has no users, so nothing is kept for a Wallet
+made by an older build.
+- **Every Wallet has its own lock from the moment it is created**, including the
+  first Wallet, whether created or imported at first run (§4.1). There is no
+  shared lock and no lock a Wallet falls into by default. The one exception is
+  FR-93's: a controlled Wallet opens with the lock of the Wallet that holds its
+  key.
+- **There is no migration.** The app does not read, upgrade or repair a Wallet
+  record that an older build wrote. A record missing its lock, Seed id, key
+  address, Network, algorithm, Open Check, Signing Check or Seed method is invalid
+  and is not shown. The owner removes their own
+  wallets before running this build, as FR-93 already says.
+- **Nothing in the app mentions an older build.** A warning that exists only
+  because a Wallet may sit on a shared lock or be unreadable by an older build
+  ends with it.
+- Open Check, Signing Check, Remove and the first-run flow are otherwise
+  unchanged. First-run import is the same import as FR-87's.
 
 ### 4.4 Sending Payments
 *Detail: `docs/user-stories/sending-payments.md`*
@@ -1170,6 +1191,9 @@ passkey it uses. The Seed is re-encrypted, and the address does not change.
 - FR-65's Mainnet floor and FR-72's written-Seed rule hold after an edit too.
 
 #### FR-74: Existing Wallets carry over unchanged
+*Superseded by FR-95 (2026-11-02): nothing carries over, because nothing older
+is read. Kept as the record of the §4.14 decision.*
+
 On updating to the build that ships §4.14, every existing Wallet becomes a Stored
 Seed Wallet whose Open Check is its current Unlock Method (passkey and App PIN,
 as today) and whose Signing Check is Standard.
@@ -1266,6 +1290,14 @@ this PRD previously failed to state.
 
 - **Checks, Escrow, Payment Channels** — real XRPL features, each its own future
   epic. Not required for a minimum functional self-custody wallet.
+- **Token issuing, Multi-Purpose Tokens and NFTs** — *raised 2026-11-02, deferred
+  and not specified.* Today the wallet holds XRP and Trust Line tokens as a holder
+  only (§4.7). Deferred: the issuer side of Trust Line tokens, MPTs (holder and
+  issuer) and NFTs (holder and creator). XRPL Bench is the interface between an
+  XRPL user and native XRPL functionality, so when this is taken up its
+  requirements come from the XRPL documentation and Ripple use cases, not from
+  invented journeys. Each family is its own slice. NFT buy and sell offers need
+  the §5 "not an exchange" question answered before any spec.
 - **Multi-signing and regular-key rotation** — same; and multi-party signing is a
   different product shape from the single-operator assumption in §2.
   *Narrowed by §4.14:* setting a Regular Key from a Controlling Wallet (FR-75)
@@ -1288,7 +1320,7 @@ this PRD previously failed to state.
 
 - **§4.14 Per-Wallet Key Setup and Signing Checks** — FR-60 through FR-78. Its
   phase-blockers, §10 questions 7 to 9, were answered 2026-10-10. FR-74 (existing Wallets carry over
-  unchanged) is the precondition for shipping any of it.
+  unchanged) was its precondition; FR-95 removes the precondition by removing the older Wallets.
 - **§4.3 Wallet Chooser and per-Wallet Configure screen** — FR-79 through FR-90,
   and changes to FR-10, FR-13, FR-14 and FR-77. Epics 17 to 19. Spec:
   `_bmad-output/specs/spec-wallet-chooser/SPEC.md`.
@@ -1547,7 +1579,7 @@ for §4.14. All three were answered by Otavio on 2026-10-10.
     2026-10-09: yes (FR-77), now from the Wallet's Configure screen (FR-88).**
 13. **Should the first-run import (§4.1) give its Wallet its own lock?** FR-87
     says every import does. The first-run flow still uses the shared lock.
-    *Owner: Otavio. Revisit: after Epics 17 to 19, as its own story.*
+    *Answered 2026-11-02: yes, and the shared lock itself goes (FR-95).*
 14. **Exact wording of the Mainnet Import sentence** (FR-93). Neutral, one fact,
     under 21 words. *Owner: Otavio. Revisit: in the FR-93 spec.*
 15. **Plate order and "this Wallet" against "XRPL Bench" wording** (FR-94).

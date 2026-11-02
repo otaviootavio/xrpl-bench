@@ -329,7 +329,7 @@ None of these is applied as an override.
 - **DEVIATION from the UX spine (not from an inherited AD): `/settings` on a cold start.** UX keeps `/settings` on boot and rewrites everything else; AD-32 rewrites it too, because only `/` is guaranteed to be served by the static shell and the owner's rule is "always the chooser". `[ASSUMPTION]` Reversing it needs a served `/settings`.
 - **DEVIATION from the UX spine: Lock inside a wallet "replaces the entry with `/`".** AD-33 uses `leaveToChooser()` instead, which leaves no dead entry. `[ASSUMPTION; UX OQ-11]`.
 - **Existing drift, reported and not fixed here:**
-  - Onboarding imports under the legacy lock through `importAndStoreWallet`, against AD-21 and AD-22 (which says that function is removed).
+  - Onboarding imports under the legacy lock through `importAndStoreWallet`, against AD-21 and AD-22 (which says that function is removed). *Closed by passkey spine AD-52: first-run Import moves to the per-wallet path and the legacy lock is deleted (`spec-no-legacy-lock`).*
   - `Unlock.tsx`'s full reset against AD-25 (a hard lock must not wipe passkey-only Wallets), which the passkey spine already says to rewrite.
   - `AppHeader` closes locks with `closeLock` directly rather than through the teardown owner (corrected by AD-45).
 
@@ -344,7 +344,7 @@ None. Q5, Q6 and Q7 were answered by the owner on 2026-10-26 and are recorded in
 - **Signer Wallet and Transmitter Wallet (raised 2026-11-02).** An offline Signer Wallet with no Network or Node, made in the quiz, paired with a Transmitter Wallet on another device. It would replace controlled views (AD-47) and two-device QR signing. Needs its own PRD, UX and architecture pass; see PRD §6.3.
 
 - **Shared-lock auto-lock (was Q5, answered).** Ships as disclosed in AD-44. Revisit if a Mainnet wallet is found sharing a lock with one the user wants left alone.
-- **Onboarding import on the keystore path (was Q6, answered: every import gets its own lock).** Onboarding keeps `importAndStoreWallet` under the legacy lock; two import lock models coexist until it moves, as its own story after Epic 17 (PRD open question 13). Then delete `importAndStoreWallet`.
+- **Onboarding import on the keystore path (was Q6, answered: every import gets its own lock).** Onboarding keeps `importAndStoreWallet` under the legacy lock; two import lock models coexist until it moves, as its own story after Epic 17 (PRD open question 13). Then delete `importAndStoreWallet`. *Answered 2026-11-02: it moves in `spec-no-legacy-lock` story 1, and the legacy lock goes with it (passkey spine AD-52).*
 - **The AD-25 rewrite of the hard-lock reset in `Unlock.tsx`.** Pre-existing; revisit with the passkey plan's reset story. The chooser adds no new path into it.
 - **Incoming-payment notices while on the chooser.** None fire, because the subscription lives in the wallet shell (AD-38). Revisit if the owner wants background notices: it needs a subscription owner outside the shell and a per-lock read budget decision under AD-26.
 - **A per-row Configure key on a multi-view card** (UX OQ-14). Revisit when a Seed with two views shows the single Configure key to be ambiguous in use.

@@ -112,7 +112,8 @@ recovery, shared or omnibus addresses.
 
 **Deferred, and recorded as deferred rather than silently absent.** Checks,
 Escrow, Payment Channels and multi-signing (all real XRPL features, each its own
-future epic); fiat-equivalent balance display (would add a
+future epic); token issuing (the issuer side of trust line tokens), Multi-Purpose
+Tokens and NFTs; fiat-equivalent balance display (would add a
 price-oracle dependency); Web Push for incoming payments (impossible without a
 backend — see Positioning); user-editable custom RPC endpoints (v1 ships one
 hardcoded endpoint plus one failover per network).

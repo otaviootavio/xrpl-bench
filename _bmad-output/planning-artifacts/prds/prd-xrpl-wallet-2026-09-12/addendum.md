@@ -223,3 +223,25 @@ this would be for show only: `vaultKey` could still open every Seed.
 **Decision reversed outside this PRD.** `docs/decisions.md` §1's mandatory PIN
 fallback (`prd.md` FR-7) is reversed by FR-65 and FR-72. It is reported in
 `prd.md` §10, not edited here.
+
+## 9. FR-95 removal list (no legacy lock, no backward compatibility)
+
+What goes, recorded 2026-11-02 from a read of `src` (46 non-test and 43 test
+references to the legacy lock). The spec turns this into stories.
+
+- The legacy lock id, its `lock.ts` and `db.ts` branches, and the
+  `?? LEGACY_LOCK_ID` fallbacks for a record with no `lockId`.
+- `migrateLegacyVault` (keystore and db) and its startup call in `App.tsx`.
+- The old App-PIN vault setup path in `auth.ts`. First-run import goes through
+  the same import as FR-87 and gets its own lock; first-run Create already does.
+- The persisted-state fallbacks in `app-store.ts` for a record with no `seedId`,
+  `keyAddress`, `lockId`, `network`, `algorithm`, `openCheck`, `signingCheck` or `seedMethod`. Such a record is dropped, not repaired.
+- The "older build cannot open" warning (`EditChecksScreen`), the legacy branch
+  of `reveal-copy.ts`, the shared-lock note in the Wallet tab and the "they share
+  one lock" line in the chooser. The chooser header "Each one has its own lock"
+  becomes true and stays.
+- The tests that exist only for the above (migration, gate-migration, legacy
+  cases in lock, edit-checks and teardown tests).
+- Kept: FR-93's controlled Wallet, which opens with the lock of the Wallet that
+  holds its key. That is a lock shared by design, not a legacy one.
+- Supersedes: passkey-signing story 1's migration half, and AD-27.

@@ -4,10 +4,10 @@ type: architecture-spine
 purpose: build-substrate
 altitude: feature
 paradigm: 'layered, two sealed boundaries (inherited) — the key boundary becomes a sealed signing service with one lock per Wallet'
-scope: 'PRD §4.14, FR-60..FR-78: per-Wallet Network/Node, Seed Method, Open Check, Signing Check, check editing, Regular Key and master-key control, two-device QR signing, migration of existing Wallets.'
+scope: 'PRD §4.14, FR-60..FR-78: per-Wallet Network/Node, Seed Method, Open Check, Signing Check, check editing, Regular Key and master-key control, two-device QR signing, migration of existing Wallets (superseded by FR-95 / AD-52: no migration).'
 status: final
 created: '2026-10-10'
-updated: '2026-10-10'
+updated: '2026-11-02'
 binds: [FR-60, FR-61, FR-62, FR-63, FR-64, FR-65, FR-66, FR-67, FR-68, FR-69, FR-70, FR-71, FR-72, FR-73, FR-74, FR-75, FR-76, FR-77, FR-78, AD-1, AD-2, AD-3, AD-4, AD-5, AD-6, AD-9, AD-12, AD-13, AD-16]
 sources:
   - _bmad-output/planning-artifacts/prds/prd-xrpl-wallet-2026-09-12/prd.md
@@ -24,7 +24,7 @@ cannot hold as written; they are listed under *Inherited Invariants* as
 **conflicts** and need a parent amendment before this spine is final. Nothing
 here overrides them silently.
 
-`[ASSUMPTION]` marks a call not yet confirmed by the owner. Four calls were confirmed by the owner on 2026-10-11 and are no longer assumptions: Regular Key replacement (AD-29), migration across networks (AD-27), Controlled Wallet identity (AD-18), a missing `network_id` accepted for Mainnet only (AD-19). The six conflicting parent ADs (AD-2, 3, 5, 6, 9, 16) are amended when this spine is adopted.
+`[ASSUMPTION]` marks a call not yet confirmed by the owner. Four calls were confirmed by the owner on 2026-10-11 and are no longer assumptions: Regular Key replacement (AD-29), migration across networks (AD-27, superseded by AD-52), Controlled Wallet identity (AD-18), a missing `network_id` accepted for Mainnet only (AD-19). The six conflicting parent ADs (AD-2, 3, 5, 6, 9, 16) are amended when this spine is adopted.
 
 ## Design Paradigm
 
@@ -111,7 +111,7 @@ graph TD
   Account); per-record state is never keyed by address. A Controlling Wallet on
   an offline device has no record here: the controlled record keeps only its
   `controllerAddress`, display-only.
-- **Legacy `algorithm` (FR-74).** Not backfilled by guessing. A legacy Seed's
+- **Legacy `algorithm` (FR-74).** *Superseded by AD-52: a record with no `algorithm` is invalid and not shown.* Not backfilled by guessing. A legacy Seed's
   `algorithm` is `unresolved` until its first decryption, then derived from the
   Seed, checked against the stored address, and stored.
 
@@ -163,7 +163,7 @@ graph TD
   `sign` or `seed`. For the App PIN there is one PBKDF2 over the PIN with a
   device salt, then HKDF per `(id, purpose)`. For a passkey, a distinct PRF salt per `(walletId, purpose)`, one credential per assertion. The `seed` salt is the exception to storing a random salt (AD-24). Every PRF salt and
   every HKDF `info` string is **generated at creation and stored with the
-  record**; code never recomputes one from a constant. The legacy `PRF_SALT` and `HKDF_INFO` (constants today) and PBKDF2 parameters are copied into the legacy lock record at migration, so the rule holds for every Wallet from then on. PBKDF2 output is never cached beyond one unwrap, and each purpose derives its own, so the session cannot obtain a Signing Key from retained bits. The lock layer owns an expiry timer per lock that fires the AD-26 teardown; expiry is checked lazily on read as well (parent AD-5), never only lazily. An Open Check of "none"
+  record**; code never recomputes one from a constant. The legacy `PRF_SALT` and `HKDF_INFO` (constants today) and PBKDF2 parameters are copied into the legacy lock record at migration, so the rule holds for every Wallet from then on. *Superseded by AD-52: no legacy lock record is written, so no constants are copied into one.* PBKDF2 output is never cached beyond one unwrap, and each purpose derives its own, so the session cannot obtain a Signing Key from retained bits. The lock layer owns an expiry timer per lock that fires the AD-26 teardown; expiry is checked lazily on read as well (parent AD-5), never only lazily. An Open Check of "none"
   (Testnet and Devnet only) stores the Open Key as a non-extractable `CryptoKey`
   in IndexedDB, which parent AD-5 permits; it is rejected for Mainnet by AD-28.
 
@@ -203,7 +203,7 @@ graph TD
   **Signing Key** wrapped **only** under the signing credential, domain
   `(walletId, 'sign')`. The Signing Key never enters session state, any store, or
   the IndexedDB session store, and is never derivable from an Open Key. A
-  Standard Wallet's Seed is encrypted under its lock's Open Key. A Seed's ciphertext exists in **exactly one form**: any edit that adds a Signing Check deletes the older ciphertext, including a legacy `encryptedSeed` under `vaultKey`, in the same transaction (AD-28). A tab still running an older build then finds no record and fails closed. A signing check is proven by decrypting the wrapped Seed. The property to test: with the app
+  Standard Wallet's Seed is encrypted under its lock's Open Key. A Seed's ciphertext exists in **exactly one form**: any edit that adds a Signing Check deletes the older ciphertext, including a legacy `encryptedSeed` under `vaultKey` *(AD-52: none exists)*, in the same transaction (AD-28). A tab still running an older build then finds no record and fails closed. A signing check is proven by decrypting the wrapped Seed. The property to test: with the app
   unlocked and the Wallet's Open Check passed, no code path yields that Wallet's
   Seed without the Signing Check succeeding.
 
@@ -223,7 +223,7 @@ graph TD
   Seed with no ciphertext, and `CLAUDE.md`'s unlock wording must be amended to
   say so. `lib/crypto/webauthn.ts` sets `rp.id` explicitly through one function from the build's configured origin (set per branch, since an rpId must match the page's origin, so dev, stage and prod each have their own), never from `location.hostname` implicitly, and every credential record stores the rpId it was registered under (today
   `rp` has only `name`, so it defaults to the current host; credentials already
-  registered get the host they were registered under at migration). PRF is
+  registered get the host they were registered under at migration; *superseded by AD-52: no credential predates its `rpId`*). PRF is
   capability-detected per credential; an unsupported device shows the option
   `aria-disabled` with the reason (FR-60). An authenticator may skip PRF evaluation during registration, so creation
   treats a second prompt right after registration as the normal path, and
@@ -244,7 +244,7 @@ graph TD
 - **Rule:** The App PIN is created the first time any Wallet chooses a PIN check
   and does not exist otherwise. The failure count lives with the PIN, not with a
   lock, and is shared by every Open Check and Signing Check that uses it. A wrong PIN counts, a wrong passkey (presented but failing the check) counts as it does today, and a cancelled or dismissed passkey prompt never does. One function, `pin.verifyPin`, owns the counter and increments it inside an IndexedDB transaction, so parallel guesses cannot share one count. The
-  prompt states tries remaining. A hard lock disables PIN derivation for every PIN-using Wallet and **deletes nothing by itself**: removal needs a separate explicit confirmation, and then removes only Seed records whose **every** unlock path is the PIN. Check kinds include `either` (the legacy lock, openable by passkey or PIN), so a legacy Wallet survives a hard lock and opens by passkey. `Unlock.tsx`'s whole-vault reset is rewritten to this rule; a full reset stays its own explicit action (parent AD-16). A Passkey-Derived Seed Wallet whose Open
+  prompt states tries remaining. A hard lock disables PIN derivation for every PIN-using Wallet and **deletes nothing by itself**: removal needs a separate explicit confirmation, and then removes only Seed records whose **every** unlock path is the PIN. Check kinds include `either` (the legacy lock, openable by passkey or PIN), so a legacy Wallet survives a hard lock and opens by passkey. *AD-52: no legacy lock exists, and the `either` kind is deleted with it (decided 2026-11-02): an Open Check is `pin`, `passkey` or `none`.* `Unlock.tsx`'s whole-vault reset is rewritten to this rule; a full reset stays its own explicit action (parent AD-16). A Passkey-Derived Seed Wallet whose Open
   Check is the PIN remains recoverable through its passkey (FR-68).
 
 ### AD-26 — Teardown has a per-lock scope; a locked Wallet issues no read `(amends parent AD-16)`
@@ -258,9 +258,11 @@ graph TD
   **shell** (never removed by a lock). A Wallet whose lock is closed shows its
   label only; the AD-4 factory read is not enabled for it, so no request carries
   its address. The first read after unlock uses a fresh query, not retained data
-  (parent AD-14). Auto-lock on backgrounding (FR-11) closes every lock. Query data for an Account is removed only when no other open lock holds a record for it (AD-18). Each lock's auto-lock minutes live on the lock record (the legacy lock takes today's persisted `autoLockMinutes` at migration); `app-store`'s single `autoLockMinutes` is removed. The app-wide `Unlock` gate is replaced by a per-Wallet unlock prompt, since the app itself opens without a check (FR-65); `auth.ts` is replaced by `lock.ts`.
+  (parent AD-14). Auto-lock on backgrounding (FR-11) closes every lock. Query data for an Account is removed only when no other open lock holds a record for it (AD-18). Each lock's auto-lock minutes live on the lock record (*superseded by AD-52: no legacy lock*); `app-store`'s single `autoLockMinutes` is removed. The app-wide `Unlock` gate is replaced by a per-Wallet unlock prompt, since the app itself opens without a check (FR-65); `auth.ts` is replaced by `lock.ts`.
 
 ### AD-27 — Existing Wallets migrate by relabelling, not re-encrypting; rollback degrades only new data
+
+**SUPERSEDED by AD-52 (2026-11-02).** The product has not launched and has no users, so nothing is migrated and no legacy lock exists. The text below is kept as the record of what was decided on 2026-10-10 and 2026-10-11; it no longer binds.
 
 - **Binds:** FR-74, FR-48, `lib/crypto/db.ts`, `store/app-store.ts`
 - **Prevents:** a migration that touches every Seed in one step, which a crash or
@@ -331,12 +333,22 @@ graph TD
   Before submitting, the online device decodes the returned blob with xrpl's `decode` and refuses it unless it deep-equals the unsigned transaction it sent, ignoring only `SigningPubKey` and `TxnSignature`, and the signing key belongs to the expected Account (master or Regular Key). The offline device cannot run live-read guards (parent AD-13): the online device runs them before building, and the offline device shows the decoded fields for the confirm step (FR-20).
   Submission goes through `submitAndClassify`; expiry reports as expired (FR-24).
 
+### AD-52 — There is no legacy lock and no migration; a record missing a required field is invalid `(supersedes AD-27)`
+
+*Numbering continues the chooser spine (`architecture-xrpl-wallet-chooser-2026-10-19`, AD-31..AD-51), so this ID is the next free one across both spines.*
+
+- **Binds:** FR-95, FR-93, FR-75, FR-87, `lib/crypto/db.ts`, `lib/crypto/lock.ts`, `lib/crypto/keystore.ts`, `lib/crypto/auth.ts`, `lib/teardown.ts`, `store/app-store.ts`, `pages/Onboarding.tsx`
+- **Prevents:** a lock id that means two things (a real lock and a default every old record falls into); a first-run Wallet on a lock no later Wallet shares the model of; a record that opens because a fallback guessed how it should open or sign.
+- **Rule:** `[ADOPTED]` Owner, 2026-11-02: the product is unlaunched with no users, so there is no backward compatibility. Every Wallet has its own lock from the moment it is created, first-run Import included. The only shared lock is a controlled Wallet using the lock of the Wallet that holds its key (FR-93, FR-75, AD-18). There is no legacy lock id, no `migrateLegacyVault`, no startup migration, no old App-PIN vault setup, and no `?? <legacy id>` fallback. A stored or persisted record missing `lockId`, `seedId`, `keyAddress`, `network`, `algorithm`, `openCheck`, `signingCheck` or `seedMethod` is invalid and is not shown; nothing repairs it and nothing defaults a field. Invalid records are filtered when read, not deleted from the vault. The unlock proof (AD-21, decrypt known ciphertext; address match for a Passkey-Derived Seed) is unchanged.
+- **Supersedes:** AD-27 in full. The "Legacy `algorithm`" rule under AD-18, the legacy-lock constants copied at migration (AD-21), the legacy `encryptedSeed` deletion note (AD-23), the credential `rpId` at migration note (AD-24), the `either` check kind for the legacy lock (AD-25), the legacy `autoLockMinutes` at migration (AD-26), the "Existing Wallets (FR-74)" row, and the passkey-signing story 1's migration half. Each is tagged where it stands.
+- **Also noted in the chooser spine:** its "Existing drift" entry on Onboarding's import under the legacy lock and its Deferred entry "Onboarding import on the keystore path" are closed by this decision (see `spec-no-legacy-lock`, story 1).
+
 ## Consistency Conventions
 
 | Concern | Convention |
 | --- | --- |
 | Naming | Wallet fields are `network`, `node`, `accountAddress`, `keyAddress`, `seedMethod`, `algorithm`, `openCheck`, `signingCheck`, `lockId`. Check kinds are the literals `passkey`, `pin`, `none`, `standard`. |
-| Persisted shape | New data is additive on existing vault records. Never bump the IndexedDB version in this feature (AD-27). |
+| Persisted shape | New data is additive on existing vault records. Never bump the IndexedDB version in this feature (AD-27; the reason, a rollback-safe migration, ends with AD-52, the rule itself is unchanged). |
 | Restore | A passkey-derived Wallet is restorable on a new device from passkey + ordinal + algorithm, tested without the original device's storage (AD-24). |
 | Passkey prompts | Every prompt offers "use an existing passkey or create a new one" (FR-70), named after the Wallet. One credential per assertion. |
 | Failed vs cancelled | A cancelled or dismissed passkey prompt is its own result, distinct from a wrong credential, and never counts toward the PIN lockout (AD-25). |
@@ -403,7 +415,7 @@ those Wallets (recoverable only by the written Seed or a Controlling Wallet).
 | One passkey rule, kind stated (FR-70, FR-71) | `webauthn.ts`, `db.ts` | AD-21, AD-24 |
 | Passkey-only Mainnet written Seed (FR-72) | `policy.ts` | AD-28 |
 | Edit checks (FR-73) | `keystore.editChecks` | AD-28 |
-| Existing Wallets (FR-74) | `db.ts`, `app-store.ts` | AD-27 |
+| Existing Wallets (FR-74, superseded by FR-95) | `db.ts`, `app-store.ts` | AD-27 (superseded), AD-52 |
 | Controlling Wallet, Regular Key, master key off (FR-75..FR-77) | `writes.ts`, `reads.ts` | AD-29, parent AD-9, AD-13 |
 | Two-device QR (FR-78) | `qr-codec.ts` | AD-30 |
 

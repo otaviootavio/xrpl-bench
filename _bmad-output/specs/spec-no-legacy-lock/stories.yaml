@@ -1,0 +1,39 @@
+- id: "1"
+  title: First-run Import gets its own lock
+  description: >-
+    Onboarding's Import goes through CreateWalletFlow with an Import source, as Add wallet does, so the first
+    imported Wallet has its own lock and the App PIN is created on demand. Covers CAP-1; nothing legacy is deleted yet.
+  spec_checkpoint: false
+  done_checkpoint: true
+  invoke_dev_with: >-
+    Reuse the AddWalletScreen import wiring; do not write a second import path. Keep Guardrail 3: the typed Seed lives
+    in a ref only. Real-browser pass of first-run Import on Testnet before done.
+- id: "2"
+  title: Remove the migration, the old PIN vault and the legacy lock
+  description: >-
+    Delete migrateLegacyVault and its startup call, setUpVaultAuth and the old App-PIN vault path, the 'either' Open Check
+    (type, keystore, policy, wording), and every LEGACY_LOCK_ID branch and fallback in lock.ts, db.ts, keystore.ts, teardown.ts and Onboarding. Covers CAP-2.
+  spec_checkpoint: true
+  done_checkpoint: true
+  invoke_dev_with: >-
+    Unlock and signing code: the unlock proof (decrypt known ciphertext) must survive untouched. Keep the controlled
+    Wallet's shared lock. Rewrite, do not drop, any current-behaviour test that used a legacy fixture.
+- id: "3"
+  title: Records missing a required field are dropped
+  description: >-
+    Remove the persisted-state fallbacks in app-store.ts so a record without a lock id, Seed id, key address, Network,
+    algorithm, Open Check, Signing Check or Seed method is filtered out of the list, not repaired. Covers CAP-3.
+  spec_checkpoint: false
+  done_checkpoint: false
+  invoke_dev_with: >-
+    A dropped record must not throw on hydration and must not leave a card. Add a test per missing field.
+- id: "4"
+  title: Remove the older-build and shared-lock copy and the legacy-only tests
+  description: >-
+    Remove the older-build warning (EditChecksScreen), the legacy branch of reveal-copy.ts, the Wallet-tab shared-lock
+    note and the chooser's "they share one lock" line, plus every test that exists only for the legacy path. Covers CAP-4 and CAP-5.
+  spec_checkpoint: false
+  done_checkpoint: true
+  invoke_dev_with: >-
+    Controlled-Wallet wording stays. Finish with a search of src for LEGACY_LOCK_ID, migrateLegacyVault and
+    older-build strings, and run all four gates.

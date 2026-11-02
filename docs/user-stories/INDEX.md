@@ -25,6 +25,7 @@ This is the functional scope reference for the wallet. It exists to keep every f
 - Escrow (time/condition-locked payments)
 - Payment Channels (streaming micro-payments)
 - Multi-signing
+- Token issuing (issuer side of trust line tokens), Multi-Purpose Tokens, NFTs
 
 These are legitimate native XRPL features and can become their own epics later, but they are not required for a minimum functional self-custody wallet.
 

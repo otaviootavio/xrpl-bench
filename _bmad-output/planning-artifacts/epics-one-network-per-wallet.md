@@ -49,7 +49,7 @@ Delivery: the four gates pass on every story; tests of removed behaviour are del
 - AD-47: a Wallet has one Network for life; storage stays "Seed record plus views"; `addNetworkView` and "Other networks" are deleted; views remain only to carry a controlled account.
 - AD-43 (amended): `listWalletCards` replaces `groupWalletsBySeed`; one card per Wallet; the locked variant carries `walletId`, `lockId`, `label`, `address` and `network` only.
 - AD-36 (amended): the chooser still makes no ledger read; address and Network are device reads.
-- AD-39 (amended) and AD-49: the duplicate key is `(keyAddress, network)`, checked before any prompt, lock write or ledger read; the step-1 probe takes the chosen Network.
+- AD-39 (amended) and AD-49: the duplicate key is `(keyAddress, network)`, checked before any prompt, lock write or ledger read; the check takes the Network chosen on step 1 and runs when Import wallet is pressed.
 - AD-48: no migration, no reset screen, no handling of an old multi-network record.
 - No keystore rewrite. The policy, the Mainnet floor, the lock model, PIN entry and the Seed backup are not changed.
 
@@ -95,9 +95,9 @@ So that I can hold one Seed as two Wallets on two Networks, and never one Accoun
 **When** the user imports it
 **Then** it is allowed as its own Wallet with its own record, ciphertext and lock (FR-93)
 
-**Given** the user is on quiz step 1
-**When** the Seed is typed, and again when the Network changes
-**Then** the duplicate probe runs with the Network chosen on that step (AD-49)
+**Given** the user presses Import wallet
+**When** the Seed is checked
+**Then** the check uses the Network chosen on quiz step 1, and a refused Seed returns the user to step 1 with the reason beside the field (FR-91, AD-49); there is no earlier probe
 
 **And** a test fails if the Network is dropped from the key; the old reason that points to "Other networks" no longer exists
 

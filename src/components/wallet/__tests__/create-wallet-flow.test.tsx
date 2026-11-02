@@ -1456,6 +1456,16 @@ describe('the consequence line on the Review (story 20.7)', () => {
   })
 })
 
+describe('the Mainnet Import fact on a Create Review', () => {
+  it('Create on Mainnet does not show it', async () => {
+    await mount()
+    await switchNetwork(/^Mainnet/)
+    goToStep('Review')
+    expect(screen.getByText('Real funds')).toBeTruthy()
+    expect(screen.queryByText(/is the same key on Mainnet/)).toBeNull()
+  })
+})
+
 describe('an App PIN refused at Create wallet (story 20.7)', () => {
   const pin = () => screen.getByLabelText(/Choose an App PIN/) as HTMLInputElement
   const confirm = () => screen.getByLabelText('Confirm the App PIN') as HTMLInputElement

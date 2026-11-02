@@ -127,3 +127,7 @@ The warning stays a sheet (as in Add wallet), not Onboarding's old full-page ale
 - Coarse-pointer 44px targets: only fine-pointer emulation was used; the button classes carry `pointer-coarse:h-11` and `min-h-11` from the primitives.
 - The passkey Open Check path through the browser (App PIN was chosen); dark theme at 1280.
 - The Create step of Onboarding was not changed and was not re-checked (deferred).
+
+**375px and Impeccable audit (On Complete):**
+- 375x667 light and dark: Next, Back to start and Import wallet reachable, inside the card, no horizontal overflow.
+- `/impeccable audit` scoped to the first-run Import step and the warning sheet, detector `[]`: **17/20 (Good)** — Accessibility 3, Performance 4, Responsive 3, Theming 4, Implementation Integrity 3. No P0, no P1 open on the touched surfaces. Not comparable one-to-one with the earlier 14/20 and 15/20, which scored whole branches. Open P2s: warning sheet `returnFocusTo` points at a detached field (unobserved); sticky footer may cover a focused App PIN field (focus-obscured behaviour not tested); coarse-pointer height of "Back to start" not measured. P3: card description pushes the Seed field below the fold at 320px / 200% text. Out of scope and already in `deferred-work.md`: the Create step has the structure Import had before the fix (primary action below the fold at 320x568 is expected there; not measured).

@@ -57,10 +57,10 @@ export function Choice({
   )
 }
 
-export function Axis({ legend, children }: { legend: string; children: ReactNode }) {
+export function Axis({ legend, hideLegend, children }: { legend: string; /** The legend names the group for assistive tech only: a heading above already says it. */ hideLegend?: boolean; children: ReactNode }) {
   return (
     <fieldset className="flex min-w-0 flex-col gap-1.5">
-      <legend className="panel-legend mb-1">{legend}</legend>
+      <legend className={hideLegend ? 'sr-only' : 'panel-legend mb-1'}>{legend}</legend>
       {children}
     </fieldset>
   )

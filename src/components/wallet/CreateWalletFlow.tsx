@@ -706,14 +706,19 @@ function CreateWalletForm({ capability, onDone, onInProgressChange, defaultLabel
       {/* Mounted once and only hidden elsewhere: unmounting would clear a typed Seed. */}
       {importSource && <div hidden={quizIndex !== 0} onChange={() => setSeedError(null)}>{importSource.field(busy, seedError)}</div>}
       {quizIndex === 0 && <NameAndNetworkStep {...questionProps} resetNote={resetNote} />}
-      {walkQuestion && <p className="text-sm text-muted-foreground">Network: {formatNetwork(network)}</p>}
+      {walkQuestion && network === 'mainnet' && (
+        <p className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
+          <Badge variant="warning">Real funds</Badge>
+          Network: {formatNetwork(network)}
+        </p>
+      )}
       {walkQuestion?.render(questionProps)}
 
       {quizIndex === reviewIndex && !verdict.ok && blockedAlert}
 
       {quizIndex === reviewIndex && (
         <ReviewStep
-          rows={answerRows(questionProps)}
+          rows={answerRows(questionProps, pathChoice?.value)}
           onChange={changeAnswer}
           disabled={busy}
           footer={

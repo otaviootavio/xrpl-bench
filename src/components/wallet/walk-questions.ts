@@ -6,6 +6,7 @@ import {
   SignatureTypeQuestion,
   SigningCheckQuestion,
   type AnswerRow,
+  type WalletPath,
   type WalletQuestionsProps,
 } from '@/components/wallet/WalletQuestions'
 import { NETWORK_LOCKED_NOTE, OPEN_CHECK_QUESTION, openCheckWords, SIGNING_CHECK_QUESTION, signingWords } from '@/components/wallet/check-words'
@@ -94,7 +95,7 @@ export const WALK_QUESTIONS: readonly WalkQuestion[] = [
     importApplies: true,
     summary: (p) => [
       { step: 'open-check', term: QUESTION_TERMS['Open Check'], value: formatOpenCheck(p.openCheck) },
-      { step: 'open-check', term: QUESTION_TERMS['Auto-lock'], value: formatAutoLock(p.autoLockMinutes), data: true },
+      { step: 'open-check', term: QUESTION_TERMS['Auto-lock'], value: formatAutoLock(p.autoLockMinutes) },
     ],
     render: OpenCheckQuestion,
   },
@@ -115,8 +116,9 @@ export function walkQuestions(imported: boolean): WalkQuestion[] {
 
 /** Every applicable answer once, in the order they were asked: Label and Network
  * from the first step, then each walk question's own rows. The Review renders this list. */
-export function answerRows(p: WalletQuestionsProps): AnswerRow[] {
+export function answerRows(p: WalletQuestionsProps, path?: WalletPath): AnswerRow[] {
   return [
+    ...(path ? [{ step: 'name-network', term: 'Create or import', value: path === 'import' ? 'Import a wallet' : 'Create a new wallet' }] : []),
     { step: 'name-network', term: QUESTION_TERMS.Label, value: formatLabel(p.label) },
     { term: QUESTION_TERMS.Network, value: formatNetwork(p.network), note: NETWORK_LOCKED_NOTE },
     ...walkQuestions(!!p.imported).flatMap((q) => q.summary(p)),

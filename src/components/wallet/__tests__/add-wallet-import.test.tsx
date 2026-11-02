@@ -209,7 +209,7 @@ describe('Import with every lock closed', () => {
     expect(seen).toEqual(['Node', 'Node', 'Authentication to open the wallet, and auto-lock', 'Authentication required to open the wallet', 'Auto-lock after inactivity', 'Authentication to sign a transaction', 'Authentication required to sign a transaction', 'Review'])
     // The Review for an import: no Seed Method, Passkey or Signature type row, and no Seed.
     const terms = Array.from(document.querySelectorAll('dt')).map((dt) => dt.textContent)
-    expect(terms).toEqual(['Label', 'Network', 'Node', 'Authentication required to open the wallet', 'Auto-lock', 'Authentication required to sign a transaction'])
+    expect(terms).toEqual(['Create or import', 'Label', 'Network', 'Node', 'Authentication required to open the wallet', 'Auto-lock', 'Authentication required to sign a transaction'])
     expect(document.body.textContent).not.toContain(SEED)
     expect(screen.queryByRole('button', { name: 'Next' })).toBeNull()
     expect(button('Import wallet')).toBeTruthy()
@@ -605,6 +605,7 @@ describe('Create or Import is the first question', () => {
     await screen.findByRole('radio', { name: 'Create a new wallet' })
     expect(screen.getByText('Step 1 of 7')).toBeTruthy()
     expect(screen.getByRole('heading', { level: 2 }).textContent).toBe('Create or import')
+    expect(screen.getAllByText('Create or import').filter((el) => !el.className.includes('sr-only')).length).toBe(1)
     expect(radio('Create a new wallet').checked).toBe(true)
     expect(radio('Import a wallet').checked).toBe(false)
     expect(seedInput()).toBeNull()

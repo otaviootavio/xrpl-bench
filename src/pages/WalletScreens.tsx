@@ -30,7 +30,7 @@ export function WalletScreens({ route }: { route: TaskRoute }) {
   const closeLock = useAppStore((s) => s.closeLock)
   const lockMinutesChanged = useLockMinutesChanged()
 
-  // A task screen is opened only from the Wallet tab and returns there; the label never carries a wallet name.
+  // A task screen is opened only from the Local settings tab and returns there; the label never carries a wallet name.
   const backLabel = BACK_LABEL
 
   const target = wallets.find((w) => w.id === route.walletId) ?? null
@@ -57,7 +57,7 @@ export function WalletScreens({ route }: { route: TaskRoute }) {
         openLock(meta.lockId, edited.openKey, edited.autoLockMinutes)
         await queryClient.invalidateQueries({ queryKey: queryKeys.lockInfo(meta.lockId) })
       } else if (edited.changed) {
-        // Same-lock edit: the minutes part is the shared handler the Wallet tab's control also uses.
+        // Same-lock edit: the minutes part is the shared handler the Local settings tab's control also uses.
         await lockMinutesChanged(meta.lockId, edited.autoLockMinutes)
       } else {
         // Nothing changed: the read the screens show is still refreshed, as it always was.

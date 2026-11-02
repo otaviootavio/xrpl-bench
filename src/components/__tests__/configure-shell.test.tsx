@@ -1,5 +1,5 @@
 /** @vitest-environment jsdom */
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -24,7 +24,7 @@ import { useAppStore } from '@/store/app-store'
 const PLATE_ORDER = ['This wallet', 'Account', 'Name', 'Address Book', 'Checks', 'Seed', 'Operating another account', 'Node', 'Two-device signing', 'Remove this wallet']
 
 const W = (id: string, lockId: string, extra = {}) =>
-  ({ id, seedId: id, lockId, label: id, address: `r${id}`, createdAt: 1, network: 'testnet', algorithm: 'ed25519', openCheck: 'pin', signingCheck: 'standard', ...extra }) as never
+  ({ id, seedId: id, lockId, label: id, address: `r${id}`, createdAt: 1, network: 'testnet', algorithm: 'ed25519', seedMethod: 'stored', openCheck: 'pin', signingCheck: 'standard', ...extra }) as never
 const KEY = {} as CryptoKey
 
 function mount() {
@@ -49,9 +49,14 @@ afterEach(() => {
 })
 
 describe('the Wallet tab', () => {
-  it('h1 reads Settings for <name> with the Network words; then the ten headings (Account and nine plates) in the fixed order', async () => {
+  it('h1 holds the fixed label Local settings and the name as its own span, with the Network words; then the ten headings (Account and nine plates) in the fixed order', async () => {
     mount()
-    expect(screen.getByRole('heading', { level: 1, name: 'Settings for a' })).toBeTruthy()
+    const h1 = screen.getByRole('heading', { level: 1, name: 'Local settings a' })
+    expect(h1.querySelectorAll('span')).toHaveLength(2)
+    expect(h1.querySelectorAll('span')[0].textContent).toBe('Local settings')
+    // The name is its own element, not upper-cased by the heading's style.
+    expect(h1.querySelectorAll('span')[1].textContent).toBe('a')
+    expect(h1.className).not.toMatch(/uppercase/)
     expect(screen.getAllByRole('heading', { level: 1 })).toHaveLength(1)
     expect(screen.getAllByText('Testnet').length).toBeGreaterThan(0)
     expect(screen.getAllByRole('heading', { level: 2 }).map((n) => n.textContent)).toEqual(PLATE_ORDER)
@@ -59,10 +64,33 @@ describe('the Wallet tab', () => {
     expect(document.querySelector('a[href^="#"]')).toBeNull()
     // The identity plate: name, network in words, the full address.
     const identity = screen.getByRole('region', { name: 'This wallet' })
-    expect(identity.textContent).toContain('NameaNetworkTestnet')
+    // The name and the Network are in the heading, so the plate does not repeat them.
+    expect(within(identity).queryByText('Name')).toBeNull()
+    expect(within(identity).queryByText('Network')).toBeNull()
     expect(identity.textContent?.replace(/\s/g, '')).toContain('ra')
     expect(await screen.findByRole('button', { name: 'Edit checks' })).toBeTruthy()
     expect(screen.getByRole('button', { name: 'Reveal seed' })).toBeTruthy()
+  })
+
+  it('the identity plate shows the setup read-only, in the quiz words, with keys that move focus to the plate', () => {
+    useAppStore.setState({ wallets: [W('a', 'X', { algorithm: 'secp256k1', openCheck: 'pin', signingCheck: 'standard', seedMethod: 'stored' })], activeWalletId: 'a' } as never)
+    mount()
+    const identity = screen.getByRole('region', { name: 'This wallet' })
+    const text = identity.textContent ?? ''
+    for (const w of ['Signature type', 'secp256k1', 'Seed Method', 'Stored Seed', 'Node', 'Built-in Nodes', 'Authentication required to open the wallet', 'App PIN', 'Authentication required to sign a transaction', 'Nothing is asked for signing']) expect(text).toContain(w)
+    expect(within(identity).getAllByText('Fixed at creation')).toHaveLength(2)
+    fireEvent.click(within(identity).getByRole('button', { name: 'Node, for the Node' }))
+    expect(document.activeElement).toBe(document.querySelector('[data-configure-plate="node"]'))
+    fireEvent.click(within(identity).getByRole('button', { name: 'Checks, for the Signing Check' }))
+    expect(document.activeElement).toBe(document.querySelector('[data-configure-plate="checks"]'))
+  })
+
+  it('says unknown for an unresolved curve, and the custom Node address', () => {
+    useAppStore.setState({ wallets: [W('a', 'X', { algorithm: 'unresolved', node: 'wss://node.example' })], activeWalletId: 'a' } as never)
+    mount()
+    const text = screen.getByRole('region', { name: 'This wallet' }).textContent ?? ''
+    expect(text).toContain('Unknown')
+    expect(text).toContain('wss://node.example')
   })
 
   it.each([
@@ -113,8 +141,8 @@ describe('the Checks plate wording', () => {
     h.lockInfo.mockResolvedValue({ id: 'X', autoLockMinutes: 5, pin: true, passkey: false, ...lock })
     useAppStore.setState({ wallets: [W('a', 'X', wallet)] } as never)
     mount()
-    await screen.findByText('Authentication required to open the wallet')
-    return document.querySelectorAll('[data-slot="config-plate"] dl')[1]?.textContent ?? ''
+    await waitFor(() => expect(screen.getByRole('region', { name: 'Checks' }).querySelector('dl')).not.toBeNull())
+    return screen.getByRole('region', { name: 'Checks' }).querySelector('dl')?.textContent ?? ''
   }
 
   it('uses the words the Edit checks screen uses', async () => {
@@ -135,10 +163,11 @@ describe('the Checks plate wording', () => {
     h.lockInfo.mockRejectedValue(new Error('idb down'))
     mount()
     expect(await screen.findByRole('alert')).toBeTruthy()
-    expect(screen.queryByText('Authentication required to open the wallet')).toBeNull()
-    expect(screen.queryByText('No authentication required to open the wallet')).toBeNull()
+    const checks = screen.getByRole('region', { name: 'Checks' })
+    expect(within(checks).queryByText('Authentication required to open the wallet')).toBeNull()
+    expect(within(checks).queryByText('No authentication required to open the wallet')).toBeNull()
     h.lockInfo.mockResolvedValue({ id: 'X', openCheck: 'pin', autoLockMinutes: 5, pin: true, passkey: false })
     fireEvent.click(screen.getByRole('button', { name: 'Retry' }))
-    expect(await screen.findByText('App PIN')).toBeTruthy()
+    expect(await within(checks).findByText('App PIN')).toBeTruthy()
   })
 })

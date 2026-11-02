@@ -4,10 +4,10 @@ import { AppSettings } from '@/pages/AppSettings'
 import { leaveScreen } from '@/lib/route'
 
 /**
- * `/settings` (AD-36): the XRPL Bench settings (app-level) as a routed, chooser-side screen.
+ * `/settings` (AD-36): the Global settings (app-level) as a routed, chooser-side screen.
  * It holds `AppSettings` and nothing else, so it works with no wallet open and
  * mounts no ledger read, no `useActive*` and no `NetworkPlate`. The in-wallet
- * Wallet tab is a different surface; the two are never mounted together.
+ * Local settings tab is a different surface; the two are never mounted together.
  */
 export function SettingsScreen() {
   return (
@@ -18,7 +18,7 @@ export function SettingsScreen() {
           Wallets
         </Button>
         <h1 id="settings-heading" tabIndex={-1} className="font-legend text-base font-semibold uppercase leading-tight tracking-[0.08em]">
-          XRPL Bench settings
+          Global settings
         </h1>
         <p className="text-sm leading-snug text-muted-foreground">
           These settings are for the whole app. Each wallet's own settings are inside that wallet.

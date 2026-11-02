@@ -20,7 +20,7 @@ companions: []
 
 # Architecture Spine — Wallet Chooser and Per-Wallet Configuration
 
-Inherits both parent spines (whole client AD-1..AD-17, passkey signing AD-18..AD-30) as binding and read-only. New decisions continue at **AD-31**. *Update 2026-11-02 (PRD FR-93, one Network per Wallet): AD-47 to AD-49 are new; AD-36, AD-39 and AD-43 are amended in place; the card is now a Wallet, not a Seed.* `[ADOPTED]` = settled by the owner (UX memlog, Resolved By The Owner, and the 2026-10-20 answers to Q1 to Q4) or by shipped code. `[ASSUMPTION]` = my call, awaiting the owner. Nothing here weakens an inherited AD; the places where it comes close are under *Conflicts For The Owner*.
+Inherits both parent spines (whole client AD-1..AD-17, passkey signing AD-18..AD-30) as binding and read-only. New decisions continue at **AD-31**. *Update 2026-11-02 (PRD FR-93, one Network per Wallet): AD-47 to AD-49 are new; AD-36, AD-39 and AD-43 are amended in place; the card is now a Wallet, not a Seed. Update 2026-11-02 (PRD FR-94, every setting is the Wallet's or XRPL Bench's): AD-50 and AD-51 are new; AD-32, AD-44, AD-45 and AD-46 are amended in place; the Configure screen is the in-wallet Wallet tab.* `[ADOPTED]` = settled by the owner (UX memlog, Resolved By The Owner, and the 2026-10-20 answers to Q1 to Q4) or by shipped code. `[ASSUMPTION]` = my call, awaiting the owner. Nothing here weakens an inherited AD; the places where it comes close are under *Conflicts For The Owner*.
 
 ## Design Paradigm
 
@@ -34,12 +34,12 @@ graph TD
   appshell["App shell — useAutoLock, useClearCacheOnLock, header split, boot rewrite"]
   subgraph chooserside["Chooser side — names and lock state only (AD-36)"]
     chooser["Chooser — one card per Seed"]
-    settings["Settings — app-level"]
+    settings["XRPL Bench settings — app-level"]
     addw["Add wallet — Generate or Import"]
   end
   subgraph walletside["Wallet shell — the only account-scoped reads"]
     walletshell["Wallet shell or Unlock view"]
-    config["Configure"]
+    config["Wallet tab — this wallet's settings and Address Book"]
     tasks["Edit checks, Let another wallet sign, Two-device"]
   end
   gate --> err
@@ -59,14 +59,15 @@ Route and screen map. The solid arrows are history pushes; the dashed ones unwin
 graph LR
   boot["cold start at any path"] -->|"rewritten before first render"| root
   root["/ chooser"] -->|"Add wallet"| newp["/wallets/new"]
-  root -->|"Settings key"| setp["/settings"]
+  root -->|"XRPL Bench key"| setp["/settings"]
   root -->|"Open: enterWallet"| wp["/wallets/:id"]
-  wp -->|"Configure"| cp["/wallets/:id/configure"]
-  cp -->|"Edit checks"| ep["/wallets/:id/checks"]
-  cp -->|"Sign with two devices"| tp["/wallets/:id/two-device"]
-  cp -->|"Let another wallet sign"| kp["/wallets/:id/control"]
+  wp -->|"Wallet tab: Edit checks"| ep["/wallets/:id/checks"]
+  wp -->|"Wallet tab: Sign with two devices"| tp["/wallets/:id/two-device"]
+  wp -->|"Wallet tab: Let another wallet sign"| kp["/wallets/:id/control"]
   wp -.->|"Wallets key, Lock key"| root
-  cp -.-> root
+  ep -.->|"Back: the Wallet tab"| wp
+  tp -.->|"Back: the Wallet tab"| wp
+  kp -.->|"Back: the Wallet tab"| wp
   ep -.-> root
   tp -.-> root
   kp -.-> root
@@ -106,12 +107,12 @@ graph LR
 - **Binds:** `lib/route.ts`, `pages/`, `App.tsx`; AD-6
 - **Prevents:** a route and a store that disagree (history forward to `/wallets/<id>` while `activeWalletId` is another wallet, so every hook keyed on the active wallet renders one wallet's balance under another's URL); a chooser-side screen mounted only inside the wallet subtree, as add-wallet is today.
 - **Rule:**
-  - `Route` is `chooser | settings | add-wallet | wallet | configure | edit-checks | two-device | control`. `home` is retired in one change, not aliased. Paths: `/`, `/settings`, `/wallets/new`, `/wallets/:id`, `/wallets/:id/configure`, `/wallets/:id/checks`, `/wallets/:id/two-device`, `/wallets/:id/control`. `parseRoute` stays total: an unknown path parses to `chooser`. A path carries a screen name and at most a walletId (the route-module rule, unchanged).
-  - `isWalletScreen(route)` in `route.ts` is the only chooser-side versus in-wallet split: `wallet`, `configure`, `edit-checks`, `two-device`, `control` are in-wallet; `chooser`, `settings`, `add-wallet` are not. Every consumer (AD-35, AD-34, AD-45) calls it; none re-lists screens.
-  - An in-wallet screen renders only when `route.walletId === activeWalletId`, the wallet exists, and (for configure and the task screens) its lock is open. Otherwise `resetToHome()`. The Unlock view is the wallet screen's own locked state, as shipped.
+  - `Route` is `chooser | settings | add-wallet | wallet | edit-checks | two-device | control`. `home` is retired in one change, not aliased. *Amended 2026-11-02 (FR-94): `configure` and `/wallets/:id/configure` are retired the same way, with no alias and no redirect; the Wallet tab replaces the screen (AD-51).* Paths: `/`, `/settings`, `/wallets/new`, `/wallets/:id`, `/wallets/:id/checks`, `/wallets/:id/two-device`, `/wallets/:id/control`. `parseRoute` stays total: an unknown path parses to `chooser`. A path carries a screen name and at most a walletId (the route-module rule, unchanged).
+  - `isWalletScreen(route)` in `route.ts` is the only chooser-side versus in-wallet split: `wallet`, `edit-checks`, `two-device`, `control` are in-wallet; `chooser`, `settings`, `add-wallet` are not. Every consumer (AD-35, AD-34, AD-45) calls it; none re-lists screens.
+  - An in-wallet screen renders only when `route.walletId === activeWalletId`, the wallet exists, and (for the task screens) its lock is open. Otherwise `resetToHome()`. The wallet screen's tabs mount only with the lock open, so the Wallet tab does too. The Unlock view is the wallet screen's own locked state, as shipped.
   - **Boot.** `route.ts` exports `rewriteBootLocation()`, run once at module scope before the first React render, which `replaceState`s any pathname other than `/` to `/`. It is not an effect and does not wait for `Gate`, so an in-wallet subtree can never mount from a bookmark or a reload. `[ASSUMPTION]` It also rewrites `/settings`: the shell is static and only `/` is guaranteed to be served (see Conflicts).
   - `/wallets/new` and `/settings` are rendered by the app shell, not by the wallet shell, so Add wallet works with every lock closed.
-  - Tab selection inside a wallet stays local state and is not in the URL. The Settings tab renders the same app-level settings component as `/settings`; the two are never mounted together.
+  - Tab selection inside a wallet stays local state (`OpenWallet`) and is not in the URL. *Amended 2026-11-02 (FR-94): the sixth tab is the Wallet tab (AD-51). The app-level settings component renders only at `/settings`, and is not mounted inside a wallet.*
 
 ### AD-33 — One unwind to the chooser, driven by a depth in the history state
 
@@ -194,12 +195,12 @@ graph LR
 - **Rule:**
   - `listWalletCards(wallets, openLocks, activeWalletId)` replaces `groupWalletsBySeed` and is the only selector. There is one card per Wallet (per `walletId`), so a Seed with a controlled view (AD-47) shows one card for each. Order is Seed `createdAt` ascending, then `seedId`, then the view's own position, never storage order and never by state.
   - Its output is a discriminated union. The **locked** variant carries `walletId`, `lockId`, `label`, `address` and `network` and nothing else: no Node, no check kind, no balance, no Account other than `address`. The **open** variant adds whether the Open Check allows Lock and whether a Node is set. The component cannot render what the type does not hold.
-  - Open, Lock and Configure carry one `walletId`. There is no entry-view rule and no network row.
+  - Open and Lock carry one `walletId`; a card has no Configure key (AD-51). There is no entry-view rule and no network row.
   - After unlocking the user enters that Wallet. The return to the chooser to pick a network is deleted, and a Mainnet Wallet is entered only by choosing its own card and passing its own Open Check (FR-82, FR-93).
 
 ### AD-44 — Auto-lock is edited in per-wallet configuration, by the one writer that re-proves the Open Check
 
-- **Binds:** Configure Checks plate, `EditChecksScreen`, `SettingsTab`, `keystore.setLockAutoLock`; AD-26, AD-28, FR-65
+- **Binds:** the Wallet tab's Checks plate (AD-51), `EditChecksScreen`, `keystore.setLockAutoLock`; AD-26, AD-28, FR-65
 - **Prevents:** an app-level auto-lock control that edits some lock with no wallet in context; two success paths for a minutes change (one refreshing `lockInfo`, one not); a shared lock changed for sibling wallets without saying so.
 - **Rule:** Settings loses auto-lock and Lock now. The Checks plate edits minutes through `setLockAutoLock`, which goes through `editChecks`: the lock's Open Check is passed again and the policy floor is checked over every Wallet on the lock. The plate and Edit checks share one success handler (`setLockMinutes` plus invalidating `queryKeys.lockInfo(lockId)`). A lock shared by more than one Seed (every legacy Wallet) says so on the plate, with the count from the store, because the change applies to all of them `[ADOPTED, owner Q5]`: legacy Wallets keep the minutes their lock already has (the default is 5), the user may change it, and no further feature is built for them. `app-store.autoLockMinutes` remains the legacy migration input only and is never read or written by a screen.
 
@@ -207,13 +208,13 @@ graph LR
 
 - **Binds:** `AppHeader`, Lock keys, the update marker; AD-16, AD-26, `docs/decisions.md` §6.12
 - **Prevents:** the wallet `Select` surviving (switching without seeing the chooser's network words); `NetworkPlate` mounted on a chooser-side screen; a Lock key calling `closeLock` directly (as `AppHeader` does today) and skipping the cache removal; the update marker derived twice.
-- **Rule:** The wallet `Select` is removed; switching is the Wallets key, then Open. A **wallet header** (nameplate, Wallets key, and only for an open lock: `NetworkPlate`, Configure, and Lock when the Open Check is not `none`) renders when `isWalletScreen(route)`; a **chooser header** (nameplate, Settings key) otherwise. A locked wallet's header carries the Wallets key alone. Every Lock key, header or card, calls `tearDownLock`. The update marker is read from one shared predicate (`updateReady && !declined`) by the chooser's Settings key and the Settings tab; neither re-derives it. `docs/decisions.md` §6.12 is updated with the picker's removal.
+- **Rule:** The wallet `Select` is removed; switching is the Wallets key, then Open. A **wallet header** (nameplate, Wallets key, and only for an open lock: `NetworkPlate`, and Lock when the Open Check is not `none`) renders when `isWalletScreen(route)`; a **chooser header** (nameplate, XRPL Bench key) otherwise. *Amended 2026-11-02 (FR-94): the Configure key is removed, and `resetConfigureFocusReturn` with it.* A locked wallet's header carries the Wallets key alone. Every Lock key, header or card, calls `tearDownLock`. The update marker is read from one shared predicate (`useUpdateMarker`, `updateReady && !declined`) by the chooser's XRPL Bench key and by the wallet header's Wallets key, whose accessible name becomes "Wallets, update available" with the lamp; neither re-derives it, and the Wallet tab does not read it. An update is applied only in the app-level settings (`useAppUpdate`, with its in-flight-transaction guard), never from inside a wallet. `docs/decisions.md` §6.12 is updated with the picker's removal.
 
 ### AD-46 — Remove re-checks its lock at call time and tears down through the owner
 
-- **Binds:** chooser Remove, Remove all, `lib/teardown.ts`, `keystore.removeWallet`, `lock.ts`; FR-13, FR-86; AD-13, AD-16, AD-25, AD-26
+- **Binds:** the Wallet tab's Remove plate, Remove all, `lib/teardown.ts`, `keystore.removeWallet`, `lock.ts`; FR-13, FR-86; AD-13, AD-16, AD-25, AD-26
 - **Prevents:** a Remove that proceeds on a locked wallet because `aria-disabled` does not stop activation; a lock closed or a cache cleared inline in a component (`closeLock`, `queryClient.clear()` today); `activeWalletId` pointing at a removed wallet; a closed-by-removal lock whose session lingers; an App PIN, its verifier and its failure count outliving the last Wallet on a handed-over device (FR-13).
-- **Rule:** The Remove handler re-reads `lockId in openLocks` at call time and refuses otherwise; the key being `aria-disabled` with its reason is the presentation, not the guard. Removal calls one teardown-owner scope, `removeWalletData(queryClient, removed, remaining)`: it removes the removed wallet's account-scoped entries, closes a lock the keystore deleted with the Seed's last view (never the legacy lock), and, when no Wallet remains, runs `tearDownAllLocks`. The new `activeWalletId` comes from one pure function (keep it if still present, else the first card in chooser order, else `null`). Removing a view removes only that view; the dialog states which of its three bodies applies. Remove all wallets from this device stays `tearDownAllLocalState` from app-level Settings, which depends on no wallet and no open lock, so a hard-locked user can reach it from the chooser's Settings key. Removing the last wallet returns the app to Onboarding through Gate's empty outcome.
+- **Rule:** The Remove handler re-reads `lockId in openLocks` at call time and refuses otherwise; the key being `aria-disabled` with its reason is the presentation, not the guard. Removal calls one teardown-owner scope, `removeWalletData(queryClient, removed, remaining)`: it removes the removed wallet's account-scoped entries, closes a lock the keystore deleted with the Seed's last view (never the legacy lock), and, when no Wallet remains, runs `tearDownAllLocks`. The new `activeWalletId` comes from one pure function (keep it if still present, else the first card in chooser order, else `null`). Removing a view removes only that view; the dialog states which of its three bodies applies. *Amended 2026-11-02 (FR-94): `removeWalletData` also removes that Wallet's Address Book (AD-50) in the same scope, so a removed Wallet leaves no label behind; it does not throw, as the scope runs in `finally`.* Remove all wallets from this device stays `tearDownAllLocalState` from app-level Settings, which depends on no wallet and no open lock, so a hard-locked user can reach it from the chooser's Settings key. Removing the last wallet returns the app to Onboarding through Gate's empty outcome.
   - **The App PIN goes with the last Wallet `[ADOPTED]`.** In `keystore.removeWallet`, when no stored Wallet and no lock record remain, one new `lock.ts` function, `discardAppPin`, runs. In **one** `mutateVaultMeta` transaction it deletes `pinSaltB64`, `pinVerifier`, `wrappedMasterKeyForPin`, `wrappedMasterKeyForPasskey`, `passkeyCredentialIdB64` and `rpId`, and resets `failedAttempts` and `lockedUntil`: the PIN and its count go together (AD-25), and nothing of the legacy master-key wrappers is left to make an empty vault read as a lock. Resetting the count is permitted only inside this function, and only here: with no Wallet left there is nothing a hard lock protects, and Remove all is already reachable from a hard-locked state. It is not `discardUnusedAppPin`, which keeps the count because a passkey shares it and swallows its error.
   - **The emptiness check and the discard are one unit.** They run in one IndexedDB transaction across the wallet, lock and vault-meta stores, or under a single-flight guard shared with `createStoredWallet` and `importStoredWallet`, so a create or import in flight cannot have its PIN or verifier deleted under it, and cannot silently turn a typed PIN into the new App PIN without the two-entry confirmation.
   - **A failed discard is reported and recoverable.** The teardown scope runs in `finally`, so `session`, `activeWalletId` and the caches are cleared even when the keystore step throws. If `discardAppPin` fails after the last Wallet is gone, Gate shows Onboarding, where the chooser's Settings key does not exist; so Onboarding offers Remove all wallets from this device whenever a PIN or a non-zero count remains, and the removal reports `The wallet was removed, but the App PIN could not be removed.` The teardown owner calls the keystore and never writes vault meta itself. A crash between the two writes leaves today's state, a PIN with no Wallet, the safe direction. The last-wallet dialog body names the PIN.
@@ -236,6 +237,21 @@ graph LR
 - **Binds:** `importDuplicateReason`, `CreateWalletFlow` step 1 and Review; AD-39, AD-40
 - **Prevents:** the duplicate check using the wrong key; a notice that blocks.
 - **Rule:** The duplicate check runs inside `acquire` when Import wallet is pressed, with the Network chosen on step 1; a refusal returns the user to step 1 with the reason beside the Seed field (FR-91). No probe runs earlier. The Mainnet Import notice (FR-93) is text on the Review step and gates nothing; it is not an input to `checkWalletRequest`.
+
+### AD-50 — The Address Book belongs to a Wallet
+
+- **Binds:** `store/app-store.ts` (`addressBook`, `addAddressBookEntry`, `mergePersistedAppState`), `store/address-book.ts`, `SendTab` (FR-21), the Wallet tab's Address Book plate, `lib/teardown.ts`; AD-6, AD-16, AD-36, AD-37
+- **Prevents:** one Wallet's recipients silencing another Wallet's first-send warning (FR-21); a removed Wallet's labels outliving it (FR-13); a persisted old-shape array crashing hydration and showing as the Gate's read error; a chooser screen reading recipients.
+- **Rule:** `[ASSUMPTION; recommended over a walletId field on each entry]` `addressBook` becomes `Record<walletId, AddressBookEntry[]>` in the same persisted slice `xrpl-wallet-app-state`. A Wallet reads only its own list, through one selector keyed by the entered `walletId`; a write takes the `walletId` too. A map keeps "a Wallet cannot see another's" true by shape, makes removal one key delete, and leaves the counterparty identity `(network, address, tag)` and its helpers in `address-book.ts` unchanged (the entry's `network` is the Wallet's, FR-93). Reads happen in the wallet shell only; the chooser and `/settings` read none (AD-36). The first-time warning fails safe: a Wallet with no list, or an unhydrated store, has no known destination, so the warning shows. Hydration failure is already the Gate's error state (AD-37), so a list is never shown empty because a read failed.
+  - `mergePersistedAppState` reads an old array-shaped `addressBook` as `{}`: it is dropped, not migrated and not an error (AD-48). Without this, the old shape would fail hydration and the app would show the read-error surface on every launch.
+  - `removeWalletData` deletes that Wallet's key; Remove all already clears the whole persisted slice (`PERSISTED_ACCOUNT_DATA`), so the book goes with it. No new persistence owner is added.
+  - Entries saved with no network (`migrateAddressBook`, Epic 9) stop being a case: they are in the dropped array. Deleting that code is a cleanup, not required here.
+
+### AD-51 — The Wallet tab replaces the Configure screen
+
+- **Binds:** `pages/Main.tsx` (`PANELS`, `OpenWallet` tab state), `WalletScreens.tsx`, `ConfigureScreen.tsx` (its plates move), `lib/configure-launch.ts`, `AppHeader`, `SettingsScreen.tsx`, `AppSettings.tsx`; AD-32, AD-45, AD-44
+- **Prevents:** two screens owning one Wallet's settings; the Back key of a task screen landing on Balances or on a retired screen; focus lost on return; an app-level plate (Remove all, Version and updates) mounted inside a wallet; a per-wallet plate on the chooser's settings.
+- **Rule:** The sixth tab is the **Wallet tab**, mounted by `OpenWallet` beside the five ledger tabs, so only with the lock open (AD-26). It renders the Configure plates in one column, in the order the PRD fixes (FR-94): identity, Name, Address Book, Checks, Seed, Operating another account, Node, Two-device signing, Remove. Its visible `<h1>` is "Settings for <name>" with the Network (the other tabs keep a screen-reader-only heading). The task screens (`edit-checks`, `two-device`, `control`) are launched only from this tab; their Back label reads "Back to Wallet", and Back returns to `wallet` with the tab still selected, because `OpenWallet` holds the tab while a task screen is shown and its state is not unmounted. `configure-launch.ts` keeps its contract under the Wallet tab's name: module state, never in the URL, holding the id of the key that opened the task screen; the tab focuses that key on mount, else its heading. The app-level `AppSettings` renders at `/settings` only and holds Version and updates and Remove all wallets from this device (FR-89); it has no Address Book and no per-wallet control. A test fails if the Wallet tab renders Remove all or Version, or if `/settings` renders a per-wallet plate or the Address Book.
 
 ## Lock Lifecycle
 
@@ -281,7 +297,7 @@ src/store/wallet-groups.ts  # groupWalletsBySeed (pure; discriminated card outpu
 src/store/app-store.ts      # touchLock(enteredWalletId); enterWallet; enteredWalletId selector
 src/pages/AppShell.tsx      # lifecycle hooks, header split, route switch (replaces most of Main)
 src/pages/Chooser.tsx       # chooser side
-src/pages/Configure.tsx     # per-wallet configuration
+src/pages/Main.tsx          # six tabs; the sixth is the Wallet tab (the Configure plates)
 ```
 
 Deployment and operations are unchanged (parent AD-17): a static shell, only `/` guaranteed served, hence the boot rewrite in AD-32.
@@ -295,7 +311,8 @@ Deployment and operations are unchanged (parent AD-17): a static shell, only `/`
 | Lock stays open on leave; auto-lock | `hooks/useAutoLock.ts`, `lib/teardown.ts` | AD-31, AD-35, AD-38 | FR-10, FR-11, FR-12, FR-83, FR-84 |
 | Add wallet: Generate and Import | `keystore.importStoredWallet`, `createStoredWallet`, `AddWalletScreen` | AD-39, AD-40, AD-28 | FR-87, FR-65 |
 | Rename | `keystore.renameWallet`, `lib/wallet-name.ts` | AD-41, AD-42 | FR-85 |
-| Per-wallet configuration and auto-lock | `pages/Configure.tsx`, `setLockAutoLock` | AD-44, AD-28 | FR-88, FR-10, FR-77 |
+| Per-wallet settings (the Wallet tab) and auto-lock | `pages/Main.tsx`, `ConfigureScreen` plates, `setLockAutoLock` | AD-51, AD-44, AD-28 | FR-88, FR-94, FR-10, FR-77 |
+| Address Book per Wallet | `store/app-store.ts`, `store/address-book.ts`, `SendTab`, Wallet tab | AD-50, AD-46 | FR-45, FR-21, FR-94 |
 | Remove, Remove all | `lib/teardown.ts`, chooser, Settings | AD-46, AD-16 | FR-13, FR-86, FR-89 |
 | Gate, read-failure states | `App.tsx` | AD-37, AD-13..AD-15 | FR-80 |
 | Header, update marker | `AppHeader` split, shared predicate | AD-45 | FR-84, FR-89, FR-90 |
@@ -306,6 +323,7 @@ None of these is applied as an override.
 
 - **RESOLVED (owner Q1), then OVERRIDDEN by the owner 2026-11-02 (FR-93): the locked card.** It now shows name, address and Network. The parent AD-26 forbids a ledger read for a locked Wallet and does not forbid showing these, so no inherited AD is weakened; AD-43 stays a type and carries exactly these three.
 - **RESOLVED (owner 2026-11-02): "Open always asks the Open Check" (FR-93) against FR-82 and FR-83.** Confirmed as FR-82 and FR-83 are written: a closed lock asks its Open Check, an open one is entered directly.
+- **ASSUMPTION for the owner (FR-94): the Address Book is keyed by `walletId`, so a controlled Wallet (FR-75) has its own book apart from its key-holder's.** It is a separate Wallet with its own address and sends. The alternative, sharing the key-holder's book, would let one Wallet's recipients silence another's first-send warning.
 - **EXCEPTION (not a conflict): a controlled Wallet shares its key-holder's lock** (AD-47). It conflicts with "each Wallet has its own lock" only for FR-75's controlled accounts, which stay as built until the planned Signer and Transmitter work.
 - **CONFLICT (near): the route carrying a walletId against AD-6.** AD-6 keeps selection in the store. AD-32 and AD-34 keep it there and make the route an input that must agree, never a second owner. No AD is weakened.
 - **DEVIATION from the UX spine (not from an inherited AD): `/settings` on a cold start.** UX keeps `/settings` on boot and rewrites everything else; AD-32 rewrites it too, because only `/` is guaranteed to be served by the static shell and the owner's rule is "always the chooser". `[ASSUMPTION]` Reversing it needs a served `/settings`.
@@ -320,6 +338,8 @@ None of these is applied as an override.
 None. Q5, Q6 and Q7 were answered by the owner on 2026-10-26 and are recorded in AD-44, AD-39 (Deferred) and AD-46. No item is open. Build-time checks for Story 18.2: the exact fields `discardAppPin` clears match `VaultMeta` in `db.ts`, and the single-transaction or single-flight choice is made against the real create and import paths.
 
 ## Deferred
+
+- **Deleting the legacy Address Book code (FR-94, AD-50).** `migrateAddressBook` and the entries with no recorded network are unreachable once the old array is dropped. Revisit as a cleanup story.
 
 - **Signer Wallet and Transmitter Wallet (raised 2026-11-02).** An offline Signer Wallet with no Network or Node, made in the quiz, paired with a Transmitter Wallet on another device. It would replace controlled views (AD-47) and two-device QR signing. Needs its own PRD, UX and architecture pass; see PRD §6.3.
 

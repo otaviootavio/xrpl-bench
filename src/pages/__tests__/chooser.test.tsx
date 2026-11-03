@@ -114,7 +114,7 @@ describe('the cards', () => {
   it('is titled Wallets with its description', () => {
     mount()
     expect(screen.getByRole('heading', { level: 1, name: 'Wallets' })).toBeTruthy()
-    expect(screen.getByText('Choose a wallet to open. Each one has its own lock.')).toBeTruthy()
+    expect(screen.getByText('Choose a wallet to open.')).toBeTruthy()
   })
 
   it('a locked card shows name, Locked once, address link, Network word and one Open key', () => {

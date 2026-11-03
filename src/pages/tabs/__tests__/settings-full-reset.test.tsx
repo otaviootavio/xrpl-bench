@@ -28,7 +28,7 @@ vi.mock('idb-keyval', () => ({
   del: async (k: string) => void h.idb.delete(k),
 }))
 vi.mock('@/lib/crypto/auth', () => ({ wipeVault: () => h.wipeVault() }))
-vi.mock('@/lib/crypto/lock', () => ({ endLockSession: async () => {}, endAllLockSessions: async () => {}, getLockInfo: async () => ({ id: 'legacy', openCheck: 'pin', autoLockMinutes: 5, pin: true, passkey: false }) }))
+vi.mock('@/lib/crypto/lock', () => ({ endLockSession: async () => {}, endAllLockSessions: async () => {}, getLockInfo: async () => ({ id: 'lockA', openCheck: 'pin', autoLockMinutes: 5, pin: true, passkey: false }) }))
 vi.mock('@/lib/crypto/keystore', () => ({
   addressFromSeed: () => '',
   listWallets: () => h.listWallets(),
@@ -84,10 +84,10 @@ function installShell() {
 
 async function seedResidue() {
   const s = useAppStore.getState()
-  s.setWallets([{ id: 'w1', seedId: 'w1', lockId: 'legacy', network: 'testnet', label: 'Savings', address: 'rAliceAddressLabelThatMustNotSurvive' } as never])
+  s.setWallets([{ id: 'w1', seedId: 'w1', lockId: 'lockA', network: 'testnet', label: 'Savings', address: 'rAliceAddressLabelThatMustNotSurvive' } as never])
   s.setActiveWalletId('w1')
   s.addAddressBookEntry('w1', { address: 'rBobCounterpartyThatMustNotSurvive', label: 'Bob — landlord' })
-  useAppStore.setState({ openLocks: { legacy: { key: {} as CryptoKey, autoLockMinutes: 5 } } } as never)
+  useAppStore.setState({ openLocks: { lockA: { key: {} as CryptoKey, autoLockMinutes: 5 } } } as never)
   await flush()
   expect(h.idb.get(APP_STATE_STORAGE_KEY)).toContain('Bob — landlord')
 }

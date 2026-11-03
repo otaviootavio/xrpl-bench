@@ -137,11 +137,11 @@ describe('Edit checks screen', () => {
     expect(radio('No authentication required to open the wallet').getAttribute('aria-disabled')).toBeNull()
   })
 
-  it('warns that an older version can no longer open the wallet when a Signing Check is added', async () => {
+  it('shows no older-version alert when a Signing Check is added', async () => {
     await mount()
-    expect(screen.queryByText(/older version of this app can no longer open/i)).toBeNull()
     await click(radio(/Passkey only: create a new one/))
-    expect(screen.getByText(/older version of this app can no longer open/i)).toBeTruthy()
+    expect(radio(/Passkey only: create a new one/).checked).toBe(true)
+    expect(screen.queryByText(/older version/i)).toBeNull()
   })
 
   it('a new PIN check needs the App PIN, typed twice when none exists', async () => {

@@ -15,7 +15,7 @@ const h = vi.hoisted(() => ({
 
 vi.mock('idb-keyval', () => ({ get: async () => undefined, set: async () => {}, del: async () => {} }))
 vi.mock('@/lib/crypto/auth', () => ({ wipeVault: async () => {} }))
-vi.mock('@/lib/crypto/lock', () => ({ endLockSession: async () => {}, endAllLockSessions: async () => {}, getLockInfo: async () => ({ id: 'legacy', openCheck: 'pin', autoLockMinutes: 5, pin: true, passkey: false }) }))
+vi.mock('@/lib/crypto/lock', () => ({ endLockSession: async () => {}, endAllLockSessions: async () => {}, getLockInfo: async () => ({ id: 'lockA', openCheck: 'pin', autoLockMinutes: 5, pin: true, passkey: false }) }))
 vi.mock('@/lib/notify', () => ({ toast: { error: (m: string) => h.toastError(m), success: () => {}, warning: () => {} } }))
 vi.mock('@/lib/crypto/keystore', () => ({
   addressFromSeed: () => '',
@@ -36,7 +36,7 @@ import { WalletTab } from '@/pages/tabs/WalletTab'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { useAppStore } from '@/store/app-store'
 
-const W = { id: 'w1', seedId: 's1', lockId: 'legacy', label: 'Savings', address: 'rAddr', createdAt: 1, network: 'mainnet', algorithm: 'ed25519', openCheck: 'pin', signingCheck: 'standard' }
+const W = { id: 'w1', seedId: 's1', lockId: 'lockA', label: 'Savings', address: 'rAddr', createdAt: 1, network: 'mainnet', algorithm: 'ed25519', openCheck: 'pin', signingCheck: 'standard' }
 
 function mount(wallet: Record<string, unknown> = W) {
   return render(
@@ -57,7 +57,7 @@ beforeEach(() => {
   h.revealSeed.mockReset()
   h.toastError.mockReset()
   h.getSeed = null
-  useAppStore.setState({ wallets: [W], activeWalletId: 'w1', network: 'mainnet', openLocks: { legacy: { key: {} as CryptoKey, autoLockMinutes: 5 } } } as never)
+  useAppStore.setState({ wallets: [W], activeWalletId: 'w1', network: 'mainnet', openLocks: { lockA: { key: {} as CryptoKey, autoLockMinutes: 5 } } } as never)
 })
 afterEach(cleanup)
 
@@ -65,7 +65,7 @@ describe('Configure reveal seed: the dialog names the check', () => {
   async function dialogFor(wallet: Record<string, unknown>) {
     useAppStore.setState({
       wallets: [{ ...W, ...wallet }],
-      openLocks: { legacy: { key: {} as CryptoKey, autoLockMinutes: 5 }, 'lock-1': { key: {} as CryptoKey, autoLockMinutes: 5 } },
+      openLocks: { lockA: { key: {} as CryptoKey, autoLockMinutes: 5 }, 'lock-1': { key: {} as CryptoKey, autoLockMinutes: 5 } },
     } as never)
     mount({ ...W, ...wallet })
     fireEvent.click(screen.getByRole('button', { name: 'Reveal seed' }))
@@ -98,7 +98,7 @@ describe('Configure reveal seed', () => {
 
   it('asks the wallet\'s own check with its own lock key', async () => {
     const OWN = { type: 'own' } as unknown as CryptoKey
-    useAppStore.setState({ openLocks: { legacy: { key: OWN, autoLockMinutes: 5 }, other: { key: {} as CryptoKey, autoLockMinutes: 5 } } } as never)
+    useAppStore.setState({ openLocks: { lockA: { key: OWN, autoLockMinutes: 5 }, other: { key: {} as CryptoKey, autoLockMinutes: 5 } } } as never)
     h.revealSeed.mockResolvedValue({ status: 'ok', value: 'sSECRETSEED' })
     mount()
     await reveal()

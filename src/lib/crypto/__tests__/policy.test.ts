@@ -6,7 +6,6 @@ import {
   checkWalletRequest,
   describeEditOptions,
   describeOptions,
-  olderBuildCannotOpen,
   resolveEdit,
   IMPORT_NEEDS_OPEN_CHECK_REASON,
   NO_PRF_REASON,
@@ -210,13 +209,6 @@ describe('editing the checks of an existing Wallet (story 8)', () => {
     expect(checkEditAllowed(derived, resolveEdit(derived, { openCheck: { kind: 'none' } }))).toEqual({ ok: true })
     const opts = describeEditOptions({ network: 'testnet', seedMethod: 'passkey-derived', openCheck: 'pin', autoLockMinutes: 5, signing: 'passkey', passkey: 'yes' })
     expect(Object.values(opts.signing).every((o) => !o.available && !!o.reason)).toBe(true)
-  })
-
-  it('an older version cannot open a Wallet after a Signing Check is added', () => {
-    const open = (c: Parameters<typeof resolveEdit>[0], q: Parameters<typeof resolveEdit>[1]) => resolveEdit(c, q)
-    expect(olderBuildCannotOpen({ signing: 'standard' }, open(stored, { signing: { kind: 'pin' } }))).toBe(true)
-    expect(olderBuildCannotOpen({ signing: 'standard' }, open(stored, { autoLockMinutes: 15 }))).toBe(false)
-    expect(olderBuildCannotOpen({ signing: 'pin' }, open({ ...stored, signing: 'pin' }, { signing: { kind: 'passkey' } }))).toBe(false)
   })
 
   it('describeOptions says a confirmed Seed needs no new confirmation', () => {

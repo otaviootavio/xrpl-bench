@@ -17,7 +17,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 const h = vi.hoisted(() => ({
   idb: new Map<string, string>(),
   wipeVault: vi.fn(async () => {}),
-  info: { id: 'legacy', openCheck: 'pin', autoLockMinutes: 5, pin: true, passkey: false } as Record<string, unknown>,
+  info: { id: 'lockA', openCheck: 'pin', autoLockMinutes: 5, pin: true, passkey: false } as Record<string, unknown>,
 }))
 
 vi.mock('idb-keyval', () => ({
@@ -48,7 +48,7 @@ import { Unlock } from '../Unlock'
 import { APP_STATE_STORAGE_KEY, useAppStore } from '@/store/app-store'
 import { useNoticeStore } from '@/store/notice-store'
 
-const WALLET = { id: 'w1', seedId: 'w1', lockId: 'legacy', label: 'Savings', address: 'rA', createdAt: 1, network: 'mainnet', algorithm: 'ed25519', openCheck: 'pin', signingCheck: 'standard' } as never
+const WALLET = { id: 'w1', seedId: 'w1', lockId: 'lockA', label: 'Savings', address: 'rA', createdAt: 1, network: 'mainnet', algorithm: 'ed25519', openCheck: 'pin', signingCheck: 'standard' } as never
 const reload = vi.fn()
 const flush = () => new Promise((r) => setTimeout(r, 0))
 
@@ -81,7 +81,7 @@ beforeEach(() => {
   reload.mockReset()
   vi.stubGlobal('location', { ...window.location, reload })
   useNoticeStore.setState({ notices: [] } as never)
-  h.info = { id: 'legacy', openCheck: 'pin', autoLockMinutes: 5, pin: true, passkey: false }
+  h.info = { id: 'lockA', openCheck: 'pin', autoLockMinutes: 5, pin: true, passkey: false }
 })
 
 afterEach(() => {

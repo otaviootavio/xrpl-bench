@@ -115,7 +115,7 @@ async function onboardingImport(value: string, { network }: { network?: RegExp }
 }
 
 describe('Onboarding: first-run Import is the quiz in import mode', () => {
-  it('writes the Wallet under its own lock when the master key is enabled: no warning, no legacy lock, no vault setup', async () => {
+  it('writes the Wallet under its own lock when the master key is enabled: no warning, no shared lock, no vault setup', async () => {
     ledger.masterKeyEnabled()
     await onboardingImport(SEED)
     await waitFor(() => expect(useAppStore.getState().activeWalletId).toBe('w-new'))

@@ -45,18 +45,18 @@ const WALLETS = [
 const NORMALISED_WALLETS = WALLETS
 
 /** A blob whose Address Book holds `list` under wallet w1 (AD-50). */
-const legacyBlob = (list: unknown) => blobWith({ w1: list })
+const blobWithList = (list: unknown) => blobWith({ w1: list })
 
 /** A blob with `addressBook` stored exactly as given (old array, malformed map, ...). */
-function blobWith(addressBook: unknown, wallets: unknown = WALLETS) {
+function blobWith(addressBook: unknown, wallets: unknown = WALLETS, extra: Record<string, unknown> = {}) {
   return JSON.stringify({
     state: {
       network: 'mainnet',
       wallets,
       activeWalletId: 'w1',
       addressBook,
-      autoLockMinutes: 15,
       declinedUpdateVersions: ['abc123'],
+      ...extra,
     },
     version: 0,
   })
@@ -64,14 +64,14 @@ function blobWith(addressBook: unknown, wallets: unknown = WALLETS) {
 
 beforeEach(() => {
   h.idb.clear()
-  useAppStore.setState({ network: 'testnet', wallets: [], activeWalletId: null, addressBook: {}, autoLockMinutes: 5, declinedUpdateVersions: [] })
+  useAppStore.setState({ network: 'testnet', wallets: [], activeWalletId: null, addressBook: {}, declinedUpdateVersions: [] })
 })
 
 describe('app store — the persisted per-Wallet Address Book (AD-50)', () => {
   it('reads every old entry as one with no recorded network or tag, and drops the fabricated labels', async () => {
     h.idb.set(
       APP_STATE_STORAGE_KEY,
-      legacyBlob([
+      blobWithList([
         { address: EXCHANGE, label: EXCHANGE.slice(0, 8) },
         { address: OTHER, label: OTHER.slice(0, 8) },
       ]),
@@ -83,7 +83,7 @@ describe('app store — the persisted per-Wallet Address Book (AD-50)', () => {
   })
 
   it('carries every other persisted field through untouched', async () => {
-    h.idb.set(APP_STATE_STORAGE_KEY, legacyBlob([{ address: EXCHANGE, label: EXCHANGE.slice(0, 8) }]))
+    h.idb.set(APP_STATE_STORAGE_KEY, blobWithList([{ address: EXCHANGE, label: EXCHANGE.slice(0, 8) }]))
 
     await useAppStore.persist.rehydrate()
 
@@ -91,16 +91,14 @@ describe('app store — the persisted per-Wallet Address Book (AD-50)', () => {
     expect(s.wallets).toEqual(NORMALISED_WALLETS)
     expect(s.activeWalletId).toBe('w1')
     expect(s.network).toBe('mainnet')
-    expect(s.autoLockMinutes).toBe(15)
     expect(s.declinedUpdateVersions).toEqual(['abc123'])
   })
 
-  it('keeps the stored version at 0, so a build from before this change still reads it', async () => {
-    // Rollback safety. Every earlier build is version 0 with no `migrate`, and
-    // zustand hydrates NOTHING from a stored version it does not expect — its
-    // next write then puts defaults over the Address Book, network, auto-lock
-    // and declined updates. The shape change must not move the version.
-    h.idb.set(APP_STATE_STORAGE_KEY, legacyBlob([{ address: EXCHANGE, label: EXCHANGE.slice(0, 8) }]))
+  it('keeps the stored version at 0: there is no migrate, and a version bump would wipe the saved state', async () => {
+    // zustand hydrates NOTHING from a stored version it does not expect, with
+    // no `migrate` — its next write then puts defaults over the Address Book,
+    // network and declined updates. The shape must not move the version.
+    h.idb.set(APP_STATE_STORAGE_KEY, blobWithList([{ address: EXCHANGE, label: EXCHANGE.slice(0, 8) }]))
     await useAppStore.persist.rehydrate()
 
     useAppStore.getState().addAddressBookEntry('w1', { address: EXCHANGE, destinationTag: '9' })
@@ -114,7 +112,7 @@ describe('app store — the persisted per-Wallet Address Book (AD-50)', () => {
 
   it('reads what this build wrote back unchanged — the migration is idempotent', async () => {
     const current = [{ address: EXCHANGE, destinationTag: '1' }, { address: EXCHANGE }, { address: OTHER, label: 'Landlord' }]
-    h.idb.set(APP_STATE_STORAGE_KEY, legacyBlob(current))
+    h.idb.set(APP_STATE_STORAGE_KEY, blobWithList(current))
 
     await useAppStore.persist.rehydrate()
 
@@ -163,7 +161,7 @@ describe('app store — the persisted per-Wallet Address Book (AD-50)', () => {
   })
 
   it('skips a __proto__ key and never throws', async () => {
-    h.idb.set(APP_STATE_STORAGE_KEY, '{"state":{"network":"testnet","wallets":[],"activeWalletId":null,"addressBook":{"__proto__":[{"address":"rX"}],"w1":[{"address":"' + OTHER + '"}]},"autoLockMinutes":5,"declinedUpdateVersions":[]},"version":0}')
+    h.idb.set(APP_STATE_STORAGE_KEY, '{"state":{"network":"testnet","wallets":[],"activeWalletId":null,"addressBook":{"__proto__":[{"address":"rX"}],"w1":[{"address":"' + OTHER + '"}]},"declinedUpdateVersions":[]},"version":0}')
     await useAppStore.persist.rehydrate()
     const book = useAppStore.getState().addressBook
     expect(Object.keys(book)).toEqual(['w1'])
@@ -178,7 +176,7 @@ describe('app store — the persisted per-Wallet Address Book (AD-50)', () => {
       { address: EXCHANGE, network: 'mainnet', destinationTag: '1' },
       { address: OTHER, network: 'mainnet' },
     ]
-    h.idb.set(APP_STATE_STORAGE_KEY, legacyBlob(current))
+    h.idb.set(APP_STATE_STORAGE_KEY, blobWithList(current))
     await useAppStore.persist.rehydrate()
     expect(useAppStore.getState().addressBook).toEqual({ w1: current })
 
@@ -191,25 +189,34 @@ describe('app store — the persisted per-Wallet Address Book (AD-50)', () => {
     expect(stored.state.addressBook).toEqual({ w1: [...current, { address: EXCHANGE, network: 'testnet' }] })
   })
 
+  it('a saved blob that still has an autoLockMinutes key hydrates and the next write drops it', async () => {
+    h.idb.set(APP_STATE_STORAGE_KEY, blobWith({}, WALLETS, { autoLockMinutes: 15 }))
+    await useAppStore.persist.rehydrate()
+    expect(useAppStore.getState().wallets).toEqual(NORMALISED_WALLETS)
+
+    useAppStore.getState().addAddressBookEntry('w1', { address: EXCHANGE })
+    await new Promise((r) => setTimeout(r, 0))
+
+    const stored = JSON.parse(h.idb.get(APP_STATE_STORAGE_KEY)!)
+    expect('autoLockMinutes' in stored.state).toBe(false)
+  })
+
   it('keeps an entry whose network this build does not know, as not recorded', async () => {
-    h.idb.set(APP_STATE_STORAGE_KEY, legacyBlob([{ address: EXCHANGE, network: 'signet', destinationTag: '4' }]))
+    h.idb.set(APP_STATE_STORAGE_KEY, blobWithList([{ address: EXCHANGE, network: 'signet', destinationTag: '4' }]))
     await useAppStore.persist.rehydrate()
 
     expect(useAppStore.getState().addressBook).toEqual({ w1: [{ address: EXCHANGE, destinationTag: '4' }] })
   })
 
-  it('a rollback round trip can only make entries unrecorded: more warnings, never fewer', async () => {
-    // What the two older builds write over this build's
-    // `[{A,1,testnet}, {A,1,mainnet}, {OTHER,testnet}]`: epic 9 rebuilds each
-    // entry without `network` and its upsert merges the two networks' (A, 1)
-    // into one; the pre-epic-9 build keeps one `{ address, label }` per address.
-    const epic9RolledBack = [{ address: EXCHANGE, destinationTag: '1' }, { address: OTHER }]
-    const preEpic9RolledBack = [
+  it('entries with no recorded network silence no first-send warning on any network', async () => {
+    // Shapes written by earlier shapes of the list: no `network`, a tag or a label only.
+    const unrecordedWithTag = [{ address: EXCHANGE, destinationTag: '1' }, { address: OTHER }]
+    const labelOnly = [
       { address: EXCHANGE, label: EXCHANGE.slice(0, 8) },
       { address: OTHER, label: OTHER.slice(0, 8) },
     ]
-    for (const rolledBack of [epic9RolledBack, preEpic9RolledBack]) {
-      h.idb.set(APP_STATE_STORAGE_KEY, legacyBlob(rolledBack))
+    for (const shape of [unrecordedWithTag, labelOnly]) {
+      h.idb.set(APP_STATE_STORAGE_KEY, blobWithList(shape))
       await useAppStore.persist.rehydrate()
       const book = useAppStore.getState().addressBook.w1
       expect(book).toHaveLength(2)
@@ -221,8 +228,8 @@ describe('app store — the persisted per-Wallet Address Book (AD-50)', () => {
     }
   })
 
-  it('after migrating, a second tag at a known address is kept beside the first', async () => {
-    h.idb.set(APP_STATE_STORAGE_KEY, legacyBlob([{ address: EXCHANGE, label: EXCHANGE.slice(0, 8) }]))
+  it('after normalising, a second tag at a known address is kept beside the first', async () => {
+    h.idb.set(APP_STATE_STORAGE_KEY, blobWithList([{ address: EXCHANGE, label: EXCHANGE.slice(0, 8) }]))
     await useAppStore.persist.rehydrate()
 
     useAppStore.getState().addAddressBookEntry('w1', { address: EXCHANGE, destinationTag: '12345' })
@@ -237,7 +244,7 @@ describe('app store — a Passkey-Derived Wallet keeps its Seed Method across a 
     const stored = { ...WALLETS[0], id: 'o1', seedId: 'o1', label: 'Stored', address: EXCHANGE, keyAddress: EXCHANGE, lockId: 'lock-o1', seedMethod: 'stored' }
     h.idb.set(
       APP_STATE_STORAGE_KEY,
-      JSON.stringify({ state: { network: 'testnet', wallets: [derived, stored], activeWalletId: 'd1', addressBook: {}, autoLockMinutes: 5, declinedUpdateVersions: [] }, version: 0 }),
+      JSON.stringify({ state: { network: 'testnet', wallets: [derived, stored], activeWalletId: 'd1', addressBook: {}, declinedUpdateVersions: [] }, version: 0 }),
     )
     await useAppStore.persist.rehydrate()
     const bySeed = Object.fromEntries(useAppStore.getState().wallets.map((w) => [w.id, w.seedMethod]))

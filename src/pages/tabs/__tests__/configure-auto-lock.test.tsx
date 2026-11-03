@@ -1,6 +1,5 @@
 /** @vitest-environment jsdom */
 import { createContext, useContext, type ReactNode } from 'react'
-import { readFileSync } from 'node:fs'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
@@ -200,10 +199,10 @@ describe('Wallet tab auto-lock', () => {
 
 describe('Wallet tab auto-lock on a shared lock', () => {
   it('says so with the count of distinct Seeds on the lock', async () => {
-    const wallets = ['a', 'b', 'c'].map((id) => ({ ...A, id, seedId: id, lockId: 'legacy' }))
+    const wallets = ['a', 'b', 'c'].map((id) => ({ ...A, id, seedId: id, lockId: 'lockA' }))
     // A second view of the same Seed does not add to the count.
-    useAppStore.setState({ wallets: [...wallets, { ...A, id: 'a-main', seedId: 'a', lockId: 'legacy' }], openLocks: { legacy: OPEN } } as never)
-    h.minutes.legacy = 5
+    useAppStore.setState({ wallets: [...wallets, { ...A, id: 'a-main', seedId: 'a', lockId: 'lockA' }], openLocks: { lockA: OPEN } } as never)
+    h.minutes.lockA = 5
     renderConfigure()
     expect(await screen.findByText('This lock is shared by 3 wallets. A change applies to all of them.')).toBeTruthy()
   })
@@ -262,14 +261,5 @@ describe('Edit checks refreshes the lockInfo read on every committed edit', () =
   it('a commit that changed nothing still refreshes the read, once', async () => {
     const invalidate = await commit({ meta: A, changed: false, previousLockId: 'X', autoLockMinutes: 5, previousLockRemoved: false })
     await waitFor(() => expect(invalidate.mock.calls.filter(([f]) => JSON.stringify(f?.queryKey) === '["lockInfo","X"]')).toHaveLength(1))
-  })
-})
-
-describe('the legacy app-store minutes', () => {
-  it('no Wallet tab file reads or writes autoLockMinutes of the app store', () => {
-    for (const f of ['src/pages/tabs/WalletTab.tsx', 'src/hooks/useLockMinutesChanged.ts']) {
-      const src = readFileSync(f, 'utf8')
-      expect(src).not.toMatch(/s\.autoLockMinutes|setAutoLockMinutes|state\.autoLockMinutes/)
-    }
   })
 })

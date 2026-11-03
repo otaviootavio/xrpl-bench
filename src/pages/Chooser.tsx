@@ -80,7 +80,7 @@ export function Chooser() {
         <h1 id="chooser-heading" ref={headingRef} tabIndex={-1} className="font-legend text-base font-semibold uppercase leading-tight tracking-[0.08em]">
           Wallets
         </h1>
-        <p className="text-sm leading-snug text-muted-foreground">Choose a wallet to open. Each one has its own lock.</p>
+        <p className="text-sm leading-snug text-muted-foreground">Choose a wallet to open.</p>
         {sharedNote && <p className="text-sm leading-snug text-muted-foreground">{sharedNote}</p>}
         <div ref={statusRef} role="status" aria-live="polite" className="sr-only" />
       </div>

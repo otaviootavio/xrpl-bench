@@ -6,7 +6,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 const h = vi.hoisted(() => ({ update: { updateReady: false, declined: false }, verifyNode: vi.fn(), retireNode: vi.fn(), setWalletNode: vi.fn(), listWallets: vi.fn() }))
 vi.mock('@/hooks/useAppUpdate', () => ({ useAppUpdate: () => h.update }))
 vi.mock('idb-keyval', () => ({ get: async () => undefined, set: async () => {}, del: async () => {} }))
-vi.mock('@/lib/crypto/lock', () => ({ endLockSession: async () => {}, endAllLockSessions: async () => {}, getLockInfo: async () => ({ id: 'legacy', openCheck: 'pin', autoLockMinutes: 5, pin: true, passkey: false }) }))
+vi.mock('@/lib/crypto/lock', () => ({ endLockSession: async () => {}, endAllLockSessions: async () => {}, getLockInfo: async () => ({ id: 'lockA', openCheck: 'pin', autoLockMinutes: 5, pin: true, passkey: false }) }))
 vi.mock('@/lib/xrpl/client', () => ({ verifyNode: h.verifyNode, retireNode: h.retireNode }))
 vi.mock('@/lib/crypto/keystore', () => ({ setWalletNode: h.setWalletNode, listWallets: h.listWallets }))
 vi.mock('@/lib/notify', () => ({ toast: { success: vi.fn(), error: vi.fn(), warning: vi.fn() } }))
@@ -31,14 +31,14 @@ function renderHeader() {
   )
 }
 
-const OPEN = { legacy: { key: {} as CryptoKey, autoLockMinutes: 5 } }
-const base = { seedId: 's', lockId: 'legacy', label: 'W', address: 'rA', createdAt: 1, algorithm: 'ed25519', openCheck: 'pin', signingCheck: 'standard' }
+const OPEN_LOCK = { key: {} as CryptoKey, autoLockMinutes: 5 }
+const base = { seedId: 's', lockId: 'lockA', label: 'W', address: 'rA', createdAt: 1, algorithm: 'ed25519', openCheck: 'pin', signingCheck: 'standard' }
 const W = (id: string, network: string) => ({ ...base, id, network }) as never
 const WM = (id: string, network: string) => ({ ...base, id, network })
 
 describe('the header names the active Wallet\'s network in words', () => {
   it('Mainnet says "Real funds" beside the name; Testnet and Devnet do not', () => {
-    useAppStore.setState({ wallets: [W('m', 'mainnet'), W('t', 'testnet'), W('d', 'devnet')], activeWalletId: 'm', openLocks: OPEN })
+    useAppStore.setState({ wallets: [W('m', 'mainnet'), W('t', 'testnet'), W('d', 'devnet')], activeWalletId: 'm', openLocks: { lockA: OPEN_LOCK } })
     renderHeader()
     expect(screen.getByText('Mainnet')).toBeTruthy()
     expect(screen.getByText('Real funds')).toBeTruthy()
@@ -65,7 +65,7 @@ describe('the header names the active Wallet\'s network in words', () => {
   })
 
   it('there is no wallet picker and no network switch, even with several wallets (AD-45)', () => {
-    useAppStore.setState({ wallets: [W('m', 'mainnet'), W('t', 'testnet')], activeWalletId: 'm', openLocks: OPEN })
+    useAppStore.setState({ wallets: [W('m', 'mainnet'), W('t', 'testnet')], activeWalletId: 'm', openLocks: { lockA: OPEN_LOCK } })
     renderHeader()
     expect(screen.queryByRole('radiogroup', { name: 'Network' })).toBeNull()
     expect(screen.queryByRole('combobox')).toBeNull()
@@ -78,7 +78,7 @@ describe('a locked Wallet is its name and nothing else (AD-26)', () => {
     useAppStore.setState({
       wallets: [{ ...WM('m', 'mainnet'), lockId: 'X', label: 'Open one' }, { ...WM('t', 'testnet'), lockId: 'Y', label: 'Locked one' }] as never,
       activeWalletId: 't',
-      openLocks: { X: OPEN.legacy },
+      openLocks: { X: OPEN_LOCK },
     })
     renderHeader()
     expect(screen.queryByText('Testnet')).toBeNull()
@@ -90,7 +90,7 @@ describe('a locked Wallet is its name and nothing else (AD-26)', () => {
     useAppStore.setState({
       wallets: [{ ...WM('t', 'testnet'), lockId: 'X', openCheck: 'none' }] as never,
       activeWalletId: 't',
-      openLocks: { X: OPEN.legacy },
+      openLocks: { X: OPEN_LOCK },
     })
     renderHeader()
     expect(screen.getByText('Testnet')).toBeTruthy()
@@ -101,7 +101,7 @@ describe('a locked Wallet is its name and nothing else (AD-26)', () => {
     useAppStore.setState({
       wallets: [{ ...WM('m', 'mainnet'), lockId: 'X' }, { ...WM('t', 'testnet'), lockId: 'Y' }] as never,
       activeWalletId: 'm',
-      openLocks: { X: OPEN.legacy, Y: OPEN.legacy },
+      openLocks: { X: OPEN_LOCK, Y: OPEN_LOCK },
     })
     renderHeader()
     fireEvent.click(screen.getByRole('button', { name: 'Lock wallet' }))

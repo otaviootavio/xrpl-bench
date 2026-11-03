@@ -145,17 +145,18 @@ describe('Wallet tab: Edit checks', () => {
     expect(useAppStore.getState().wallets.find((w) => w.id === 'a')?.lockId).toBe('Z')
   })
 
-  it('leaving the shared legacy lock does not close it', async () => {
+  it('leaving a shared lock does not close it', async () => {
     const KEY = { type: 'new-key' } as unknown as CryptoKey
-    const legacyA = { ...A, lockId: 'legacy' }
+    const sharedA = { ...A, lockId: 'lockA' }
+    const sharedB = { ...B, lockId: 'lockA' }
     const moved = { ...A, lockId: 'Z' }
-    useAppStore.setState({ wallets: [legacyA, B], openLocks: { legacy: OPEN } } as never)
-    h.listed = [moved, B]
-    h.edited = { meta: moved, changed: true, previousLockId: 'legacy', openKey: KEY, autoLockMinutes: 5, previousLockRemoved: false }
+    useAppStore.setState({ wallets: [sharedA, sharedB], openLocks: { lockA: OPEN } } as never)
+    h.listed = [moved, sharedB]
+    h.edited = { meta: moved, changed: true, previousLockId: 'lockA', openKey: KEY, autoLockMinutes: 5, previousLockRemoved: false }
     renderAt()
     openEditChecks()
     fireEvent.click(await screen.findByRole('button', { name: /commit edit for a/ }))
-    await waitFor(() => expect(Object.keys(useAppStore.getState().openLocks).sort()).toEqual(['Z', 'legacy']))
+    await waitFor(() => expect(Object.keys(useAppStore.getState().openLocks).sort()).toEqual(['Z', 'lockA']))
   })
 
   it('an auto-lock-only edit updates that lock\'s window and starts no session and closes no lock', async () => {

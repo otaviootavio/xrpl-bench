@@ -82,7 +82,6 @@ async function seedStore() {
   s.setWallets([{ id: 'w1', label: 'Savings', address: 'rAliceAddressLabelThatMustNotSurvive' } as never])
   s.setActiveWalletId('w1')
   s.addAddressBookEntry('w1', { address: 'rBobCounterpartyThatMustNotSurvive', label: 'Bob — landlord' })
-  useAppStore.setState({ autoLockMinutes: 30 })
   s.declineUpdateVersion('deadbeef')
   await flush()
   // Precondition: the residue really is on disk before the teardown runs.
@@ -118,13 +117,12 @@ describe('tearDownAllLocalState — "remove everything" (G-13)', () => {
     }
     if (onDisk !== undefined) {
       const { state } = JSON.parse(onDisk)
-      expect(state).toMatchObject({ wallets: [], activeWalletId: null, addressBook: {}, autoLockMinutes: 5, declinedUpdateVersions: [] })
+      expect(state).toMatchObject({ wallets: [], activeWalletId: null, addressBook: {}, declinedUpdateVersions: [] })
     }
 
     const s = useAppStore.getState()
     expect(s.wallets).toEqual([])
     expect(s.addressBook).toEqual({})
-    expect(s.autoLockMinutes).toBe(5)
     expect(s.declinedUpdateVersions).toEqual([])
   })
 

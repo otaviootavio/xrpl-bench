@@ -66,8 +66,8 @@ describe('removeWalletData (AD-46)', () => {
   })
 
   it('runs tearDownAllLocks when none remain: every lock, and the whole cache', () => {
-    const a = W('a', 'legacy', 'rA')
-    useAppStore.setState({ wallets: [a], openLocks: { legacy: OPEN, LX: OPEN } } as never)
+    const a = W('a', 'lockA', 'rA')
+    useAppStore.setState({ wallets: [a], openLocks: { lockA: OPEN, LX: OPEN } } as never)
     const qc = seeded('rA')
     removeWalletData(qc, a, [])
     expect(state().openLocks).toEqual({})

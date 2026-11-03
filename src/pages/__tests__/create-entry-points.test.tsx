@@ -31,7 +31,7 @@ vi.mock('@/lib/crypto/lock', () => ({
   DEFAULT_AUTO_LOCK_MINUTES: 5,
   endLockSession: async () => {},
   endAllLockSessions: async () => {},
-  getLockInfo: async () => ({ id: 'legacy', openCheck: 'pin', autoLockMinutes: 5, pin: true, passkey: false }),
+  getLockInfo: async () => ({ id: 'lockA', openCheck: 'pin', autoLockMinutes: 5, pin: true, passkey: false }),
 }))
 vi.mock('@/components/wallet/CreateWalletFlow', () => ({
   CreateWalletFlow: (props: Record<string, unknown>) => {
@@ -79,9 +79,9 @@ beforeEach(() => {
   h.createStoredWallet.mockClear()
   h.flowProps.length = 0
   useAppStore.setState({
-    wallets: [{ id: 'w1', seedId: 'w1', lockId: 'legacy', label: 'Main', address: 'rAddr', createdAt: 1, network: 'testnet', algorithm: 'ed25519', openCheck: 'pin', signingCheck: 'standard' }],
+    wallets: [{ id: 'w1', seedId: 'w1', lockId: 'lockA', label: 'Main', address: 'rAddr', createdAt: 1, network: 'testnet', algorithm: 'ed25519', openCheck: 'pin', signingCheck: 'standard' }],
     activeWalletId: 'w1',
-    openLocks: { legacy: { key: {} as CryptoKey, autoLockMinutes: 5 } },
+    openLocks: { lockA: { key: {} as CryptoKey, autoLockMinutes: 5 } },
   } as never)
 })
 afterEach(cleanup)

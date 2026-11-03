@@ -12,7 +12,7 @@ const h = vi.hoisted(() => ({
 
 vi.mock('idb-keyval', () => ({ get: async () => undefined, set: async () => {}, del: async () => {} }))
 vi.mock('@/lib/crypto/auth', () => ({ wipeVault: async () => {} }))
-vi.mock('@/lib/crypto/lock', () => ({ endLockSession: async () => {}, endAllLockSessions: async () => {}, getLockInfo: async () => ({ id: 'legacy', openCheck: 'pin', autoLockMinutes: 5, pin: true, passkey: false }) }))
+vi.mock('@/lib/crypto/lock', () => ({ endLockSession: async () => {}, endAllLockSessions: async () => {}, getLockInfo: async () => ({ id: 'lockA', openCheck: 'pin', autoLockMinutes: 5, pin: true, passkey: false }) }))
 vi.mock('@/lib/notify', () => ({ notify: { success: (m: string) => h.success(m), error: () => {}, warning: () => {} }, toast: { error: () => {}, success: () => {}, warning: () => {} } }))
 vi.mock('@/lib/crypto/keystore', () => ({
   addressFromSeed: () => '',
@@ -27,7 +27,7 @@ import { TooltipProvider } from '@/components/ui/tooltip'
 import { RENAME_ERRORS, RENAME_HELP, RENAME_WRITE_FAILED } from '@/components/wallet/rename-copy'
 import { useAppStore } from '@/store/app-store'
 
-const base = { lockId: 'legacy', createdAt: 1, network: 'mainnet', algorithm: 'ed25519', openCheck: 'pin', signingCheck: 'standard' }
+const base = { lockId: 'lockA', createdAt: 1, network: 'mainnet', algorithm: 'ed25519', openCheck: 'pin', signingCheck: 'standard' }
 const W = { ...base, id: 'w1', seedId: 's1', label: 'Savings', address: 'rA' }
 const SIBLING = { ...base, id: 'w1b', seedId: 's1', label: 'Savings', address: 'rA2', network: 'testnet' }
 const OTHER = { ...base, id: 'w2', seedId: 's2', label: 'Travel', address: 'rB' }
@@ -56,7 +56,7 @@ const namePlate = () => document.querySelector('[data-configure-plate="name"]') 
 beforeEach(() => {
   h.rename.mockReset()
   h.success.mockReset()
-  useAppStore.setState({ wallets: [W, SIBLING, OTHER], activeWalletId: 'w1', network: 'mainnet', openLocks: { legacy: { key: {} as CryptoKey, autoLockMinutes: 5 } } } as never)
+  useAppStore.setState({ wallets: [W, SIBLING, OTHER], activeWalletId: 'w1', network: 'mainnet', openLocks: { lockA: { key: {} as CryptoKey, autoLockMinutes: 5 } } } as never)
 })
 afterEach(cleanup)
 
@@ -85,7 +85,7 @@ describe('Configure Name plate', () => {
     expect(h.success).toHaveBeenCalledWith('Wallet renamed.')
     expect(within(namePlate()).getByText('Rainy day')).toBeTruthy()
     expect(screen.getAllByText('Rainy day').length).toBeGreaterThan(1) // plate and subtitle
-    expect(Object.keys(useAppStore.getState().openLocks)).toEqual(['legacy'])
+    expect(Object.keys(useAppStore.getState().openLocks)).toEqual(['lockA'])
     await waitFor(() => expect(document.activeElement).toBe(namePlate()))
   })
 

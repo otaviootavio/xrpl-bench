@@ -11,10 +11,9 @@ import { migrateAddressBook, upsertAddressBookEntry, type AddressBookEntry } fro
 interface AppState {
   // Non-secret, persisted state
   /** NOT the network any read uses (AD-19): the active Wallet's `network` is.
-   * This field survives only as the story-1 migration input — the network a
-   * pre-per-Wallet build had selected — and, on write (`partialize`), as a
-   * mirror of the active Wallet's network so a rolled-back build opens on the
-   * network the user was last on. Read it through `useActiveNetwork()`. */
+   * This field is only the default `useActiveNetwork()` falls back to when no
+   * Wallet is active; on write (`partialize`) it mirrors the active Wallet's
+   * network. Read it through `useActiveNetwork()`. */
   network: NetworkId
   wallets: WalletMeta[]
   activeWalletId: string | null
@@ -22,10 +21,6 @@ interface AppState {
    * list is the `(network, address, destination tag)` triple — see
    * `store/address-book.ts`, the one place that decides it (AD-6). */
   addressBook: Record<string, AddressBookEntry[]>
-  /** NOT read by anything (AD-26): each lock's auto-lock minutes live on its
-   * lock record. Kept only so a rolled-back build still finds its setting.
-   * Tolerated in `merge`. */
-  autoLockMinutes: number
   /** app-versioning-and-updates.md US-4: a declined release's identifier (its
    * commit SHA) is remembered so it stops nagging, while a newer one still
    * surfaces. Non-secret, so it's fine alongside the rest of this state. */
@@ -119,7 +114,7 @@ export const APP_STATE_STORAGE_KEY = 'xrpl-wallet-app-state'
 
 type PersistedAppState = Pick<
   AppState,
-  'network' | 'wallets' | 'activeWalletId' | 'addressBook' | 'autoLockMinutes' | 'declinedUpdateVersions'
+  'network' | 'wallets' | 'activeWalletId' | 'addressBook' | 'declinedUpdateVersions'
 >
 
 /** The persisted slice's initial values — one object, used both as the
@@ -130,7 +125,6 @@ const PERSISTED_DEFAULTS: PersistedAppState = {
   wallets: [],
   activeWalletId: null,
   addressBook: {},
-  autoLockMinutes: 5,
   declinedUpdateVersions: [],
 }
 
@@ -203,24 +197,17 @@ export function useAddressBook(walletId: string | null | undefined): readonly Ad
 }
 
 /**
- * Reads the persisted slice into the current shape, on every hydration — the
- * Address Book migration (Epic 9).
+ * Reads the persisted slice into the current shape, on every hydration.
  *
  * Done in `merge`, deliberately NOT by bumping `persist`'s `version` with a
- * `migrate`. Every build before this one is version 0 with no `migrate`, and
- * zustand's answer to a stored version it does not expect, with no `migrate`,
- * is to hydrate nothing; its next `set()` then writes defaults over storage.
- * A version bump would therefore make rolling `prod` back past this commit
- * erase the Address Book, the network, the auto-lock setting and the declined
- * updates. Normalising on read keeps the stored version at 0, which every
- * build reads: an older build sees the new entries as `{ address }` rows and
- * ignores the tag.
+ * `migrate`: zustand's answer to a stored version it does not expect, with no
+ * `migrate`, is to hydrate nothing, and its next `set()` then writes defaults
+ * over storage. Normalising on read keeps the stored version at 0.
  *
- * `migrateAddressBook` is idempotent, so running it on every load is safe: a
- * pre-Epic-9 entry `{ address, label }` reads as an entry with no recorded
- * network and its tag not recorded (it silences no first-send warning), minus
- * the label the old Send screen fabricated from the address, and nothing with
- * an address is dropped.
+ * `migrateAddressBook` is idempotent, so running it on every load is safe: an
+ * entry `{ address, label }` reads as an entry with no recorded network and its
+ * tag not recorded (it silences no first-send warning), and nothing with an
+ * address is dropped.
  *
  * Total and non-throwing: a throw here would leave the store on its in-memory
  * defaults, and the next `set()` (even `closeLock()`) would write them over the
@@ -346,7 +333,6 @@ export const useAppStore = create<AppState>()(
         wallets: s.wallets,
         activeWalletId: s.activeWalletId,
         addressBook: s.addressBook,
-        autoLockMinutes: s.autoLockMinutes,
         declinedUpdateVersions: s.declinedUpdateVersions,
       }),
     },

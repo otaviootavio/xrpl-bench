@@ -326,15 +326,6 @@ export function checkEditAllowed(current: CurrentChecks, resolved: ResolvedEdit)
   return { ok: true }
 }
 
-/** After an edit of this kind an older version of the app can no longer open the
- * Wallet: adding a Signing Check (AD-23). */
-export function olderBuildCannotOpen(
-  current: { signing: SigningKind },
-  resolved: Pick<ResolvedEdit, 'result'>,
-): boolean {
-  return current.signing === 'standard' && resolved.result.signing !== 'standard'
-}
-
 /** `describeOptions` for an edit. The Wallet's Signing Check answers are all
  * unavailable, with the reason, when it is Passkey-Derived. */
 export function describeEditOptions(ctx: OptionsContext): DescribedOptions {

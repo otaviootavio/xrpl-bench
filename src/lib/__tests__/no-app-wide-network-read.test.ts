@@ -3,8 +3,8 @@ import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 
 /**
- * Story 2 / AD-19: the app-wide `network` survives only as a rollback mirror
- * of the active Wallet's network. No module outside the store may read it for a ledger
+ * Story 2 / AD-19: the app-wide `network` survives only as the default
+ * `useActiveNetwork` falls back to, mirroring the active Wallet's network. No module outside the store may read it for a ledger
  * read — the active Wallet's network (`useActiveNetwork`) is the only source.
  * The one sanctioned read is named here so an addition is a visible edit.
  */

@@ -8,9 +8,9 @@ vi.mock('@/lib/crypto/lock', () => ({ endLockSession: async () => {}, endAllLock
 import { mergePersistedAppState, useAppStore, useActiveNetwork, useActiveNode } from '../app-store'
 
 const base = { label: 'W', address: 'rA', keyAddress: 'rA', lockId: 'lock-1', createdAt: 1, algorithm: 'ed25519', seedMethod: 'stored', openCheck: 'pin', signingCheck: 'standard' }
-const current: Parameters<typeof mergePersistedAppState>[1] = { network: 'testnet', wallets: [], activeWalletId: null, addressBook: {}, autoLockMinutes: 5, declinedUpdateVersions: [] }
+const current: Parameters<typeof mergePersistedAppState>[1] = { network: 'testnet', wallets: [], activeWalletId: null, addressBook: {}, declinedUpdateVersions: [] }
 
-describe('legacy persisted state is normalised on merge', () => {
+describe('persisted state is normalised on merge', () => {
   it('a Wallet meta without node keeps built-in Nodes; devnet is accepted; an unknown network drops the entry', () => {
     const merged = mergePersistedAppState(
       {
@@ -54,7 +54,7 @@ describe('the active network is derived from the active Wallet', () => {
     expect(a.result.current).toEqual(['testnet', 'wss://n.example.com'])
   })
 
-  it('persists the active Wallet\'s network as the rollback mirror', () => {
+  it('persists the active Wallet\'s network as the default network', () => {
     useAppStore.setState({ wallets, activeWalletId: 'm', network: 'testnet' })
     const partialize = useAppStore.persist.getOptions().partialize!
     expect(partialize(useAppStore.getState())).toMatchObject({ network: 'mainnet' })

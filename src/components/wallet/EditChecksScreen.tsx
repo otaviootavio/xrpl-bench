@@ -26,7 +26,6 @@ import { triesRemaining } from '@/lib/crypto/pin'
 import {
   checkEditAllowed,
   describeEditOptions,
-  olderBuildCannotOpen,
   resolveEdit,
   type CheckEditRequest,
   type CurrentChecks,
@@ -219,7 +218,6 @@ function EditChecksBody({
   const allowed = checkEditAllowed(current, resolved)
   const verdict = !allowed.ok ? allowed : options.combination
   const needsPin = (resolved.openChange && resolved.result.openCheck === 'pin') || (resolved.signingChange && resolved.result.signing === 'pin')
-  const warnOlder = olderBuildCannotOpen({ signing: current.signing }, resolved)
 
   const refreshAppPin = useCallback(async () => {
     try {
@@ -492,14 +490,6 @@ function EditChecksBody({
           </div>
         )}
 
-        {warnOlder && (
-          <Alert variant="warning">
-            <AlertTitle>An older version of this app can no longer open this wallet</AlertTitle>
-            <AlertDescription>
-              After this change the wallet only opens with this version or a newer one. Updates are never automatic, so make sure every device you use it on is up to date.
-            </AlertDescription>
-          </Alert>
-        )}
         {resolved.changed && !verdict.ok && (
           <Alert variant="warning" id={`${group}-blocked`}>
             <AlertTitle>This change cannot be made yet</AlertTitle>

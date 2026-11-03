@@ -15,7 +15,7 @@ const h = vi.hoisted(() => ({
 
 vi.mock('idb-keyval', () => ({ get: async () => undefined, set: async () => {}, del: async () => {} }))
 vi.mock('@/lib/crypto/auth', () => ({ wipeVault: async () => {} }))
-vi.mock('@/lib/crypto/lock', () => ({ endLockSession: async () => {}, endAllLockSessions: async () => {}, getLockInfo: async () => ({ id: 'legacy', openCheck: 'pin', autoLockMinutes: 5, pin: true, passkey: false }) }))
+vi.mock('@/lib/crypto/lock', () => ({ endLockSession: async () => {}, endAllLockSessions: async () => {}, getLockInfo: async () => ({ id: 'lockA', openCheck: 'pin', autoLockMinutes: 5, pin: true, passkey: false }) }))
 vi.mock('@/lib/notify', () => ({ notify: { success: (m: string) => h.success(m), error: (m: string) => h.error(m), warning: () => {} }, toast: { error: () => {}, success: () => {}, warning: () => {} } }))
 vi.mock('@/lib/route', async (orig) => {
   const real = await orig<typeof import('@/lib/route')>()

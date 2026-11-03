@@ -61,8 +61,7 @@ export interface StoredWallet {
   label: string
   address: string
   /** Absent once the Seed carries a Signing Check: its ciphertext exists in
-   * exactly one form (AD-23), and an older build then finds none and fails
-   * closed. */
+   * exactly one form (AD-23). */
   encryptedSeed?: { ivB64: string; ciphertextB64: string }
   createdAt: number
   /** The Seed under the Signing Key. Present only with `signing`. */
@@ -81,7 +80,7 @@ export interface StoredWallet {
    * (FR-72). Additive; absent on every record made without that step. */
   writtenSeedConfirmedAt?: number
   /** Edit counter for the compare-and-swap of `commitWalletEdit` (AD-28, AD-18):
-   * absent is 0, +1 per edit of the checks. Additive: an older build ignores it. */
+   * absent is 0, +1 per edit of the checks. */
   rev?: number
 }
 

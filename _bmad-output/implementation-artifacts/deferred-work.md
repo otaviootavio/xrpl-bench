@@ -460,3 +460,7 @@ Item 8 shipped as a refactor that preserves behaviour (`spec-sendtab-split.md`).
   summary: Story 4 should rename the remaining `id: 'legacy'` lock fixtures and legacy-titled tests.
   evidence: `settings-address-book.test.tsx`, `settings-full-reset.test.tsx`, `unlock-hard-lock-reset.test.tsx` (`WALLET.lockId`, default `h.info`) and the `active-network.test.ts` describe "legacy persisted state is normalised on merge" still use the removed concept's name as a plain lock id; nothing asserts on them.
 
+
+- source_spec: `_bmad-output/specs/spec-no-legacy-lock/SPEC.md`
+  summary: Later, handle breaking changes to the wallet record shape in a smarter, deliberate way, instead of the one-off "skip the broken record" rule used under FR-95.
+  evidence: Raised by Otavio on 2026-11-02 while scoping story 3. FR-95 deliberately drops migration and any defaulting, which is right while there are no users. Once there are real users, every change to the stored wallet record (a new field, a renamed field, a new Open Check kind) will be a breaking change, and "ignore it" would hide real wallets. The idea to design then: a version number on the stored record and on the saved app state, one small upgrade step per version run on load, and a visible "this wallet could not be read" notice rather than a silent skip. That is a design question for when the product has users, not something to build now. Touches `store/app-store.ts` (saved list), `lib/crypto/db.ts` (vault records) and the rule in `docs/decisions.md`.

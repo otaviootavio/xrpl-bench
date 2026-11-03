@@ -68,9 +68,12 @@ export async function confirmRemoveWallet(
       // threw AND the list cannot be read, nothing is known: never show that as the list.
       vault = result ? state.wallets.filter((w) => w.id !== walletId) : null
     }
+    // Gone for sure: the keystore said so, or the vault was read and no longer lists it. A failed
+    // removal, or a vault that could not be read, is not proof, and the Address Book is not rebuilt.
+    const walletGone = result !== null || (vault !== null && !vault.some((w) => w.id === walletId))
     try {
       // Unread vault: only the removed wallet's data is shed (it is still listed), nothing else is torn down.
-      removeWalletData(queryClient, removed, vault ? vault.filter((w) => w.id !== walletId) : state.wallets)
+      removeWalletData(queryClient, removed, vault ? vault.filter((w) => w.id !== walletId) : state.wallets, walletGone)
     } catch {
       teardownFailed = true
     }

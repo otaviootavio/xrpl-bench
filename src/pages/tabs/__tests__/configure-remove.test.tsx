@@ -348,3 +348,50 @@ describe('Configure Remove plate', () => {
     expect(readFileSync('src/pages/tabs/WalletTab.tsx', 'utf8')).toMatch(/confirmRemoveWallet\(/)
   })
 })
+
+describe('Configure Remove: the Address Book only goes with a wallet that is really gone', () => {
+  const book = () => useAppStore.setState({ addressBook: { w1: [{ address: 'rKept' }], w2: [{ address: 'rOther' }] } } as never)
+  const removeIt = async () => {
+    mount()
+    fireEvent.click(key())
+    fireEvent.click(confirm())
+    await waitFor(() => expect(h.success.mock.calls.length + h.error.mock.calls.length).toBeGreaterThan(0))
+  }
+
+  it('the keystore reports the removal done: the wallet\'s list is deleted, the others stay', async () => {
+    book()
+    vaultWithout('w1')
+    await removeIt()
+    expect(h.success).toHaveBeenCalledWith(REMOVE_DONE)
+    expect(Object.keys(state().addressBook)).toEqual(['w2'])
+  })
+
+  it('the keystore throws but the vault no longer lists the wallet: the removal did happen, so its list goes', async () => {
+    book()
+    h.remove.mockRejectedValue(new Error('boom'))
+    vaultWithout('w1')
+    await removeIt()
+    expect(h.error).toHaveBeenCalledWith(REMOVE_FAILED)
+    expect(Object.keys(state().addressBook)).toEqual(['w2'])
+  })
+
+  it('the keystore throws and the wallet is still in the vault: its saved addresses are kept', async () => {
+    book()
+    h.remove.mockRejectedValue(new Error('boom'))
+    h.list.mockImplementation(async () => state().wallets) // still listed
+    await removeIt()
+    expect(h.error).toHaveBeenCalledWith(REMOVE_FAILED)
+    expect(state().addressBook.w1).toEqual([{ address: 'rKept' }])
+    expect(state().addressBook.w2).toEqual([{ address: 'rOther' }])
+  })
+
+  it('the keystore throws and the vault cannot be read: nothing is known, so its saved addresses are kept', async () => {
+    book()
+    h.remove.mockRejectedValue(new Error('boom'))
+    h.list.mockRejectedValue(new Error('unreadable'))
+    await removeIt()
+    expect(h.error).toHaveBeenCalledWith(REMOVE_FAILED)
+    expect(state().addressBook.w1).toEqual([{ address: 'rKept' }])
+  })
+})
+

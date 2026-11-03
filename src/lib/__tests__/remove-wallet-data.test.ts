@@ -35,7 +35,7 @@ describe('removeWalletData (AD-46)', () => {
     const [a, b] = [W('a', 'LA', 'rA'), W('b', 'LB', 'rB')]
     useAppStore.setState({ wallets: [a, b], openLocks: { LA: OPEN, LB: OPEN } } as never)
     const qc = seeded('rA', 'rB')
-    removeWalletData(qc, a, [b])
+    removeWalletData(qc, a, [b], true)
     expect(has(qc, 'rA')).toBe(false)
     expect(has(qc, 'rB')).toBe(true)
     expect(Object.keys(state().openLocks)).toEqual(['LB'])
@@ -46,7 +46,7 @@ describe('removeWalletData (AD-46)', () => {
     const [a, a2] = [W('a', 'LA', 'rA'), W('a2', 'LA', 'rA2', { seedId: 'a' })]
     useAppStore.setState({ wallets: [a, a2], openLocks: { LA: OPEN } } as never)
     const qc = seeded('rA', 'rA2')
-    removeWalletData(qc, a, [a2])
+    removeWalletData(qc, a, [a2], true)
     expect(Object.keys(state().openLocks)).toEqual(['LA'])
     expect(has(qc, 'rA2')).toBe(true)
   })
@@ -55,13 +55,13 @@ describe('removeWalletData (AD-46)', () => {
     const [a, b] = [W('a', 'LA', 'rSAME'), W('b', 'LB', 'rSAME')]
     useAppStore.setState({ wallets: [a, b], openLocks: { LA: OPEN, LB: OPEN } } as never)
     const qc = seeded('rSAME')
-    removeWalletData(qc, a, [b])
+    removeWalletData(qc, a, [b], true)
     expect(has(qc, 'rSAME')).toBe(true)
     expect(Object.keys(state().openLocks)).toEqual(['LB'])
     // ...but not one that a CLOSED lock's Wallet holds.
     const c = W('c', 'LC', 'rSAME')
     useAppStore.setState({ wallets: [b, c], openLocks: { LB: OPEN } } as never)
-    removeWalletData(qc, b, [c])
+    removeWalletData(qc, b, [c], true)
     expect(has(qc, 'rSAME')).toBe(false)
   })
 
@@ -69,7 +69,7 @@ describe('removeWalletData (AD-46)', () => {
     const a = W('a', 'lockA', 'rA')
     useAppStore.setState({ wallets: [a], openLocks: { lockA: OPEN, LX: OPEN } } as never)
     const qc = seeded('rA')
-    removeWalletData(qc, a, [])
+    removeWalletData(qc, a, [], true)
     expect(state().openLocks).toEqual({})
     expect(qc.getQueryCache().getAll()).toEqual([])
   })
@@ -78,7 +78,7 @@ describe('removeWalletData (AD-46)', () => {
     const [a, b] = [W('a', 'LA', 'rA'), W('b', 'LB', 'rB')]
     useAppStore.setState({ wallets: [a, b], openLocks: { LA: OPEN, LB: OPEN } } as never)
     const qc = seeded('rA', 'rB')
-    removeWalletData(qc, a, [a, b])
+    removeWalletData(qc, a, [a, b], true)
     expect(Object.keys(state().openLocks)).toEqual(['LB'])
     expect(has(qc, 'rA')).toBe(false)
   })
@@ -90,14 +90,29 @@ describe('removeWalletData (AD-46)', () => {
       openLocks: { LA: OPEN },
       addressBook: { a: [{ address: 'rX' }], b: [{ address: 'rY' }] },
     } as never)
-    removeWalletData(seeded('rA', 'rB'), a, [b])
+    removeWalletData(seeded('rA', 'rB'), a, [b], true)
     expect(state().addressBook).toEqual({ b: [{ address: 'rY' }] })
+  })
+
+  it('keeps the Address Book when the Wallet is not gone, but still sheds its session and cached data', () => {
+    const [a, b] = [W('a', 'LA', 'rA'), W('b', 'LB', 'rB')]
+    useAppStore.setState({
+      wallets: [a, b],
+      openLocks: { LA: OPEN, LB: OPEN },
+      addressBook: { a: [{ address: 'rX' }], b: [{ address: 'rY' }] },
+    } as never)
+    const qc = seeded('rA', 'rB')
+    removeWalletData(qc, a, [b], false)
+    expect(state().addressBook).toEqual({ a: [{ address: 'rX' }], b: [{ address: 'rY' }] })
+    expect(has(qc, 'rA')).toBe(false)
+    expect('LA' in state().openLocks).toBe(false)
+    expect('LB' in state().openLocks).toBe(true)
   })
 
   it('does not throw when the removed Wallet had no list', () => {
     const [a, b] = [W('a', 'LA', 'rA'), W('b', 'LB', 'rB')]
     useAppStore.setState({ wallets: [a, b], openLocks: { LA: OPEN, LB: OPEN }, addressBook: { b: [{ address: 'rY' }] } } as never)
-    expect(() => removeWalletData(seeded('rA', 'rB'), a, [b])).not.toThrow()
+    expect(() => removeWalletData(seeded('rA', 'rB'), a, [b], true)).not.toThrow()
     expect(state().addressBook).toEqual({ b: [{ address: 'rY' }] })
   })
 
@@ -108,7 +123,7 @@ describe('removeWalletData (AD-46)', () => {
       throw new Error('boom')
     })
     const qc = seeded('rA', 'rB')
-    expect(() => removeWalletData(qc, a, [b])).not.toThrow()
+    expect(() => removeWalletData(qc, a, [b], true)).not.toThrow()
     expect(has(qc, 'rA')).toBe(false)
     spy.mockRestore()
   })

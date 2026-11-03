@@ -167,14 +167,27 @@ export function leaveWallet(queryClient: QueryClient, walletId: string): void {
  * contains `removed` (a keystore step that threw may have left it in the vault; its
  * in-memory session and data are closed anyway, which fails closed). The caller
  * runs this from `finally`, so it must not throw on a half-finished removal.
+ *
+ * `walletGone` is whether the Wallet is really gone: the keystore reported the
+ * removal done, or the vault no longer lists it. Only then is its Address Book
+ * deleted (AD-50). The Address Book is saved on disk and cannot be rebuilt, so a
+ * removal that failed or could not be checked must not take it, while the
+ * session and the cached data, which are rebuilt on the next open, still go.
  */
-export function removeWalletData(queryClient: QueryClient, removed: WalletMeta, remaining: readonly WalletMeta[]): void {
+export function removeWalletData(
+  queryClient: QueryClient,
+  removed: WalletMeta,
+  remaining: readonly WalletMeta[],
+  walletGone: boolean,
+): void {
   const others = remaining.filter((w) => w.id !== removed.id)
   // This wallet's saved addresses go with it (AD-50); a throw must not stop the rest of the scope.
-  try {
-    useAppStore.getState().removeAddressBook(removed.id)
-  } catch {
-    // fewer saved addresses only means more warnings
+  if (walletGone) {
+    try {
+      useAppStore.getState().removeAddressBook(removed.id)
+    } catch {
+      // fewer saved addresses only means more warnings
+    }
   }
   const { openLocks } = useAppStore.getState()
   const stillHeld = others.some((w) => w.lockId in openLocks && w.network === removed.network && w.address === removed.address)

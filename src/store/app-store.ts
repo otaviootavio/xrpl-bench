@@ -4,6 +4,7 @@ import { get as idbGet, set as idbSet, del as idbDel } from 'idb-keyval'
 import { canonicalNodeUrl, isNetworkId, type NetworkId } from '@/lib/xrpl/networks'
 import type { WalletMeta } from '@/lib/crypto/keystore'
 import { endAllLockSessions, endLockSession } from '@/lib/crypto/lock'
+import { isOpenCheck, isSeedAlgorithm, isSeedMethod, isSigningCheck } from '@/lib/crypto/db'
 import { navigate, walletScreenPath } from '@/lib/route'
 import { migrateAddressBook, upsertAddressBookEntry, type AddressBookEntry } from '@/store/address-book'
 
@@ -134,32 +135,38 @@ const PERSISTED_DEFAULTS: PersistedAppState = {
 }
 
 /**
- * Story 12.1: a Wallet persisted by an earlier build has no `network` and no
- * `seedId`. It is given the persisted app-wide network (the same value the
- * vault migration labels the Seed's first view with) and its own id as Seed id.
- * Total: a value that is not an array leaves the current wallets alone, never
- * throws.
+ * FR-95: a saved Wallet missing any field the screens read is invalid and is not
+ * shown; nothing is guessed. The stored entry is left as it is. `node` is the one
+ * optional field: it must pass the shared validator (wss://, no userinfo, query or
+ * fragment) or the Wallet falls back to its built-in Nodes. Total: a value that is
+ * not an array leaves the current wallets alone, never throws.
  */
-function normaliseWallets(persisted: unknown, persistedNetwork: unknown, fallback: NetworkId, current: WalletMeta[]): WalletMeta[] {
+function isCompleteSavedWallet(w: unknown): w is WalletMeta {
+  if (!w || typeof w !== 'object') return false
+  const r = w as Record<string, unknown>
+  const str = (v: unknown) => typeof v === 'string' && v.length > 0
+  return (
+    str(r.id) &&
+    str(r.seedId) &&
+    str(r.lockId) &&
+    str(r.label) &&
+    str(r.address) &&
+    str(r.keyAddress) &&
+    typeof r.createdAt === 'number' &&
+    isNetworkId(r.network) &&
+    isSeedAlgorithm(r.algorithm) &&
+    isSeedMethod(r.seedMethod) &&
+    isOpenCheck(r.openCheck) &&
+    isSigningCheck(r.signingCheck)
+  )
+}
+
+function normaliseWallets(persisted: unknown, current: WalletMeta[]): WalletMeta[] {
   if (!Array.isArray(persisted)) return current
-  const network = isNetworkId(persistedNetwork) ? persistedNetwork : fallback
-  return persisted
-    .filter((w): w is Record<string, unknown> => !!w && typeof w === 'object' && typeof (w as { id?: unknown }).id === 'string' && typeof (w as { lockId?: unknown }).lockId === 'string')
-    .map((w) => ({
-      ...(w as unknown as WalletMeta),
-      seedId: typeof w.seedId === 'string' ? w.seedId : (w.id as string),
-      // Persisted before a Wallet could operate another Account: the key's address is the Account.
-      keyAddress: typeof w.keyAddress === 'string' ? w.keyAddress : (w.address as string),
-      network: isNetworkId(w.network) ? w.network : network,
-      // A custom Node must pass the shared validator (wss://, no userinfo, query
-      // or fragment); anything else on a persisted record is dropped, so a Wallet falls back to its built-in Nodes rather than
-      // contacting a host nobody proved.
-      node: canonicalNodeUrl(w.node) ?? undefined,
-      algorithm: (w.algorithm as WalletMeta['algorithm']) ?? 'unresolved',
-      seedMethod: w.seedMethod === 'passkey-derived' ? 'passkey-derived' : 'stored',
-      openCheck: (w.openCheck as WalletMeta['openCheck']) ?? 'pin',
-      signingCheck: (w.signingCheck as WalletMeta['signingCheck']) ?? 'standard',
-    }))
+  return persisted.filter(isCompleteSavedWallet).map((w) => ({
+    ...w,
+    node: canonicalNodeUrl((w as { node?: unknown }).node) ?? undefined,
+  }))
 }
 
 /**
@@ -228,7 +235,7 @@ export function mergePersistedAppState<S extends PersistedAppState>(persisted: u
     ...current,
     ...(state as Partial<PersistedAppState>),
     addressBook: normaliseAddressBook(state.addressBook),
-    wallets: normaliseWallets(state.wallets, state.network, current.network, current.wallets),
+    wallets: normaliseWallets(state.wallets, current.wallets),
   }
 }
 

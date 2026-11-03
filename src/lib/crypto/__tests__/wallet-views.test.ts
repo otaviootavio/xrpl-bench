@@ -132,12 +132,54 @@ async function seedWallets(...wallets: Wallet[]) {
   return records
 }
 
-/** A record with no `views`: shown on the fallback network, never persisted. */
+/** A record with no `views`: invalid (FR-95), so it is not shown, and it stays as it is. */
 async function seedViewlessWallet(wallet: Wallet) {
   const { views: _views, ...record } = await seedRecord('w1', key, wallet)
   h.state.stores.wallets.set('w1', record)
   return record
 }
+
+describe('a Seed record missing a required field is not shown (FR-95)', () => {
+  it.each(['id', 'label', 'address', 'createdAt', 'lockId', 'seedMethod', 'algorithm', 'openCheck', 'signingCheck', 'views'] as const)(
+    'lists nothing for a record with no %s, leaves it stored, and still lists the complete one',
+    async (field) => {
+      const [good] = await seedWallets(Wallet.generate())
+      const { [field]: _omitted, ...broken } = await seedRecord('w2', key, Wallet.generate())
+      h.state.stores.wallets.set('w2', broken)
+      expect((await listWallets()).map((m) => m.id)).toEqual([good.id])
+      expect(h.state.stores.wallets.get('w2')).toEqual(broken)
+    },
+  )
+
+  it.each([undefined, 'either', 'other'])('lists nothing for a record whose Open Check is %s, and an empty views list shows nothing', async (openCheck) => {
+    await seedWallets(Wallet.generate())
+    h.state.stores.wallets.set('w2', { ...(await seedRecord('w2', key, Wallet.generate())), openCheck })
+    h.state.stores.wallets.set('w3', { ...(await seedRecord('w3', key, Wallet.generate())), views: [] })
+    expect((await listWallets()).map((m) => m.id)).toEqual(['w1'])
+  })
+
+  it.each([
+    ['seedMethod', 'banana'],
+    ['algorithm', 'banana'],
+    ['signingCheck', 'banana'],
+  ])('lists nothing for a record with an unknown %s', async (field, value) => {
+    h.state.stores.wallets.set('w1', { ...(await seedRecord('w1', key, Wallet.generate())), [field]: value })
+    expect(await listWallets()).toEqual([])
+  })
+
+  it.each([
+    ['no walletId', { network: 'mainnet' }],
+    ['a bad network', { walletId: 'w1', network: 'signet' }],
+  ])('lists nothing for a record with a view with %s', async (_name, view) => {
+    h.state.stores.wallets.set('w1', { ...(await seedRecord('w1', key, Wallet.generate())), views: [view] })
+    expect(await listWallets()).toEqual([])
+  })
+
+  it('lists a record that is complete with algorithm unresolved and Open Check none', async () => {
+    h.state.stores.wallets.set('w1', { ...(await seedRecord('w1', key, Wallet.generate())), openCheck: 'none' })
+    expect((await listWallets()).map((m) => [m.id, m.openCheck, m.algorithm])).toEqual([['w1', 'none', 'unresolved']])
+  })
+})
 
 describe('first decrypt resolves the algorithm', () => {
   it.each([
@@ -192,11 +234,10 @@ describe('Wallets as views over a Seed record', () => {
 })
 
 describe('review follow-ups', () => {
-  it('shows a record with no views on the fallback network without persisting it, and addControlledView refuses it', async () => {
+  it('does not list a record with no views, and addControlledView finds nothing to extend', async () => {
     const r = await seedViewlessWallet(Wallet.generate())
-    expect((await listWallets()).map((m) => m.network)).toEqual(['testnet'])
-    expect((await listWallets('mainnet')).map((m) => m.network)).toEqual(['mainnet'])
-    await expect(addControlledView('w1', { network: 'testnet', accountAddress: 'rControlledAccount1111111111111111' })).rejects.toThrow(/record is incomplete/)
+    expect(await listWallets()).toEqual([])
+    await expect(addControlledView('w1', { network: 'testnet', accountAddress: 'rControlledAccount1111111111111111' })).rejects.toThrow(/not found/)
     expect(h.state.stores.wallets.get('w1')).toEqual(r)
   })
 
@@ -232,7 +273,7 @@ describe('a Node is a field of one Wallet view (story 2)', () => {
 
   it('refuses to set a node on a record with no views, persisting no view', async () => {
     await seedViewlessWallet(Wallet.generate())
-    await expect(setWalletNode('w1', 'wss://node.example.com')).rejects.toThrow(/record is incomplete/)
+    await expect(setWalletNode('w1', 'wss://node.example.com')).rejects.toThrow(/not found/)
     expect(h.state.stores.wallets.get('w1').views).toBeUndefined()
   })
 

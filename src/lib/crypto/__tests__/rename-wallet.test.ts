@@ -84,6 +84,10 @@ const rec = (id: string, label: string, extra: Partial<StoredWallet> = {}): Stor
     address: `r${id}`,
     createdAt: 1,
     lockId: `L${id}`,
+    seedMethod: 'stored',
+    algorithm: 'ed25519',
+    openCheck: 'pin',
+    signingCheck: 'standard',
     rev: 3,
     encryptedSeed: { ivB64: 'iv', ciphertextB64: `ct-${id}` },
     views: [

@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 /**
- * Story 9.1: "the persisted store already holds entries in the old shape —
+ * Story 9.1 and FR-95: "the persisted store already holds entries in the old shape —
  * existing entries read as tagless entries rather than throwing or vanishing,
  * and no saved address is lost by the shape change."
  *
@@ -26,22 +26,33 @@ import { selectAddressBook } from '../app-store'
 
 const EXCHANGE = 'rHb9CJAWyB4rj91VRWn96DkukG4bwdtyTh'
 const OTHER = 'rPT1Sjq2YGrBMTttX4GZHjKu9dyfzbpAYe'
-const WALLETS = [{ id: 'w1', label: 'Savings', address: 'r4NagxniGTmPRr8yBRXRD6NNpZP7FfP4KR', lockId: 'lock-w1' }]
-/** Story 12.1: read into the per-Wallet shape — the persisted app-wide network
- * ('mainnet' in this blob) becomes the Wallet's network; nothing else changes. */
-const NORMALISED_WALLETS = [
-  { ...WALLETS[0], seedId: 'w1', keyAddress: WALLETS[0].address, network: 'mainnet', algorithm: 'unresolved', seedMethod: 'stored', openCheck: 'pin', signingCheck: 'standard' },
+const WALLETS = [
+  {
+    id: 'w1',
+    seedId: 'w1',
+    lockId: 'lock-w1',
+    label: 'Savings',
+    address: 'r4NagxniGTmPRr8yBRXRD6NNpZP7FfP4KR',
+    keyAddress: 'r4NagxniGTmPRr8yBRXRD6NNpZP7FfP4KR',
+    createdAt: 1,
+    network: 'mainnet',
+    algorithm: 'unresolved',
+    seedMethod: 'stored',
+    openCheck: 'pin',
+    signingCheck: 'standard',
+  },
 ]
+const NORMALISED_WALLETS = WALLETS
 
 /** A blob whose Address Book holds `list` under wallet w1 (AD-50). */
 const legacyBlob = (list: unknown) => blobWith({ w1: list })
 
 /** A blob with `addressBook` stored exactly as given (old array, malformed map, ...). */
-function blobWith(addressBook: unknown) {
+function blobWith(addressBook: unknown, wallets: unknown = WALLETS) {
   return JSON.stringify({
     state: {
       network: 'mainnet',
-      wallets: WALLETS,
+      wallets,
       activeWalletId: 'w1',
       addressBook,
       autoLockMinutes: 15,
@@ -221,12 +232,12 @@ describe('app store — the persisted per-Wallet Address Book (AD-50)', () => {
 })
 
 describe('app store — a Passkey-Derived Wallet keeps its Seed Method across a reload', () => {
-  it('rehydrates seedMethod "passkey-derived" as it was persisted, and reads anything else as stored', async () => {
-    const derived = { id: 'd1', label: 'Derived', address: OTHER, lockId: 'lock-d1', seedMethod: 'passkey-derived' }
-    const odd = { id: 'o1', label: 'Odd', address: EXCHANGE, lockId: 'lock-o1', seedMethod: 'something-else' }
+  it('rehydrates seedMethod "passkey-derived" as it was persisted', async () => {
+    const derived = { ...WALLETS[0], id: 'd1', seedId: 'd1', label: 'Derived', address: OTHER, keyAddress: OTHER, lockId: 'lock-d1', seedMethod: 'passkey-derived' }
+    const stored = { ...WALLETS[0], id: 'o1', seedId: 'o1', label: 'Stored', address: EXCHANGE, keyAddress: EXCHANGE, lockId: 'lock-o1', seedMethod: 'stored' }
     h.idb.set(
       APP_STATE_STORAGE_KEY,
-      JSON.stringify({ state: { network: 'testnet', wallets: [derived, odd], activeWalletId: 'd1', addressBook: {}, autoLockMinutes: 5, declinedUpdateVersions: [] }, version: 0 }),
+      JSON.stringify({ state: { network: 'testnet', wallets: [derived, stored], activeWalletId: 'd1', addressBook: {}, autoLockMinutes: 5, declinedUpdateVersions: [] }, version: 0 }),
     )
     await useAppStore.persist.rehydrate()
     const bySeed = Object.fromEntries(useAppStore.getState().wallets.map((w) => [w.id, w.seedMethod]))
@@ -277,15 +288,39 @@ describe('app store — Address Book actions and the selector', () => {
   })
 })
 
-describe('app store — a persisted Wallet with no lock', () => {
-  it('is not read: a record without a string lockId is filtered out, never given a default', async () => {
-    const withLock = { id: 'w1', label: 'Savings', address: EXCHANGE, lockId: 'lock-w1' }
-    const noLock = { id: 'w2', label: 'Old', address: OTHER }
-    h.idb.set(
-      APP_STATE_STORAGE_KEY,
-      JSON.stringify({ state: { network: 'testnet', wallets: [withLock, noLock], activeWalletId: 'w1', addressBook: {}, autoLockMinutes: 5, declinedUpdateVersions: [] }, version: 0 }),
-    )
+describe('app store — a saved Wallet missing a required field is dropped (FR-95)', () => {
+  const FIELDS = ['id', 'label', 'address', 'createdAt', 'seedId', 'keyAddress', 'network', 'algorithm', 'seedMethod', 'openCheck', 'signingCheck', 'lockId'] as const
+
+  it.each(FIELDS)('drops an entry with no %s, guesses nothing, and keeps the complete one', async (field) => {
+    const broken = { ...WALLETS[0], id: 'w2' } as Record<string, unknown>
+    delete broken[field]
+    h.idb.set(APP_STATE_STORAGE_KEY, blobWith({}, [WALLETS[0], broken]))
+
     await useAppStore.persist.rehydrate()
-    expect(useAppStore.getState().wallets.map((w) => w.id)).toEqual(['w1'])
+
+    expect(useAppStore.getState().wallets).toEqual(NORMALISED_WALLETS)
+  })
+
+  it.each([
+    ['seedMethod', 'banana'],
+    ['algorithm', 'banana'],
+    ['signingCheck', 'banana'],
+  ])('drops an entry with an unknown %s', async (field, value) => {
+    h.idb.set(APP_STATE_STORAGE_KEY, blobWith({}, [{ ...WALLETS[0], [field]: value }]))
+    await useAppStore.persist.rehydrate()
+    expect(useAppStore.getState().wallets).toEqual([])
+  })
+
+  it.each(['either', 'none-ish', 7, null])('drops an entry whose Open Check is %s', async (openCheck) => {
+    h.idb.set(APP_STATE_STORAGE_KEY, blobWith({}, [{ ...WALLETS[0], openCheck }]))
+    await useAppStore.persist.rehydrate()
+    expect(useAppStore.getState().wallets).toEqual([])
+  })
+
+  it('keeps an entry whose algorithm is unresolved, and one whose Open Check is none', async () => {
+    const w = { ...WALLETS[0], openCheck: 'none', algorithm: 'unresolved' }
+    h.idb.set(APP_STATE_STORAGE_KEY, blobWith({}, [w]))
+    await useAppStore.persist.rehydrate()
+    expect(useAppStore.getState().wallets).toEqual([w])
   })
 })

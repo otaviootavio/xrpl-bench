@@ -28,7 +28,7 @@ export function WalletNodeSection({ wallet }: { wallet: WalletMeta }) {
   async function refreshAfterChange() {
     // The old custom socket is closed (a write holding it closes it on release).
     if (wallet.node) retireNode(wallet.network, wallet.node)
-    setWallets(await listWallets(wallet.network))
+    setWallets(await listWallets())
     // The same Account answered by another Node: drop what the old one said,
     // the ledger-wide figures included.
     await invalidateAccountScoped(queryClient, wallet.network, wallet.address)

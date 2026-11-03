@@ -61,6 +61,12 @@ const legends = (c: HTMLElement) => [...c.querySelectorAll('legend')].map((l) =>
 const radioLabels = (c: HTMLElement) => [...c.querySelectorAll('input[type="radio"]')].map((r) => r.closest('label')?.textContent ?? '')
 
 describe('plain wording for the checks', () => {
+  it('only the none Open Check reads as no authentication', () => {
+    expect(words.openCheckWords('pin')).toBe('App PIN')
+    expect(words.openCheckWords('passkey')).toBe('Passkey')
+    expect(words.openCheckWords('none')).toBe(words.NO_OPEN_CHECK_ANSWER)
+  })
+
   it('every string check-words.ts exports is short and says nothing about signing data', () => {
     const strings = (Object.values(words) as unknown[]).filter((v): v is string => typeof v === 'string')
     expect(strings.length).toBeGreaterThanOrEqual(5)

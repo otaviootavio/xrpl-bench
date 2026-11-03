@@ -68,7 +68,7 @@ function Gate() {
           if (!cancelled) setStatus('error')
           return
         }
-        const stored = await listWallets(useAppStore.getState().network)
+        const stored = await listWallets()
         if (cancelled) return
         setWallets(stored)
         const active = useAppStore.getState().activeWalletId

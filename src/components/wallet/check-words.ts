@@ -1,3 +1,4 @@
+import type { OpenCheck } from '@/lib/crypto/db'
 import type { SigningKind } from '@/lib/crypto/policy'
 
 /** The words for a Wallet's checks. The Edit checks screen and the Configure
@@ -9,13 +10,13 @@ export const SIGNING_CHECK_QUESTION = 'Authentication required to sign a transac
 export const NO_OPEN_CHECK_ANSWER = 'No authentication required to open the wallet'
 export const STANDARD_SIGNING_ANSWER = 'Nothing is asked for signing.'
 
-export function openCheckWords(kind: string): string {
+export function openCheckWords(kind: OpenCheck): string {
   switch (kind) {
     case 'pin':
       return 'App PIN'
     case 'passkey':
       return 'Passkey'
-    default:
+    case 'none':
       return NO_OPEN_CHECK_ANSWER
   }
 }

@@ -9,7 +9,7 @@ import { startLockSession } from '@/lib/crypto/lock'
 import { useLockMinutesChanged } from '@/hooks/useLockMinutesChanged'
 import { toast } from '@/lib/notify'
 import { queryKeys } from '@/lib/xrpl/query-keys'
-import { useActiveNetwork, useAppStore } from '@/store/app-store'
+import { useAppStore } from '@/store/app-store'
 
 const BACK_LABEL = 'Back to Wallet'
 
@@ -21,7 +21,6 @@ const BACK_LABEL = 'Back to Wallet'
  * that is not open.
  */
 export function WalletScreens({ route }: { route: TaskRoute }) {
-  const activeNetwork = useActiveNetwork()
   const queryClient = useQueryClient()
   const wallets = useAppStore((s) => s.wallets)
   const setWallets = useAppStore((s) => s.setWallets)
@@ -40,7 +39,7 @@ export function WalletScreens({ route }: { route: TaskRoute }) {
   }, [reachable])
 
   async function refreshWallets() {
-    const fresh = await listWallets(activeNetwork)
+    const fresh = await listWallets()
     setWallets(fresh)
     return fresh
   }

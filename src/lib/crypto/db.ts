@@ -1,5 +1,5 @@
 import { openDB, type DBSchema, type IDBPDatabase } from 'idb'
-import type { NetworkId } from '@/lib/xrpl/networks'
+import { isNetworkId, type NetworkId } from '@/lib/xrpl/networks'
 
 /** Seed Method (FR-62), the one declaration; `policy.ts` re-exports it. */
 export type SeedMethod = 'stored' | 'passkey-derived'
@@ -54,8 +54,8 @@ export interface WalletView {
 
 /** A Seed record. `id` is the Seed id and, for the first view, also its
  * walletId, so a persisted `activeWalletId` keeps working. Everything after
- * `createdAt` is additive and optional: a record written by a build before
- * story 12.1 has none of it, and an older build ignores all of it. */
+ * `createdAt` is additive and optional, except the fields `isCompleteStoredWallet`
+ * requires: a record missing one of those is invalid and not shown (FR-95). */
 export interface StoredWallet {
   id: string
   label: string
@@ -71,12 +71,12 @@ export interface StoredWallet {
   /** Passkey-Derived only. Such a record has no `encryptedSeed`, `sealedSeed` or
    * `signing`: its Seed exists in no stored form. */
   derived?: DerivedSeedInfo
-  seedMethod?: SeedMethod
-  algorithm?: SeedAlgorithm
+  seedMethod: SeedMethod
+  algorithm: SeedAlgorithm
   lockId: string
-  openCheck?: OpenCheck
-  signingCheck?: SigningCheck
-  views?: WalletView[]
+  openCheck: OpenCheck
+  signingCheck: SigningCheck
+  views: WalletView[]
   /** When the person wrote the Seed down and typed back the challenged groups
    * (FR-72). Additive; absent on every record made without that step. */
   writtenSeedConfirmedAt?: number
@@ -97,7 +97,7 @@ export interface LockRecord {
   autoLockMinutes: number
   createdAt: number
   /** The Open Check this lock was created with. */
-  openCheck?: OpenCheck
+  openCheck: OpenCheck
   /** The Open Key (raw, base64) encrypted under the App PIN's key for this lock. */
   wrappedOpenKeyForPin?: { ivB64: string; ciphertextB64: string }
   /** The Open Key encrypted under this lock's own passkey. */
@@ -192,15 +192,51 @@ export async function putVaultMeta(meta: VaultMeta): Promise<void> {
   await db.put('vault', meta)
 }
 
+export const isOpenCheck = (v: unknown): v is OpenCheck => v === 'pin' || v === 'passkey' || v === 'none'
+export const isSeedMethod = (v: unknown): v is SeedMethod => v === 'stored' || v === 'passkey-derived'
+export const isSeedAlgorithm = (v: unknown): v is SeedAlgorithm => v === 'ed25519' || v === 'secp256k1' || v === 'unresolved'
+export const isSigningCheck = (v: unknown): v is SigningCheck => v === 'standard' || v === 'passkey' || v === 'pin'
+
+function isCompleteView(v: unknown): boolean {
+  if (!v || typeof v !== 'object') return false
+  const r = v as Record<string, unknown>
+  return typeof r.walletId === 'string' && r.walletId.length > 0 && isNetworkId(r.network)
+}
+
+/** FR-95: the one validity rule for a Seed record. Every field the screens read
+ * must be present, `openCheck` must be one of the three, and a record with no
+ * views shows no Wallet. `algorithm: 'unresolved'` is a value, not an absence.
+ * An invalid record is not shown; it is never rewritten or deleted. */
+export function isCompleteStoredWallet(w: unknown): w is StoredWallet {
+  if (!w || typeof w !== 'object') return false
+  const r = w as Record<string, unknown>
+  const str = (v: unknown) => typeof v === 'string' && v.length > 0
+  return (
+    str(r.id) &&
+    str(r.label) &&
+    str(r.address) &&
+    typeof r.createdAt === 'number' &&
+    str(r.lockId) &&
+    isSeedMethod(r.seedMethod) &&
+    isSeedAlgorithm(r.algorithm) &&
+    isOpenCheck(r.openCheck) &&
+    isSigningCheck(r.signingCheck) &&
+    Array.isArray(r.views) &&
+    r.views.length > 0 &&
+    r.views.every(isCompleteView)
+  )
+}
+
+/** The one bulk read of Seed records: only complete ones come back. */
 export async function listStoredWallets(): Promise<StoredWallet[]> {
   const db = await getDb()
-  return db.getAll('wallets')
+  return (await db.getAll('wallets')).filter(isCompleteStoredWallet)
 }
 
 /** FR-93: a Wallet has one Network for life, so a record may hold at most one
  * plain (non-controlled) view. Controlled views carry `accountAddress`. */
 function assertOneOwnView(wallet: StoredWallet): void {
-  const plain = (wallet.views ?? []).filter((v) => !v.accountAddress)
+  const plain = wallet.views.filter((v) => !v.accountAddress)
   if (plain.length > 1) throw new Error('A wallet can only be on one network.')
 }
 
@@ -265,7 +301,7 @@ export async function mutateStoredWallet(
 export function lockStamp(record: LockRecord | undefined): string {
   if (!record) return 'absent'
   return JSON.stringify([
-    record.openCheck ?? null,
+    record.openCheck,
     record.autoLockMinutes,
     record.hkdfInfo,
     record.wrappedOpenKeyForPin?.ciphertextB64 ?? null,
@@ -394,7 +430,8 @@ export async function clearAllLockSessions(): Promise<void> {
 
 export async function getLockRecord(lockId: string): Promise<LockRecord | undefined> {
   const db = await getDb()
-  return (await db.get('vault', lockKey(lockId))) as LockRecord | undefined
+  const record = (await db.get('vault', lockKey(lockId))) as LockRecord | undefined
+  return record && isOpenCheck(record.openCheck) ? record : undefined
 }
 
 export async function putLockRecord(record: LockRecord): Promise<void> {
@@ -457,7 +494,7 @@ export async function deleteAllLockRecords(): Promise<void> {
 export async function listLockRecords(): Promise<LockRecord[]> {
   const db = await getDb()
   const all = (await db.getAll('vault')) as Array<VaultMeta | LockRecord>
-  return all.filter((r): r is LockRecord => r.key.startsWith('lock:'))
+  return all.filter((r): r is LockRecord => r.key.startsWith('lock:') && isOpenCheck((r as LockRecord).openCheck))
 }
 
 /** Full teardown — wallet removal / logout must wipe the vault, per

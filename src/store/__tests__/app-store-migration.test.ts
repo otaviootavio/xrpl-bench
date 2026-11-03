@@ -18,7 +18,7 @@ vi.mock('idb-keyval', () => ({
   set: async (k: string, v: string) => void h.idb.set(k, v),
   del: async (k: string) => void h.idb.delete(k),
 }))
-vi.mock('@/lib/crypto/lock', () => ({ endLockSession: async () => {}, endAllLockSessions: async () => {}, getLockInfo: async () => ({ id: 'legacy', openCheck: 'pin', autoLockMinutes: 5, pin: true, passkey: false }) }))
+vi.mock('@/lib/crypto/lock', () => ({ endLockSession: async () => {}, endAllLockSessions: async () => {}, getLockInfo: async () => ({ id: 'lock-w1', openCheck: 'pin', autoLockMinutes: 5, pin: true, passkey: false }) }))
 
 import { APP_STATE_STORAGE_KEY, useAppStore } from '../app-store'
 import { suppressesFirstSendWarning } from '../address-book'
@@ -26,11 +26,11 @@ import { selectAddressBook } from '../app-store'
 
 const EXCHANGE = 'rHb9CJAWyB4rj91VRWn96DkukG4bwdtyTh'
 const OTHER = 'rPT1Sjq2YGrBMTttX4GZHjKu9dyfzbpAYe'
-const WALLETS = [{ id: 'w1', label: 'Savings', address: 'r4NagxniGTmPRr8yBRXRD6NNpZP7FfP4KR' }]
+const WALLETS = [{ id: 'w1', label: 'Savings', address: 'r4NagxniGTmPRr8yBRXRD6NNpZP7FfP4KR', lockId: 'lock-w1' }]
 /** Story 12.1: read into the per-Wallet shape — the persisted app-wide network
  * ('mainnet' in this blob) becomes the Wallet's network; nothing else changes. */
 const NORMALISED_WALLETS = [
-  { ...WALLETS[0], seedId: 'w1', keyAddress: WALLETS[0].address, lockId: 'legacy', network: 'mainnet', algorithm: 'unresolved', seedMethod: 'stored', openCheck: 'pin', signingCheck: 'standard' },
+  { ...WALLETS[0], seedId: 'w1', keyAddress: WALLETS[0].address, network: 'mainnet', algorithm: 'unresolved', seedMethod: 'stored', openCheck: 'pin', signingCheck: 'standard' },
 ]
 
 /** A blob whose Address Book holds `list` under wallet w1 (AD-50). */
@@ -222,8 +222,8 @@ describe('app store — the persisted per-Wallet Address Book (AD-50)', () => {
 
 describe('app store — a Passkey-Derived Wallet keeps its Seed Method across a reload', () => {
   it('rehydrates seedMethod "passkey-derived" as it was persisted, and reads anything else as stored', async () => {
-    const derived = { id: 'd1', label: 'Derived', address: OTHER, seedMethod: 'passkey-derived' }
-    const odd = { id: 'o1', label: 'Odd', address: EXCHANGE, seedMethod: 'something-else' }
+    const derived = { id: 'd1', label: 'Derived', address: OTHER, lockId: 'lock-d1', seedMethod: 'passkey-derived' }
+    const odd = { id: 'o1', label: 'Odd', address: EXCHANGE, lockId: 'lock-o1', seedMethod: 'something-else' }
     h.idb.set(
       APP_STATE_STORAGE_KEY,
       JSON.stringify({ state: { network: 'testnet', wallets: [derived, odd], activeWalletId: 'd1', addressBook: {}, autoLockMinutes: 5, declinedUpdateVersions: [] }, version: 0 }),
@@ -274,5 +274,18 @@ describe('app store — Address Book actions and the selector', () => {
     expect(useAppStore.getState().addressBook).toEqual({ b: [{ address: OTHER }] })
     expect(() => removeAddressBook('nope')).not.toThrow()
     expect(useAppStore.getState().addressBook).toEqual({ b: [{ address: OTHER }] })
+  })
+})
+
+describe('app store — a persisted Wallet with no lock', () => {
+  it('is not read: a record without a string lockId is filtered out, never given a default', async () => {
+    const withLock = { id: 'w1', label: 'Savings', address: EXCHANGE, lockId: 'lock-w1' }
+    const noLock = { id: 'w2', label: 'Old', address: OTHER }
+    h.idb.set(
+      APP_STATE_STORAGE_KEY,
+      JSON.stringify({ state: { network: 'testnet', wallets: [withLock, noLock], activeWalletId: 'w1', addressBook: {}, autoLockMinutes: 5, declinedUpdateVersions: [] }, version: 0 }),
+    )
+    await useAppStore.persist.rehydrate()
+    expect(useAppStore.getState().wallets.map((w) => w.id)).toEqual(['w1'])
   })
 })

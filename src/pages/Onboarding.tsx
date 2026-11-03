@@ -4,7 +4,6 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { CreateWalletFlow } from '@/components/wallet/CreateWalletFlow'
 import { useSeedImport } from '@/components/wallet/useSeedImport'
 import { ChassisShell } from '@/components/ChassisShell'
-import { hasPasskeyRegistered } from '@/lib/crypto/auth'
 import { RemoveAllPlate } from '@/components/wallet/RemoveAllPlate'
 import { appPinResidue, type WalletMeta } from '@/lib/crypto/keystore'
 import { toast } from '@/lib/notify'
@@ -177,12 +176,4 @@ function ImportStep({
       {warningDialog}
     </ChassisShell>
   )
-}
-
-// A thin re-export of hasPasskeyRegistered() consumed by Unlock; kept here so
-// the onboarding flow that registers the passkey and the check for it stay in
-// one place.
-// oxlint-disable-next-line react/only-export-components
-export async function passkeyAvailableForReturningUser() {
-  return hasPasskeyRegistered()
 }

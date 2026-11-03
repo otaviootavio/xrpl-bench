@@ -3,11 +3,11 @@ import { describe, expect, it, vi } from 'vitest'
 import { renderHook } from '@testing-library/react'
 
 vi.mock('idb-keyval', () => ({ get: async () => undefined, set: async () => {}, del: async () => {} }))
-vi.mock('@/lib/crypto/lock', () => ({ endLockSession: async () => {}, endAllLockSessions: async () => {}, getLockInfo: async () => ({ id: 'legacy', openCheck: 'pin', autoLockMinutes: 5, pin: true, passkey: false }) }))
+vi.mock('@/lib/crypto/lock', () => ({ endLockSession: async () => {}, endAllLockSessions: async () => {}, getLockInfo: async () => ({ id: 'lock-1', openCheck: 'pin', autoLockMinutes: 5, pin: true, passkey: false }) }))
 
 import { mergePersistedAppState, useAppStore, useActiveNetwork, useActiveNode } from '../app-store'
 
-const base = { label: 'W', address: 'rA', createdAt: 1, algorithm: 'ed25519', openCheck: 'pin', signingCheck: 'standard' }
+const base = { label: 'W', address: 'rA', lockId: 'lock-1', createdAt: 1, algorithm: 'ed25519', openCheck: 'pin', signingCheck: 'standard' }
 const current: Parameters<typeof mergePersistedAppState>[1] = { network: 'testnet', wallets: [], activeWalletId: null, addressBook: {}, autoLockMinutes: 5, declinedUpdateVersions: [] }
 
 describe('legacy persisted state is normalised on merge', () => {

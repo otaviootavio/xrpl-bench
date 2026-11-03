@@ -6,10 +6,8 @@ export type SeedMethod = 'stored' | 'passkey-derived'
 /** `unresolved` until the first decryption derives it from the Seed itself and
  * checks it against the stored address — never guessed (AD-18). */
 export type SeedAlgorithm = 'ed25519' | 'secp256k1' | 'unresolved'
-/** `either` is a legacy Wallet whose app-wide unlock accepts a PIN or a
- * passkey (AD-25). `none` is a Testnet or Devnet lock with no Open Check (AD-21,
- * AD-28). */
-export type OpenCheck = 'pin' | 'passkey' | 'either' | 'none'
+/** `none` is a Testnet or Devnet lock with no Open Check (AD-21, AD-28). */
+export type OpenCheck = 'pin' | 'passkey' | 'none'
 export type SigningCheck = 'standard' | 'passkey' | 'pin'
 
 /** How a Signing Check's key is wrapped (AD-23). Holds only public derivation
@@ -75,7 +73,7 @@ export interface StoredWallet {
   derived?: DerivedSeedInfo
   seedMethod?: SeedMethod
   algorithm?: SeedAlgorithm
-  lockId?: string
+  lockId: string
   openCheck?: OpenCheck
   signingCheck?: SigningCheck
   views?: WalletView[]
@@ -98,8 +96,7 @@ export interface LockRecord {
   pbkdf2: { iterations: number; hash: 'SHA-256'; keyBits: number }
   autoLockMinutes: number
   createdAt: number
-  /** Story 4 (additive; the legacy lock has none of these, its wrappers live in
-   * the vault meta). The Open Check this lock was created with. */
+  /** The Open Check this lock was created with. */
   openCheck?: OpenCheck
   /** The Open Key (raw, base64) encrypted under the App PIN's key for this lock. */
   wrappedOpenKeyForPin?: { ivB64: string; ciphertextB64: string }
@@ -113,26 +110,13 @@ export interface LockRecord {
   openKey?: CryptoKey
 }
 
-export const LEGACY_LOCK_ID = 'legacy'
 export const lockKey = (id: string) => `lock:${id}`
 
-// The vault has one random "master key" that actually encrypts every stored
-// seed. It is never stored in the clear — only wrapped (encrypted) once per
-// unlock method, so either method can unwrap the SAME master key. Without
-// this, PIN and passkey would each derive their own independent key and
-// only whichever one was used at setup time could ever decrypt anything
-// (a real bug caught during live testing: the other method appeared to
-// "unlock" but was silently deriving a key that couldn't decrypt anything).
+/** The App PIN: its salt, the known ciphertext that proves it, and the one
+ * failure count every PIN use and passkey assertion shares (AD-25). */
 export interface VaultMeta {
   key: 'vault'
-  passkeyCredentialIdB64?: string
-  /** The rpId the legacy passkey was registered under, when recorded (AD-24). */
-  rpId?: string
   pinSaltB64?: string
-  wrappedMasterKeyForPin?: { ivB64: string; ciphertextB64: string }
-  wrappedMasterKeyForPasskey?: { ivB64: string; ciphertextB64: string }
-  /** Known ciphertext that proves the App PIN when no legacy wrapper exists
-   * (story 4): written when the App PIN is created by a non-legacy lock. */
   pinVerifier?: { ivB64: string; ciphertextB64: string; hkdfInfo: string }
   failedAttempts: number
   lockedUntil?: number
@@ -147,7 +131,7 @@ export interface VaultMeta {
 // every lock path (manual lock, auto-lock timeout, backgrounding, wallet
 // removal) — see lib/crypto/auth.ts and store/app-store.ts.
 export interface UnlockedSession {
-  /** `session` for the legacy lock, `session:<lockId>` for any other. */
+  /** `session:<lockId>`. */
   key: string
   masterKey: CryptoKey
   expiresAt: number
@@ -231,18 +215,6 @@ export async function deleteStoredWallet(id: string): Promise<void> {
   await db.delete('wallets', id)
 }
 
-/** What the legacy Open Check is today: `either` if a passkey is registered
- * (credential id and wrapper both present), else `pin`. */
-export async function legacyOpenCheck(): Promise<OpenCheck> {
-  return openCheckOf(await getVaultMeta())
-}
-
-/** The one statement of the rule: a passkey is registered only when its
- * credential id and its wrapper are both present. */
-function openCheckOf(meta: VaultMeta | undefined): OpenCheck {
-  return meta?.passkeyCredentialIdB64 && meta.wrappedMasterKeyForPasskey ? 'either' : 'pin'
-}
-
 /**
  * Reads the vault meta, applies `change`, and writes the result back in ONE
  * transaction — the only way the PIN failure count moves, so two parallel wrong
@@ -289,7 +261,7 @@ export async function mutateStoredWallet(
 
 /** What a lock record's wrappers and window are, as one comparable string: the
  * read an edit was based on, checked again inside its transaction. `undefined`
- * (the legacy lock before its record exists) has a stamp of its own. */
+ * (no record) has a stamp of its own. */
 export function lockStamp(record: LockRecord | undefined): string {
   if (!record) return 'absent'
   return JSON.stringify([
@@ -304,7 +276,7 @@ export function lockStamp(record: LockRecord | undefined): string {
 
 /** The ciphertext and lock a Seed record was read with. */
 export function seedStamp(w: StoredWallet): string {
-  return JSON.stringify([w.rev ?? 0, w.lockId ?? LEGACY_LOCK_ID, w.encryptedSeed?.ciphertextB64 ?? null, w.sealedSeed?.ciphertextB64 ?? null])
+  return JSON.stringify([w.rev ?? 0, w.lockId, w.encryptedSeed?.ciphertextB64 ?? null, w.sealedSeed?.ciphertextB64 ?? null])
 }
 
 /** Another tab or flow changed what an edit was based on. Nothing was written. */
@@ -329,7 +301,7 @@ export interface WalletEditCommit {
   /** A lock record to write: a new lock, or the existing one with a new window. */
   putLock?: LockRecord
   /** The lock the record leaves. Deleted in the same transaction when no record
-   * is left on it; the legacy lock never is. */
+   * is left on it. */
   releaseLockId?: string
 }
 
@@ -357,8 +329,8 @@ export async function commitWalletEdit(input: WalletEditCommit): Promise<{ walle
     if (input.putLock) await vault.put(input.putLock)
     const released = input.releaseLockId
     let lockRemoved = false
-    if (released && released !== LEGACY_LOCK_ID) {
-      const others = (await wallets.getAll()).some((w) => w.id !== next.id && (w.lockId ?? LEGACY_LOCK_ID) === released)
+    if (released) {
+      const others = (await wallets.getAll()).some((w) => w.id !== next.id && w.lockId === released)
       if (!others) {
         await vault.delete(lockKey(released))
         lockRemoved = true
@@ -376,81 +348,8 @@ export async function commitWalletEdit(input: WalletEditCommit): Promise<{ walle
   }
 }
 
-export interface LegacyMigrationInput {
-  network: NetworkId
-  autoLockMinutes: number
-  hkdfInfo: string
-  prfSaltB64: string
-  pbkdf2Iterations: number
-}
-
-/**
- * AD-27: every Seed record written by a build before per-Wallet locks joins
- * one `lock:legacy` record and gains its additive fields. Nothing is
- * re-encrypted and no key material is touched or held.
- *
- * One transaction over `wallets` and `vault`: it commits whole or not at all,
- * so a crash leaves every Wallet openable exactly as before. Writes nothing
- * when no record lacks `views` and the lock exists (re-run), or the vault is
- * empty. A record that already carries `views` is left alone; an already
- * resolved `algorithm` is kept.
- *
- * Returns true only if it wrote.
- */
-export async function migrateLegacyVault(input: LegacyMigrationInput): Promise<boolean> {
-  const db = await getDb()
-  const tx = db.transaction(['wallets', 'vault'], 'readwrite')
-  const done = tx.done
-  done.catch(() => {})
-  try {
-    const lockExists = !!(await tx.objectStore('vault').get(lockKey(LEGACY_LOCK_ID)))
-    const all = await tx.objectStore('wallets').getAll()
-    // A record without `views` is pending, even when the lock exists: a build
-    // rolled back to before this story can add one after the first migration.
-    const pending = all.filter((w) => !w.views)
-    if (pending.length === 0 && (lockExists || all.length === 0)) {
-      await done
-      return false
-    }
-    const openCheck = openCheckOf((await tx.objectStore('vault').get('vault')) as VaultMeta | undefined)
-    for (const w of pending) {
-      await tx.objectStore('wallets').put({
-        ...w,
-        seedMethod: 'stored',
-        algorithm: w.algorithm ?? 'unresolved',
-        lockId: LEGACY_LOCK_ID,
-        openCheck,
-        signingCheck: 'standard',
-        views: [{ walletId: w.id, network: input.network }],
-      })
-    }
-    if (!lockExists) {
-      const lock: LockRecord = {
-        key: lockKey(LEGACY_LOCK_ID),
-        id: LEGACY_LOCK_ID,
-        hkdfInfo: input.hkdfInfo,
-        prfSaltB64: input.prfSaltB64,
-        pbkdf2: { iterations: input.pbkdf2Iterations, hash: 'SHA-256', keyBits: 256 },
-        autoLockMinutes: input.autoLockMinutes,
-        createdAt: Date.now(),
-      }
-      await tx.objectStore('vault').put(lock)
-    }
-    await done
-    return true
-  } catch (err) {
-    try {
-      tx.abort()
-    } catch {
-      // already finished or aborted
-    }
-    throw err
-  }
-}
-
-/** One persisted session per open lock (AD-21). The legacy lock keeps its
- * pre-story-4 key, so a refresh across the update still restores it. */
-export const sessionKeyOf = (lockId: string) => (lockId === LEGACY_LOCK_ID ? 'session' : `session:${lockId}`)
+/** One persisted session per open lock (AD-21). */
+export const sessionKeyOf = (lockId: string) => `session:${lockId}`
 
 export async function putLockSession(lockId: string, masterKey: CryptoKey, expiresAt: number): Promise<void> {
   const db = await getDb()
@@ -516,13 +415,11 @@ export async function putLockRecord(record: LockRecord): Promise<void> {
  * module-level promise chain (one tab). It is NOT re-entrant: a function inside
  * the guard must never call another guarded one, or it waits on itself.
  *
- * Wrapped, in `keystore.ts` and `auth.ts` (a test checks every name below):
- *  - keystore: `createStoredWallet`, `createDerivedWallet`, `importAndStoreWallet`,
- *    `generateAndStoreWallet`, `importStoredWallet`, `editChecks`, `removeWallet`
- *  - auth: `setUpVaultAuth` (Onboarding's first-run setup)
+ * Wrapped, in `keystore.ts` (a test checks every name below):
+ *  - keystore: `createStoredWallet`, `createDerivedWallet`, `importStoredWallet`,
+ *    `editChecks`, `removeWallet`
  * Not wrapped, because each reaches a wrapped one: `restorePasskeyWallet`
- * (`createDerivedWallet`), `setLockAutoLock` (`editChecks`). `importAndStoreWallet`
- * is Onboarding's until it migrates to `importStoredWallet`.
+ * (`createDerivedWallet`), `setLockAutoLock` (`editChecks`).
  */
 let vaultWriteTail: Promise<unknown> = Promise.resolve()
 export function exclusiveVaultWrite<T>(work: () => Promise<T>): Promise<T> {
@@ -537,17 +434,14 @@ export function exclusiveVaultWrite<T>(work: () => Promise<T>): Promise<T> {
   return run
 }
 
-/** Removes one `lock:<id>` record. Never the legacy lock's, whose wrappers
- * live in the vault meta. */
+/** Removes one `lock:<id>` record. */
 export async function deleteLockRecord(lockId: string): Promise<void> {
-  if (lockId === LEGACY_LOCK_ID) throw new Error('The legacy lock cannot be deleted.')
   const db = await getDb()
   await db.delete('vault', lockKey(lockId))
 }
 
-/** Deletes EVERY `lock:<id>` record, the legacy lock's included, in one transaction.
- * Only for a vault that holds no Wallet (AD-46): `deleteLockRecord` refuses the
- * legacy id on purpose, and an emptied vault must hold nothing that reads as a
+/** Deletes EVERY `lock:<id>` record in one transaction. Only for a vault that
+ * holds no Wallet (AD-46): an emptied vault must hold nothing that reads as a
  * lock. Call it under `exclusiveVaultWrite`, after the emptiness check. */
 export async function deleteAllLockRecords(): Promise<void> {
   const db = await getDb()

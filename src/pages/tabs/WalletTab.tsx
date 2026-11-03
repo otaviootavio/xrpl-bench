@@ -60,7 +60,7 @@ function AutoLockRow({ lockId, minutes }: { lockId: string; minutes: number | nu
   const problemId = `${id}-problem`
   const sharedBy = new Set(wallets.filter((w) => w.lockId === lockId).map((w) => w.seedId)).size
   const choices: number[] = [...AUTO_LOCK_CHOICES]
-  // A lock whose minutes are not a choice (legacy) still shows what it really has.
+  // A lock whose minutes are not a choice still shows what it really has.
   if (minutes !== null && !choices.includes(minutes)) choices.push(minutes)
   choices.sort((a, b) => a - b)
 

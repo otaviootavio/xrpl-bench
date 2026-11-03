@@ -145,9 +145,7 @@ export function Unlock({ wallet }: { wallet: WalletMeta }) {
           {pinAvailable && hardLocked && (
             <p role="alert" className="text-sm text-text-destructive">
               Too many failed PIN attempts: PIN entry is turned off on this device.{' '}
-              {passkeyAvailable
-                ? 'Your passkey still opens this wallet. Nothing has been erased.'
-                : 'Nothing has been erased, but this wallet cannot be opened with a PIN now. You can erase this device below and import your wallet again with your seed.'}
+              Nothing has been erased, but this wallet cannot be opened with a PIN now. You can erase this device below and import your wallet again with your seed.
             </p>
           )}
           {pinAvailable && !hardLocked && backedOff && (
@@ -200,7 +198,7 @@ export function Unlock({ wallet }: { wallet: WalletMeta }) {
             </>
           )}
 
-          <Button variant={pinAvailable && pinBlocked && !passkeyAvailable ? 'destructive' : 'ghost'} size="sm" onClick={() => setConfirmReset(true)}>
+          <Button variant={pinAvailable && pinBlocked ? 'destructive' : 'ghost'} size="sm" onClick={() => setConfirmReset(true)}>
             Reset this device and re-import
           </Button>
         </CardContent>

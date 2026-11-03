@@ -447,3 +447,16 @@ Item 8 shipped as a refactor that preserves behaviour (`spec-sendtab-split.md`).
 - source_spec: `_bmad-output/specs/spec-no-legacy-lock/stories/1-first-run-import-gets-its-own-lock.md`
   summary: First-run Create (Onboarding `create` step) leaves the quiz's primary action below the fold at 320x568, at 100% and at 200% text.
   evidence: Same card and inline action row as first-run Import before story 1's round 2 fix; measured on Import in a real browser (Next at y=1245, Import wallet at y=5963 against a scroll area ending at 451 at 200% text). Add wallet avoids it with a sticky ScreenFooter through `CreateWalletFlow`'s `actionHost`. Pre-existing and outside story 1's intent, so it was not fixed there; the same host wiring would fix it. Needs a browser pass on Create after the change.
+
+- source_spec: `_bmad-output/specs/spec-no-legacy-lock/stories/2-remove-the-migration-the-old-pin-vault-and-the-legacy-lock.md`
+  summary: Story 3 must cover vault-level records, not only the persisted app state: a Seed record with no `lockId` now reaches `toMetas` as `undefined`, and a record with no `views` is shown on the fallback network.
+  evidence: Story 2 removed `?? LEGACY_LOCK_ID` in `keystore.ts` and the migration; `getLockInfo(undefined)` throws "Lock not found." (fails closed) and `viewsOf` (`keystore.ts:73`) still invents a Testnet view for a record with no `views`. FR-95 says such records are invalid and not shown. Story 3 should filter them where the vault is read (`listStoredWallets`/`toMetas`), then delete the "record is incomplete" guards at `keystore.ts` ~1139 and ~1174 and the `viewsOf` fallback.
+
+- source_spec: `_bmad-output/specs/spec-no-legacy-lock/stories/2-remove-the-migration-the-old-pin-vault-and-the-legacy-lock.md`
+  summary: Story 3 should validate `openCheck` as one of `pin`, `passkey`, `none` (an `either` or missing value makes the record invalid) and make `LockRecord.openCheck` required.
+  evidence: After `either` was deleted, `check-words.ts` and `reveal-copy.ts` default any unknown value to the "no authentication" wording, and `getLockInfo` reads an unknown value as `pin: false, passkey: false`. Reachable only by a record the removed migration wrote, so low, but a wrong "no check" statement on a protected wallet is the wrong direction to fail. Also decide whether a dropped record gets a visible notice or stays silent (FR-95 says not shown).
+
+- source_spec: `_bmad-output/specs/spec-no-legacy-lock/stories/2-remove-the-migration-the-old-pin-vault-and-the-legacy-lock.md`
+  summary: Story 4 should rename the remaining `id: 'legacy'` lock fixtures and legacy-titled tests.
+  evidence: `settings-address-book.test.tsx`, `settings-full-reset.test.tsx`, `unlock-hard-lock-reset.test.tsx` (`WALLET.lockId`, default `h.info`) and the `active-network.test.ts` describe "legacy persisted state is normalised on merge" still use the removed concept's name as a plain lock id; nothing asserts on them.
+

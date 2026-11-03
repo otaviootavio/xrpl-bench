@@ -4,7 +4,6 @@ import { get as idbGet, set as idbSet, del as idbDel } from 'idb-keyval'
 import { canonicalNodeUrl, isNetworkId, type NetworkId } from '@/lib/xrpl/networks'
 import type { WalletMeta } from '@/lib/crypto/keystore'
 import { endAllLockSessions, endLockSession } from '@/lib/crypto/lock'
-import { LEGACY_LOCK_ID } from '@/lib/crypto/db'
 import { navigate, walletScreenPath } from '@/lib/route'
 import { migrateAddressBook, upsertAddressBookEntry, type AddressBookEntry } from '@/store/address-book'
 
@@ -23,9 +22,8 @@ interface AppState {
    * `store/address-book.ts`, the one place that decides it (AD-6). */
   addressBook: Record<string, AddressBookEntry[]>
   /** NOT read by anything (AD-26): each lock's auto-lock minutes live on its
-   * lock record. Kept only as the migration's input — the value a pre-story-4
-   * build had persisted becomes the legacy lock's minutes — and so a rolled-back
-   * build still finds its setting. Tolerated in `merge`. */
+   * lock record. Kept only so a rolled-back build still finds its setting.
+   * Tolerated in `merge`. */
   autoLockMinutes: number
   /** app-versioning-and-updates.md US-4: a declined release's identifier (its
    * commit SHA) is remembered so it stops nagging, while a newer one still
@@ -146,14 +144,12 @@ function normaliseWallets(persisted: unknown, persistedNetwork: unknown, fallbac
   if (!Array.isArray(persisted)) return current
   const network = isNetworkId(persistedNetwork) ? persistedNetwork : fallback
   return persisted
-    .filter((w): w is Record<string, unknown> => !!w && typeof w === 'object' && typeof (w as { id?: unknown }).id === 'string')
+    .filter((w): w is Record<string, unknown> => !!w && typeof w === 'object' && typeof (w as { id?: unknown }).id === 'string' && typeof (w as { lockId?: unknown }).lockId === 'string')
     .map((w) => ({
       ...(w as unknown as WalletMeta),
       seedId: typeof w.seedId === 'string' ? w.seedId : (w.id as string),
       // Persisted before a Wallet could operate another Account: the key's address is the Account.
       keyAddress: typeof w.keyAddress === 'string' ? w.keyAddress : (w.address as string),
-      // A Wallet persisted before per-Wallet locks belongs to the one legacy lock.
-      lockId: typeof w.lockId === 'string' ? w.lockId : LEGACY_LOCK_ID,
       network: isNetworkId(w.network) ? w.network : network,
       // A custom Node must pass the shared validator (wss://, no userinfo, query
       // or fragment); anything else on a persisted record is dropped, so a Wallet falls back to its built-in Nodes rather than
@@ -250,7 +246,7 @@ function settleHydration() {
  * defaults and callers proceed with those. */
 /** True when the persisted slice could not be read: the store then holds its
  * defaults, not what the user last chose, so nothing may be derived from it and
- * written back (the legacy-vault relabel in particular). */
+ * written back. */
 export function appStateHydrationFailed(): boolean {
   return hydrationFailed
 }

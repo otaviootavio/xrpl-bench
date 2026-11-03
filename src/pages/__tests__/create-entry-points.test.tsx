@@ -8,8 +8,6 @@ import { act, waitFor, cleanup, fireEvent, render, screen } from '@testing-libra
  * writes a Wallet itself. Onboarding's Import renders it with the shared Seed source.
  */
 const h = vi.hoisted(() => ({
-  setUpVaultAuth: vi.fn(async () => ({}) as CryptoKey),
-  generateAndStoreWallet: vi.fn(),
   createStoredWallet: vi.fn(),
   flowProps: [] as Array<Record<string, unknown>>,
   appPinResidue: vi.fn(async () => false),
@@ -20,8 +18,6 @@ vi.mock('@/lib/notify', () => ({ toast: { error: vi.fn(), success: vi.fn(), warn
 vi.mock('@/lib/crypto/keystore', () => ({
   parseSeedInput: (raw: string) => raw.trim() || null,
   addressFromSeed: () => 'rAddr',
-  importAndStoreWallet: vi.fn(),
-  generateAndStoreWallet: (...a: unknown[]) => h.generateAndStoreWallet(...a),
   createStoredWallet: (...a: unknown[]) => h.createStoredWallet(...a),
   listWallets: async () => [],
   removeWallet: vi.fn(),
@@ -30,7 +26,7 @@ vi.mock('@/lib/crypto/keystore', () => ({
   setLockAutoLock: vi.fn(),
   describeCheckFailure: () => '',
 }))
-vi.mock('@/lib/crypto/auth', () => ({ setUpVaultAuth: (...a: unknown[]) => h.setUpVaultAuth(...(a as [])), hasPasskeyRegistered: async () => false, wipeVault: async () => {} }))
+vi.mock('@/lib/crypto/auth', () => ({ wipeVault: async () => {} }))
 vi.mock('@/lib/crypto/lock', () => ({
   DEFAULT_AUTO_LOCK_MINUTES: 5,
   endLockSession: async () => {},
@@ -80,8 +76,6 @@ const click = async (name: string | RegExp) => act(async () => void fireEvent.cl
 
 beforeEach(() => {
   window.history.replaceState(null, '', '/')
-  h.setUpVaultAuth.mockClear()
-  h.generateAndStoreWallet.mockClear()
   h.createStoredWallet.mockClear()
   h.flowProps.length = 0
   useAppStore.setState({
@@ -98,8 +92,6 @@ describe('first run', () => {
     await click('Create a new wallet')
     expect(screen.getByText('the creation flow')).toBeTruthy()
     expect((h.flowProps.at(-1) as { pathChoice?: unknown }).pathChoice).toBeUndefined() // Onboarding's buttons choose the path
-    expect(h.setUpVaultAuth).not.toHaveBeenCalled()
-    expect(h.generateAndStoreWallet).not.toHaveBeenCalled()
   })
 
   it('names its own leave action "Back to start", disabled while a wallet is being written, and it returns to the choice', async () => {
@@ -133,7 +125,6 @@ describe('first run', () => {
     const props = h.flowProps.at(-1) as { importSource?: unknown; pathChoice?: unknown }
     expect(props.importSource).toBeTruthy()
     expect(props.pathChoice).toBeUndefined()
-    expect(h.setUpVaultAuth).not.toHaveBeenCalled()
     expect(screen.getByRole('button', { name: 'Back to start' })).toBeTruthy()
   })
 })
@@ -180,7 +171,6 @@ describe('Add wallet from the chooser: the routed screen', () => {
     await addWallet()
     expect(screen.getByText('the creation flow')).toBeTruthy()
     expect(screen.queryByRole('button', { name: 'Add' })).toBeNull()
-    expect(h.generateAndStoreWallet).not.toHaveBeenCalled()
     expect(h.createStoredWallet).not.toHaveBeenCalled()
   })
 

@@ -1,10 +1,10 @@
 import type { NetworkId } from '@/lib/xrpl/networks'
 import { aesDecrypt, aesEncrypt } from './aes'
-import { deriveAesKeyFromBits, HKDF_INFO } from './derive'
+import { deriveAesKeyFromBits } from './derive'
 import { b64ToBuf, bufToB64 } from './encoding'
 import { attemptPin, derivePinKeyBits, generateSalt, getLockoutState, PBKDF2_ITERATIONS, recordFailure, resetFailures, triesRemaining } from './pin'
 import { checkAutoLock, checkLockRequest, type NewOpenCheck, type PolicyVerdict } from './policy'
-import { assertAnyPasskeyAndDeriveBits, assertPasskeyAndDeriveBits, getRpId, isCancelled, isPrfUnsupported, isWebAuthnSupported, PRF_SALT, registerPasskey } from './webauthn'
+import { assertAnyPasskeyAndDeriveBits, assertPasskeyAndDeriveBits, getRpId, isCancelled, isPrfUnsupported, isWebAuthnSupported, registerPasskey } from './webauthn'
 import {
   clearAllLockSessions,
   clearLockSession,
@@ -14,7 +14,6 @@ import {
   extendLockSessionExpiry,
   getLockSession,
   getVaultMeta,
-  LEGACY_LOCK_ID,
   listLockRecords,
   listStoredWallets,
   lockKey,
@@ -32,10 +31,6 @@ import {
  * deriving, which always succeeds. Nothing here holds a key beyond the call: the
  * caller (the app store) keeps the non-extractable result, and `db.ts` keeps its
  * persisted session.
- *
- * The legacy lock (AD-27) is every Wallet written before per-Wallet locks. Its
- * Open Key IS the old vault master key, wrapped as it always was in the vault
- * meta, so it opens exactly as before.
  *
  * `xrpl` never imports this module; PINs arrive as arguments (parent AD-1).
  */
@@ -88,53 +83,21 @@ async function wrapOpenKey(openKey: CryptoKey, methodKey: CryptoKey): Promise<Wr
   return aesEncrypt(methodKey, bufToB64(await crypto.subtle.exportKey('raw', openKey)))
 }
 
-/** The legacy lock's record, written with the constants that were baked in until
- * now — stored from here on, never recomputed (AD-21). */
-export function legacyLockRecord(autoLockMinutes: number): LockRecord {
-  return {
-    key: lockKey(LEGACY_LOCK_ID),
-    id: LEGACY_LOCK_ID,
-    hkdfInfo: HKDF_INFO,
-    prfSaltB64: bufToB64(PRF_SALT.slice().buffer),
-    pbkdf2: { iterations: PBKDF2_ITERATIONS, hash: 'SHA-256', keyBits: 256 },
-    autoLockMinutes,
-    createdAt: Date.now(),
-  }
-}
-
-/** Writes the legacy lock's record, for a vault set up on this build. A vault
- * from an earlier build gets it from the migration instead. */
-export async function writeLegacyLock(autoLockMinutes: number): Promise<void> {
-  await putLockRecord(legacyLockRecord(autoLockMinutes))
-}
-
 export async function getLockInfo(lockId: string): Promise<LockInfo> {
   const record = await getLockRecord(lockId)
-  if (lockId === LEGACY_LOCK_ID) {
-    const meta = await getVaultMeta()
-    const passkey = !!meta.passkeyCredentialIdB64 && !!meta.wrappedMasterKeyForPasskey
-    return {
-      id: lockId,
-      openCheck: passkey ? 'either' : 'pin',
-      autoLockMinutes: record?.autoLockMinutes ?? DEFAULT_AUTO_LOCK_MINUTES,
-      pin: !!meta.pinSaltB64 && !!meta.wrappedMasterKeyForPin,
-      passkey,
-    }
-  }
   if (!record) throw new Error('Lock not found.')
   const openCheck = record.openCheck ?? 'pin'
   return {
     id: lockId,
     openCheck,
     autoLockMinutes: record.autoLockMinutes,
-    pin: openCheck === 'pin' || openCheck === 'either',
-    passkey: openCheck === 'passkey' || openCheck === 'either',
+    pin: openCheck === 'pin',
+    passkey: openCheck === 'passkey',
   }
 }
 
 export async function listLocks(): Promise<LockInfo[]> {
   const ids = new Set((await listLockRecords()).map((r) => r.id))
-  ids.add(LEGACY_LOCK_ID)
   const infos: LockInfo[] = []
   for (const id of ids) {
     try {
@@ -158,21 +121,6 @@ interface OpenPlan {
 
 async function planFor(lockId: string): Promise<OpenPlan> {
   const record = await getLockRecord(lockId)
-  if (lockId === LEGACY_LOCK_ID) {
-    const meta = await getVaultMeta()
-    return {
-      // A vault the migration has not reached has no record yet: the constants
-      // it would have been given.
-      hkdfInfo: record?.hkdfInfo ?? HKDF_INFO,
-      prfSalt: record?.prfSaltB64 ? new Uint8Array(b64ToBuf(record.prfSaltB64)) : PRF_SALT,
-      autoLockMinutes: record?.autoLockMinutes ?? DEFAULT_AUTO_LOCK_MINUTES,
-      pin: meta.pinSaltB64 ? meta.wrappedMasterKeyForPin : undefined,
-      passkey:
-        meta.passkeyCredentialIdB64 && meta.wrappedMasterKeyForPasskey
-          ? { credentialIdB64: meta.passkeyCredentialIdB64, wrapped: meta.wrappedMasterKeyForPasskey, ...(meta.rpId ? { rpId: meta.rpId } : {}) }
-          : undefined,
-    }
-  }
   if (!record) throw new Error('Lock not found.')
   return {
     hkdfInfo: record.hkdfInfo,
@@ -202,8 +150,8 @@ async function finish(lockId: string, key: CryptoKey, autoLockMinutes: number, p
  *    counts, as it does today; a cancelled or dismissed prompt never does.
  *  - `none` opens with no prompt.
  *
- * On success the session is persisted under `session:<lockId>` (the legacy
- * lock under `session`) with the lock's own expiry.
+ * On success the session is persisted under `session:<lockId>` with the lock's
+ * own expiry.
  */
 export async function openLock(
   lockId: string,
@@ -283,15 +231,8 @@ export type CreateLockResult = CheckResult<{ id: string; key: CryptoKey }> | { s
 
 /** Proves a typed PIN is the App PIN: its known ciphertext decrypts under it. */
 export async function provesAppPin(bits: ArrayBuffer, meta: Awaited<ReturnType<typeof getVaultMeta>>): Promise<void> {
-  if (meta.wrappedMasterKeyForPin) {
-    await aesDecrypt(await deriveAesKeyFromBits(bits, HKDF_INFO), meta.wrappedMasterKeyForPin.ivB64, meta.wrappedMasterKeyForPin.ciphertextB64)
-    return
-  }
-  if (meta.pinVerifier) {
-    await aesDecrypt(await deriveAesKeyFromBits(bits, meta.pinVerifier.hkdfInfo), meta.pinVerifier.ivB64, meta.pinVerifier.ciphertextB64)
-    return
-  }
-  throw new Error('The App PIN cannot be verified.')
+  if (!meta.pinVerifier) throw new Error('The App PIN cannot be verified.')
+  await aesDecrypt(await deriveAesKeyFromBits(bits, meta.pinVerifier.hkdfInfo), meta.pinVerifier.ivB64, meta.pinVerifier.ciphertextB64)
 }
 
 /**
@@ -301,7 +242,7 @@ export async function provesAppPin(bits: ArrayBuffer, meta: Awaited<ReturnType<t
  *
  * With no App PIN yet, `pin` becomes it: a salt and a verifier are written, so
  * later uses can prove it from known ciphertext. Otherwise the PIN is tried on
- * the shared counter: proved against the legacy wrapper or the verifier, and a
+ * the shared counter: proved against the verifier, and a
  * wrong one counts. A vault with an App PIN but nothing to prove it against is a
  * configuration problem, not a wrong PIN, and must not count.
  */
@@ -322,7 +263,7 @@ export async function withAppPin<T>(
     if (written.pinSaltB64 !== pinSaltB64) return withAppPin(pin, hkdfInfo, build) // another flow set the App PIN first
     return { status: 'ok', value }
   }
-  if (!meta.wrappedMasterKeyForPin && !meta.pinVerifier) return { status: 'unsupported' }
+  if (!meta.pinVerifier) return { status: 'unsupported' }
   const attempt = await attemptPin(pin, async (bits) => {
     await provesAppPin(bits, meta)
     return build(await deriveAesKeyFromBits(bits, hkdfInfo))
@@ -340,13 +281,11 @@ export async function hasAppPin(): Promise<boolean> {
 /** Undoes an App PIN that a creation that then failed had just made, if nothing
  * has used it since — so a refused or cancelled creation leaves the vault as it
  * was. Anything that depends on the PIN blocks it: a lock wrapped under it, a
- * Wallet sealed under it (a PIN Signing Check has no lock wrapper), or a legacy
- * wrapper. The failure count is not touched: a passkey shares it. */
+ * Wallet sealed under it (a PIN Signing Check has no lock wrapper). The failure count is not touched: a passkey shares it. */
 export async function discardUnusedAppPin(): Promise<void> {
   if ((await listLockRecords()).some((r) => r.wrappedOpenKeyForPin)) return
   if ((await listStoredWallets()).some((w) => w.signing?.kind === 'pin')) return
   await mutateVaultMeta((current) => {
-    if (current.wrappedMasterKeyForPin) return current
     const { pinSaltB64: _salt, pinVerifier: _verifier, ...rest } = current
     return rest
   })
@@ -355,10 +294,8 @@ export async function discardUnusedAppPin(): Promise<void> {
 /**
  * The App PIN goes with the last Wallet (AD-46, FR-86), and its failure count goes
  * with it (AD-25: one PIN, one count). In ONE `mutateVaultMeta` transaction it
- * deletes `pinSaltB64`, `pinVerifier`,
- * `wrappedMasterKeyForPin`, `wrappedMasterKeyForPasskey`, `passkeyCredentialIdB64`
- * and `rpId`, and resets `failedAttempts` and `lockedUntil` (checked against `VaultMeta`:
- * those eight are every field but the key). The meta is built from scratch, never spread, so a field
+ * deletes `pinSaltB64` and `pinVerifier`, and resets `failedAttempts` and
+ * `lockedUntil` (checked against `VaultMeta`: those four are every field but the key). The meta is built from scratch, never spread, so a field
  * added later cannot survive into an emptied vault.
  *
  * The only function allowed to reset the failure count outside a successful unlock.
@@ -370,7 +307,7 @@ export async function discardAppPin(): Promise<void> {
   await mutateVaultMeta(() => ({ key: 'vault', failedAttempts: 0 }))
 }
 
-/** Removes every lock record (the legacy one too) and every persisted session of a
+/** Removes every lock record and every persisted session of a
  * vault with no Wallet left. See `db.deleteAllLockRecords`. */
 export async function discardAllLocks(): Promise<void> {
   await deleteAllLockRecords()
@@ -384,8 +321,8 @@ export async function discardAllLocks(): Promise<void> {
  * opened and no session is written; the Open Key is returned (non-extractable)
  * for the caller that creates the first Wallet under it.
  *
- * A PIN lock proves the App PIN from known ciphertext: the legacy wrapper if
- * present, else the verifier written when the App PIN was created. With no App
+ * A PIN lock proves the App PIN from known ciphertext: the verifier written
+ * when the App PIN was created. With no App
  * PIN yet, `ctx.pin` becomes it.
  */
 export async function createLock(input: CreateLockInput, ctx: { pin?: string } = {}): Promise<CreateLockResult> {
@@ -485,7 +422,7 @@ export async function setAutoLockMinutes(
 ): Promise<PolicyVerdict> {
   const verdict = checkAutoLock(networks, minutes)
   if (!verdict.ok) return verdict
-  const record = (await getLockRecord(lockId)) ?? (lockId === LEGACY_LOCK_ID ? legacyLockRecord(minutes) : undefined)
+  const record = await getLockRecord(lockId)
   if (!record) throw new Error('Lock not found.')
   await putLockRecord({ ...record, autoLockMinutes: minutes })
   return { ok: true }
@@ -501,8 +438,7 @@ export async function startLockSession(lockId: string, key: CryptoKey, autoLockM
   await putLockSession(lockId, key, Date.now() + autoLockMinutes * 60_000)
 }
 
-/** Removes a lock's record and its session. The legacy lock is refused: its
- * wrappers live in the vault meta and every migrated Wallet is on it. */
+/** Removes a lock's record and its session. */
 export async function deleteLock(lockId: string): Promise<void> {
   await deleteLockRecord(lockId)
   await clearLockSession(lockId)
@@ -512,7 +448,6 @@ export async function deleteLock(lockId: string): Promise<void> {
  * entry is cleared by the read. */
 export async function restoreOpenLocks(): Promise<Array<{ lockId: string; key: CryptoKey; autoLockMinutes: number; expiresAt: number }>> {
   const ids = new Set((await listLockRecords()).map((r) => r.id))
-  ids.add(LEGACY_LOCK_ID)
   const restored: Array<{ lockId: string; key: CryptoKey; autoLockMinutes: number; expiresAt: number }> = []
   for (const lockId of ids) {
     const session = await getLockSession(lockId)

@@ -66,7 +66,7 @@ describe('plain wording for the checks', () => {
     expect(strings.length).toBeGreaterThanOrEqual(5)
     for (const text of [
       ...strings,
-      ...(['pin', 'passkey', 'either', 'none'] as const).map((k) => words.openCheckWords(k)),
+      ...(['pin', 'passkey', 'none'] as const).map((k) => words.openCheckWords(k)),
       ...(['standard', 'passkey', 'pin'] as const).map((k) => words.signingWords(k)),
     ]) {
       for (const s of sentences(text)) expect(wordCount(s), s).toBeLessThan(21)

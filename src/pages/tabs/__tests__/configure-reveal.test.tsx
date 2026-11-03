@@ -76,9 +76,7 @@ describe('Configure reveal seed: the dialog names the check', () => {
 
   it.each([
     ['a PIN Open Check', { lockId: 'lock-1' }, /App PIN will be asked/],
-    ['the legacy lock, whichever check it uses', {}, /passkey or App PIN will be asked, whichever this wallet's lock uses/],
     ['a passkey Open Check', { lockId: 'lock-1', openCheck: 'passkey' }, /passkey will be asked/],
-    ['an either lock off the legacy id', { lockId: 'lock-1', openCheck: 'either' }, /passkey will be asked, or your App PIN/],
     ['no Open Check', { lockId: 'lock-1', openCheck: 'none' }, /nothing more will be asked and the Seed is shown/],
     ['a PIN Signing Check', { openCheck: 'passkey', signingCheck: 'pin' }, /App PIN will be asked/],
     ['a passkey Signing Check', { signingCheck: 'passkey' }, /passkey will be asked/],

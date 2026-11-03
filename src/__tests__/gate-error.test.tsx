@@ -19,7 +19,6 @@ vi.mock('idb-keyval', () => ({
   del: async (k: string) => void h.idb.delete(k),
 }))
 vi.mock('@/lib/crypto/keystore', () => ({
-  migrateLegacyVault: async () => true,
   listWallets: (n?: string) => h.list(n),
 }))
 vi.mock('@/lib/crypto/lock', () => ({

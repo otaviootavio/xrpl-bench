@@ -29,7 +29,7 @@ vi.mock('@/lib/crypto/webauthn', () => ({ detectPrfSupport: async () => h.capabi
 vi.mock('@/lib/crypto/lock', () => ({ hasAppPin: async () => h.appPin, startLockSession: (...a: unknown[]) => h.startLockSession(...(a as [])) }))
 vi.mock('@/lib/crypto/pin', () => ({ triesRemaining: async () => 8 }))
 vi.mock('@/lib/build-info', () => ({ BUILD: { version: '0.0.0' }, shortSha: 'abc', sourceUrl: '#', formatBuiltAt: () => 'now' }))
-vi.mock('@/lib/crypto/auth', () => ({ setUpVaultAuth: vi.fn(), hasPasskeyRegistered: async () => false, wipeVault: async () => {} }))
+vi.mock('@/lib/crypto/auth', () => ({ wipeVault: async () => {} }))
 vi.mock('@/lib/xrpl/client', () => ({ verifyNode: vi.fn() }))
 vi.mock('@/lib/xrpl/query-reads', () => ({ fetchAccountStateOnce: (...a: unknown[]) => h.fetchAccountStateOnce(...a) }))
 vi.mock('@/lib/seed-import', async (importOriginal) => {
@@ -46,7 +46,6 @@ vi.mock('@/lib/crypto/keystore', () => ({
   createStoredWallet: vi.fn(),
   createDerivedWallet: vi.fn(),
   appPinResidue: async () => false,
-  importAndStoreWallet: vi.fn(),
   listWallets: async () => [META],
   describeCheckFailure: (r: { status: string; triesRemaining?: number }) =>
     r.status === 'wrong-credential' ? `Incorrect PIN. ${r.triesRemaining} tries remaining.` : 'Locked out.',

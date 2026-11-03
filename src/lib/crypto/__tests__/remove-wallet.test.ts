@@ -83,10 +83,6 @@ const FULL_META: VaultMeta = {
   key: 'vault',
   pinSaltB64: 'salt',
   pinVerifier: { ...wrapped, hkdfInfo: 'v' },
-  wrappedMasterKeyForPin: wrapped,
-  wrappedMasterKeyForPasskey: wrapped,
-  passkeyCredentialIdB64: 'cred',
-  rpId: 'wallet.example',
   failedAttempts: 5,
   lockedUntil: 123,
 }
@@ -106,7 +102,7 @@ const lock = (id: string): LockRecord =>
 const putWallet = (r: StoredWallet) => h.state.stores.wallets.set(r.id, structuredClone(r))
 const putVault = (r: VaultMeta | LockRecord) => h.state.stores.vault.set(r.key, structuredClone(r))
 const meta = () => h.state.stores.vault.get('vault') as VaultMeta
-const SIX = ['pinSaltB64', 'pinVerifier', 'wrappedMasterKeyForPin', 'wrappedMasterKeyForPasskey', 'passkeyCredentialIdB64', 'rpId'] as const
+const PIN_FIELDS = ['pinSaltB64', 'pinVerifier'] as const
 
 beforeEach(() => {
   h.state.stores = { wallets: new Map(), vault: new Map(), session: new Map() }
@@ -115,9 +111,9 @@ beforeEach(() => {
 })
 
 describe('discardAppPin (AD-46, AD-25)', () => {
-  it('clears the six fields and resets the count and the back-off, in one write', async () => {
+  it('clears the App PIN fields and resets the count and the back-off, in one write', async () => {
     await discardAppPin()
-    for (const field of SIX) expect(meta()[field], field).toBeUndefined()
+    for (const field of PIN_FIELDS) expect(meta()[field], field).toBeUndefined()
     expect(meta().failedAttempts).toBe(0)
     expect(meta().lockedUntil).toBeUndefined()
   })
@@ -144,12 +140,12 @@ describe('removeWallet: the App PIN goes with the last Wallet', () => {
     expect(meta()).toEqual(FULL_META)
   })
 
-  it('the last Wallet: the six fields go, the count and back-off reset, its lock goes', async () => {
+  it('the last Wallet: the App PIN fields go, the count and back-off reset, its lock goes', async () => {
     putWallet(rec('a', 'LA'))
     putVault(lock('LA'))
     h.state.stores.session.set('session:LA', { key: 'session:LA' })
     expect(await removeWallet('a')).toEqual({ emptied: true, appPin: 'discarded' })
-    for (const field of SIX) expect(meta()[field], field).toBeUndefined()
+    for (const field of PIN_FIELDS) expect(meta()[field], field).toBeUndefined()
     expect(meta().failedAttempts).toBe(0)
     expect(meta().lockedUntil).toBeUndefined()
     expect([...h.state.stores.vault.keys()]).toEqual(['vault'])
@@ -158,22 +154,12 @@ describe('removeWallet: the App PIN goes with the last Wallet', () => {
     expect(await listWallets()).toEqual([])
   })
 
-  it('a migrated legacy vault whose only lock record is lock:legacy: the PIN is discarded and the legacy record deleted', async () => {
-    putWallet(rec('a', undefined))
-    putVault({ ...lock('legacy'), wrappedOpenKeyForPin: undefined })
-    h.state.stores.session.set('session', { key: 'session' })
-    expect(await removeWallet('a')).toEqual({ emptied: true, appPin: 'discarded' })
-    expect([...h.state.stores.vault.keys()]).toEqual(['vault'])
-    expect(meta().pinSaltB64).toBeUndefined()
-    expect(h.state.stores.session.size).toBe(0)
-  })
-
-  it('removing a legacy Wallet never deletes the legacy lock while another Wallet remains', async () => {
-    putWallet(rec('a', 'legacy'))
-    putWallet(rec('b', 'legacy'))
-    putVault(lock('legacy'))
+  it('removing a Wallet never deletes a lock another Wallet remains on', async () => {
+    putWallet(rec('a', 'LS'))
+    putWallet(rec('b', 'LS'))
+    putVault(lock('LS'))
     await removeWallet('a')
-    expect(h.state.stores.vault.has('lock:legacy')).toBe(true)
+    expect(h.state.stores.vault.has('lock:LS')).toBe(true)
   })
 
   it('an orphan created-lock record with no Wallet does not block the discard, and is removed', async () => {
@@ -279,19 +265,16 @@ describe('the vault-write guard (AD-46)', () => {
 
   it('every function the guard comment names is wrapped in it, and none of the unwrapped ones is', () => {
     const keystore = readFileSync('src/lib/crypto/keystore.ts', 'utf8')
-    const auth = readFileSync('src/lib/crypto/auth.ts', 'utf8')
     const db = readFileSync('src/lib/crypto/db.ts', 'utf8')
     const body = (text: string, name: string) => {
       const start = text.indexOf(`export function ${name}(`)
       expect(start, `${name} is an exported one-line wrapper`).toBeGreaterThan(-1)
       return text.slice(start, text.indexOf('\n}\n', start))
     }
-    for (const name of ['createStoredWallet', 'createDerivedWallet', 'importAndStoreWallet', 'importStoredWallet', 'generateAndStoreWallet', 'editChecks', 'removeWallet']) {
+    for (const name of ['createStoredWallet', 'createDerivedWallet', 'importStoredWallet', 'editChecks', 'removeWallet']) {
       expect(body(keystore, name), name).toMatch(/exclusiveVaultWrite\(\(\) => \w+Unguarded\(/)
       expect(db, `${name} is listed in the guard comment`).toContain(name)
     }
-    expect(body(auth, 'setUpVaultAuth')).toMatch(/exclusiveVaultWrite\(\(\) => setUpVaultAuthUnguarded\(/)
-    expect(db).toContain('setUpVaultAuth')
     // Not re-entrant: these reach a wrapped function and must not be wrapped themselves.
     for (const name of ['restorePasskeyWallet', 'setLockAutoLock']) {
       const start = keystore.indexOf(`export async function ${name}(`)

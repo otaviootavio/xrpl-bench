@@ -82,8 +82,6 @@ vi.mock('idb', () => ({
   },
 }))
 
-import { setUpVaultAuth } from '../auth'
-import { LEGACY_LOCK_ID } from '../db'
 import { openLock } from '../lock'
 import { seedSalt } from '../derive'
 import {
@@ -93,7 +91,6 @@ import {
   openSigner,
   restorePasskeyWallet,
   revealSeed,
-  sealSeedUnderSigningCheck,
   type CreateDerivedWalletInput,
   type Prompts,
 } from '../keystore'
@@ -221,7 +218,6 @@ describe('a new passkey on Testnet', () => {
     expect(rec.sealedSeed).toBeUndefined()
     expect(rec.signing).toBeUndefined()
     expect(rec.lockId).toBe(meta.lockId)
-    expect(meta.lockId).not.toBe(LEGACY_LOCK_ID)
   })
 
   it('holds no Seed, entropy or PRF output anywhere in the vault', async () => {
@@ -346,10 +342,6 @@ describe('signing and reveal', () => {
     expect(failedAttempts()).toBe(before)
   })
 
-  it('a derived Wallet cannot be given a stored signing check', async () => {
-    const { meta, openKey } = ok(await createDerivedWallet(base, { pin: PIN }))
-    await expect(sealSeedUnderSigningCheck(meta.id, 'passkey', { openKey, prompts })).rejects.toThrow(/no stored Seed/)
-  })
 })
 
 describe('one passkey, one purpose per salt', () => {
@@ -537,13 +529,6 @@ describe('getRpId is the only rpId source', () => {
   })
 })
 
-describe('legacy vault set-up records the rpId of a new passkey', () => {
-  it('stores it on the vault meta', async () => {
-    await setUpVaultAuth('Me', PIN)
-    expect(h.state.stores.vault.get('vault').rpId).toBe('localhost')
-  })
-})
-
 describe('rpId recording and replay on the existing paths', () => {
   const stored = {
     label: 'Old',
@@ -574,16 +559,16 @@ describe('rpId recording and replay on the existing paths', () => {
     expect(auth.gets[0].publicKey).not.toHaveProperty('rpId')
   })
 
-  it("openLock('legacy', 'passkey') passes the vault meta's rpId, and none when it has none", async () => {
-    await setUpVaultAuth('Me', PIN)
+  it("openLock(<passkey lock>, 'passkey') passes the lock record's rpId, and none when it has none", async () => {
+    const { meta } = ok(await createStoredWallet({ ...stored, signing: 'standard', openCheck: 'passkey' }, { pin: PIN }))
     auth.gets = []
-    ok(await openLock(LEGACY_LOCK_ID, 'passkey'))
+    ok(await openLock(meta.lockId, 'passkey'))
     expect(auth.gets[0].publicKey.rpId).toBe('localhost')
-    const meta = h.state.stores.vault.get('vault')
-    delete meta.rpId
-    h.state.stores.vault.set('vault', meta)
+    const record = h.state.stores.vault.get(`lock:${meta.lockId}`)
+    delete record.rpId
+    h.state.stores.vault.set(`lock:${meta.lockId}`, record)
     auth.gets = []
-    ok(await openLock(LEGACY_LOCK_ID, 'passkey'))
+    ok(await openLock(meta.lockId, 'passkey'))
     expect(auth.gets[0].publicKey).not.toHaveProperty('rpId')
   })
 

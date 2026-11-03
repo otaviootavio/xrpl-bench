@@ -1533,8 +1533,8 @@ its passkey, and the confirm dialog names which. A copy-guard test bans wording
 that calls a key unrevealable: the Seed is revealable behind its checks.
 
 **Editing a Wallet's checks (story 8, 2026-10-11).** `keystore.editChecks` is the
-one edit (FR-73, AD-28); `sealSeedUnderSigningCheck` stays only as the legacy
-passkey-only write and nothing new calls it. `policy.ts` resolves the result of a
+one edit (FR-73, AD-28); `sealSeedUnderSigningCheck` stayed only as the legacy
+passkey-only write and nothing new called it (deleted 2026-11-02 with the legacy lock, FR-95, AD-52). `policy.ts` resolves the result of a
 request (`resolveEdit`), judges it with the same `checkWalletRequest` creation uses,
 and renders the dialog's answers (`describeEditOptions`, `olderBuildCannotOpen`); a
 Passkey-Derived Wallet's Signing Check, and every Wallet's Seed Method and

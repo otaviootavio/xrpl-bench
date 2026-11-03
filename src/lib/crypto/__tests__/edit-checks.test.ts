@@ -78,8 +78,7 @@ vi.mock('idb', () => ({
   },
 }))
 
-import { setUpVaultAuth } from '../auth'
-import { LEGACY_LOCK_ID } from '../db'
+import { makePinLock, storeSeedWallet } from './fixtures'
 import { getLockInfo, openLock } from '../lock'
 import { aesDecrypt } from '../aes'
 import {
@@ -87,7 +86,6 @@ import {
   createStoredWallet,
   editChecks,
   addControlledView,
-  generateAndStoreWallet,
   listWallets,
   openSigner,
   revealSeed,
@@ -392,31 +390,33 @@ describe('changing the Open Check', () => {
   })
 })
 
-describe('a Wallet on the legacy lock', () => {
-  it('moves to its own lock, its old encryptedSeed goes, and the other legacy Wallets still open', async () => {
-    const key = await setUpVaultAuth('tester', PIN)
-    const a = await generateAndStoreWallet('A', key, 'testnet')
-    const b = await generateAndStoreWallet('B', key, 'testnet')
+describe('a Wallet on a lock shared with other Wallets', () => {
+  it('moves to its own lock, its old encryptedSeed goes, and the other Wallets still open', async () => {
+    const shared = await makePinLock(PIN)
+    const key = shared.key
+    const a = await storeSeedWallet('A', shared)
+    const b = await storeSeedWallet('B', shared)
     const aSeed = ok(await revealSeed(a.meta.id, { openKey: key, prompts: pinPrompt(PIN) }))
     auth.mode = 'ok'
-    const result = ok(await editChecks(a.meta.id, { openCheck: { kind: 'pin' } }, { prompts: pinPrompt(PIN), pin: PIN }))
-    expect(result.previousLockId).toBe(LEGACY_LOCK_ID)
+    const result = ok(await editChecks(a.meta.id, { openCheck: { kind: 'passkey' } }, { prompts: pinPrompt(PIN) }))
+    expect(result.previousLockId).toBe(shared.lockId)
     expect(result.previousLockRemoved).toBe(false)
-    expect(result.meta.lockId).not.toBe(LEGACY_LOCK_ID)
+    expect(result.meta.lockId).not.toBe(shared.lockId)
     const moved = recordOf(a.meta.id)
     expect(moved.encryptedSeed.ciphertextB64).not.toBe(undefined)
     expect(await aesDecrypt(result.openKey!, moved.encryptedSeed.ivB64, moved.encryptedSeed.ciphertextB64)).toBe(aSeed)
-    // The legacy lock and the other Wallet are as they were.
-    expect(recordOf(b.meta.id).lockId ?? LEGACY_LOCK_ID).toBe(LEGACY_LOCK_ID)
+    // The shared lock and the other Wallet are as they were.
+    expect(recordOf(b.meta.id).lockId).toBe(shared.lockId)
     expect((await openSigner(b.meta.id, { openKey: key, prompts: pinPrompt(null) })).status).toBe('ok')
-    expect((await openLock(LEGACY_LOCK_ID, 'pin', { pin: PIN })).status).toBe('ok')
-    expect(h.state.stores.vault.has(`lock:${LEGACY_LOCK_ID}`)).toBe(true)
+    expect((await openLock(shared.lockId, 'pin', { pin: PIN })).status).toBe('ok')
+    expect(h.state.stores.vault.has(`lock:${shared.lockId}`)).toBe(true)
   })
 
-  it('adding a Signing Check deletes the legacy encryptedSeed (one form only)', async () => {
-    const key = await setUpVaultAuth('tester', PIN)
-    const a = await generateAndStoreWallet('A', key, 'testnet')
-    const b = await generateAndStoreWallet('B', key, 'testnet')
+  it('adding a Signing Check deletes the encryptedSeed (one form only)', async () => {
+    const shared = await makePinLock(PIN)
+    const key = shared.key
+    const a = await storeSeedWallet('A', shared)
+    const b = await storeSeedWallet('B', shared)
     const seed = ok(await revealSeed(a.meta.id, { openKey: key, prompts: pinPrompt(PIN) }))
     ok(await editChecks(a.meta.id, { signing: { kind: 'pin' } }, { prompts: pinPrompt(PIN), pin: PIN }))
     expect(recordOf(a.meta.id).encryptedSeed).toBeUndefined()
@@ -426,12 +426,12 @@ describe('a Wallet on the legacy lock', () => {
   })
 
   it('auto-lock on the shared lock applies to every Wallet on it, and Mainnet is the floor', async () => {
-    const key = await setUpVaultAuth('tester', PIN)
-    await generateAndStoreWallet('Test', key, 'testnet')
-    await generateAndStoreWallet('Main', key, 'mainnet')
-    expect(await setLockAutoLock(LEGACY_LOCK_ID, 0.5, { prompts: pinPrompt(PIN) })).toMatchObject({ ok: false, reason: expect.stringMatching(/Mainnet/) })
-    expect(await setLockAutoLock(LEGACY_LOCK_ID, 15, { prompts: pinPrompt(PIN) })).toEqual({ ok: true })
-    expect((await getLockInfo(LEGACY_LOCK_ID)).autoLockMinutes).toBe(15)
+    const shared = await makePinLock(PIN)
+    await storeSeedWallet('Test', shared, 'testnet')
+    await storeSeedWallet('Main', shared, 'mainnet')
+    expect(await setLockAutoLock(shared.lockId, 0.5, { prompts: pinPrompt(PIN) })).toMatchObject({ ok: false, reason: expect.stringMatching(/Mainnet/) })
+    expect(await setLockAutoLock(shared.lockId, 15, { prompts: pinPrompt(PIN) })).toEqual({ ok: true })
+    expect((await getLockInfo(shared.lockId)).autoLockMinutes).toBe(15)
   })
 })
 
@@ -723,10 +723,10 @@ describe('follow-up review: combined and shared-lock edits', () => {
     },
   )
 
-  it('an Open Check edit never deletes a non-legacy lock another Wallet still uses', async () => {
+  it('an Open Check edit never deletes a lock another Wallet still uses', async () => {
     const { meta } = await made()
     const key = ok(await openLock(meta.lockId, 'pin', { pin: PIN })).key
-    const other = await generateAndStoreWallet('Other', key, 'testnet', meta.lockId)
+    const other = await storeSeedWallet('Other', { lockId: meta.lockId, key }, 'testnet')
     const result = ok(await editChecks(meta.id, { openCheck: { kind: 'passkey' } }, { prompts: pinPrompt(PIN) }))
     expect(result.previousLockRemoved).toBe(false)
     expect(h.state.stores.vault.has(`lock:${meta.lockId}`)).toBe(true)

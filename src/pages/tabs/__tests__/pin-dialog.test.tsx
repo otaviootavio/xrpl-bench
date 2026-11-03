@@ -24,7 +24,6 @@ vi.mock('@/lib/crypto/lock', () => ({ endLockSession: async () => {}, endAllLock
 vi.mock('@/lib/notify', () => ({ toast: { error: (m: string) => h.toastError(m), success: () => {}, warning: () => {}, resolve: () => {} } }))
 vi.mock('@/lib/crypto/keystore', () => ({
   addressFromSeed: () => '',
-  importAndStoreWallet: async () => {},
   listWallets: async () => [],
   removeWallet: async () => {},
   setLockAutoLock: async () => ({ ok: true }),

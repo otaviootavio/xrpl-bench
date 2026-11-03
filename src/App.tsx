@@ -6,7 +6,7 @@ import { Onboarding } from '@/pages/Onboarding'
 import { AppShell, walletInView } from '@/components/AppShell'
 import { GateError } from '@/components/wallet/GateError'
 import { appStateHydrationFailed, appStateSettled, useAppStore } from '@/store/app-store'
-import { listWallets, migrateLegacyVault } from '@/lib/crypto/keystore'
+import { listWallets } from '@/lib/crypto/keystore'
 import { currentPathname, parseRoute, resetToHome, subscribeRoute } from '@/lib/route'
 import { restoreOpenLocks } from '@/lib/crypto/lock'
 import { notify, setNoticeWalletReader } from '@/lib/notify'
@@ -40,29 +40,6 @@ const queryClient = new QueryClient({
   },
 })
 
-/** Story 12.1 / AD-27: the legacy-vault relabel, run once per app start and only
- * here — in a build the user has already activated. Idempotent and atomic in the
- * vault; an error leaves every Wallet on its legacy shape, still openable. */
-let migration: Promise<void> | null = null
-function migrateOnce(): Promise<void> {
-  migration ??= appStateSettled()
-    .then(() => {
-      // A failed read leaves the store on its defaults, and the relabel writes
-      // `network` into the vault for good: skip it, so every Wallet stays on its
-      // legacy shape and the next app start tries again.
-      if (appStateHydrationFailed()) return undefined
-      const { network, autoLockMinutes } = useAppStore.getState()
-      return migrateLegacyVault({ network, autoLockMinutes })
-    })
-    .then(() => undefined)
-    .catch((err: unknown) => {
-      // Not cached: a later call retries.
-      console.error('Legacy vault migration failed; Wallets stay on their legacy shape.', err)
-      migration = null
-    })
-  return migration
-}
-
 /** Story 4 / AD-26: there is no app-wide unlock gate. The app opens to the shell;
  * `Main` shows the active Wallet's locked view until its own lock is open. */
 function Gate() {
@@ -85,7 +62,7 @@ function Gate() {
     // AD-37: no store setter runs before a successful read — after a failed
     // hydration `persist` would write the defaults over the saved state.
     let cancelled = false
-    migrateOnce()
+    appStateSettled()
       .then(async () => {
         if (appStateHydrationFailed()) {
           if (!cancelled) setStatus('error')

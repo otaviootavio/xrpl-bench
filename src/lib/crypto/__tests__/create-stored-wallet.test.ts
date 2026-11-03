@@ -100,7 +100,7 @@ vi.mock('../webauthn', async (importOriginal) => {
       if (w.mode === 'cancel') throw Object.assign(new Error('dismissed'), { name: 'NotAllowedError' })
       return { credentialIdB64: `cred-${w.registers}`, prfSupported: true }
     },
-    assertPasskeyAndDeriveBits: async (_id: string, salt: BufferSource = actual.PRF_SALT) => {
+    assertPasskeyAndDeriveBits: async (_id: string, salt: BufferSource) => {
       w.asserts += 1
       w.salts.push(Buffer.from(new Uint8Array(salt as ArrayBuffer)).toString('base64'))
       if (w.mode === 'cancel') throw Object.assign(new Error('dismissed'), { name: 'NotAllowedError' })
@@ -115,8 +115,7 @@ vi.mock('../webauthn', async (importOriginal) => {
   }
 })
 
-import { setUpVaultAuth } from '../auth'
-import { LEGACY_LOCK_ID } from '../db'
+import { makePinLock, storeSeedWallet } from './fixtures'
 import { discardUnusedAppPin, getLockInfo, openLock } from '../lock'
 import { addControlledView, createStoredWallet, listWallets, openSigner, removeWallet, revealSeed, type CreateStoredWalletInput, type Prompts } from '../keystore'
 import * as keystore from '../keystore'
@@ -182,7 +181,6 @@ describe('defaults: App PIN open, Standard signing', () => {
   it('writes one Wallet on its own lock, the Seed under the lock Open Key only', async () => {
     const { meta, openKey, seed } = ok(await createStoredWallet(base, { pin: PIN }))
     const rec = recordOf(meta.id)
-    expect(meta.lockId).not.toBe(LEGACY_LOCK_ID)
     expect(rec.lockId).toBe(meta.lockId)
     expect(rec.seedMethod).toBe('stored')
     expect(rec.algorithm).toBe('ed25519')
@@ -387,30 +385,26 @@ describe('a controlled view of a created Wallet', () => {
 })
 
 describe('removing the last Wallet on a created lock', () => {
-  it('deletes its record and session and leaves the legacy lock and other locks', async () => {
-    const legacyKey = await setUpVaultAuth('t', PIN)
-    expect(legacyKey).toBeDefined()
-    expect(h.state.stores.vault.get('lock:legacy')).toBeDefined()
-    const a = ok(await createStoredWallet(base, { pin: PIN })).meta
+  it('deletes its record and session and leaves other locks', async () => {
+    const created = ok(await createStoredWallet(base, { pin: PIN }))
+    const a = created.meta
     const b = ok(await createStoredWallet(base, { pin: PIN })).meta
     const { startLockSession } = await import('../lock')
-    await startLockSession(a.lockId, legacyKey, 5)
+    await startLockSession(a.lockId, created.openKey, 5)
     expect(h.state.stores.session.get(`session:${a.lockId}`)).toBeDefined()
     await removeWallet(a.id)
     expect(h.state.stores.vault.get(`lock:${a.lockId}`)).toBeUndefined()
     expect(h.state.stores.session.get(`session:${a.lockId}`)).toBeUndefined()
     expect(h.state.stores.vault.get(`lock:${b.lockId}`)).toBeDefined()
-    expect(h.state.stores.vault.get('lock:legacy')).toBeDefined()
     expect((await listWallets()).map((m) => m.id)).toEqual([b.id])
   })
 
-  it('removing a legacy Wallet never deletes the legacy lock while another Wallet remains', async () => {
-    const { generateAndStoreWallet } = await import('../keystore')
-    const key = await setUpVaultAuth('t', PIN)
-    const legacy = (await generateAndStoreWallet('L', key, 'testnet')).meta
-    await generateAndStoreWallet('M', key, 'testnet')
-    await removeWallet(legacy.id)
-    expect(h.state.stores.vault.get('lock:legacy')).toBeDefined()
+  it('removing a Wallet never deletes a lock another Wallet remains on', async () => {
+    const shared = await makePinLock(PIN)
+    const first = (await storeSeedWallet('L', shared)).meta
+    await storeSeedWallet('M', shared)
+    await removeWallet(first.id)
+    expect(h.state.stores.vault.get(`lock:${shared.lockId}`)).toBeDefined()
   })
 })
 
@@ -528,26 +522,20 @@ describe('a throwing confirmation callback', () => {
   })
 })
 
-describe('revealing on a legacy lock (FR-69)', () => {
-  async function legacyWallet(passkey: boolean) {
-    const { generateAndStoreWallet } = await import('../keystore')
-    const key = await setUpVaultAuth('t', PIN)
-    if (!passkey) {
-      const meta = await getVaultMeta()
-      await putVaultMeta({ ...meta, passkeyCredentialIdB64: undefined, wrappedMasterKeyForPasskey: undefined })
-    }
-    const { meta, seed } = await generateAndStoreWallet('L', key, 'testnet')
+describe('revealing on a Wallet\'s own lock (FR-69)', () => {
+  async function walletOn(openCheck: 'pin' | 'passkey') {
+    const { meta, seed, openKey } = ok(await createStoredWallet({ ...base, openCheck }, { pin: PIN }))
     h.state.stores.session.clear()
-    return { meta, seed, key }
+    return { meta, seed, key: openKey }
   }
   const countingPin = (pin: string | null) => {
     const p = { calls: 0, pin: async () => (p.calls++, pin) }
     return p
   }
 
-  it('PIN-only: asks the PIN, a wrong PIN counts, and no session is written', async () => {
-    const { meta, seed, key } = await legacyWallet(false)
-    expect((await getLockInfo('legacy')).openCheck).toBe('pin')
+  it('PIN lock: asks the PIN, a wrong PIN counts, and no session is written', async () => {
+    const { meta, seed, key } = await walletOn('pin')
+    expect((await getLockInfo(meta.lockId)).openCheck).toBe('pin')
     const wrong = countingPin('000000')
     expect(await revealSeed(meta.id, { openKey: key, prompts: wrong })).toMatchObject({ status: 'wrong-credential', kind: 'pin' })
     expect(wrong.calls).toBe(1)
@@ -558,9 +546,8 @@ describe('revealing on a legacy lock (FR-69)', () => {
     expect(h.state.stores.session.size).toBe(0)
   })
 
-  it("'either': asks the passkey when WebAuthn is supported, without touching the PIN or the failure count", async () => {
-    const { meta, seed, key } = await legacyWallet(true)
-    expect((await getLockInfo('legacy')).openCheck).toBe('either')
+  it('passkey lock: asks the passkey, without touching the PIN or the failure count', async () => {
+    const { meta, seed, key } = await walletOn('passkey')
     const prompt = countingPin(null)
     w.asserts = 0
     expect(await revealSeed(meta.id, { openKey: key, prompts: prompt })).toEqual({ status: 'ok', value: seed })
@@ -569,24 +556,24 @@ describe('revealing on a legacy lock (FR-69)', () => {
     expect(h.state.stores.session.size).toBe(0)
   })
 
-  it("'either': a passkey reveal does not clear the PIN failure count", async () => {
-    const { meta, key } = await legacyWallet(true)
+  it('passkey lock: a passkey reveal does not clear the PIN failure count', async () => {
+    const { meta, key } = await walletOn('passkey')
     const meta0 = await getVaultMeta()
     await putVaultMeta({ ...meta0, failedAttempts: 3 })
     expect((await revealSeed(meta.id, { openKey: key, prompts: pinPrompt(null) })).status).toBe('ok')
     expect(failedAttempts()).toBe(3)
   })
 
-  it("'either': a passkey that gives no PRF here falls back to the PIN, so a backup is never blocked", async () => {
-    const { meta, seed, key } = await legacyWallet(true)
+  it('passkey lock: a passkey that gives no PRF here is unsupported and no PIN is asked', async () => {
+    const { meta, key } = await walletOn('passkey')
     w.mode = 'no-prf'
     const prompt = countingPin(PIN)
-    expect(await revealSeed(meta.id, { openKey: key, prompts: prompt })).toEqual({ status: 'ok', value: seed })
-    expect(prompt.calls).toBe(1)
+    expect((await revealSeed(meta.id, { openKey: key, prompts: prompt })).status).toBe('unsupported')
+    expect(prompt.calls).toBe(0)
   })
 
-  it("'either': a cancelled passkey prompt stops there: no PIN is asked and nothing counts", async () => {
-    const { meta, key } = await legacyWallet(true)
+  it('passkey lock: a cancelled passkey prompt stops there: no PIN is asked and nothing counts', async () => {
+    const { meta, key } = await walletOn('passkey')
     w.mode = 'cancel'
     const prompt = countingPin(PIN)
     expect((await revealSeed(meta.id, { openKey: key, prompts: prompt })).status).toBe('cancelled')
@@ -594,15 +581,14 @@ describe('revealing on a legacy lock (FR-69)', () => {
     expect(failedAttempts()).toBe(0)
   })
 
-  it("'either': falls back to the PIN when WebAuthn is not supported", async () => {
-    const { meta, seed, key } = await legacyWallet(true)
+  it('passkey lock: WebAuthn not supported is unsupported and no PIN is asked', async () => {
+    const { meta, key } = await walletOn('passkey')
     w.supported = false
     w.asserts = 0
     const prompt = countingPin(PIN)
-    expect(await revealSeed(meta.id, { openKey: key, prompts: prompt })).toEqual({ status: 'ok', value: seed })
-    expect(prompt.calls).toBe(1)
+    expect((await revealSeed(meta.id, { openKey: key, prompts: prompt })).status).toBe('unsupported')
+    expect(prompt.calls).toBe(0)
     expect(w.asserts).toBe(0)
-    expect(h.state.stores.session.size).toBe(0)
   })
 })
 

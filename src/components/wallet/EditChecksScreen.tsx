@@ -20,7 +20,6 @@ import { useLeaveBlocker } from '@/hooks/useRoute'
 import { minutesLabel } from '@/lib/minutes-label'
 import { WrittenSeedConfirm } from '@/components/wallet/WrittenSeedConfirm'
 import { usePrompts } from '@/hooks/usePrompts'
-import { LEGACY_LOCK_ID } from '@/lib/crypto/db'
 import { describeCheckFailure, editChecks, type EditChecksResult, type WalletMeta } from '@/lib/crypto/keystore'
 import { getLockInfo, hasAppPin } from '@/lib/crypto/lock'
 import { triesRemaining } from '@/lib/crypto/pin'
@@ -220,7 +219,7 @@ function EditChecksBody({
   const allowed = checkEditAllowed(current, resolved)
   const verdict = !allowed.ok ? allowed : options.combination
   const needsPin = (resolved.openChange && resolved.result.openCheck === 'pin') || (resolved.signingChange && resolved.result.signing === 'pin')
-  const warnOlder = olderBuildCannotOpen({ lockIsLegacy: wallet.lockId === LEGACY_LOCK_ID, signing: current.signing }, resolved)
+  const warnOlder = olderBuildCannotOpen({ signing: current.signing }, resolved)
 
   const refreshAppPin = useCallback(async () => {
     try {
@@ -423,9 +422,6 @@ function EditChecksBody({
               onSelect={() => setMinutes(choice.minutes)}
             />
           ))}
-          {lock.openCheck === 'either' && (
-            <p className="text-xs text-muted-foreground">This wallet is on the lock shared with the other wallets made before per-wallet locks. Changing the auto-lock changes it for all of them.</p>
-          )}
         </Axis>
 
         <Axis legend={SIGNING_CHECK_QUESTION}>

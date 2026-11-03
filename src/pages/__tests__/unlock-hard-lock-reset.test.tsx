@@ -132,13 +132,21 @@ describe('Unlock — hard-lock reset', () => {
     expect(reload).not.toHaveBeenCalled()
   })
 
-  it('a hard lock deletes nothing by itself, and a lock a passkey opens still offers the passkey', async () => {
-    h.info = { id: 'legacy', openCheck: 'either', autoLockMinutes: 5, pin: true, passkey: true }
+  it('a hard-locked PIN lock says nothing has been erased, promises no deletion, and offers Reset', async () => {
+    const { getLockoutState } = await import('@/lib/crypto/auth')
+    expect((await getLockoutState()).hardLocked).toBe(true)
     renderUnlock()
     const message = await screen.findByText(/too many failed/i)
-    expect(message.textContent).toMatch(/nothing has been erased/i)
+    expect(message.textContent).toMatch(/Nothing has been erased/)
     expect(message.textContent).not.toMatch(/delet|wipe|automatic/i)
+    expect(screen.getByRole('button', { name: /reset this device and re-import/i })).toBeTruthy()
+  })
+
+  it('a PIN hard lock does not block a passkey lock: it still offers the passkey, shows no PIN lockout and deletes nothing', async () => {
+    h.info = { id: 'lock-1', openCheck: 'passkey', autoLockMinutes: 5, pin: false, passkey: true }
+    renderUnlock()
     expect(await screen.findByRole('button', { name: /unlock with passkey/i })).toBeTruthy()
+    expect(screen.queryByText(/too many failed/i)).toBeNull()
     expect(screen.queryByRole('button', { name: /unlock with pin/i })).toBeNull()
     expect(h.wipeVault).not.toHaveBeenCalled()
   })

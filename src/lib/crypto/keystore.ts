@@ -2,12 +2,12 @@ import { decodeSeed, ECDSA, Wallet } from 'xrpl'
 import { canonicalNodeUrl, NETWORKS, type NetworkId } from '@/lib/xrpl/networks'
 import type { Signer, SigningHandle } from '@/lib/xrpl/writes'
 import { aesDecrypt, aesEncrypt } from './aes'
-import { deriveAesKeyFromBits, generateOrdinal, HKDF_INFO, isOrdinal, seedSalt, walletFromSeedPrf } from './derive'
-import { buildLock, createLock, deleteLock, discardAllLocks, discardAppPin, discardUnusedAppPin, getLockInfo, hasAppPin, legacyLockRecord, openLock, provesAppPin, setAutoLockMinutes, withAppPin, type CheckResult } from './lock'
-import { checkAutoLock, checkEditAllowed, checkLockRequest, checkWalletRequest, requiresWrittenSeed, resolveEdit, type CheckEditRequest, type NewOpenCheck, type PasskeyCapability, type PasskeyChoice, type PolicyVerdict, type SigningKind } from './policy'
+import { deriveAesKeyFromBits, generateOrdinal, isOrdinal, seedSalt, walletFromSeedPrf } from './derive'
+import { buildLock, createLock, deleteLock, discardAllLocks, discardAppPin, discardUnusedAppPin, getLockInfo, hasAppPin, openLock, setAutoLockMinutes, withAppPin, type CheckResult } from './lock'
+import { checkAutoLock, checkEditAllowed, checkWalletRequest, requiresWrittenSeed, resolveEdit, type CheckEditRequest, type NewOpenCheck, type PasskeyCapability, type PasskeyChoice, type PolicyVerdict, type SigningKind } from './policy'
 import { b64ToBuf, bufToB64 } from './encoding'
 import { uniqueDefaultName, validateWalletName, type WalletNameReason } from '@/lib/wallet-name'
-import { attemptPin, getLockoutState, PBKDF2_ITERATIONS, recordFailure, triesRemaining } from './pin'
+import { attemptPin, getLockoutState, recordFailure, triesRemaining } from './pin'
 import {
   assertAnyPasskeyAndDeriveBits,
   assertPasskeyAndDeriveBits,
@@ -15,7 +15,6 @@ import {
   isCancelled,
   isPrfUnsupported,
   isWebAuthnSupported,
-  PRF_SALT,
   registerPasskey,
 } from './webauthn'
 import {
@@ -24,12 +23,10 @@ import {
   exclusiveVaultWrite,
   getLockRecord,
   getVaultMeta,
-  LEGACY_LOCK_ID,
   lockStamp,
   seedStamp,
   type LockRecord,
   listStoredWallets,
-  migrateLegacyVault as migrateLegacyVaultRecords,
   mutateStoredWallet,
   putStoredWallet,
   type OpenCheck,
@@ -46,8 +43,7 @@ import {
 export interface WalletMeta {
   id: string
   seedId: string
-  /** The lock whose Open Key opens this Wallet's Seed (AD-21). Legacy Wallets
-   * all share `legacy`. */
+  /** The lock whose Open Key opens this Wallet's Seed (AD-21). */
   lockId: string
   label: string
   /** The Account this Wallet reads and signs for: the ONLY ledger identity every
@@ -71,9 +67,8 @@ export interface WalletMeta {
   writtenSeedConfirmedAt?: number
 }
 
-/** Only reachable for a record the migration has not reached yet (it failed or
- * has not run): its one view is shown on the caller's `fallbackNetwork` (the
- * app-wide network) and is never persisted. */
+/** A record with no views is shown with one view on the caller's `fallbackNetwork`
+ * (the app-wide network) and is never persisted. */
 function viewsOf(w: StoredWallet, fallbackNetwork: NetworkId = 'testnet'): WalletView[] {
   return w.views && w.views.length > 0 ? w.views : [{ walletId: w.id, network: fallbackNetwork }]
 }
@@ -82,7 +77,7 @@ function toMetas(w: StoredWallet, fallbackNetwork?: NetworkId): WalletMeta[] {
   return viewsOf(w, fallbackNetwork).map((v) => ({
     id: v.walletId,
     seedId: w.id,
-    lockId: w.lockId ?? LEGACY_LOCK_ID,
+    lockId: w.lockId,
     label: w.label,
     address: v.accountAddress ?? w.address,
     keyAddress: w.address,
@@ -112,43 +107,9 @@ export async function listWallets(fallbackNetwork: NetworkId = 'testnet'): Promi
   return wallets.flatMap((w) => toMetas(w, fallbackNetwork))
 }
 
-/** Relabels every legacy Seed record onto the legacy lock — AD-27. Run once, at
- * app start, after the app store has hydrated (its `network` and
- * `autoLockMinutes` are the inputs). Holds no Seed and no key. */
-export async function migrateLegacyVault(input: { network: NetworkId; autoLockMinutes: number }): Promise<boolean> {
-  return migrateLegacyVaultRecords({
-    ...input,
-    hkdfInfo: HKDF_INFO,
-    prfSaltB64: bufToB64(PRF_SALT.slice().buffer),
-    pbkdf2Iterations: PBKDF2_ITERATIONS,
-  })
-}
-
 /** The algorithm a Seed's own encoding names. */
 function algorithmOfSeed(seed: string): 'ed25519' | 'secp256k1' {
   return decodeSeed(seed).type === 'ed25519' ? 'ed25519' : 'secp256k1'
-}
-
-/** Generates a brand-new XRPL keypair locally (no network call) and stores
- * the seed encrypted under the given vault key — account-onboarding.md US-1. */
-export function generateAndStoreWallet(
-  label: string,
-  vaultKey: CryptoKey,
-  network: NetworkId,
-  lockId: string = LEGACY_LOCK_ID,
-): Promise<{ meta: WalletMeta; seed: string }> {
-  return exclusiveVaultWrite(() => generateAndStoreWalletUnguarded(label, vaultKey, network, lockId))
-}
-
-async function generateAndStoreWalletUnguarded(
-  label: string,
-  vaultKey: CryptoKey,
-  network: NetworkId,
-  lockId: string,
-): Promise<{ meta: WalletMeta; seed: string }> {
-  const wallet = Wallet.generate()
-  const meta = await storeWallet(label, wallet.seed!, vaultKey, network, lockId)
-  return { meta, seed: wallet.seed! }
 }
 
 /**
@@ -197,74 +158,6 @@ export function isValidSeed(seed: string): boolean {
 export function parseSeedInput(raw: string): string | null {
   const seed = raw.trim()
   return isValidSeed(seed) ? seed : null
-}
-
-/** Imports an existing wallet from a seed — account-onboarding.md US-2.
- * Runs under `exclusiveVaultWrite` (AD-46): a last-Wallet removal waits for it.
- * Story 12 replaces this function and MUST wrap its replacement in the same guard. */
-export function importAndStoreWallet(
-  label: string,
-  seed: string,
-  vaultKey: CryptoKey,
-  network: NetworkId,
-  lockId: string = LEGACY_LOCK_ID,
-): Promise<WalletMeta> {
-  return exclusiveVaultWrite(() => importAndStoreWalletUnguarded(label, seed, vaultKey, network, lockId))
-}
-
-async function importAndStoreWalletUnguarded(
-  label: string,
-  seed: string,
-  vaultKey: CryptoKey,
-  network: NetworkId,
-  lockId: string,
-): Promise<WalletMeta> {
-  const wallet = Wallet.fromSeed(seed) // throws on malformed seed
-  return storeWallet(label, wallet.seed!, vaultKey, network, lockId)
-}
-
-/** Policy for putting a Wallet or view on `network` under an EXISTING lock
- * (AD-28): a Mainnet one may not sit under a lock with no Open Check or an
- * auto-lock under a minute. Throws the policy's plain reason, so nothing is
- * written. */
-async function assertLockAllowsNetwork(lockId: string, network: NetworkId): Promise<void> {
-  const info = await getLockInfo(lockId)
-  const verdict = checkLockRequest({
-    network,
-    openCheck: info.openCheck === 'none' ? 'none' : info.openCheck === 'passkey' ? 'passkey' : 'pin',
-    autoLockMinutes: info.autoLockMinutes,
-  })
-  if (!verdict.ok) throw new Error(verdict.reason)
-}
-
-/** `vaultKey` must be the Open Key of `lockId`: a Seed written under one lock's
- * key and labelled with another's could never be opened. Creating a Wallet under
- * a NEW lock is the creation flow's job (story 5). */
-async function storeWallet(label: string, seed: string, vaultKey: CryptoKey, network: NetworkId, lockId: string): Promise<WalletMeta> {
-  await assertLockAllowsNetwork(lockId, network)
-  const wallet = Wallet.fromSeed(seed)
-  if (hasView(await listStoredWallets(), network, wallet.address, wallet.address)) {
-    throw new Error('This wallet is already on this device for that network.')
-  }
-  const encryptedSeed = await aesEncrypt(vaultKey, seed)
-  const walletId = crypto.randomUUID()
-  const stored: StoredWallet = {
-    id: walletId,
-    label,
-    address: wallet.address,
-    encryptedSeed: { ivB64: encryptedSeed.ivB64, ciphertextB64: encryptedSeed.ciphertextB64 },
-    createdAt: Date.now(),
-    // Under the Open Key of the lock it is stored with: the legacy lock's, until
-    // story 5 creates Wallets under their own.
-    seedMethod: 'stored',
-    algorithm: algorithmOfSeed(wallet.seed!),
-    lockId,
-    openCheck: (await getLockInfo(lockId)).openCheck,
-    signingCheck: 'standard',
-    views: [{ walletId, network }],
-  }
-  await putStoredWallet(stored)
-  return toMetas(stored)[0]
 }
 
 // ---------------------------------------------------------------------------
@@ -534,7 +427,7 @@ export async function revealSeed(walletId: string, ctx: SigningContext): Promise
   const standard =
     stored.seedMethod !== 'passkey-derived' && (!stored.signingCheck || stored.signingCheck === 'standard') && !stored.signing && !stored.sealedSeed
   if (standard) {
-    const passed = await repassOpenCheck(stored.lockId ?? LEGACY_LOCK_ID, ctx.prompts)
+    const passed = await repassOpenCheck(stored.lockId, ctx.prompts)
     if (passed.status !== 'ok') return passed
     if (passed.value) signingCtx = { ...ctx, openKey: passed.value }
   }
@@ -546,19 +439,14 @@ export async function revealSeed(walletId: string, ctx: SigningContext): Promise
 
 /** Passes a lock's Open Check again, for a reveal, and returns its Open Key
  * (`null` for Open Check `none`, which needs nothing). PIN lock: the PIN; passkey
- * lock: the passkey; the legacy `either` lock: the passkey when this device can
- * use one, else the PIN (also when the passkey turns out unusable here). A wrong PIN counts and a cancelled prompt never does
+ * lock: the passkey. A wrong PIN counts and a cancelled prompt never does
  * (AD-25). Nothing is persisted. */
 async function repassOpenCheck(lockId: string, prompts: Prompts): Promise<CheckResult<CryptoKey | null>> {
   const info = await getLockInfo(lockId)
   if (info.openCheck === 'none') return { status: 'ok', value: null }
-  const usePasskey = info.openCheck === 'passkey' || (info.openCheck === 'either' && info.passkey && isWebAuthnSupported())
-  if (usePasskey) {
+  if (info.openCheck === 'passkey') {
     const opened = await openLock(lockId, 'passkey', { persist: false })
-    if (opened.status === 'ok') return { status: 'ok', value: opened.value.key }
-    // The `either` lock has a PIN too: a passkey this device cannot use must not
-    // block a reveal (and so a backup). A cancelled prompt is not that: it stops here.
-    if (!(info.openCheck === 'either' && opened.status === 'unsupported')) return opened
+    return opened.status === 'ok' ? { status: 'ok', value: opened.value.key } : opened
   }
   const lockout = await getLockoutState()
   if (lockout.hardLocked || lockout.locked) {
@@ -632,100 +520,6 @@ async function sealUnderNewCredential(
   }
 }
 
-/**
- * Gives a Standard Wallet a Signing Check (AD-23): its Seed is re-encrypted
- * under a random Signing Key wrapped only by the PIN or a passkey, and the
- * Open-key ciphertext is deleted in the same IndexedDB transaction. Any failure
- * leaves the old record untouched. The PIN is proven against the App PIN's own
- * wrapper first (counted); a passkey must produce PRF output (else
- * `unsupported`). The address is unchanged. The edit flow, policy and dialogs
- * belong to later stories; this is only the write.
- */
-export async function sealSeedUnderSigningCheck(
-  walletId: string,
-  kind: 'pin' | 'passkey',
-  ctx: SigningContext,
-): Promise<CheckResult<WalletMeta>> {
-  const stored = await seedRecordFor(walletId)
-  if (stored.seedMethod === 'passkey-derived') throw new Error('A Passkey-Derived Seed has no stored Seed to seal.')
-  if (stored.signing || stored.sealedSeed) throw new Error('This wallet already has a signing check.')
-  if (!stored.encryptedSeed) throw new Error('Wallet not found in local vault.')
-  if (!ctx.openKey) throw new Error('Wallet is locked.')
-  const before = stored.encryptedSeed
-  const revRead = stored.rev ?? 0
-
-  const hkdfInfo = `${SIGN_HKDF_PREFIX}${stored.id}:v1`
-  let credentialKey: CryptoKey
-  let credentialId: string | undefined
-  let prfSaltB64: string | undefined
-  let legacyRpId: string | undefined
-
-  if (kind === 'pin') {
-    const lockout = await getLockoutState()
-    if (lockout.hardLocked || lockout.locked) {
-      return { status: 'locked-out', hard: lockout.hardLocked, lockedUntil: lockout.lockedUntil }
-    }
-    const pin = await ctx.prompts.pin({ triesRemaining: await triesRemaining() })
-    if (pin === null) return { status: 'cancelled' }
-    const meta = await getVaultMeta()
-    if (!meta.wrappedMasterKeyForPin && !meta.pinVerifier) throw new Error('No PIN has been set up for this device.')
-    const attempt = await attemptPin(pin, async (bits) => {
-      // Proof the PIN is the App PIN, by the one rule every PIN use shares: its
-      // legacy wrapper or its verifier decrypts under it.
-      await provesAppPin(bits, meta)
-      return deriveAesKeyFromBits(bits, hkdfInfo)
-    })
-    if (attempt.status === 'locked-out') return attempt
-    if (attempt.status === 'wrong-credential') return { status: 'wrong-credential', kind: 'pin', triesRemaining: attempt.triesRemaining }
-    credentialKey = attempt.value
-  } else {
-    const meta = await getVaultMeta()
-    if (!isWebAuthnSupported() || !meta.passkeyCredentialIdB64) return { status: 'unsupported' }
-    credentialId = meta.passkeyCredentialIdB64
-    legacyRpId = meta.rpId
-    const salt = crypto.getRandomValues(new Uint8Array(32))
-    prfSaltB64 = bufToB64(salt.buffer)
-    try {
-      credentialKey = await deriveAesKeyFromBits(await assertPasskeyAndDeriveBits(credentialId, salt, meta.rpId), hkdfInfo)
-    } catch (err) {
-      if (isCancelled(err)) return { status: 'cancelled' }
-      if (isPrfUnsupported(err)) return { status: 'unsupported' }
-      throw err
-    }
-  }
-
-  const seed = await aesDecrypt(ctx.openKey, before.ivB64, before.ciphertextB64)
-  const wallet = await walletFromSeed(stored, seed)
-  const algorithm = algorithmOfSeed(seed)
-  const { sealedSeed, signing } = await buildSeal(seed, credentialKey, {
-    kind,
-    hkdfInfo,
-    ...(credentialId ? { credentialIdB64: credentialId } : {}),
-    ...(prfSaltB64 ? { prfSaltB64 } : {}),
-    ...(credentialId && legacyRpId ? { rpId: legacyRpId } : {}),
-  })
-  await mutateStoredWallet(stored.id, (current) => {
-    // Another tab or flow changed the ciphertext since it was read: abort,
-    // leaving the record exactly as it is.
-    if (current.signing || (current.rev ?? 0) !== revRead || current.encryptedSeed?.ciphertextB64 !== before.ciphertextB64) {
-      throw new Error('This wallet changed while its signing check was being set. Nothing was changed.')
-    }
-    const { encryptedSeed: _old, ...rest } = current
-    return {
-      ...rest,
-      algorithm: current.algorithm && current.algorithm !== 'unresolved' ? current.algorithm : algorithm,
-      sealedSeed,
-      signing,
-      signingCheck: kind,
-      rev: revRead + 1,
-    }
-  })
-  void wallet
-  const meta = (await listWallets()).find((w) => w.id === walletId)
-  if (!meta) throw new Error('Wallet not found in local vault.')
-  return { status: 'ok', value: meta }
-}
-
 export type RenameWalletResult =
   | { ok: true; metas: WalletMeta[] }
   | { ok: false; reason: WalletNameReason | 'write-failed' }
@@ -791,8 +585,8 @@ export interface RemoveWalletResult {
  * under `exclusiveVaultWrite`, so a create or import in flight finishes first and
  * the emptiness check below sees what it wrote (AD-46).
  *
- * When the removal leaves no Wallet on the device, every lock record (the legacy
- * one and any orphan from a failed creation) goes and `discardAppPin` removes the
+ * When the removal leaves no Wallet on the device, every lock record (any
+ * orphan from a failed creation included) goes and `discardAppPin` removes the
  * App PIN with its failure count (FR-86). That step reports its failure in the
  * result rather than throwing: the Wallet is already gone. */
 export function removeWallet(walletId: string): Promise<RemoveWalletResult> {
@@ -806,15 +600,14 @@ async function removeWalletUnguarded(walletId: string): Promise<RemoveWalletResu
       const remaining = viewsOf(current).filter((v) => v.walletId !== walletId)
       return remaining.length === 0 ? null : { ...current, views: remaining }
     })
-    // A lock made for Wallets that are all gone goes with the last of them. The
-    // legacy lock never does here: its wrappers are the vault's own.
-    const lockId = record.lockId ?? LEGACY_LOCK_ID
-    if (lockId !== LEGACY_LOCK_ID && !(await listStoredWallets()).some((w) => (w.lockId ?? LEGACY_LOCK_ID) === lockId)) {
+    // A lock made for Wallets that are all gone goes with the last of them.
+    const lockId = record.lockId
+    if (!(await listStoredWallets()).some((w) => w.lockId === lockId)) {
       await deleteLock(lockId)
     }
   }
   if ((await listStoredWallets()).length > 0) return { emptied: false, appPin: 'kept' }
-  // Nothing is stored: every lock record left is the legacy one or an orphan.
+  // Nothing is stored: every lock record left is an orphan.
   // The PIN discard never depends on the lock-record cleanup: a failed cleanup there leaves only
   // lock records no wallet points at, while a skipped discard would leave a PIN on an empty device.
   try {
@@ -1343,7 +1136,7 @@ export async function addControlledView(
   const record = findSeedRecord(all, seedWalletId)
   if (!record) throw new Error('Wallet not found in local vault.')
   if (!record.views || record.views.length === 0) {
-    throw new Error('This wallet is not migrated yet. Restart the app and try again.')
+    throw new Error("This wallet's record is incomplete. Nothing was changed.")
   }
   if (hasView(all, view.network, view.accountAddress, record.address)) {
     throw new Error('This wallet already operates that account.')
@@ -1378,7 +1171,7 @@ export async function setWalletNode(walletId: string, node: string | undefined):
   const record = findSeedRecord(await listStoredWallets(), walletId)
   if (!record) throw new Error('Wallet not found in local vault.')
   if (!record.views || record.views.length === 0) {
-    throw new Error('This wallet is not migrated yet. Restart the app and try again.')
+    throw new Error("This wallet's record is incomplete. Nothing was changed.")
   }
   await mutateStoredWallet(record.id, (current) => ({
     ...current,
@@ -1466,7 +1259,7 @@ export function editChecks(walletId: string, request: CheckEditRequest, ctx: Edi
 
 async function editChecksUnguarded(walletId: string, request: CheckEditRequest, ctx: EditChecksContext): Promise<EditChecksResult> {
   const stored = await seedRecordFor(walletId)
-  const fromLockId = stored.lockId ?? LEGACY_LOCK_ID
+  const fromLockId = stored.lockId
   const lockRecord = await getLockRecord(fromLockId)
   const info = await getLockInfo(fromLockId)
   const expectSeedStamp = seedStamp(stored)
@@ -1498,7 +1291,7 @@ async function editChecksUnguarded(walletId: string, request: CheckEditRequest, 
   const network: NetworkId = views.some((v) => v.network === 'mainnet') ? 'mainnet' : views[0].network
   const lockNetworks = resolved.openChange
     ? views.map((v) => v.network)
-    : (await listStoredWallets()).filter((w) => (w.lockId ?? LEGACY_LOCK_ID) === fromLockId).flatMap((w) => viewsOf(w).map((v) => v.network))
+    : (await listStoredWallets()).filter((w) => w.lockId === fromLockId).flatMap((w) => viewsOf(w).map((v) => v.network))
   const confirmed = stored.writtenSeedConfirmedAt !== undefined
   let origin: string | undefined
   try {
@@ -1612,7 +1405,7 @@ async function editChecksUnguarded(walletId: string, request: CheckEditRequest, 
     const putLock = newLock
       ? newLock.record
       : resolved.autoLockChange
-        ? { ...(lockRecord ?? legacyLockRecord(resultMinutes)), autoLockMinutes: resultMinutes }
+        ? (lockRecord ? { ...lockRecord, autoLockMinutes: resultMinutes } : undefined)
         : undefined
     const { wallet: written, lockRemoved } = await commitWalletEdit({
       seedId: stored.id,
@@ -1658,16 +1451,11 @@ async function editChecksUnguarded(walletId: string, request: CheckEditRequest, 
 
 /** Sets one lock's auto-lock minutes through `editChecks`: the lock's Open Check is
  * passed again first, and the policy decides against the networks of every Wallet
- * on that lock — a Mainnet Wallet's lock may not go under one minute (FR-65). On a
- * lock shared by legacy Wallets it applies to all of them, as before. A refusal
+ * on that lock — a Mainnet Wallet's lock may not go under one minute (FR-65). A refusal
  * carries its plain reason and writes nothing. */
 export async function setLockAutoLock(lockId: string, minutes: number, ctx: { prompts: Prompts } = { prompts: unavailablePrompts }): Promise<PolicyVerdict> {
-  const onLock = (await listStoredWallets()).filter((w) => (w.lockId ?? LEGACY_LOCK_ID) === lockId)
+  const onLock = (await listStoredWallets()).filter((w) => w.lockId === lockId)
   const first = onLock[0]
-  // An unmigrated record would be read as Testnet and skip the Mainnet floor.
-  if (first && (!first.views || first.views.length === 0)) {
-    return { ok: false, reason: 'This wallet is not migrated yet. Restart the app and try again.' }
-  }
   if (!first) {
     // A lock with no Wallet left on it has nothing to protect and no Seed to prove.
     return setAutoLockMinutes(lockId, minutes, [])

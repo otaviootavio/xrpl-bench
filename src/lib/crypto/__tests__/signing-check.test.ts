@@ -88,7 +88,7 @@ vi.mock('../webauthn', async (importOriginal) => {
     registerPasskey: async () => {
       throw new Error('not used')
     },
-    assertPasskeyAndDeriveBits: async (_id: string, salt: BufferSource = actual.PRF_SALT) => {
+    assertPasskeyAndDeriveBits: async (_id: string, salt: BufferSource) => {
       w.asserts += 1
       if (w.mode === 'cancel') throw Object.assign(new Error('dismissed'), { name: 'NotAllowedError' })
       if (w.mode === 'no-prf') throw Object.assign(new Error('no prf'), { name: 'PrfUnsupportedError' })
@@ -102,22 +102,20 @@ vi.mock('../webauthn', async (importOriginal) => {
   }
 })
 
-import { putVaultMeta } from '../db'
-import { setUpVaultAuth } from '../auth'
 import { openLock } from '../lock'
+import { makePinLock, sealRecordDirect, sealRecordUnderPin, storeSeedWallet, type FixtureLock } from './fixtures'
 import {
-  generateAndStoreWallet,
   openSigner,
   revealSeed,
-  sealSeedUnderSigningCheck,
   signingHandleFor,
   SigningCheckError,
   unavailablePrompts,
   type Prompts,
 } from '../keystore'
-import { aesDecrypt, aesEncrypt } from '../aes'
+import { aesDecrypt } from '../aes'
 import { deriveAesKeyFromBits } from '../derive'
-import { derivePinKeyBits } from '../pin'
+import { assertPasskeyAndDeriveBits } from '../webauthn'
+import { bufToB64 } from '../encoding'
 
 const PIN = '123456'
 const pinPrompt = (pin: string | null): Prompts & { calls: { triesRemaining: number }[] } => {
@@ -126,6 +124,7 @@ const pinPrompt = (pin: string | null): Prompts & { calls: { triesRemaining: num
 }
 const failedAttempts = () => h.state.stores.vault.get('vault')?.failedAttempts ?? 0
 
+let lock: FixtureLock
 let key: CryptoKey
 let seed: string
 let walletId: string
@@ -137,19 +136,21 @@ beforeEach(async () => {
   h.state.failNextPutOn = null
   w.mode = 'ok'
   w.asserts = 0
-  // No passkey is registered by setup: the vault is PIN-only, as the mock's
-  // registerPasskey throws.
-  key = await setUpVaultAuth('tester', PIN)
-  const created = await generateAndStoreWallet('W', key, 'testnet')
+  // A PIN lock of its own; no passkey is registered.
+  lock = await makePinLock(PIN)
+  key = lock.key
+  const created = await storeSeedWallet('W', lock)
   seed = created.seed
   walletId = created.meta.id
   address = created.meta.address
 })
 
-/** The vault meta with a passkey registered, as setup does when PRF works. */
-async function registerPasskeyOnVault() {
-  const meta = h.state.stores.vault.get('vault')
-  await putVaultMeta({ ...meta, passkeyCredentialIdB64: 'Y3JlZA==' })
+/** A passkey Signing Check on the record, wrapped under the mock authenticator's PRF. */
+async function sealUnderPasskey() {
+  const hkdfInfo = `xrpl-bench:sign:${walletId}:v1`
+  const salt = crypto.getRandomValues(new Uint8Array(32))
+  const credentialKey = await deriveAesKeyFromBits(await assertPasskeyAndDeriveBits('Y3JlZA==', salt), hkdfInfo)
+  await sealRecordDirect(walletId, seed, credentialKey, { kind: 'passkey', hkdfInfo, credentialIdB64: 'Y3JlZA==', prfSaltB64: bufToB64(salt.buffer) })
 }
 
 const ctxWith = (prompts: Prompts, openKey: CryptoKey | null = key) => ({ openKey, prompts })
@@ -175,49 +176,6 @@ describe('Standard Wallet', () => {
   })
 })
 
-describe('sealing a Seed under a PIN Signing Check', () => {
-  it('writes sealedSeed and signing, deletes encryptedSeed, keeps the address, in one record write', async () => {
-    const result = await sealSeedUnderSigningCheck(walletId, 'pin', ctxWith(pinPrompt(PIN)))
-    expect(result.status).toBe('ok')
-    const rec = h.state.stores.wallets.get(walletId)
-    expect(rec.encryptedSeed).toBeUndefined()
-    expect(rec.sealedSeed).toBeDefined()
-    expect(rec.signing.kind).toBe('pin')
-    expect(rec.signingCheck).toBe('pin')
-    expect(rec.address).toBe(address)
-    expect(JSON.stringify(rec)).not.toContain(seed)
-    expect(rec.signing.hkdfInfo).toContain(walletId)
-  })
-
-  it('proves the App PIN from its verifier when there is no legacy wrapper (a PIN made by a non-legacy lock)', async () => {
-    const meta = h.state.stores.vault.get('vault')
-    const bits = await derivePinKeyBits(PIN, meta.pinSaltB64)
-    const verifier = await aesEncrypt(await deriveAesKeyFromBits(bits, 'xrpl-bench:pin-verifier:v1'), 'xrpl-bench:app-pin')
-    const { wrappedMasterKeyForPin: _legacy, ...rest } = meta
-    await putVaultMeta({ ...rest, pinVerifier: { ...verifier, hkdfInfo: 'xrpl-bench:pin-verifier:v1' } })
-
-    expect((await sealSeedUnderSigningCheck(walletId, 'pin', ctxWith(pinPrompt('000000')))).status).toBe('wrong-credential')
-    expect((await sealSeedUnderSigningCheck(walletId, 'pin', ctxWith(pinPrompt(PIN)))).status).toBe('ok')
-    expect(h.state.stores.wallets.get(walletId).signing.kind).toBe('pin')
-  })
-
-  it('a failed write leaves the old record untouched', async () => {
-    const before = structuredClone(h.state.stores.wallets.get(walletId))
-    h.state.failNextPutOn = 'wallets'
-    await expect(sealSeedUnderSigningCheck(walletId, 'pin', ctxWith(pinPrompt(PIN)))).rejects.toThrow()
-    expect(h.state.stores.wallets.get(walletId)).toEqual(before)
-  })
-
-  it('a wrong PIN or a cancelled prompt seals nothing; only the wrong PIN counts', async () => {
-    const before = structuredClone(h.state.stores.wallets.get(walletId))
-    expect((await sealSeedUnderSigningCheck(walletId, 'pin', ctxWith(pinPrompt('000000')))).status).toBe('wrong-credential')
-    expect(failedAttempts()).toBe(1)
-    expect((await sealSeedUnderSigningCheck(walletId, 'pin', ctxWith(pinPrompt(null)))).status).toBe('cancelled')
-    expect(failedAttempts()).toBe(1)
-    expect(h.state.stores.wallets.get(walletId)).toEqual(before)
-  })
-})
-
 describe('a record that claims a Signing Check without its seal', () => {
   it('fails closed instead of opening with the session key', async () => {
     const rec = h.state.stores.wallets.get(walletId)
@@ -231,7 +189,7 @@ describe('a record that claims a Signing Check without its seal', () => {
 
 describe('a PIN Signing Check', () => {
   beforeEach(async () => {
-    await sealSeedUnderSigningCheck(walletId, 'pin', ctxWith(pinPrompt(PIN)))
+    await sealRecordUnderPin(walletId, seed, PIN)
   })
 
   it('AD-23: with the session key and prompts that cancel, no Signer and no Seed comes out of any export', async () => {
@@ -239,7 +197,6 @@ describe('a PIN Signing Check', () => {
     const results = [
       await openSigner(walletId, cancel),
       await revealSeed(walletId, cancel),
-      await sealSeedUnderSigningCheck(walletId, 'pin', cancel).catch((e) => ({ threw: String(e.message) })),
     ]
     await expect((await signingHandleFor(walletId, cancel)).open()).rejects.toBeInstanceOf(SigningCheckError)
     expect(results[0]).toEqual({ status: 'cancelled' })
@@ -278,14 +235,14 @@ describe('a PIN Signing Check', () => {
     for (let i = 0; i < 4; i++) {
       await openSigner(walletId, ctxWith(pinPrompt('000000')))
       h.state.stores.vault.set('vault', { ...h.state.stores.vault.get('vault'), lockedUntil: undefined })
-      expect(await openLock('legacy', 'pin', { pin: '000000' })).toMatchObject({ status: 'wrong-credential', kind: 'pin' })
+      expect(await openLock(lock.lockId, 'pin', { pin: '000000' })).toMatchObject({ status: 'wrong-credential', kind: 'pin' })
       h.state.stores.vault.set('vault', { ...h.state.stores.vault.get('vault'), lockedUntil: undefined })
     }
     expect(failedAttempts()).toBe(8)
     const prompt = pinPrompt(PIN)
     expect(await openSigner(walletId, ctxWith(prompt))).toMatchObject({ status: 'locked-out', hard: true })
     expect(prompt.calls).toEqual([]) // never asked
-    expect(await openLock('legacy', 'pin', { pin: PIN })).toMatchObject({ status: 'locked-out', hard: true })
+    expect(await openLock(lock.lockId, 'pin', { pin: PIN })).toMatchObject({ status: 'locked-out', hard: true })
   })
 
   it('a backoff in force also answers locked-out without prompting', async () => {
@@ -298,8 +255,7 @@ describe('a PIN Signing Check', () => {
 
 describe('a passkey Signing Check', () => {
   beforeEach(async () => {
-    await registerPasskeyOnVault()
-    expect((await sealSeedUnderSigningCheck(walletId, 'passkey', ctxWith(unavailablePrompts))).status).toBe('ok')
+    await sealUnderPasskey()
   })
 
   it('opens a Signer on a good assertion', async () => {
@@ -325,23 +281,5 @@ describe('a passkey Signing Check', () => {
   it('a hard lock never blocks a passkey-only check', async () => {
     h.state.stores.vault.set('vault', { ...h.state.stores.vault.get('vault'), failedAttempts: 8 })
     expect((await openSigner(walletId, ctxWith(unavailablePrompts))).status).toBe('ok')
-  })
-})
-
-describe('sealing under a passkey', () => {
-  it('reports unsupported when the authenticator gives no PRF, leaving the record untouched', async () => {
-    await registerPasskeyOnVault()
-    const before = structuredClone(h.state.stores.wallets.get(walletId))
-    w.mode = 'no-prf'
-    expect((await sealSeedUnderSigningCheck(walletId, 'passkey', ctxWith(unavailablePrompts))).status).toBe('unsupported')
-    expect(h.state.stores.wallets.get(walletId)).toEqual(before)
-  })
-
-  it('reports unsupported when no passkey is registered, and cancelled when dismissed', async () => {
-    expect((await sealSeedUnderSigningCheck(walletId, 'passkey', ctxWith(unavailablePrompts))).status).toBe('unsupported')
-    await registerPasskeyOnVault()
-    w.mode = 'cancel'
-    expect((await sealSeedUnderSigningCheck(walletId, 'passkey', ctxWith(unavailablePrompts))).status).toBe('cancelled')
-    expect(failedAttempts()).toBe(0)
   })
 })

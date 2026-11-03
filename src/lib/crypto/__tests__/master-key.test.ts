@@ -86,7 +86,7 @@ vi.mock('../webauthn', async (importOriginal) => {
     registerPasskey: async () => {
       throw new Error('not used')
     },
-    assertPasskeyAndDeriveBits: async (_id: string, salt: BufferSource = actual.PRF_SALT) => {
+    assertPasskeyAndDeriveBits: async (_id: string, salt: BufferSource) => {
       w.asserts += 1
       if (w.mode === 'cancel') throw Object.assign(new Error('dismissed'), { name: 'NotAllowedError' })
       if (w.mode === 'no-prf') throw Object.assign(new Error('no prf'), { name: 'PrfUnsupportedError' })
@@ -146,12 +146,10 @@ vi.mock('@/lib/xrpl/writes', async (importOriginal) => {
 })
 
 import { QueryClient } from '@tanstack/react-query'
-import { setUpVaultAuth } from '../auth'
+import { makePinLock, sealRecordUnderPin, storeSeedWallet } from './fixtures'
 import {
   addControlledView,
-  generateAndStoreWallet,
   removeWallet,
-  sealSeedUnderSigningCheck,
   unavailablePrompts,
   type Prompts,
   type WalletMeta,
@@ -163,6 +161,7 @@ import { NO_REGULAR_KEY_WALLET_REASON, masterKeyAction, masterKeyStatus, setMast
 const PIN = '123456'
 let key: CryptoKey
 let master: WalletMeta
+let masterSeed: string
 let regular: WalletMeta
 let queryClient: QueryClient
 
@@ -171,9 +170,12 @@ beforeEach(async () => {
   h.state.stores = { wallets: new Map(), vault: new Map(), session: new Map() }
   h.state.failNextPutOn = null
   w.mode = 'ok'
-  key = await setUpVaultAuth('tester', PIN)
-  master = (await generateAndStoreWallet('Master', key, 'testnet')).meta
-  const t = await generateAndStoreWallet('Regular', key, 'testnet')
+  const lock = await makePinLock(PIN)
+  key = lock.key
+  const m = await storeSeedWallet('Master', lock)
+  master = m.meta
+  masterSeed = m.seed
+  const t = await storeSeedWallet('Regular', lock)
   regular = await addControlledView(t.meta.id, { network: 'testnet', accountAddress: master.address })
   ledger.state = { ...ledger.state, exists: true, disableMasterKey: false, regularKey: t.meta.keyAddress }
   ledger.failReads = false
@@ -334,7 +336,7 @@ describe('setMasterKey', () => {
   })
 
   it('counts a wrong PIN and not a cancel, and sends nothing for either', async () => {
-    await sealSeedUnderSigningCheck(master.id, 'pin', { openKey: key, prompts: pinPrompt(PIN) })
+    await sealRecordUnderPin(master.seedId, masterSeed, PIN)
     const wrong = await setMasterKey(master.id, false, ctx({ prompts: pinPrompt('000000') }))
     expect(wrong.status).toBe('check-failed')
     const failed = failedAttempts()

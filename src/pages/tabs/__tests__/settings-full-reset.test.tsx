@@ -31,8 +31,6 @@ vi.mock('@/lib/crypto/auth', () => ({ wipeVault: () => h.wipeVault() }))
 vi.mock('@/lib/crypto/lock', () => ({ endLockSession: async () => {}, endAllLockSessions: async () => {}, getLockInfo: async () => ({ id: 'legacy', openCheck: 'pin', autoLockMinutes: 5, pin: true, passkey: false }) }))
 vi.mock('@/lib/crypto/keystore', () => ({
   addressFromSeed: () => '',
-  generateAndStoreWallet: async () => {},
-  importAndStoreWallet: async () => {},
   listWallets: () => h.listWallets(),
   removeWallet: (id: string) => h.removeWallet(id),
   revealSeed: async () => '',

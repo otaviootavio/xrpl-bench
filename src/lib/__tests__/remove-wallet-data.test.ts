@@ -42,16 +42,6 @@ describe('removeWalletData (AD-46)', () => {
     expect(qc.getQueryData(queryKeys.recommendedFee('testnet'))).toBe(2)
   })
 
-  it('never closes the legacy lock in the per-removal step', () => {
-    const [a, b] = [W('a', 'legacy', 'rA'), W('b', 'legacy', 'rB')]
-    useAppStore.setState({ wallets: [a, b], openLocks: { legacy: OPEN } } as never)
-    const qc = seeded('rA', 'rB')
-    removeWalletData(qc, a, [b])
-    expect(Object.keys(state().openLocks)).toEqual(['legacy'])
-    expect(has(qc, 'rA')).toBe(false)
-    expect(has(qc, 'rB')).toBe(true)
-  })
-
   it('keeps the lock when a sibling view of the same Seed is still on it', () => {
     const [a, a2] = [W('a', 'LA', 'rA'), W('a2', 'LA', 'rA2', { seedId: 'a' })]
     useAppStore.setState({ wallets: [a, a2], openLocks: { LA: OPEN } } as never)
@@ -75,7 +65,7 @@ describe('removeWalletData (AD-46)', () => {
     expect(has(qc, 'rSAME')).toBe(false)
   })
 
-  it('runs tearDownAllLocks when none remain: every lock, the legacy one too, and the whole cache', () => {
+  it('runs tearDownAllLocks when none remain: every lock, and the whole cache', () => {
     const a = W('a', 'legacy', 'rA')
     useAppStore.setState({ wallets: [a], openLocks: { legacy: OPEN, LX: OPEN } } as never)
     const qc = seeded('rA')

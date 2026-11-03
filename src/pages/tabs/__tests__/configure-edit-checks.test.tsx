@@ -26,7 +26,6 @@ vi.mock('@/lib/crypto/lock', () => ({
 }))
 vi.mock('@/lib/crypto/keystore', () => ({
   addressFromSeed: () => '',
-  importAndStoreWallet: async () => {},
   listWallets: async () => h.listed,
   removeWallet: async () => {},
   revealSeed: async () => ({ status: 'cancelled' }),

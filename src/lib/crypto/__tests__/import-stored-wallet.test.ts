@@ -100,7 +100,7 @@ vi.mock('../webauthn', async (importOriginal) => {
       if (w.mode === 'cancel') throw Object.assign(new Error('dismissed'), { name: 'NotAllowedError' })
       return { credentialIdB64: `cred-${w.registers}`, prfSupported: true }
     },
-    assertPasskeyAndDeriveBits: async (_id: string, salt: BufferSource = actual.PRF_SALT) => {
+    assertPasskeyAndDeriveBits: async (_id: string, salt: BufferSource) => {
       w.asserts += 1
       w.salts.push(Buffer.from(new Uint8Array(salt as ArrayBuffer)).toString('base64'))
       if (w.mode === 'cancel') throw Object.assign(new Error('dismissed'), { name: 'NotAllowedError' })

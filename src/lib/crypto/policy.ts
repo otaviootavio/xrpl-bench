@@ -17,12 +17,10 @@ export type { SeedMethod }
  * | Testnet, Devnet | optional                  | any       |
  *
  * A floor applies to what is being created or edited. It never reaches back and
- * changes an existing Wallet: the legacy lock is not made weaker or stronger by
- * this module, and only an edit to its auto-lock is asked to meet the floor.
+ * changes an existing Wallet: only an edit is asked to meet the floor.
  */
 
-/** The Open Check a new lock may be created with. `either` is the legacy lock's
- * and cannot be created. */
+/** The Open Check a new lock may be created with. */
 export type NewOpenCheck = 'pin' | 'passkey' | 'none'
 
 export const MAINNET_MIN_AUTO_LOCK_MINUTES = 1
@@ -190,7 +188,7 @@ export interface OptionsContext {
    * existing Wallet): `writtenSeedRequired` is then false. */
   writtenSeedConfirmed?: boolean
   /** The networks of every Wallet on the lock the auto-lock answers apply to, when
-   * that is more than `network` (a lock shared by legacy Wallets). */
+   * that is more than `network` (a lock shared by several Wallets). */
   lockNetworks?: readonly NetworkId[]
   /** The Seed comes from outside (an import): Open Check `none` is unavailable on every network. */
   imported?: boolean
@@ -276,7 +274,7 @@ export const DERIVED_SIGNING_NOT_EDITABLE_REASON =
 
 export type PasskeyChoice = 'new' | 'existing'
 
-/** What a Wallet has now. `either` is the legacy lock's (a PIN or a passkey). */
+/** What a Wallet has now. */
 export interface CurrentChecks {
   seedMethod: SeedMethod
   openCheck: OpenCheck
@@ -299,8 +297,7 @@ export interface ResolvedEdit {
   autoLockChange: boolean
   /** True when any axis changes: nothing is asked and nothing written otherwise. */
   changed: boolean
-  /** The state the edit would leave, which is what the policy judges. `either`
-   * is not a passkey-only check, so it reads as the App PIN. */
+  /** The state the edit would leave, which is what the policy judges. */
   result: { openCheck: NewOpenCheck; signing: SigningKind; autoLockMinutes: number }
 }
 
@@ -316,7 +313,7 @@ export function resolveEdit(current: CurrentChecks, request: CheckEditRequest): 
     autoLockChange,
     changed: openChange || signingChange || autoLockChange,
     result: {
-      openCheck: openChange && open ? open.kind : current.openCheck === 'either' ? 'pin' : current.openCheck,
+      openCheck: openChange && open ? open.kind : current.openCheck,
       signing: signingChange && sign ? sign.kind : current.signing,
       autoLockMinutes: autoLockChange && request.autoLockMinutes !== undefined ? request.autoLockMinutes : current.autoLockMinutes,
     },
@@ -330,12 +327,12 @@ export function checkEditAllowed(current: CurrentChecks, resolved: ResolvedEdit)
 }
 
 /** After an edit of this kind an older version of the app can no longer open the
- * Wallet: adding a Signing Check, or leaving the legacy lock (AD-23, AD-27). */
+ * Wallet: adding a Signing Check (AD-23). */
 export function olderBuildCannotOpen(
-  current: { lockIsLegacy: boolean; signing: SigningKind },
-  resolved: Pick<ResolvedEdit, 'openChange' | 'result'>,
+  current: { signing: SigningKind },
+  resolved: Pick<ResolvedEdit, 'result'>,
 ): boolean {
-  return (current.signing === 'standard' && resolved.result.signing !== 'standard') || (current.lockIsLegacy && resolved.openChange)
+  return current.signing === 'standard' && resolved.result.signing !== 'standard'
 }
 
 /** `describeOptions` for an edit. The Wallet's Signing Check answers are all

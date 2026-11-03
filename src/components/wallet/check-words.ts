@@ -15,8 +15,6 @@ export function openCheckWords(kind: string): string {
       return 'App PIN'
     case 'passkey':
       return 'Passkey'
-    case 'either':
-      return 'Passkey or App PIN, shared with the other wallets on this lock'
     default:
       return NO_OPEN_CHECK_ANSWER
   }

@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, expectTypeOf, it, vi } from 'vitest'
 import { webcrypto } from 'node:crypto'
 
 /**
@@ -84,7 +84,7 @@ vi.mock('../webauthn', async (importOriginal) => {
       if (w.mode === 'cancel') throw Object.assign(new Error('dismissed'), { name: 'NotAllowedError' })
       return { credentialIdB64: 'Y3JlZA==', prfSupported: true }
     },
-    assertPasskeyAndDeriveBits: async (_id: string, salt: BufferSource = actual.PRF_SALT) => {
+    assertPasskeyAndDeriveBits: async (_id: string, salt: BufferSource) => {
       w.asserts += 1
       if (w.mode === 'cancel') throw Object.assign(new Error('dismissed'), { name: 'NotAllowedError' })
       if (w.mode === 'no-prf') throw Object.assign(new Error('no prf'), { name: 'PrfUnsupportedError' })
@@ -98,13 +98,14 @@ vi.mock('../webauthn', async (importOriginal) => {
   }
 })
 
-import { putVaultMeta } from '../db'
-import { setUpVaultAuth } from '../auth'
+import type { OpenCheck } from '../db'
 import { createLock, endAllLockSessions, endLockSession, extendLockSession, getLockInfo, openLock, restoreOpenLocks, setAutoLockMinutes } from '../lock'
-import { generateAndStoreWallet, listWallets, migrateLegacyVault, openSigner, setLockAutoLock, unavailablePrompts } from '../keystore'
+import { setLockAutoLock, type Prompts } from '../keystore'
+import { makePinLock, storeSeedWallet } from './fixtures'
 import { aesDecrypt, aesEncrypt } from '../aes'
 
 const PIN = '123456'
+const pinPrompt = (pin: string | null): Prompts => ({ pin: async () => pin })
 const failedAttempts = () => h.state.stores.vault.get('vault')?.failedAttempts ?? 0
 const lockRecords = () => [...h.state.stores.vault.values()].filter((r) => r.key.startsWith('lock:'))
 const clearBackoff = () => h.state.stores.vault.set('vault', { ...h.state.stores.vault.get('vault'), lockedUntil: undefined })
@@ -121,19 +122,6 @@ beforeEach(() => {
   w.mode = 'ok'
   w.asserts = 0
   w.registers = 0
-})
-
-describe('setLockAutoLock on a record the migration has not reached', () => {
-  it('refuses, so the Mainnet floor cannot be skipped by reading it as Testnet', async () => {
-    await setUpVaultAuth('tester', PIN)
-    const key = await crypto.subtle.generateKey({ name: 'AES-GCM', length: 256 }, true, ['encrypt', 'decrypt'])
-    const created = await generateAndStoreWallet('W', key, 'mainnet')
-    const record = h.state.stores.wallets.get(created.meta.id)
-    const { views: _views, ...legacy } = record
-    h.state.stores.wallets.set(created.meta.id, legacy)
-
-    expect(await setLockAutoLock('legacy', 0.5)).toMatchObject({ ok: false, reason: expect.stringMatching(/not migrated yet/) })
-  })
 })
 
 describe('policy at createLock (AD-28, FR-65)', () => {
@@ -166,7 +154,7 @@ describe('a PIN lock', () => {
     const created = ok(await createLock({ network: 'testnet', openCheck: 'pin', autoLockMinutes: 5 }, { pin: PIN }))
     const record = h.state.stores.vault.get(`lock:${created.id}`)
     expect(record).toMatchObject({ id: created.id, openCheck: 'pin', autoLockMinutes: 5 })
-    expect(record.hkdfInfo).toContain(created.id) // stored, per lock — not the legacy constant
+    expect(record.hkdfInfo).toContain(created.id) // stored, per lock — not a shared constant
     expect(h.state.stores.vault.get('vault').pinVerifier).toBeDefined()
     expect(created.key.extractable).toBe(false)
 
@@ -178,8 +166,10 @@ describe('a PIN lock', () => {
     expect(await aesDecrypt(opened.key, sealed.ivB64, sealed.ciphertextB64)).toBe('seedvalue')
   })
 
-  it('proves the App PIN from the legacy wrapper when there is one, and a wrong PIN creates nothing', async () => {
-    await setUpVaultAuth('tester', PIN)
+  it('proves the App PIN from its verifier alone, and a wrong PIN creates nothing', async () => {
+    await makePinLock(PIN)
+    // The vault meta holds the App PIN's salt and verifier, the count, and nothing else.
+    expect(Object.keys(h.state.stores.vault.get('vault')).sort()).toEqual(['failedAttempts', 'key', 'pinSaltB64', 'pinVerifier'])
     const before = h.state.stores.vault.size
     expect(await createLock({ network: 'testnet', openCheck: 'pin', autoLockMinutes: 5 }, { pin: '000000' })).toEqual({
       status: 'wrong-credential',
@@ -191,21 +181,21 @@ describe('a PIN lock', () => {
     expect((await createLock({ network: 'testnet', openCheck: 'pin', autoLockMinutes: 5 }, { pin: PIN })).status).toBe('ok')
   })
 
-  it('a wrong PIN says how many tries remain and shares ONE counter with the legacy lock', async () => {
-    await setUpVaultAuth('tester', PIN)
+  it('a wrong PIN says how many tries remain and shares ONE counter with every other PIN lock', async () => {
     const created = ok(await createLock({ network: 'testnet', openCheck: 'pin', autoLockMinutes: 5 }, { pin: PIN }))
+    const other = await makePinLock(PIN)
     expect(await openLock(created.id, 'pin', { pin: '000000' })).toEqual({ status: 'wrong-credential', kind: 'pin', triesRemaining: 7 })
     clearBackoff()
-    expect(await openLock('legacy', 'pin', { pin: '000000' })).toEqual({ status: 'wrong-credential', kind: 'pin', triesRemaining: 6 })
+    expect(await openLock(other.lockId, 'pin', { pin: '000000' })).toEqual({ status: 'wrong-credential', kind: 'pin', triesRemaining: 6 })
     expect(failedAttempts()).toBe(2)
   })
 
-  it('a hard lock blocks a PIN lock — and the legacy PIN too', async () => {
-    await setUpVaultAuth('tester', PIN)
+  it('a hard lock blocks every PIN lock', async () => {
     const created = ok(await createLock({ network: 'testnet', openCheck: 'pin', autoLockMinutes: 5 }, { pin: PIN }))
+    const other = await makePinLock(PIN)
     h.state.stores.vault.set('vault', { ...h.state.stores.vault.get('vault'), failedAttempts: 8 })
     expect(await openLock(created.id, 'pin', { pin: PIN })).toMatchObject({ status: 'locked-out', hard: true })
-    expect(await openLock('legacy', 'pin', { pin: PIN })).toMatchObject({ status: 'locked-out', hard: true })
+    expect(await openLock(other.lockId, 'pin', { pin: PIN })).toMatchObject({ status: 'locked-out', hard: true })
   })
 })
 
@@ -284,19 +274,19 @@ describe('a lock with no Open Check (Testnet, Devnet)', () => {
 
 describe('sessions are per lock', () => {
   it('restores only the lock whose session is valid, and clears an expired entry', async () => {
-    await setUpVaultAuth('tester', PIN)
     const a = ok(await createLock({ network: 'testnet', openCheck: 'pin', autoLockMinutes: 5 }, { pin: PIN }))
     const b = ok(await createLock({ network: 'testnet', openCheck: 'pin', autoLockMinutes: 5 }, { pin: PIN }))
+    const c = ok(await createLock({ network: 'testnet', openCheck: 'pin', autoLockMinutes: 5 }, { pin: PIN }))
     ok(await openLock(a.id, 'pin', { pin: PIN }))
     ok(await openLock(b.id, 'pin', { pin: PIN }))
-    ok(await openLock('legacy', 'pin', { pin: PIN }))
+    ok(await openLock(c.id, 'pin', { pin: PIN }))
 
     await endLockSession(b.id)
-    h.state.stores.session.set('session', { ...h.state.stores.session.get('session'), expiresAt: Date.now() - 1 })
+    h.state.stores.session.set(`session:${c.id}`, { ...h.state.stores.session.get(`session:${c.id}`), expiresAt: Date.now() - 1 })
 
     const restored = await restoreOpenLocks()
     expect(restored.map((r) => r.lockId)).toEqual([a.id])
-    expect(h.state.stores.session.has('session')).toBe(false) // expired entry cleared
+    expect(h.state.stores.session.has(`session:${c.id}`)).toBe(false) // expired entry cleared
     expect(h.state.stores.session.has(`session:${a.id}`)).toBe(true)
 
     await endAllLockSessions()
@@ -318,100 +308,44 @@ describe('auto-lock minutes live on the lock', () => {
   })
 
   it('keystore.setLockAutoLock reads the networks of the Wallets on the lock', async () => {
-    const key = await setUpVaultAuth('tester', PIN)
-    await generateAndStoreWallet('Main', key, 'mainnet')
-    expect(await setLockAutoLock('legacy', 0.5)).toMatchObject({ ok: false })
-    expect(await setLockAutoLock('legacy', 15)).toEqual({ ok: true })
-    expect(await openLock('legacy', 'pin', { pin: PIN })).toMatchObject({ status: 'ok', value: { autoLockMinutes: 15 } })
-  })
-})
-
-describe('a vault from the previous build', () => {
-  it('opens through the legacy lock with its existing PIN, all Wallets together, addresses unchanged', async () => {
-    // A vault as the previous build left it: no lock record, no views.
-    const key = await setUpVaultAuth('tester', PIN)
-    const a = await generateAndStoreWallet('A', key, 'testnet')
-    const b = await generateAndStoreWallet('B', key, 'testnet')
-    h.state.stores.vault.delete('lock:legacy')
-    for (const meta of [a.meta, b.meta]) {
-      const rec = h.state.stores.wallets.get(meta.id)
-      delete rec.views
-      delete rec.lockId
-      delete rec.openCheck
-    }
-    await migrateLegacyVault({ network: 'testnet', autoLockMinutes: 15 })
-
-    const wallets = await listWallets()
-    expect(wallets.map((x) => [x.address, x.lockId])).toEqual([
-      [a.meta.address, 'legacy'],
-      [b.meta.address, 'legacy'],
-    ])
-    const opened = ok(await openLock('legacy', 'pin', { pin: PIN }))
-    expect(opened.autoLockMinutes).toBe(15) // today's value, carried by the migration
-    for (const meta of [a.meta, b.meta]) {
-      const signer = await openSigner(meta.id, { openKey: opened.key, prompts: unavailablePrompts })
-      expect(signer.status).toBe('ok')
-    }
-  })
-
-  it('an unmigrated vault still opens, on the default minutes', async () => {
-    await setUpVaultAuth('tester', PIN)
-    h.state.stores.vault.delete('lock:legacy')
-    expect(await openLock('legacy', 'pin', { pin: PIN })).toMatchObject({ status: 'ok', value: { autoLockMinutes: 5 } })
-  })
-
-  it('opens by passkey too, and a hard lock does not stop it', async () => {
-    await setUpVaultAuth('tester', PIN)
-    // Register a passkey on the legacy lock the way setup does, with the constant PRF salt.
-    const meta = h.state.stores.vault.get('vault')
-    const { PRF_SALT } = await import('../webauthn')
-    const { deriveAesKeyFromBits, HKDF_INFO } = await import('../derive')
-    const { derivePinKeyBits } = await import('../pin')
-    const pinKey = await deriveAesKeyFromBits(await derivePinKeyBits(PIN, meta.pinSaltB64), HKDF_INFO)
-    const master = await aesDecrypt(pinKey, meta.wrappedMasterKeyForPin.ivB64, meta.wrappedMasterKeyForPin.ciphertextB64)
-    const bits = await crypto.subtle.digest('SHA-256', new Uint8Array([...new TextEncoder().encode('same'), ...PRF_SALT]))
-    await putVaultMeta({
-      ...meta,
-      passkeyCredentialIdB64: 'Y3JlZA==',
-      wrappedMasterKeyForPasskey: await aesEncrypt(await deriveAesKeyFromBits(bits, HKDF_INFO), master),
-      failedAttempts: 8,
-    })
-    expect((await getLockInfo('legacy')).openCheck).toBe('either')
-    expect((await openLock('legacy', 'passkey')).status).toBe('ok')
-    expect(await openLock('legacy', 'pin', { pin: PIN })).toMatchObject({ status: 'locked-out', hard: true })
+    const lock = await makePinLock(PIN)
+    await storeSeedWallet('Main', lock, 'mainnet')
+    expect(await setLockAutoLock(lock.lockId, 0.5, { prompts: pinPrompt(PIN) })).toMatchObject({ ok: false })
+    expect(await setLockAutoLock(lock.lockId, 15, { prompts: pinPrompt(PIN) })).toEqual({ ok: true })
+    expect(await openLock(lock.lockId, 'pin', { pin: PIN })).toMatchObject({ status: 'ok', value: { autoLockMinutes: 15 } })
   })
 })
 
 describe('persisted expiry and in-flight extends', () => {
   it('restoreOpenLocks carries the persisted expiresAt, so remaining time is not reset', async () => {
-    await setUpVaultAuth('tester', PIN)
-    ok(await openLock('legacy', 'pin', { pin: PIN }))
+    const { lockId } = await makePinLock(PIN)
+    ok(await openLock(lockId, 'pin', { pin: PIN }))
     const persisted = Date.now() + 20_000
-    h.state.stores.session.set('session', { ...h.state.stores.session.get('session'), expiresAt: persisted })
+    h.state.stores.session.set(`session:${lockId}`, { ...h.state.stores.session.get(`session:${lockId}`), expiresAt: persisted })
     const [restored] = await restoreOpenLocks()
     expect(restored.expiresAt).toBe(persisted)
   })
 
   it('an extend that lands after the lock closed writes nothing, so a refresh cannot restore it', async () => {
-    await setUpVaultAuth('tester', PIN)
-    ok(await openLock('legacy', 'pin', { pin: PIN }))
-    await endLockSession('legacy')
-    await extendLockSession('legacy', 5)
-    expect(h.state.stores.session.has('session')).toBe(false)
+    const { lockId } = await makePinLock(PIN)
+    ok(await openLock(lockId, 'pin', { pin: PIN }))
+    await endLockSession(lockId)
+    await extendLockSession(lockId, 5)
+    expect(h.state.stores.session.has(`session:${lockId}`)).toBe(false)
     expect(await restoreOpenLocks()).toEqual([])
   })
 
   it('an extend on an open lock moves its expiry', async () => {
-    await setUpVaultAuth('tester', PIN)
-    ok(await openLock('legacy', 'pin', { pin: PIN }))
-    h.state.stores.session.set('session', { ...h.state.stores.session.get('session'), expiresAt: Date.now() + 1000 })
-    await extendLockSession('legacy', 5)
-    expect(h.state.stores.session.get('session').expiresAt).toBeGreaterThan(Date.now() + 200_000)
+    const { lockId } = await makePinLock(PIN)
+    ok(await openLock(lockId, 'pin', { pin: PIN }))
+    h.state.stores.session.set(`session:${lockId}`, { ...h.state.stores.session.get(`session:${lockId}`), expiresAt: Date.now() + 1000 })
+    await extendLockSession(lockId, 5)
+    expect(h.state.stores.session.get(`session:${lockId}`).expiresAt).toBeGreaterThan(Date.now() + 200_000)
   })
 })
 
 describe('configuration errors are not wrong PINs', () => {
-  it('an App PIN with neither legacy wrapper nor verifier is reported and does not count', async () => {
+  it('an App PIN with no verifier is reported and does not count', async () => {
     h.state.stores.vault.set('vault', { key: 'vault', failedAttempts: 0, pinSaltB64: 'AAAAAAAAAAAAAAAAAAAAAA==' })
     expect(await createLock({ network: 'testnet', openCheck: 'pin', autoLockMinutes: 5 }, { pin: PIN })).toEqual({ status: 'unsupported' })
     expect(failedAttempts()).toBe(0)
@@ -419,16 +353,19 @@ describe('configuration errors are not wrong PINs', () => {
   })
 })
 
-describe('policy when a Wallet joins an existing lock (AD-28)', () => {
-  it('refuses a Mainnet Wallet under a lock with no Open Check, or auto-lock under a minute; writes nothing', async () => {
-    const none = ok(await createLock({ network: 'testnet', openCheck: 'none', autoLockMinutes: 5 }))
-    await expect(generateAndStoreWallet('M', none.key, 'mainnet', none.id)).rejects.toThrow(/Open Check/)
-    expect(h.state.stores.wallets.size).toBe(0)
+describe('the Open Check kinds', () => {
+  it('are pin, passkey and none: there is no `either`', async () => {
+    expectTypeOf<OpenCheck>().toEqualTypeOf<'pin' | 'passkey' | 'none'>()
+    const pin = ok(await createLock({ network: 'testnet', openCheck: 'pin', autoLockMinutes: 5 }, { pin: PIN }))
+    expect(await getLockInfo(pin.id)).toMatchObject({ openCheck: 'pin', pin: true, passkey: false })
+    const passkey = ok(await createLock({ network: 'testnet', openCheck: 'passkey', autoLockMinutes: 5 }))
+    expect(await getLockInfo(passkey.id)).toMatchObject({ openCheck: 'passkey', pin: false, passkey: true })
+  })
+})
 
-    const short = ok(await createLock({ network: 'testnet', openCheck: 'pin', autoLockMinutes: 0.5 }, { pin: PIN }))
-    await expect(generateAndStoreWallet('M', short.key, 'mainnet', short.id)).rejects.toThrow(/at least 1 minute/)
-    // Testnet under the same lock is fine.
-    await generateAndStoreWallet('T', short.key, 'testnet', short.id)
-    expect((await listWallets()).length).toBe(1)
+describe('an unknown lock', () => {
+  it('is reported as not found', async () => {
+    await expect(getLockInfo('missing')).rejects.toThrow('Lock not found.')
+    await expect(setAutoLockMinutes('missing', 5, ['testnet'])).rejects.toThrow('Lock not found.')
   })
 })

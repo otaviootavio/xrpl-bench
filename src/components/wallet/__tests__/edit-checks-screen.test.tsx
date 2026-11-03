@@ -137,16 +137,10 @@ describe('Edit checks screen', () => {
     expect(radio('No authentication required to open the wallet').getAttribute('aria-disabled')).toBeNull()
   })
 
-  it('warns that an older version can no longer open the wallet when a Signing Check is added or the legacy lock is left', async () => {
+  it('warns that an older version can no longer open the wallet when a Signing Check is added', async () => {
     await mount()
     expect(screen.queryByText(/older version of this app can no longer open/i)).toBeNull()
     await click(radio(/Passkey only: create a new one/))
-    expect(screen.getByText(/older version of this app can no longer open/i)).toBeTruthy()
-    cleanup()
-    h.lock = { id: 'legacy', openCheck: 'either', autoLockMinutes: 5, pin: true, passkey: true }
-    await mount({ ...META, lockId: 'legacy', openCheck: 'either' })
-    expect(screen.queryByText(/older version of this app can no longer open/i)).toBeNull()
-    await click(radio('App PIN'))
     expect(screen.getByText(/older version of this app can no longer open/i)).toBeTruthy()
   })
 
@@ -277,13 +271,13 @@ describe('Edit checks screen', () => {
   })
 
   it('offers a sub-minute auto-lock as unavailable when another Wallet on the shared lock is on Mainnet', async () => {
-    h.lock = { id: 'legacy', openCheck: 'either', autoLockMinutes: 5, pin: true, passkey: true }
-    const legacy = { ...META, lockId: 'legacy', openCheck: 'either' }
-    useAppStore.setState({ wallets: [legacy, { ...META, id: 'w2', seedId: 's2', lockId: 'legacy', network: 'mainnet' }] } as never)
+    h.lock = { id: 'shared', openCheck: 'pin', autoLockMinutes: 5, pin: true, passkey: false }
+    const shared = { ...META, lockId: 'shared', openCheck: 'pin' }
+    useAppStore.setState({ wallets: [shared, { ...META, id: 'w2', seedId: 's2', lockId: 'shared', network: 'mainnet' }] } as never)
     const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
     render(
       <QueryClientProvider client={qc}>
-        <EditChecksScreen wallet={legacy as never} onClose={vi.fn()} onEdited={vi.fn()} />
+        <EditChecksScreen wallet={shared as never} onClose={vi.fn()} onEdited={vi.fn()} />
       </QueryClientProvider>,
     )
     await screen.findByText('Authentication required to open the wallet')

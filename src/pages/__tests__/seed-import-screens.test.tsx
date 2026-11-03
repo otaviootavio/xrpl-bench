@@ -18,7 +18,6 @@ const h = vi.hoisted(() => ({
   importStoredWallet: vi.fn(),
   importDuplicateReason: vi.fn(),
   addressFromSeed: vi.fn(),
-  setUpVaultAuth: vi.fn(),
   fetchQuery: vi.fn(),
   startLockSession: vi.fn(async () => {}),
 }))
@@ -31,7 +30,7 @@ vi.mock('@/lib/crypto/lock', () => ({
   startLockSession: (...a: unknown[]) => h.startLockSession(...(a as [])),
 }))
 vi.mock('@/lib/crypto/pin', () => ({ triesRemaining: async () => 8 }))
-vi.mock('@/lib/crypto/auth', () => ({ setUpVaultAuth: (...a: unknown[]) => h.setUpVaultAuth(...a), hasPasskeyRegistered: async () => false, wipeVault: async () => {} }))
+vi.mock('@/lib/crypto/auth', () => ({ wipeVault: async () => {} }))
 vi.mock('@/lib/xrpl/client', () => ({ verifyNode: vi.fn() }))
 vi.mock('@tanstack/react-query', () => ({
   useQueryClient: () => ({ fetchQuery: h.fetchQuery, invalidateQueries: vi.fn() }),
@@ -86,7 +85,6 @@ beforeEach(() => {
   h.importStoredWallet.mockReset().mockResolvedValue({ status: 'ok', value: { meta: META, openKey: KEY } })
   h.importDuplicateReason.mockReset().mockResolvedValue(null)
   h.addressFromSeed.mockReset().mockReturnValue(ADDRESS)
-  h.setUpVaultAuth.mockReset()
   h.fetchQuery.mockReset()
   h.startLockSession.mockClear()
   toastSuccess.mockReset()
@@ -130,7 +128,6 @@ describe('Onboarding: first-run Import is the quiz in import mode', () => {
     const lockIds = Object.keys(useAppStore.getState().openLocks)
     expect(lockIds).toEqual(['lock-new'])
     expect(lockIds).not.toContain('legacy')
-    expect(h.setUpVaultAuth).not.toHaveBeenCalled()
     expect(h.startLockSession).toHaveBeenCalledWith('lock-new', KEY, 5)
     expect(toastSuccess).toHaveBeenCalledWith('Wallet imported.')
   })
@@ -178,7 +175,6 @@ describe('Onboarding: first-run Import is the quiz in import mode', () => {
     await waitFor(() => expect(h.importStoredWallet).toHaveBeenCalledTimes(1))
     expect(h.importStoredWallet.mock.calls[0][0]).toMatchObject({ seed: SEED })
     await waitFor(() => expect(Object.keys(useAppStore.getState().openLocks)).toEqual(['lock-new']))
-    expect(h.setUpVaultAuth).not.toHaveBeenCalled()
   })
 
   it('writes nothing, and empties the Seed field, when the operator cancels the warning', async () => {

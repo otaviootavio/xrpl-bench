@@ -3,7 +3,6 @@ import { bufToB64, b64ToBuf } from './encoding'
 // A fixed, app-wide salt for the WebAuthn PRF extension. This is not a
 // secret (PRF salts don't need to be) — it just needs to be stable so the
 // same passkey always derives the same key material across unlocks.
-export const PRF_SALT = new TextEncoder().encode('xrpl-wallet:vault-unlock:v1')
 
 /** True for a ceremony the user dismissed or that timed out. Never a wrong
  * credential, so it never counts toward the PIN lockout (AD-25). */
@@ -156,7 +155,7 @@ function prfBitsOf(assertion: PublicKeyCredential): ArrayBuffer {
  * `rpId` is the one the credential was registered under; a credential stored
  * without one is asserted as before (the browser uses the page's host).
  */
-export async function assertPasskeyAndDeriveBits(credentialIdB64: string, salt: BufferSource = PRF_SALT, rpId?: string): Promise<ArrayBuffer> {
+export async function assertPasskeyAndDeriveBits(credentialIdB64: string, salt: BufferSource, rpId?: string): Promise<ArrayBuffer> {
   const challenge = crypto.getRandomValues(new Uint8Array(32))
   const credentialId = b64ToBuf(credentialIdB64)
 

@@ -88,7 +88,7 @@ vi.mock('../webauthn', async (importOriginal) => {
     registerPasskey: async () => {
       throw new Error('not used')
     },
-    assertPasskeyAndDeriveBits: async (_id: string, salt: BufferSource = actual.PRF_SALT) => {
+    assertPasskeyAndDeriveBits: async (_id: string, salt: BufferSource) => {
       w.asserts += 1
       if (w.mode === 'cancel') throw Object.assign(new Error('dismissed'), { name: 'NotAllowedError' })
       if (w.mode === 'no-prf') throw Object.assign(new Error('no prf'), { name: 'PrfUnsupportedError' })
@@ -152,13 +152,11 @@ vi.mock('@/lib/xrpl/writes', async (importOriginal) => {
 
 import { QueryClient } from '@tanstack/react-query'
 import { decode } from 'xrpl'
-import { setUpVaultAuth } from '../auth'
+import { makePinLock, sealRecordUnderPin, storeSeedWallet } from './fixtures'
 import {
-  generateAndStoreWallet,
-  importAndStoreWallet,
+  importStoredWallet,
   listWallets,
   openSigner,
-  sealSeedUnderSigningCheck,
   signingHandleFor,
   unavailablePrompts,
   type Prompts,
@@ -172,6 +170,8 @@ const failedAttempts = () => h.state.stores.vault.get('vault')?.failedAttempts ?
 
 let key: CryptoKey
 let controller: WalletMeta
+let controllerSeed: string
+let lock: Awaited<ReturnType<typeof makePinLock>>
 let target: WalletMeta
 let targetSeed: string
 let queryClient: QueryClient
@@ -181,9 +181,12 @@ beforeEach(async () => {
   h.state.stores = { wallets: new Map(), vault: new Map(), session: new Map() }
   h.state.failNextPutOn = null
   w.mode = 'ok'
-  key = await setUpVaultAuth('tester', PIN)
-  controller = (await generateAndStoreWallet('Controller', key, 'testnet')).meta
-  const t = await generateAndStoreWallet('Target', key, 'testnet')
+  lock = await makePinLock(PIN)
+  key = lock.key
+  const c = await storeSeedWallet('Controller', lock)
+  controller = c.meta
+  controllerSeed = c.seed
+  const t = await storeSeedWallet('Target', lock)
   target = t.meta
   targetSeed = t.seed
   ledger.state = { ...ledger.state, exists: true, disableMasterKey: false, regularKey: undefined }
@@ -337,7 +340,7 @@ describe('setRegularKey', () => {
   })
 
   it('counts a wrong Signing Check PIN, never a cancel, and adds no view for either', async () => {
-    await sealSeedUnderSigningCheck(controller.id, 'pin', { openKey: key, prompts: pinPrompt(PIN) })
+    await sealRecordUnderPin(controller.seedId, controllerSeed, PIN)
     const wrong = await setRegularKey(controller.id, target.id, ctx({ prompts: pinPrompt('000000') }))
     expect(wrong.status).toBe('check-failed')
     expect(failedAttempts()).toBe(1)
@@ -349,7 +352,7 @@ describe('setRegularKey', () => {
   })
 
   it('offers only another Seed on the same network, and refuses a controlled Wallet as controller', async () => {
-    const other = (await generateAndStoreWallet('Main', key, 'mainnet')).meta
+    const other = (await storeSeedWallet('Main', lock, 'mainnet')).meta
     const all = await listWallets()
     expect(eligibleTargets(controller, all).map((m) => m.id)).toEqual([target.id])
     expect(eligibleTargets(controller, all).map((m) => m.id)).not.toContain(other.id)
@@ -363,7 +366,7 @@ describe('setRegularKey', () => {
   })
 
   it('a key that was replaced and is set again is claimed through its old view, with no second view', async () => {
-    const third = (await generateAndStoreWallet('Third', key, 'testnet')).meta
+    const third = (await storeSeedWallet('Third', lock, 'testnet')).meta
     await setRegularKey(controller.id, target.id, ctx())
     expect(viewsOfTarget()).toHaveLength(2)
     // Replace it with the third key: the target's view of the Account is now stale.
@@ -401,14 +404,19 @@ describe('setRegularKey', () => {
 
   it('lists a Seed once, even when it also has a controlled view', async () => {
     await setRegularKey(controller.id, target.id, ctx())
-    const second = (await generateAndStoreWallet('Second', key, 'testnet')).meta
+    const second = (await storeSeedWallet('Second', lock, 'testnet')).meta
     const rows = eligibleTargets(second, await listWallets()).filter((m) => m.seedId === target.seedId)
     expect(rows).toHaveLength(1)
     expect(rows[0].id).toBe(target.id)
   })
 
   it('refuses importing the same Seed on the same network twice', async () => {
-    await expect(importAndStoreWallet('Copy', targetSeed, key, 'testnet')).rejects.toThrow(/already/)
+    const copy = await importStoredWallet(
+      { label: 'Copy', network: 'testnet', openCheck: 'pin', autoLockMinutes: 5, signing: 'standard', seed: targetSeed, passkey: 'yes' },
+      { pin: PIN },
+    )
+    expect(copy.status).toBe('refused')
+    expect(JSON.stringify(copy)).toMatch(/already/)
   })
 })
 
@@ -437,7 +445,7 @@ describe('a controlled Wallet signs (AD-18)', () => {
   it('still detects a wrong credential by the key address', async () => {
     await setRegularKey(controller.id, target.id, ctx())
     const claimed = (await listWallets()).find((m) => m.seedId === target.seedId && m.address === controller.address)!
-    await sealSeedUnderSigningCheck(claimed.id, 'pin', { openKey: key, prompts: pinPrompt(PIN) })
+    await sealRecordUnderPin(claimed.seedId, targetSeed, PIN)
     const wrong = await openSigner(claimed.id, ctx({ prompts: pinPrompt('000000') }))
     expect(wrong.status).toBe('wrong-credential')
   })

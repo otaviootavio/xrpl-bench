@@ -2,8 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { webcrypto } from 'node:crypto'
 
 // Minimal in-memory stand-in for the IndexedDB layer, so the vault's
-// wrap/unwrap logic can be exercised without a browser. `openLock('legacy')`
-// is the one path that opens a vault written by an earlier build.
+// wrap/unwrap logic can be exercised without a browser.
 const stores: Record<string, Map<string, any>> = { vault: new Map(), wallets: new Map(), session: new Map() }
 
 vi.mock('../db', async (importOriginal) => {
@@ -52,8 +51,8 @@ vi.mock('../webauthn', async (importOriginal) => ({
   },
 }))
 
-import { setUpVaultAuth, getLockoutState, hasPasskeyRegistered } from '../auth'
-import { openLock } from '../lock'
+import { getLockoutState } from '../auth'
+import { createLock, openLock } from '../lock'
 import { aesEncrypt, aesDecrypt } from '../aes'
 
 beforeEach(() => {
@@ -63,92 +62,78 @@ beforeEach(() => {
   for (const s of Object.values(stores)) s.clear()
 })
 
-async function unlocked(pin: string) {
-  const result = await openLock('legacy', 'pin', { pin })
+/** A PIN lock of its own; the first one also makes `pin` the App PIN. */
+async function setUpLock(pin: string, autoLockMinutes = 5) {
+  const created = await createLock({ network: 'testnet', openCheck: 'pin', autoLockMinutes }, { pin })
+  if (created.status !== 'ok') throw new Error(`expected ok, got ${created.status}`)
+  return created.value
+}
+
+async function unlocked(lockId: string, pin: string) {
+  const result = await openLock(lockId, 'pin', { pin })
   if (result.status !== 'ok') throw new Error(`expected ok, got ${result.status}`)
   return result.value.key
 }
 
 describe('vault unlock', () => {
-  it('unwraps the same master key it wrapped, so stored ciphertext decrypts', async () => {
-    const setupKey = await setUpVaultAuth('tester', '123456')
-    const sealed = await aesEncrypt(setupKey, 'sEdSEEDVALUE')
+  it('unwraps the same Open Key it wrapped, so stored ciphertext decrypts', async () => {
+    const lock = await setUpLock('123456')
+    const sealed = await aesEncrypt(lock.key, 'sEdSEEDVALUE')
 
-    const unlockedKey = await unlocked('123456')
+    const unlockedKey = await unlocked(lock.id, '123456')
     await expect(aesDecrypt(unlockedKey, sealed.ivB64, sealed.ciphertextB64)).resolves.toBe('sEdSEEDVALUE')
   })
 
   it('rejects a wrong PIN instead of deriving-and-trusting a key', async () => {
-    await setUpVaultAuth('tester', '123456')
+    const lock = await setUpLock('123456')
     // The core invariant from decisions.md §4: deriving a key always
     // "succeeds", so only a failed UNWRAP can reject a wrong credential.
-    expect(await openLock('legacy', 'pin', { pin: '999999' })).toEqual({ status: 'wrong-credential', kind: 'pin', triesRemaining: 7 })
+    expect(await openLock(lock.id, 'pin', { pin: '999999' })).toEqual({ status: 'wrong-credential', kind: 'pin', triesRemaining: 7 })
   })
 
-  it('returns a non-extractable master key from setup as well as unlock', async () => {
-    const setupKey = await setUpVaultAuth('tester', '123456')
-    expect(setupKey.extractable).toBe(false)
-    expect((await unlocked('123456')).extractable).toBe(false)
+  it('returns a non-extractable Open Key from creation as well as unlock', async () => {
+    const lock = await setUpLock('123456')
+    expect(lock.key.extractable).toBe(false)
+    expect((await unlocked(lock.id, '123456')).extractable).toBe(false)
   })
 
-  it('writes the legacy lock record at setup, so its auto-lock minutes live on the lock', async () => {
-    await setUpVaultAuth('tester', '123456')
-    expect(stores.vault.get('lock:legacy')).toMatchObject({ id: 'legacy', autoLockMinutes: 5 })
-    const result = await openLock('legacy', 'pin', { pin: '123456' })
+  it('keeps the auto-lock minutes on the lock record and persists the session under session:<id>', async () => {
+    const lock = await setUpLock('123456')
+    expect(stores.vault.get(`lock:${lock.id}`)).toMatchObject({ id: lock.id, autoLockMinutes: 5 })
+    const result = await openLock(lock.id, 'pin', { pin: '123456' })
     expect(result).toMatchObject({ status: 'ok', value: { autoLockMinutes: 5 } })
-    // Persisted under the legacy key, with an expiry.
-    expect(stores.session.get('session')).toBeDefined()
-  })
-
-  it('does not carry a stale passkey wrapper across re-onboarding', async () => {
-    // Regression: setUpVaultAuth spread the previous vault meta, so a
-    // passkey wrapper for the OLD master key survived into a vault with a
-    // freshly generated one — the passkey then "unlocked" but decrypted
-    // nothing.
-    await setUpVaultAuth('tester', '123456')
-    stores.vault.set('vault', {
-      ...stores.vault.get('vault'),
-      passkeyCredentialIdB64: 'stale-credential',
-      wrappedMasterKeyForPasskey: { ivB64: 'AAAA', ciphertextB64: 'BBBB' },
-    })
-
-    await setUpVaultAuth('tester', '654321')
-
-    const meta = stores.vault.get('vault')
-    expect(meta.passkeyCredentialIdB64).toBeUndefined()
-    expect(meta.wrappedMasterKeyForPasskey).toBeUndefined()
-    await expect(hasPasskeyRegistered()).resolves.toBe(false)
+    expect(stores.session.get(`session:${lock.id}`)).toBeDefined()
   })
 
   it('counts wrong PINs but not a method the lock does not have', async () => {
-    await setUpVaultAuth('tester', '123456')
-    expect((await openLock('legacy', 'pin', { pin: '000000' })).status).toBe('wrong-credential')
+    const lock = await setUpLock('123456')
+    expect((await openLock(lock.id, 'pin', { pin: '000000' })).status).toBe('wrong-credential')
     expect((await getLockoutState()).hardLocked).toBe(false)
     expect(stores.vault.get('vault').failedAttempts).toBe(1)
 
-    // No passkey is registered — a config error, not a failed attempt.
-    expect(await openLock('legacy', 'passkey')).toEqual({ status: 'unsupported' })
+    // No passkey is registered on this lock — a config error, not a failed attempt.
+    expect(await openLock(lock.id, 'passkey')).toEqual({ status: 'unsupported' })
     expect(stores.vault.get('vault').failedAttempts).toBe(1)
   })
 
   it('hard-locks after the configured number of failures', async () => {
-    await setUpVaultAuth('tester', '123456')
+    const lock = await setUpLock('123456')
     for (let i = 0; i < 8; i++) {
       // Clear any backoff so the loop reaches the hard-lock threshold.
       const meta = stores.vault.get('vault')
       stores.vault.set('vault', { ...meta, lockedUntil: undefined })
-      expect((await openLock('legacy', 'pin', { pin: '000000' })).status).toBe('wrong-credential')
+      expect((await openLock(lock.id, 'pin', { pin: '000000' })).status).toBe('wrong-credential')
     }
     expect((await getLockoutState()).hardLocked).toBe(true)
-    expect(await openLock('legacy', 'pin', { pin: '123456' })).toMatchObject({ status: 'locked-out', hard: true })
+    expect(await openLock(lock.id, 'pin', { pin: '123456' })).toMatchObject({ status: 'locked-out', hard: true })
   })
 
   it('resets the failure count after a successful unlock', async () => {
-    await setUpVaultAuth('tester', '123456')
-    await openLock('legacy', 'pin', { pin: '000000' })
+    const lock = await setUpLock('123456')
+    await openLock(lock.id, 'pin', { pin: '000000' })
     const meta = stores.vault.get('vault')
     stores.vault.set('vault', { ...meta, lockedUntil: undefined })
-    await unlocked('123456')
+    await unlocked(lock.id, '123456')
     expect(stores.vault.get('vault').failedAttempts).toBe(0)
   })
 })

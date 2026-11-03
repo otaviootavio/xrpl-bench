@@ -129,3 +129,8 @@ Iteration 0. Layers: blind-hunter (BH), edge-case-hunter (EC), verification-gap 
 - A real Send through a Signing Check on a funded account. The faucet was not used; the Reveal path above exercises the same sealed-Seed decrypt, and unit tests cover the Send gate.
 - The PIN hard-lock message in a browser (needs 8 wrong tries and the back-off); covered by the new unit test only.
 - Switching an Open Check in a browser, a passkey Signing Check, coarse-pointer target sizes, 200% text, and the dark theme of Edit checks and the Reveal dialogs.
+
+**375px and Impeccable audit (On Complete):**
+- 375x667 light and dark on the unlock screen: Unlock button reachable, inside the card, no horizontal overflow.
+- Audit scoped to the touched surfaces (unlock screen, Edit checks screen, Reveal and check copy), detector `[]` over the six changed UI files, no `outline-none`, `:focus`, inline style or hard-coded colour: **17/20 (Good)** — Accessibility 3, Performance 4, Responsive 3, Theming 4, Implementation Integrity 3. No P0, no P1. The UI part of the diff is 3 insertions and 9 deletions in two files, all removals. Open P2s: coarse-pointer height of the unlock and Edit-checks buttons not measured; the PIN hard-lock copy observed only through its unit test; copy defaults for an unknown Open Check (story 3, in `deferred-work.md`).
+

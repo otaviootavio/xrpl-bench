@@ -86,7 +86,7 @@ async function wrapOpenKey(openKey: CryptoKey, methodKey: CryptoKey): Promise<Wr
 export async function getLockInfo(lockId: string): Promise<LockInfo> {
   const record = await getLockRecord(lockId)
   if (!record) throw new Error('Lock not found.')
-  const openCheck = record.openCheck ?? 'pin'
+  const openCheck = record.openCheck
   return {
     id: lockId,
     openCheck,

@@ -267,6 +267,12 @@ describe('importStoredWallet', () => {
       id: 'w1',
       address,
       label: 'Two views',
+      createdAt: 1,
+      lockId: 'L1',
+      seedMethod: 'stored',
+      algorithm: 'ed25519',
+      openCheck: 'pin',
+      signingCheck: 'standard',
       views: [
         { walletId: 'w1', network: 'testnet' },
         { walletId: 'w1-dev', network: 'devnet' },
@@ -282,13 +288,17 @@ describe('importStoredWallet', () => {
     expect(h.state.stores.wallets.size).toBe(2)
   })
 
-  it('a legacy record with no views is a duplicate on its fallback Network (testnet) only', async () => {
-    h.state.stores.wallets.set('legacy', { id: 'legacy', address: Wallet.fromSeed(SEED).address, label: 'Legacy' })
-    expect(await importDuplicateReason(SEED, 'testnet')).toContain('Testnet')
-    expect((await importStoredWallet({ ...base, network: 'testnet' }, { pin: PIN })).status).toBe('refused')
-    expect(await importDuplicateReason(SEED, 'devnet')).toBeNull()
-    expect(await importDuplicateReason(SEED, 'mainnet')).toBeNull()
-    ok(await importStoredWallet({ ...base, network: 'devnet' }, { pin: PIN }))
+  it('an invalid record with the same address is not a duplicate: a new, separate, complete record is written', async () => {
+    const address = Wallet.fromSeed(SEED).address
+    const invalid = { id: 'bad', address, label: 'No views', createdAt: 1, lockId: 'L1', seedMethod: 'stored', algorithm: 'ed25519', openCheck: 'pin', signingCheck: 'standard' }
+    h.state.stores.wallets.set('bad', invalid)
+    expect(await importDuplicateReason(SEED, 'testnet')).toBeNull()
+    ok(await importStoredWallet({ ...base, network: 'testnet' }, { pin: PIN }))
+    expect(h.state.stores.wallets.size).toBe(2)
+    expect(h.state.stores.wallets.get('bad')).toEqual(invalid)
+    const fresh = [...h.state.stores.wallets.values()].find((w) => w.id !== 'bad')
+    expect(fresh.address).toBe(address)
+    expect(fresh.views.length).toBe(1)
   })
 
   it.each(['testnet', 'devnet', 'mainnet'] as const)('the reason names %s', async (network) => {

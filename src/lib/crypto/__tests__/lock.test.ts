@@ -98,7 +98,7 @@ vi.mock('../webauthn', async (importOriginal) => {
   }
 })
 
-import type { OpenCheck } from '../db'
+import { getLockRecord, listLockRecords, type OpenCheck } from '../db'
 import { createLock, endAllLockSessions, endLockSession, extendLockSession, getLockInfo, openLock, restoreOpenLocks, setAutoLockMinutes } from '../lock'
 import { setLockAutoLock, type Prompts } from '../keystore'
 import { makePinLock, storeSeedWallet } from './fixtures'
@@ -360,6 +360,17 @@ describe('the Open Check kinds', () => {
     expect(await getLockInfo(pin.id)).toMatchObject({ openCheck: 'pin', pin: true, passkey: false })
     const passkey = ok(await createLock({ network: 'testnet', openCheck: 'passkey', autoLockMinutes: 5 }))
     expect(await getLockInfo(passkey.id)).toMatchObject({ openCheck: 'passkey', pin: false, passkey: true })
+  })
+})
+
+describe('a lock record with a missing or invalid Open Check', () => {
+  it.each([undefined, 'either', 'other'])('reads as missing through every reader when it is %s', async (openCheck) => {
+    const lock = ok(await createLock({ network: 'testnet', openCheck: 'none', autoLockMinutes: 5 }))
+    const record = h.state.stores.vault.get(`lock:${lock.id}`)
+    h.state.stores.vault.set(`lock:${lock.id}`, { ...record, openCheck })
+    expect(await getLockRecord(lock.id)).toBeUndefined()
+    expect(await listLockRecords()).toEqual([])
+    await expect(getLockInfo(lock.id)).rejects.toThrow('Lock not found.')
   })
 })
 

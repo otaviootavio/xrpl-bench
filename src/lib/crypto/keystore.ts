@@ -67,14 +67,12 @@ export interface WalletMeta {
   writtenSeedConfirmedAt?: number
 }
 
-/** A record with no views is shown with one view on the caller's `fallbackNetwork`
- * (the app-wide network) and is never persisted. */
-function viewsOf(w: StoredWallet, fallbackNetwork: NetworkId = 'testnet'): WalletView[] {
-  return w.views && w.views.length > 0 ? w.views : [{ walletId: w.id, network: fallbackNetwork }]
+function viewsOf(w: StoredWallet): WalletView[] {
+  return w.views
 }
 
-function toMetas(w: StoredWallet, fallbackNetwork?: NetworkId): WalletMeta[] {
-  return viewsOf(w, fallbackNetwork).map((v) => ({
+function toMetas(w: StoredWallet): WalletMeta[] {
+  return viewsOf(w).map((v) => ({
     id: v.walletId,
     seedId: w.id,
     lockId: w.lockId,
@@ -84,10 +82,10 @@ function toMetas(w: StoredWallet, fallbackNetwork?: NetworkId): WalletMeta[] {
     createdAt: w.createdAt,
     network: v.network,
     ...(v.node ? { node: v.node } : {}),
-    algorithm: w.algorithm ?? 'unresolved',
-    seedMethod: w.seedMethod ?? 'stored',
-    openCheck: w.openCheck ?? 'pin',
-    signingCheck: w.signingCheck ?? 'standard',
+    algorithm: w.algorithm,
+    seedMethod: w.seedMethod,
+    openCheck: w.openCheck,
+    signingCheck: w.signingCheck,
     ...(w.writtenSeedConfirmedAt !== undefined ? { writtenSeedConfirmedAt: w.writtenSeedConfirmedAt } : {}),
   }))
 }
@@ -102,9 +100,9 @@ function hasView(all: StoredWallet[], network: NetworkId, account: string, keyAd
   return all.some((w) => w.address === keyAddress && viewsOf(w).some((v) => v.network === network && (v.accountAddress ?? w.address) === account))
 }
 
-export async function listWallets(fallbackNetwork: NetworkId = 'testnet'): Promise<WalletMeta[]> {
+export async function listWallets(): Promise<WalletMeta[]> {
   const wallets = await listStoredWallets()
-  return wallets.flatMap((w) => toMetas(w, fallbackNetwork))
+  return wallets.flatMap((w) => toMetas(w))
 }
 
 /** The algorithm a Seed's own encoding names. */
@@ -1135,9 +1133,6 @@ export async function addControlledView(
   const all = await listStoredWallets()
   const record = findSeedRecord(all, seedWalletId)
   if (!record) throw new Error('Wallet not found in local vault.')
-  if (!record.views || record.views.length === 0) {
-    throw new Error("This wallet's record is incomplete. Nothing was changed.")
-  }
   if (hasView(all, view.network, view.accountAddress, record.address)) {
     throw new Error('This wallet already operates that account.')
   }
@@ -1154,7 +1149,7 @@ export async function addControlledView(
     }
   })
   if (!added) throw new Error('This wallet already operates that account.')
-  const meta = (await listWallets(view.network)).find((w) => w.id === newWalletId)
+  const meta = (await listWallets()).find((w) => w.id === newWalletId)
   if (!meta) throw new Error('Wallet not found in local vault.')
   return meta
 }
@@ -1170,9 +1165,6 @@ export async function setWalletNode(walletId: string, node: string | undefined):
   }
   const record = findSeedRecord(await listStoredWallets(), walletId)
   if (!record) throw new Error('Wallet not found in local vault.')
-  if (!record.views || record.views.length === 0) {
-    throw new Error("This wallet's record is incomplete. Nothing was changed.")
-  }
   await mutateStoredWallet(record.id, (current) => ({
     ...current,
     views: viewsOf(current).map((v) => {
@@ -1269,9 +1261,9 @@ async function editChecksUnguarded(walletId: string, request: CheckEditRequest, 
   const standardRecord = !isDerived && !isSealed
 
   const current = {
-    seedMethod: stored.seedMethod ?? 'stored',
+    seedMethod: stored.seedMethod,
     openCheck: info.openCheck,
-    signing: (isDerived ? 'passkey' : (stored.signingCheck ?? 'standard')) as SigningKind,
+    signing: (isDerived ? 'passkey' : stored.signingCheck) as SigningKind,
     autoLockMinutes: info.autoLockMinutes,
   }
   const resolved = resolveEdit(current, request)

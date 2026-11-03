@@ -493,7 +493,7 @@ function CreateWalletForm({ capability, onDone, onInProgressChange, defaultLabel
       // The lock first: Gate shows Main the moment a Wallet is listed, and a
       // Wallet whose lock is not yet open would flash its locked view.
       openLock(pending.meta.lockId, pending.key, pending.autoLockMinutes)
-      setWallets(await listWallets(pending.meta.network))
+      setWallets(await listWallets())
       // Creation never selects: the caller decides (Onboarding sets its first wallet, Add wallet sets nothing).
       seedRef.current = null
       pendingRef.current = null

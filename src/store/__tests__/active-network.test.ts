@@ -7,22 +7,22 @@ vi.mock('@/lib/crypto/lock', () => ({ endLockSession: async () => {}, endAllLock
 
 import { mergePersistedAppState, useAppStore, useActiveNetwork, useActiveNode } from '../app-store'
 
-const base = { label: 'W', address: 'rA', lockId: 'lock-1', createdAt: 1, algorithm: 'ed25519', openCheck: 'pin', signingCheck: 'standard' }
+const base = { label: 'W', address: 'rA', keyAddress: 'rA', lockId: 'lock-1', createdAt: 1, algorithm: 'ed25519', seedMethod: 'stored', openCheck: 'pin', signingCheck: 'standard' }
 const current: Parameters<typeof mergePersistedAppState>[1] = { network: 'testnet', wallets: [], activeWalletId: null, addressBook: {}, autoLockMinutes: 5, declinedUpdateVersions: [] }
 
 describe('legacy persisted state is normalised on merge', () => {
-  it('a Wallet meta without node keeps built-in Nodes; devnet is accepted; unknown network falls back to the persisted one', () => {
+  it('a Wallet meta without node keeps built-in Nodes; devnet is accepted; an unknown network drops the entry', () => {
     const merged = mergePersistedAppState(
       {
         network: 'mainnet',
         wallets: [
           { ...base, id: 'a', seedId: 'a', network: 'devnet' },
-          { ...base, id: 'b' },
+          { ...base, id: 'b', seedId: 'b', network: 'mainnet' },
           { ...base, id: 'c', network: 'signet' },
-          { ...base, id: 'd', network: 'testnet', node: 'wss://n.example.com' },
-          { ...base, id: 'e', network: 'testnet', node: 'ws://insecure.example.com' },
-          { ...base, id: 'f', network: 'testnet', node: 'wss://u:p@n.example.com' },
-          { ...base, id: 'g', network: 'testnet', node: 'WSS://N.Example.com/' },
+          { ...base, id: 'd', seedId: 'd', network: 'testnet', node: 'wss://n.example.com' },
+          { ...base, id: 'e', seedId: 'e', network: 'testnet', node: 'ws://insecure.example.com' },
+          { ...base, id: 'f', seedId: 'f', network: 'testnet', node: 'wss://u:p@n.example.com' },
+          { ...base, id: 'g', seedId: 'g', network: 'testnet', node: 'WSS://N.Example.com/' },
         ],
       },
       current,
@@ -30,7 +30,6 @@ describe('legacy persisted state is normalised on merge', () => {
     expect(merged.wallets.map((w) => [w.id, w.network, w.node])).toEqual([
       ['a', 'devnet', undefined],
       ['b', 'mainnet', undefined],
-      ['c', 'mainnet', undefined],
       ['d', 'testnet', 'wss://n.example.com'],
       // A non-wss node on a persisted record is never contacted.
       ['e', 'testnet', undefined],

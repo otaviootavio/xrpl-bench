@@ -13,7 +13,7 @@ export function revealCheckSentence(wallet: WalletMeta | undefined): string {
       return 'After you confirm, your App PIN will be asked.'
     case 'passkey':
       return 'After you confirm, your passkey will be asked.'
-    default:
+    case 'none':
       return 'After you confirm, nothing more will be asked and the Seed is shown.'
   }
 }

@@ -86,13 +86,17 @@ const FULL_META: VaultMeta = {
   failedAttempts: 5,
   lockedUntil: 123,
 }
-const rec = (id: string, lockId: string | undefined, extra: Partial<StoredWallet> = {}): StoredWallet =>
+const rec = (id: string, lockId: string, extra: Partial<StoredWallet> = {}): StoredWallet =>
   ({
     id,
     label: id,
     address: `r${id}`,
     createdAt: 1,
-    ...(lockId ? { lockId } : {}),
+    lockId,
+    seedMethod: 'stored',
+    algorithm: 'ed25519',
+    openCheck: 'pin',
+    signingCheck: 'standard',
     encryptedSeed: wrapped,
     views: [{ walletId: id, network: 'testnet' }],
     ...extra,
@@ -130,6 +134,16 @@ describe('removeWallet: the App PIN goes with the last Wallet', () => {
     expect(meta()).toEqual(FULL_META)
     expect(h.state.stores.vault.has('lock:LA')).toBe(false)
     expect(h.state.stores.vault.has('lock:LB')).toBe(true)
+  })
+
+  it('an invalid record counts as absent: removing the only visible Wallet empties the vault and leaves the record unchanged', async () => {
+    putWallet(rec('a', 'LS'))
+    const { views: _views, ...invalid } = rec('b', 'LS')
+    h.state.stores.wallets.set('b', structuredClone(invalid))
+    putVault(lock('LS'))
+    expect(await removeWallet('a')).toEqual({ emptied: true, appPin: 'discarded' })
+    expect(h.state.stores.vault.has('lock:LS')).toBe(false)
+    expect(h.state.stores.wallets.get('b')).toEqual(invalid)
   })
 
   it('removing a sibling view keeps the Seed, the lock and the PIN', async () => {

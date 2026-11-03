@@ -62,7 +62,7 @@ export async function confirmRemoveWallet(
     const state = useAppStore.getState()
     let vault: WalletMeta[] | null
     try {
-      vault = await listWallets(state.network)
+      vault = await listWallets()
     } catch {
       // The keystore said the removal went through: the store minus it is what we know. If it
       // threw AND the list cannot be read, nothing is known: never show that as the list.

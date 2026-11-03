@@ -3,13 +3,13 @@ import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 
 /**
- * Story 2 / AD-19: the app-wide `network` survives only as a migration input
- * and a rollback mirror. No module outside the store may read it for a ledger
+ * Story 2 / AD-19: the app-wide `network` survives only as a rollback mirror
+ * of the active Wallet's network. No module outside the store may read it for a ledger
  * read — the active Wallet's network (`useActiveNetwork`) is the only source.
- * The two sanctioned reads are named here so an addition is a visible edit.
+ * The one sanctioned read is named here so an addition is a visible edit.
  */
 const SRC = join(__dirname, '..', '..')
-const ALLOWED = new Set(['store/app-store.ts', 'App.tsx'])
+const ALLOWED = new Set(['store/app-store.ts'])
 
 function walk(dir: string): string[] {
   return readdirSync(dir).flatMap((n) => {
@@ -51,12 +51,5 @@ describe('no module outside the store reads the app-wide network', () => {
       .filter((rel) => !ALLOWED.has(rel))
       .filter((rel) => READS.some((re) => re.test(readFileSync(join(SRC, rel), 'utf8'))))
     expect(offenders).toEqual([])
-  })
-
-  it('App.tsx reads it only as the legacy fallback for listWallets and the migration input', () => {
-    const src = readFileSync(join(SRC, 'App.tsx'), 'utf8')
-    const reads = src.split('\n').filter((l) => /\.network\b|\bnetwork\b.*getState/.test(l))
-    expect(reads.length).toBeGreaterThan(0)
-    for (const l of reads) expect(l).toMatch(/listWallets|const \{ network, autoLockMinutes \}/)
   })
 })

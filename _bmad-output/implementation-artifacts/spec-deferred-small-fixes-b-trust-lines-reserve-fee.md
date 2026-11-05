@@ -3,12 +3,19 @@ title: 'Small deferred fixes B: Trust lines reserve and fee'
 type: 'bugfix'
 created: '2026-11-05'
 baseline_revision: 'e057faf8d901b435780caeb718239341f3dbf9f0'
-status: 'in-review'
+status: 'done'
 review_loop_iteration: 0
-followup_review_recommended: false
+followup_review_recommended: true
 context: ['{project-root}/DESIGN.md', '{project-root}/PRODUCT.md']
 warnings: ['oversized']
-deferred: []
+deferred:
+  - summary: >-
+      At 320px with 200% text, the "Create trust line" button's no-wrap label cuts off, the sheet body scrolls sideways and the close X overlaps the title.
+    evidence: |-
+      Seen in this spec's browser pass. Pre-existing: this change did not touch the button or its label. Logged in deferred-work.md.
+    location: >-
+      src/pages/tabs/TrustLinesTab.tsx add sheet footer
+    severity: medium
 ---
 
 <intent-contract>
@@ -112,3 +119,35 @@ The three dialogs already are the confirm steps (close has its own; add and edit
 - Add dialog with all reads ok: reserve and fee shown; Create reachable without scrolling at 320px and 200% zoom.
 - Reserve forced failed with a temporary switch (reverted after): no reserve figure, refusal reason and Retry shown.
 - Create a real trust line: the transaction's fee on the explorer equals the fee the dialog showed. Edit its limit, then close it: each dialog shows the fee.
+
+**Browser pass (2026-11-05).** Commit 49b307c, then 49b307c plus the `scroll-pb-24` fix in `src/components/ui/dialog.tsx` for the confirmation round. Playwright MCP Chromium with the CDP virtual authenticator (ctap2, internal, resident key, UV, PRF). Two throwaway Testnet wallets made with the create quiz and funded by the in-app faucet; wallet 2 was the issuer. Widths 320, 390, 1280, light and dark; 200% zoom as root font-size 200% at 320x568 and as a 160x284 viewport. The reserve failure was forced with a temporary localStorage switch in `fetchServerReserves`, reverted after; it was not observed naturally. Screenshots in the session scratchpad (`bp-b/`, `bp-b2/`), opened before citing.
+- MET: reserve and fee figures shown with all reads ok; Create reachable without scrolling at 320px.
+- MET: signed fee equals shown fee on Testnet for create, edit (limit 500) and close: 10 drops each, shown 0.00001 XRP, all tesSUCCESS, read back with `account_tx`.
+- MET: edit and close dialogs show a Network fee reading.
+- MET: reserve failed shows no reserve figure anywhere on the screen; Create disabled with the reserve reason and a Try again button.
+- MET after fix: focused Try again at 320px was under the sticky footer (first round); with `scroll-pb-24` on the sheet body it sits fully above the footer in light and dark, `elementFromPoint` at its centre returns it, focus ring fully visible.
+- NOT MET, pre-existing, deferred: 200% zoom at 320px clips the Create label and scrolls the sheet sideways.
+- MET: tree clean after each round (temporary switch reverted).
+
+## Auto Run Result
+
+Status: done
+
+**Summary.** The Trust lines screen no longer shows a hardcoded 0.2 XRP reserve: the reserve is shown only when read, and adding a line is refused with a reason naming what is missing (reserve, balance, fee, fee cap, or not enough XRP), with Retry for a failed reserve or fee. The reserve read itself fails instead of falling back to fixed figures when the node has no validated ledger. Add, edit and close each show the network fee and sign exactly the fee shown at the press (pinned on the TrustSet); the pinned figure stays on screen while the submission runs. A sheet's body now keeps a focused element above its sticky footer.
+
+**Files changed.**
+- `src/lib/xrpl/writes.ts` -- `submitTrustSet` takes `feeDrops`.
+- `src/lib/xrpl/money.ts` -- `coversOwnerReserveAndFee`.
+- `src/lib/xrpl/reads.ts` -- `fetchServerReserves` throws without a validated ledger.
+- `src/pages/tabs/TrustLinesTab.tsx` -- read states, refusal reasons, fee readings, pinned fee, guard re-check in the handler.
+- `src/components/ui/dialog.tsx` -- `scroll-pb-24` on the sheet body below `sm`.
+- Tests: `writes.test.ts`, `money.test.ts`, `reads-node.test.ts`, `trustlines-error.test.tsx`, `pin-dialog.test.tsx`.
+- `deferred-work.md` -- the 200% zoom footer entry.
+
+**Review.** 22 findings: 8 patched (fee Retry test, malformed-fee test, refusal and aria tests, reserve read without validated ledger, pinned fee display, handler guard, writes test name, mid-submission fee test), 0 deferred from review, 14 rejected with reasons in the triage log. Patched entries by verdict: medium 3, low 4. Browser pass added one fix (sheet scroll padding) and one deferral (200% zoom label, pre-existing).
+
+**Follow-up review: recommended.** Unverified risk: the pinned fee shown during a submission is checked in jsdom only; in the browser the passkey prompt hides the add and edit sheets, so the swap from the live to the pinned figure was not observed there.
+
+**Verification.** `bun run lint`, `bun run build`, `bun run test` (129 files, 1938 tests), `bun run check:contrast`: all pass. Browser pass above.
+
+**Residual risks.** The 200% zoom footer label (deferred).

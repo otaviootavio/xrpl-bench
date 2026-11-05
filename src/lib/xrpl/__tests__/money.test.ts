@@ -15,6 +15,7 @@ import {
   spendableAfterReserve,
   amountPlusFeeFits,
   coversOwnerReserve,
+  coversOwnerReserveAndFee,
 } from '../money'
 
 describe('dropsToXrpString', () => {
@@ -193,5 +194,14 @@ describe('coversOwnerReserve', () => {
   it('works against the 200000-drop fallback the trust-line tab uses before reserves load', () => {
     expect(coversOwnerReserve('0', '200000')).toBe(false)
     expect(coversOwnerReserve('5000000', '200000')).toBe(true)
+  })
+})
+
+describe('coversOwnerReserveAndFee', () => {
+  it('needs the reserve AND the fee, inclusive at exactly equal', () => {
+    expect(coversOwnerReserveAndFee('200012', '200000', '12')).toBe(true)
+    expect(coversOwnerReserveAndFee('200011', '200000', '12')).toBe(false)
+    // Covers the reserve alone, but not the fee on top of it.
+    expect(coversOwnerReserveAndFee('200000', '200000', '12')).toBe(false)
   })
 })

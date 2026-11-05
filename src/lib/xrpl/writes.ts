@@ -321,7 +321,15 @@ export async function submitIssuedPayment(
 export async function submitTrustSet(
   network: NetworkId,
   signing: SigningHandle,
-  params: { currency: string; issuer: string; limit: string }, // limit "0" removes the line
+  params: {
+    currency: string
+    issuer: string
+    limit: string // "0" removes the line
+    /** The fee to sign, as a drops string — the figure the operator was shown.
+     * Pinned on the transaction so autofill does not compute its own. Still
+     * subject to the choke point's cap. */
+    feeDrops?: string
+  },
   node?: string,
 ): Promise<SubmitOutcome> {
   const tx: TrustSet = {
@@ -332,6 +340,7 @@ export async function submitTrustSet(
     // rippling is for issuers. Without NoRipple a holder's balance can shift
     // as a side effect of unrelated payments between other parties.
     Flags: TrustSetFlags.tfSetNoRipple,
+    ...(params.feeDrops !== undefined ? { Fee: params.feeDrops } : {}),
   }
   return submitAndClassify(network, signing, tx, node)
 }

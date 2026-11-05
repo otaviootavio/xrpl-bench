@@ -210,3 +210,12 @@ export function amountPlusFeeFits(amountDrops: string, feeDrops: string, spendab
 export function coversOwnerReserve(spendableDrops: string, ownerReserveDrops: string): boolean {
   return BigInt(spendableDrops) >= BigInt(ownerReserveDrops)
 }
+
+/**
+ * Whether the spendable balance covers what opening one trust line takes out
+ * of it: one more owner reserve plus the network fee of the `TrustSet`.
+ * Exactly equal fits, as in `amountPlusFeeFits`.
+ */
+export function coversOwnerReserveAndFee(spendableDrops: string, ownerReserveDrops: string, feeDrops: string): boolean {
+  return BigInt(ownerReserveDrops) + BigInt(feeDrops) <= BigInt(spendableDrops)
+}

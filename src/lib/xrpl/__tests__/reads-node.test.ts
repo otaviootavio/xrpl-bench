@@ -77,3 +77,33 @@ describe('every ledger read forwards the Wallet\'s Node', () => {
     expect(urls).toEqual([NODE])
   })
 })
+
+describe('fetchServerReserves never invents a reserve', () => {
+  /** A node answering `server_state` with `state`, and `server_info` as above. */
+  function serverStateFactory(state: unknown) {
+    setXrplClientFactory(
+      () =>
+        ({
+          connect: async () => {},
+          isConnected: () => true,
+          disconnect: async () => {},
+          request: async (req: { command: string }) =>
+            req.command === 'server_info' ? { result: { info: {} } } : { result: { state } },
+        }) as unknown as Client,
+    )
+  }
+
+  it.each([
+    ['no validated ledger (a syncing node)', {}],
+    ['no reserve_base', { validated_ledger: { reserve_inc: 200000 } }],
+    ['no reserve_inc', { validated_ledger: { reserve_base: 1000000 } }],
+  ])('throws when there is %s', async (_label, state) => {
+    serverStateFactory(state)
+    await expect(fetchServerReserves('mainnet', NODE)).rejects.toThrow(/could not be read/)
+  })
+
+  it('returns the reserves the validated ledger states', async () => {
+    serverStateFactory({ validated_ledger: { reserve_base: 1000000, reserve_inc: 200000 } })
+    await expect(fetchServerReserves('mainnet', NODE)).resolves.toEqual({ baseReserveDrops: '1000000', ownerReserveDrops: '200000' })
+  })
+})

@@ -17,6 +17,7 @@
   summary: The query-key guard cannot see a key bound to a variable before use (`const k = ['accountState', n, a]` then `invalidateQueries({ queryKey: k })`).
   evidence: Confirmed against a fixture tree — the literal is not flagged. Closing it needs dataflow analysis rather than a text scan, which is beyond what a dependency-free `node:` script should attempt. Would be settled by moving the check into a real lint rule with an AST.
   triage: (2026-10-04, against origin/dev 3ac02fc) promote. Already story 10.1 (backlog). Still true: `scripts/check-query-keys.mjs` is a text scan.
+  triage: (2026-11-05, against origin/dev cec5be0) drop. Fixed: scripts/check-query-keys.mjs follows same-file bindings to `queryKey: k` and invalidate calls; keys built in another module remain a documented limit.
 
 - source_spec: `_bmad-output/implementation-artifacts/spec-1-1-query-key-factory.md`
   summary: The four invalidation sites each invalidate a different subset of the account-scoped keys, and nothing checks the subsets against one another.
@@ -27,31 +28,37 @@
   summary: docs/agents/ledger-io.md:12 still instructs agents to put the active wallet and network into every query key by hand, with no mention of the factory or the lint gate.
   evidence: Verified the line is present and now behind the code. Deferred because the fix edits an agent-context file, which this workflow routes away from a build story.
   triage: (2026-10-04, against origin/dev 3ac02fc) promote-to-story (proposed docs story D, with the other agent-context and decision-doc entries). Still true: `docs/agents/ledger-io.md:12-15` still says to put the wallet and network into every key by hand, and does not mention the factory.
+  triage: (2026-11-05, against origin/dev cec5be0) keep. Doc not updated: docs/agents/ledger-io.md still tells agents to put wallet and network in every key and names neither the factory nor the lint gate.
 
 - source_spec: `_bmad-output/implementation-artifacts/spec-2-sealed-boundaries.md`
   summary: The transaction in-flight signal is a boolean, so two overlapping writes let the first to finish clear it while the second is still in flight — the window FR-48 exists to close.
   evidence: Reachable, not theoretical: the flag is deliberately global because Radix unmounts inactive tabs, so a payment and a trust-line change can be in flight together. Pre-existing — `git show 2eba44c:src/lib/xrpl/writes.ts` uses the same boolean. The fix is a depth counter reporting true on 0→1 and false on 1→0.
   triage: (2026-10-04, against origin/dev 3ac02fc) promote. Already story 7.2 (backlog). Still true: `app-store.ts:31` `txInFlight: boolean`; `writes.ts:17` reporter takes a boolean.
+  triage: (2026-11-05, against origin/dev cec5be0) drop. Fixed: writes.ts keeps an `inFlightDepth` counter and reports only on 0 to 1 and 1 to 0.
 
 - source_spec: `_bmad-output/implementation-artifacts/spec-2-sealed-boundaries.md`
   summary: Clients discarded during failover are never disconnected, and a connect abandoned at the 10-second timeout can still open a socket nobody owns.
   evidence: Confirmed by reading the failover loop in lib/xrpl/client.ts. Pre-existing; Epic 2 added a clearTimeout for the timer but not socket cleanup. Would be settled by disconnecting the loser in the catch and on cache-miss replacement.
   triage: (2026-10-04, against origin/dev 3ac02fc) promote. Already story 8.1 (backlog). Still true: the failover `catch` (`client.ts:82-84`) drops the client without disconnecting.
+  triage: (2026-11-05, against origin/dev cec5be0) drop. Fixed: client.ts abandons a client on failure and on a late connect, and retires the network's slot.
 
 - source_spec: `_bmad-output/implementation-artifacts/spec-2-sealed-boundaries.md`
   summary: getXrplClient has no in-flight deduplication, so several queries firing at mount each construct and connect their own Client, and every loser is dropped from the map still connected.
   evidence: Confirmed by reading client.ts. Pre-existing. Caching the in-flight connect promise per network closes it.
   triage: (2026-10-04, against origin/dev 3ac02fc) promote. Already story 8.2 (backlog). Still true: `getXrplClient` (`client.ts:71-73`) caches only connected clients, not the in-flight connect.
+  triage: (2026-11-05, against origin/dev cec5be0) drop. Fixed: client.ts keeps a per-slot `inflight` promise, so concurrent callers share one connect.
 
 - source_spec: `_bmad-output/implementation-artifacts/spec-2-sealed-boundaries.md`
   summary: The two seed-import paths disagree — Onboarding gates the write on the disabled-master-key warning, SettingsTab writes to the vault first and warns afterwards — and they surface a malformed seed differently.
   evidence: Confirmed at both call sites and independently reported by the implementer as an unmet acceptance criterion. Making the settings path gate the write is a user-visible flow change, so it needs its own story. Neither path trims the seed input either, so a pasted trailing newline reads as malformed.
   triage: (2026-10-04, against origin/dev 3ac02fc) promote. Already stories 11.1 (the warning comes before the write) and 11.2 (whitespace).
+  triage: (2026-11-05, against origin/dev cec5be0) drop. Fixed: both imports share useSeedImport with the check before the write (seed-import.ts), and keystore trims the input.
 
 - source_spec: `_bmad-output/implementation-artifacts/spec-4-rules-and-code.md`
   summary: AGENTS.md still states "no secret ever enters localStorage, React state, a store, the URL, or anything serializable" absolutely, while docs/decisions.md §4 now carries a narrow exception for a non-extractable CryptoKey handle.
   evidence: AGENTS.md is loaded first via CLAUDE.md, so an agent reading it deletes the vaultKey code the §4 exception exists to protect — the exact failure the exception was written to prevent. Deferred because the fix edits an agent-context file. Per the repo's own rule it should gain a pointer to §4, not a restatement of it.
   triage: (2026-10-04, against origin/dev 3ac02fc) promote-to-story (docs story D). The premise has moved: AGENTS.md does not exist on dev (open PR #28 would add it). The absolute sentence is now `CLAUDE.md:44`, which still has no pointer to the `docs/decisions.md` §4 (line 62) `CryptoKey` exception.
+  triage: (2026-11-05, against origin/dev cec5be0) keep. Doc not updated: CLAUDE.md still states the secret rule absolutely, with no pointer to the decisions.md section 4 CryptoKey exception.
 
 - source_spec: `_bmad-output/implementation-artifacts/spec-4-rules-and-code.md`
   summary: The waiting-update flag never returns to false, so a failed applyUpdate leaves the update prompt showing.
@@ -62,6 +69,7 @@
   summary: No lint gate stops BigInt arithmetic reappearing outside money.ts, or a hand-rolled explorer anchor returning outside AddressLink/TxLink.
   evidence: Both acceptance criteria for Epic 4 are grep-shaped and hold today, but nothing enforces them tomorrow — the same decay the query-key guard was written to stop. Two more guard scripts in the check-query-keys.mjs idiom would close it.
   triage: (2026-10-04, against origin/dev 3ac02fc) promote. Already story 10.2 (backlog). Still true: `scripts/` has no BigInt or explorer-link check.
+  triage: (2026-11-05, against origin/dev cec5be0) drop. Fixed: scripts/check-money.mjs and scripts/check-explorer-links.mjs run in `bun run lint`. Their scope gap is the separate entry below.
 
 - source_spec: `_bmad-output/implementation-artifacts/spec-3-report-failed-reads.md`
   summary: When useServerReserves fails but account_info succeeds, useSpendableBalance returns spendableDrops: null with isLoading: false, so Balances renders the XRP balance with Spendable and Reserved silently missing — no skeleton, no failure text. useRecommendedFee failing in SendTab is likewise unreported.
@@ -72,6 +80,7 @@
   summary: The Send screen's Review button uses native `disabled={!canSend}`, which docs/decisions.md §6.4 forbids — a temporarily unavailable control must be `aria-disabled` with its reason in visible text.
   evidence: Confirmed at SendTab.tsx:279; the rule is restated in docs/agents/ui-and-design-system.md:56 and PRODUCT.md:249, with existing precedent at TrustLineRow.tsx:66 and SettingsTab.tsx:347. Deferred at the story 5.1 intent gate because `canSend` composes seven conditions and each needs its own accurate visible reason — well past this story's destination check. Safe to defer only because story 5.1 puts the real guard inside the submit path.
   triage: (2026-10-04, against origin/dev 3ac02fc) defer to epic 5 retro action item 8 (the SendTab split gives each `canSend` reason its own visible text). Still true: `SendTab.tsx:822` `disabled={!canSend}`.
+  triage: (2026-11-05, against origin/dev cec5be0) keep. Still true: SendTab.tsx Review button uses `disabled={!canSend}`.
 
 - source_spec: `_bmad-output/implementation-artifacts/spec-5-1-destination-check-guard.md`
   summary: The send submit path re-reads the destination and then consumes only `requireDestTag` — the fresh `exists` and `hasTrustLine` are discarded, so a destination that de-activated or lost its trust line between the two reads is still submitted to and burns a network fee.
@@ -82,27 +91,32 @@
   summary: The pre-flight `fetchDestinationInfoOnce` inside `doSend` has no timeout or abort, and the dialog's Cancel is `disabled={busy}`, so a stalled read leaves the confirm dialog showing "Sending…" with no way out while the decrypted signing wallet sits in a local.
   evidence: Verified, and narrower than first filed — `client.ts:43` gives connection a 10s timeout and `App.tsx:24` sets `retry: 1`, so the wait is bounded rather than open-ended; a request that stalls after connect still has none. Deferred because the fix needs a race or abort path plus a cancellable busy state, which is more than a direct correction.
   triage: (2026-10-04, against origin/dev 3ac02fc) keep. Still true: `fetchDestinationInfoOnce` in `doSend` has no race or abort, and Cancel is `disabled={busy}` (`SendTab.tsx:883`). Bounded, but not by the 10 s connect timeout, which only covers opening the socket: once connected, each request is bounded by xrpl.js's own 20 s request timeout (`TIMEOUT = 20` in `xrpl/dist/npm/client/connection.js`), and `retry: 1` (`App.tsx:26`) allows a second attempt, so "Sending…" can hold with Cancel disabled for roughly 40 s plus backoff.
+  triage: (2026-11-05, against origin/dev cec5be0) keep. Still true: `fetchDestinationInfoOnce` in doSend has no race or abort, and Cancel is `disabled={busy}`.
 
 - source_spec: `_bmad-output/implementation-artifacts/spec-5-2-reserve-read-reported.md`
   summary: `TrustLinesTab.tsx:69` falls back to a hardcoded `'200000'` owner reserve when the server-reserve read has no data, so `canAffordNewLine` is decided by a figure that was never read.
   evidence: Found while mapping every consumer of the reserve read for story 5.2. Squarely within epic 5's guarantee that a figure on screen was actually read, but on a different screen than 5.2's acceptance criteria and failing closed rather than open — `canAffordNewLine` is `false` when `spendableDrops` is null. Deferred rather than folded in unasked.
   scope: Three sites, not one, so closing only the first closes half the defect. (a) `TrustLinesTab.tsx:70` decides `canAffordNewLine` from the fallback. (b) `TrustLinesTab.tsx:91` RENDERS the same never-read figure to the user — "This will lock an additional 0.2 XRP owner reserve" — stated as fact, which is the falsehood epic 5 exists to remove rather than merely a guard fed a guess. (c) `TrustLinesTab.tsx:28` reads `reserves.data` with no `isError` check at all, so across a failed refetch the retained answer feeds both of the above and is presented as current. The fix is the same shape as story 5.2's on Balances: no figure without a read that succeeded, the unavailability stated in words, and a retry beside it.
   triage: (2026-10-04, against origin/dev 3ac02fc) promote-to-story (proposed story T, with the next entry): 5.2's shape on the Trust lines screen. Still true at all three sites: `TrustLinesTab.tsx:68` fallback, `:90` renders it as fact, no `reserves.isError` check.
+  triage: (2026-11-05, against origin/dev cec5be0) keep. Still true: TrustLinesTab.tsx falls back to '200000', renders it as fact, and does not check `reserves.isError`.
 
 - source_spec: `_bmad-output/implementation-artifacts/spec-5-2-reserve-read-reported.md`
   summary: `TrustLinesTab.tsx:92` states one reason — "You don't have enough spendable XRP to cover this." — for every state in which `spendableDrops` is null, including the two where the true reason is that a read failed rather than that the balance is short.
   evidence: Pre-existing for the never-loaded case; story 5.2 widened it, because the hook now returns null (correctly) while the reserve read is in error with an earlier answer retained, where it previously returned a figure. The guard itself still fails closed — the control is `disabled` and nothing is submitted — so this is a wrong *reason*, not a wrong permission. Out of 5.2's scope: a different screen, and fixing it means giving that dialog the same unavailable-vs-insufficient distinction the Balances rows just gained. Natural pair for the `'200000'` fallback entry above.
   triage: (2026-10-04, against origin/dev 3ac02fc) promote-to-story (story T, with the previous entry). Still true: `TrustLinesTab.tsx:91` gives one reason for every null `spendableDrops`.
+  triage: (2026-11-05, against origin/dev cec5be0) keep. Still true: TrustLinesTab.tsx gives one sentence for every `!canAffordNewLine`.
 
 - source_spec: `_bmad-output/implementation-artifacts/spec-5-3-fee-read-not-zero.md`
   summary: A token send never checks that the account can afford its XRP network fee. Every Payment costs drops regardless of what it carries, so an account holding tokens but almost no XRP can submit an issued payment it cannot pay for, and it is refused by the network after the attempt rather than on the form — as tecINSUFF_FEE (136) if it reaches a ledger, or terINSUF_FEE_B (-97) at submission. Neither code appears in src/lib/xrpl/result-codes.ts, so the operator gets the raw-code fallback rather than a sentence.
   evidence: Confirmed at SendTab.tsx — the `fundsError` token branch compares the amount against the trust-line balance only, and never reaches the fee or the spendable XRP figure. Pre-existing: the check has never existed, so story 5.3 could not be "not fabricating" it. Ruled out of 5.3 explicitly at the intent gate — adding it would refuse token sends that are permitted today, a user-visible behaviour change beyond a bugfix story. Would be settled by extending the token branch with an XRP-side check of fee against spendable, which then also inherits 5.2's and 5.3's three-state wording for both reads.
   triage: (2026-10-04, against origin/dev 3ac02fc) defer to epic 5 retro action item 8 (it extracts the funds check, where the XRP-side fee check belongs). Still true: the token branch (`SendTab.tsx:307-311`) compares only the trust-line balance; #32 made it refuse on an unknown line, not check the fee.
+  triage: (2026-11-05, against origin/dev cec5be0) keep. Still true: the token branch of funds-check.ts checks the line balance only; result-codes.ts maps no INSUF_FEE code.
 
 - source_spec: `_bmad-output/implementation-artifacts/spec-5-3-fee-read-not-zero.md`
   summary: No screen renders the offline state. `App.tsx:24` builds the QueryClient with no `networkMode`, so the default `'online'` leaves a read with no connection at `status: 'pending'`, `fetchStatus: 'paused'` — no data and no error — and every three-state screen reports it as a read still in flight, with no retry and no admission that nothing is being attempted.
   evidence: Confirmed by grep — nothing in `src/` branches on `fetchStatus`, `isPaused`, or `navigator.onLine`. This is a property of every ledger read in the app, not of story 5.3: 5.2's spendable wording has it identically, and 5.3 only made it visible by adding a third state worth distinguishing. For an installable PWA meant to be opened offline, "still being read" is a false statement about a read that was never started. What 5.3 did change offline is an improvement: an XRP send is now refused rather than declared affordable against a fee of zero. Would be settled by one shared treatment for `paused` across the three-state screens, which is why it does not belong inside a single story.
   triage: (2026-10-04, against origin/dev 3ac02fc) defer to epic 5 retro action item 8 (`paused` becomes a state of the shared read-state primitive). Still true: nothing in `src/` reads `fetchStatus`, `isPaused`, `navigator.onLine` or `networkMode`.
+  triage: (2026-11-05, against origin/dev cec5be0) keep. Still true: App.tsx sets no `networkMode`, and nothing in src reads `fetchStatus` or `isPaused`.
 
 - source_spec: `_bmad-output/implementation-artifacts/spec-5-3-fee-read-not-zero.md`
   summary: The Send screen's Spendable row renders the word "Unavailable" for a read still in flight and for an account that does not exist yet, not only for a read that failed — the same collapse epic 5 exists to remove, one row away from the fee row that now distinguishes all three.
@@ -110,6 +124,7 @@
   triage: (2026-10-04, against origin/dev 3ac02fc) defer to epic 5 retro action item 8 (the row takes the primitive's state). Still true: `SendTab.tsx:799-802` branches on `spendableDrops` alone.
 
 ## Deferred from: code review of story-5.1 (2026-09-16)
+  triage: (2026-11-05, against origin/dev cec5be0) keep. Still true: SendTab.tsx maps every non-ok spendable status to `{ status: 'failed' }`.
 
 - source_spec: `_bmad-output/implementation-artifacts/spec-5-1-destination-check-guard.md`
   summary: No decision record names `DESTINATION_CHECK_FRESHNESS_MS`, its 30-second value, the third ("out of date") state the Send form now has, the post-unlock placement of the re-check, or the deliberate choice not to refetch when a check goes stale.
@@ -117,17 +132,20 @@
   triage: (2026-10-04, against origin/dev 3ac02fc) promote-to-story (docs story D). Still true: `docs/decisions.md` does not name `DESTINATION_CHECK_FRESHNESS_MS`; §12 (`:1288`) mentions a freshness window only in passing.
 
 ## Deferred from: code review of story-5.4 (2026-09-28)
+  triage: (2026-11-05, against origin/dev cec5be0) keep. Doc not updated: `DESTINATION_CHECK_FRESHNESS_MS` is not named anywhere in docs/.
 
 - source_spec: `_bmad-output/implementation-artifacts/spec-5-4-amount-upper-bound.md`
   summary: An issued-currency value in XRPL exponent notation (`1e-7`, `1234567890123456e-30`) is rendered raw by `formatAmountString`, and a digit run before `e` gets thousands separators (`1,234e5`).
   evidence: `money.ts:36-43` splits only on `.` and applies separators to the whole integer part. rippled's `STAmount::getText` uses scientific notation for very small or very large IOU values. Pre-existing: before story 5.4, any truthy `delivered_amount` reached the same formatter. Story 5.4 now classifies such values as exact (`isPositiveLedgerDecimalString`), so they are correctly unflagged but still misformatted. Medium: a misread token figure on History and in the "Received" toast.
   triage: (2026-10-04, against origin/dev 3ac02fc) promote-to-story. Medium: a misread token figure on History and in the Received toast. Still true: `formatAmountString` (`money.ts:36-43`) splits only on `.`.
+  triage: (2026-11-05, against origin/dev cec5be0) keep. Still true: money.ts `formatAmountString` splits only on `.`, so exponent notation is rendered raw.
 - source_spec: `_bmad-output/implementation-artifacts/spec-5-4-amount-upper-bound.md`
   summary: `docs/agents/money.md` does not record the split between `isPositiveDecimalString` (strict, what a user types) and `isPositiveLedgerDecimalString` (lenient, what the ledger reports), or that `amountIsUpperBound` now also covers failed, zero and malformed deliveries.
   evidence: money.md:37-39 still describes the flag only as "when the ledger could not report it". Without the note, a later change may merge the two checks back together. Agent-context file, so it is recorded here rather than patched.
   triage: (2026-10-04, against origin/dev 3ac02fc) promote-to-story (docs story D). Still true: `docs/agents/money.md:39` is the only mention, and `isPositiveLedgerDecimalString` is not named.
 
 ## Deferred from: browser pass of stories 5.3 and 5.4 (2026-09-28)
+  triage: (2026-11-05, against origin/dev cec5be0) keep. Doc not updated: docs/agents/money.md does not name `isPositiveLedgerDecimalString` or the strict/lenient split.
 
 - source_spec: `_bmad-output/implementation-artifacts/spec-5-4-amount-upper-bound.md`
   summary: On History at 320 and 390 px, a failed payment's collapsed amount (and its `≤` label) is pushed off-screen by the unwrapped status badge.
@@ -138,23 +156,27 @@
   evidence: In the browser pass, the dialog read "plus a network fee of 0.00001 XRP". After a failed send the balance went from 99 to 98.999988, and History's Fee field reads 0.000012 XRP. The dialog and the fee autofilled at submission disagree.
   triage: (2026-10-04, against origin/dev 3ac02fc) promote-to-story. Root cause confirmed: the dialog states `fee`'s `open_ledger_fee` (`reads.ts:126`), while `client.autofill` (`writes.ts`) applies xrpl.js's default `feeCushion` (`DEFAULT_FEE_CUSHION = 1.2`, `node_modules/xrpl/dist/npm/client/index.js:51`), so 10 drops shown means 12 drops charged. The confirm dialog of a money-moving action states a figure that is not the one charged.
   resolution: (2026-10-04, `spec-fee-cap-and-shown-fee.md`) resolved. Send pins the fee it shows: `doSend` passes the render closure's `feeState.value` as `feeDrops`, `submitXrpPayment`/`submitIssuedPayment` set it as `tx.Fee`, and autofill leaves a preset `Fee` alone, so no cushion is applied and the figure is not re-read after the unlock. Shown equals paid (10 drops shown, 10 signed). Trade-off: under rising load a pinned uncushioned fee may queue or expire (reported `expired`, no fee consumed) rather than pay more than shown. A token send with no fee figure states "it will not exceed 0.01 XRP" and lets autofill compute the fee under the cap.
+  triage: (2026-11-05, against origin/dev cec5be0) drop. Fixed: Send pins the fee it showed (`Fee: params.feeDrops` in writes.ts), so autofill's cushion no longer applies.
 - source_spec: `_bmad-output/implementation-artifacts/spec-5-3-fee-read-not-zero.md`
   summary: Sending a token back to its own issuer shows "Recipient can't hold this token", but an issuer needs no trust line to receive its own token.
   evidence: In the browser pass, selecting EUR with the EUR issuer's address as destination showed that warning. The destination check reads `hasTrustLine` without treating destination === issuer as holding.
   triage: (2026-10-04, against origin/dev 3ac02fc) keep. Low. Still true: `query-reads.ts:93` has no `destination === issuer` case.
 
 ## Deferred from: code review of story-5.5 (2026-09-29)
+  triage: (2026-11-05, against origin/dev cec5be0) keep. Still true: `hasTrustLine` in query-reads.ts has no destination-is-issuer case, so SendTab still warns.
 
 - source_spec: `_bmad-output/implementation-artifacts/spec-5-5-one-invalidation-group.md`
   summary: When `submitXrpPayment`/`submitTrustSet` throws (timeout, dropped socket, unknown outcome), SendTab and TrustLinesTab invalidate nothing, although the transaction may have applied.
   evidence: `invalidateAccountScoped` sits on the `try` path after the result toast; the `catch` only toasts. Pre-existing: before 5.5 the `catch` also invalidated nothing. The live subscription usually covers it, but not when the socket is what failed. Medium: balance and history can stay pre-submit until a poll.
   triage: (2026-10-04, against origin/dev 3ac02fc) promote-to-story (proposed for epic 7, which owns the write path). Medium. Still true: the `catch` in SendTab `doSend` (`SendTab.tsx:533`) and in TrustLinesTab `submit` (`TrustLinesTab.tsx:61-62`) only toasts. Raised by the retro (P5) as a priority item.
+  triage: (2026-11-05, against origin/dev cec5be0) keep. Still true: SendTab and TrustLinesTab catch blocks only toast; nothing is invalidated.
 - source_spec: `_bmad-output/implementation-artifacts/spec-5-5-one-invalidation-group.md`
   summary: `docs/decisions.md` §4 (enforced patterns) and `docs/agents/ledger-io.md` do not record that account-scoped data is discarded only through `invalidateAccountScoped`, or why.
   evidence: The rule and its reason live only in `query-keys.ts` comments and a vitest scan. CLAUDE.md makes `decisions.md` the home of the reasoning. Agent-context and decision docs, so recorded here, not patched.
   triage: (2026-10-04, against origin/dev 3ac02fc) promote-to-story (docs story D). Still true: neither `docs/decisions.md` nor `docs/agents/` mentions `invalidateAccountScoped`.
 
 ## Deferred from: browser pass of story 5.5 (2026-09-29)
+  triage: (2026-11-05, against origin/dev cec5be0) keep. Doc not updated: no file in docs/ names `invalidateAccountScoped`.
 
 - source_spec: `_bmad-output/implementation-artifacts/spec-5-5-one-invalidation-group.md`
   summary: When `account_tx` is answered by a node whose history doesn't reach the account's transactions, History states "No transactions yet" or shows a truncated list as the complete one.
@@ -162,17 +184,20 @@
   triage: (2026-10-04, against origin/dev 3ac02fc) promote-to-story. High: History states "No transactions yet", or shows a truncated list, as fact. Raised by the retro (P5) as the top item. Still true: `fetchAccountTx` (`reads.ts:154-198`) sends `ledger_index_min: -1` and never reads the returned range, and `client.ts` fails over to the backup silently. Proposed to go ahead of epic 6, or as the first story of epic 8.
 
 ## Deferred from: code review of the History failed-row fix (2026-09-30)
+  triage: (2026-11-05, against origin/dev cec5be0) keep. Still true: reads.ts asks `ledger_index_min: -1` and never reads the range the node answered.
 
 - source_spec: `_bmad-output/implementation-artifacts/spec-5-4-history-failed-row-clipping.md`
   summary: At 320 px the Send outcome line (status legend beside the transaction hash link) overflows its plate by about 41 px; the link's external-link icon spills past the edge.
   evidence: Measured in the browser during the fix's verification. The `SendTab.tsx:729-733` row is `flex items-center gap-2`, with no wrap or shrink. Pre-existing: before the fix the whole legend was nowrap and the overflow was larger.
   triage: (2026-10-04, against origin/dev 3ac02fc) defer to epic 5 retro action item 8 (the SendTab split). Low, cosmetic. Still true: the outcome row (`SendTab.tsx:828`) is `flex items-center gap-2`, with no wrap.
+  triage: (2026-11-05, against origin/dev cec5be0) keep. Still true: the Send outcome row is `flex items-center gap-2` with no wrap. Not re-measured at 320 px.
 - source_spec: `_bmad-output/implementation-artifacts/spec-5-4-history-failed-row-clipping.md`
   summary: On History below `sm`, a very long amount (e.g. a 20+ character issued-currency figure) squeezes the direction column to zero, and "SENT"/"RECEIVED" can paint over the amount.
   evidence: The row grid is `grid-cols-[minmax(0,1fr)_auto]` with a `min-w-0` direction cell, so an `auto` amount wider than the row minus the direction wins. Pre-existing in another form: the old flex layout pushed the amount off-screen in the same case. Medium: a long token amount on a phone is unreadable either way. Needs a design choice (let the amount wrap, or give it its own line).
   triage: (2026-10-04, against origin/dev 3ac02fc) keep. Still true: `HistoryTab.tsx:98` `grid-cols-[minmax(0,1fr)_auto]`. It needs a design choice before it can be a story.
 
 ## Deferred from: code review of the Epic 5 retro send-guards fix (2026-10-03)
+  triage: (2026-11-05, against origin/dev cec5be0) keep. Still true: HistoryTab.tsx keeps `grid-cols-[minmax(0,1fr)_auto]`. Not re-measured.
 
 - source_spec: `_bmad-output/implementation-artifacts/spec-retro-5-send-guards-fail-closed.md`
   summary: After the unlock, Send re-checks only the destination; a trust-line, fee or spendable read that fails or changes during the unlock does not stop a token or XRP payment from being submitted.
@@ -180,48 +205,58 @@
   triage: (2026-10-04, against origin/dev 3ac02fc) defer to epic 5 retro action item 8, as the retro decided (F6, open question 3). The cost is one fee, not funds.
 
 ## Deferred from: Epic 5 retrospective, aggregate views A7 and A8 (2026-09-30; recorded 2026-10-04)
+  triage: (2026-11-05, against origin/dev cec5be0) keep. Still true: after the unlock, doSend re-reads only the destination.
 
 - source_spec: `_bmad-output/implementation-artifacts/epic-5-retro-2026-09-30.md`
   summary: History keeps rendering its retained rows under the failure panel, and its retry fetches the next page even when the read that failed was a refetch of the first page. The failed read is never retried, and the list under the panel is shown as if it were current.
   evidence: (Line numbers are origin/dev 3ac02fc.) `HistoryTab.tsx:34` is `retryRead = () => (data && data.pages.length > 0 ? fetchNextPage() : refetch())`. With pages already loaded, it assumes the failure came from "Load more". A failed first-page refetch also leaves pages loaded, and it is the common case: every `invalidateAccountScoped` call (send, trust-line change, faucet, live stream) refetches page 1. Retry then fetches a further page. Rows are rendered (`:88`) beside the `QueryErrorState` (`:56`) with nothing marking them as last-known. Pre-epic; story 5.5 widened its reach by routing more invalidations through `accountTx`. Medium: a stale history presented as current, after exactly the actions that change it.
   triage: (2026-10-04) defer, as the retro decided (A7). Pairs with the backup-node partial-history entry above: both are History stating an incomplete list as complete. Settle in the same story.
+  triage: (2026-11-05, against origin/dev cec5be0) keep. Still true: HistoryTab retry is unchanged and retained rows render beside the error panel.
 - source_spec: `_bmad-output/implementation-artifacts/epic-5-retro-2026-09-30.md`
   summary: The Trust lines screen renders the retained lines beneath its own failure panel, whose text says the app "does not know what is on" the list.
   evidence: (origin/dev 3ac02fc) `TrustLinesTab.tsx:149` renders the `QueryErrorState` on `trustLines.isError`. `:166` then maps `trustLines.data` unconditionally, so after a failed refetch the previous answer is listed under a panel that disclaims it. The comment at `:145-148` acknowledges retained data only for the empty branch. Pre-epic. Same root as retro F1 (Send's asset picker listing retained lines on error), which 3ac02fc (#32) fixed for Send only. Low to medium: a line's balance and limit are shown as current when they were not read.
   triage: (2026-10-04) defer, as the retro decided (A8). Natural member of proposed story T (Trust lines screen, 5.2's shape).
 
 ## Deferred from: build of epic 8 (2026-10-04)
+  triage: (2026-11-05, against origin/dev cec5be0) keep. Still true: TrustLinesTab maps `trustLines.data` under its own failure panel.
 
 - source_spec: `_bmad-output/implementation-artifacts/spec-epic-8-connections.md`
   summary: A connect attempt still in flight when `disconnectAllClients` runs (wallet removal) settles afterwards and writes a connected client into the cache that teardown has just emptied.
   evidence: `client.ts` `connectNetwork` caches on success; `disconnectAllClients` only closes clients already in the map and does not touch `inflight`. Pre-existing: before epic 8 every concurrent attempt did the same. Not fixed because story 8.1 requires the teardown path's behaviour to stay unchanged. Low: the socket carries no subscription after teardown, but it stays open until the next disconnect.
+  triage: (2026-11-05, against origin/dev cec5be0) keep. Still true: `disconnectAllClients` ignores `inflight`, and a connect that settles later is cached.
 - source_spec: `_bmad-output/implementation-artifacts/spec-epic-8-connections.md`
   summary: After a socket drops, `useAccountLiveUpdates` keeps its `transaction` listener on the client it subscribed through, and nothing re-subscribes on the replacement client. Live updates stop until the hook remounts (network or wallet switch, or reload), and polling is the only fallback.
   evidence: xrpl.js 5.1.0 `connection.ts` has no subscription tracking, so its own auto-reconnect never re-subscribed either. Epic 8 now closes the replaced client, which ends that client's reconnect loop. The loss itself is pre-existing. Medium: incoming payments appear on the next 15-second poll rather than at once.
 
 ## Deferred from: build of epic 10 (2026-10-04)
+  triage: (2026-11-05, against origin/dev cec5be0) keep. Still true: useAccountLiveUpdates subscribes once and has no reconnect handling.
 
 - source_spec: `_bmad-output/implementation-artifacts/spec-epic-10-guards.md`
   summary: `scripts/check-layering.mjs` and `scripts/check-sw-register.mjs` still say "oxlint carries no user-defined-rule mechanism"; oxlint 1.80 has one (`jsPlugins`, alpha).
   evidence: `node_modules/oxlint/configuration_schema.json` documents `jsPlugins`. Corrected in `check-query-keys.mjs`, which epic 10 owns; the other two are outside its scope (agents rule 5). Low: the conclusion (stay a `node:` script) still holds, only the stated reason is stale.
+  triage: (2026-11-05, against origin/dev cec5be0) keep. Still true: check-layering.mjs, check-sw-register.mjs and check-account-invalidation.mjs still say oxlint has no user-defined rules.
 - source_spec: `_bmad-output/implementation-artifacts/spec-epic-10-guards.md`
   summary: AD-7 is gated only for BigInt construction in `src/hooks`, `src/pages` and `src/components`. `src/lib`/`src/store` and the `Number()`/`parseFloat`/`toFixed`-on-money half of the rule are still review-only.
   evidence: Story 10.2's AC scopes the guard to the three UI trees. Widening it to `src/lib` needs a directive in `lib/xrpl/__tests__/money.test.ts:104` (a deliberate `BigInt('10.5')`), and a `Number()` ban needs a way to tell a monetary value from any other number, which a text scan cannot. Medium: today no non-`money.ts` lib module does money arithmetic, but nothing holds that.
 
 ## Deferred from: build of epic 6 (2026-10-04)
+  triage: (2026-11-05, against origin/dev cec5be0) keep. Still true: check-money.mjs scans only src/hooks, src/pages and src/components.
 
 - source_spec: `_bmad-output/implementation-artifacts/spec-epic-6-teardown.md`
   summary: The `lock()` comment in `store/app-store.ts` says the query cache "is cleared by the Main view's lock handler"; it is cleared by `hooks/useClearCacheOnLock.ts`.
   evidence: `useClearCacheOnLock` (called from `Main.tsx`) is the only lock-time caller of `clearCachedAccountData`. The comment is outside the lines epic 6 changed (agents rule 5). Low: a stale pointer, not a wrong rule.
+  triage: (2026-11-05, against origin/dev cec5be0) drop. Fixed: the `lock()` comment in app-store.ts now names lib/teardown.ts.
 - source_spec: `_bmad-output/implementation-artifacts/spec-epic-6-teardown.md`
   summary: Unlocking with no network logs an uncaught page error, "Could not reach the Testnet network (tried wss://s.altnet.rippletest.net:51233 and wss://testnet.xrpl-labs.com)…", in addition to the per-read failure panels.
   evidence: Seen as a Playwright `pageerror` during the epic 6 offline pass (production build, controlling service worker, `context.setOffline(true)`). The screen itself reported each failed read inline, as AD-8 requires. The source is a rejection in the connection layer that nothing catches; the exact call site was not traced. Low: no wrong figure is shown, but an unhandled rejection is noise that can hide a real one.
 
 ## Deferred from: build of epic 11 (2026-10-04)
+  triage: (2026-11-05, against origin/dev cec5be0) keep. Unverified: the rejection is thrown in client.ts, but the uncaught call site was not traced. An offline browser pass decides it.
 
 - source_spec: `_bmad-output/implementation-artifacts/spec-epic-11-seed-import.md`
   summary: Importing a Seed that is already in the vault adds a second, identical wallet entry (same address, new id) on either import screen.
   evidence: Observed in the epic 11 browser pass — Settings listed `rBtWH1…XsAK` twice after importing the same Seed from Onboarding and then Settings. `storeWallet` (`lib/crypto/keystore.ts`) assigns a fresh `crypto.randomUUID()` with no address check. Pre-existing, outside 11.1/11.2. Low: no funds at risk, but two entries for one account invite removing the "wrong" one.
+  triage: (2026-11-05, against origin/dev cec5be0) drop. Fixed: keystore `duplicateReasonFor` refuses the same address on the same Network (FR-93).
 - source_spec: `_bmad-output/implementation-artifacts/spec-epic-11-seed-import.md`
   summary: An error notice ("That seed looks invalid…") stays at the top of the notice band after a later action on the same screen succeeds, so the band shows an error above a completed import.
   evidence: Observed in the epic 11 browser pass, screenshots 03/04/08 (Onboarding warning, Balances after import, Settings after import). Notice-band lifetime is Epic 3's (AD-8) design, not the import flow's. Low: cosmetic but reads as a current failure.
@@ -229,33 +264,40 @@
 ## Re-triaged from: SendTab split (epic 5 retro item 8, 2026-10-04)
 
 Item 8 shipped as a refactor that preserves behaviour (`spec-sendtab-split.md`). The six entries above triaged "defer to epic 5 retro action item 8" would each change what the user sees, so none of them was done there. They are re-homed here so that closing item 8 does not leave them without an owner. Proposed home: one follow-up story, "Send screen behaviour fixes", before epic 7 reopens the write path.
+  triage: (2026-11-05, against origin/dev cec5be0) drop. Fixed: useSeedImport returns an inline refusal and raises no notice.
 
 - source_spec: `_bmad-output/implementation-artifacts/spec-sendtab-split.md`
   summary: The Review button still uses native `disabled={!canSend}`. §6.4 wants `aria-disabled`, with a visible reason for each `canSend` term.
   evidence: `SendTab.tsx:657`. Each term now has one source to name its reason from: `checkFunds` (funds), `useDestinationCheck` (`ok`/`stale`/`pending`), and the tag and amount validation in SendTab.
   triage: (2026-10-04) defer to the proposed "Send screen behaviour fixes" story. A behaviour change, so not part of a refactor.
+  triage: (2026-11-05, against origin/dev cec5be0) keep. Still true: duplicate of the Review-button entry above; SendTab.tsx still uses native `disabled`.
 - source_spec: `_bmad-output/implementation-artifacts/spec-sendtab-split.md`
   summary: A token send still never checks that the account can afford its XRP network fee.
   evidence: The token branch of `checkFunds` (`funds-check.ts:190-195`) compares the amount against the trust-line balance only. The fix is now one branch in a pure function that already receives `spendable` and `fee` as read states.
   triage: (2026-10-04) defer to the proposed "Send screen behaviour fixes" story. A behaviour change: it refuses token sends that are permitted today.
+  triage: (2026-11-05, against origin/dev cec5be0) keep. Still true: duplicate of the token-fee entry above.
 - source_spec: `_bmad-output/implementation-artifacts/spec-sendtab-split.md`
   summary: There is still no `paused` (offline) state: a read that was never started is reported as "still being read".
   evidence: `ReadState` (`src/lib/read-state.ts`) has four states, and `readStateOf` reads only `data` and `isError`. Adding `paused` means a fifth state, plus a renderer and wording in each consumer.
   triage: (2026-10-04) defer to the proposed "Send screen behaviour fixes" story. New behaviour, and a state with no renderer would be dead code.
+  triage: (2026-11-05, against origin/dev cec5be0) keep. Still true: read-state.ts has four states and no `paused`.
 - source_spec: `_bmad-output/implementation-artifacts/spec-sendtab-split.md`
   summary: The Send screen's Spendable row still says "Unavailable" for a read in flight and for an unactivated account.
   evidence: SendTab deliberately passes `spendableState.status === 'ok' ? spendableState : { status: 'failed' }` to `ReadingValue`. The fix is `state={spendableState}` plus flipping the pinned assertion in `send-destination-error.test.tsx` ("the readout rows render from the read state").
   triage: (2026-10-04) defer to the proposed "Send screen behaviour fixes" story. A visible wording change.
+  triage: (2026-11-05, against origin/dev cec5be0) keep. Still true: duplicate of the Spendable-row entry above.
 - source_spec: `_bmad-output/implementation-artifacts/spec-sendtab-split.md`
   summary: At 320 px, the Send outcome row (status legend and hash link) still overflows its plate.
   evidence: `SendTab.tsx:663` is still `flex items-center gap-2`, with no wrap. The split did not touch it.
   triage: (2026-10-04) defer to the proposed "Send screen behaviour fixes" story. Low; cosmetic.
+  triage: (2026-11-05, against origin/dev cec5be0) keep. Still true: duplicate of the 320 px outcome-row entry above.
 - source_spec: `_bmad-output/implementation-artifacts/spec-sendtab-split.md`
   summary: F6: after the unlock, Send re-checks only the destination. The spendable, fee and trust-line figures it checks against were read before the unlock.
   evidence: `doSend` still calls only `fetchDestinationInfoOnce`. The split makes widening it cheap: `checkFunds` is pure, so it can be fed fresh `ReadState`s from `fetchQuery` inside `doSend`. It was left as it is because widening it adds new reads and a new refusal.
   triage: (2026-10-04) defer to the proposed "Send screen behaviour fixes" story, or to epic 7, which owns the write path. The cost is one fee, not funds.
 
 ## Deferred from: build of epic 7 (2026-10-04)
+  triage: (2026-11-05, against origin/dev cec5be0) keep. Still true: doSend re-checks only the destination; `checkFunds` is not re-run.
 
 - source_spec: `_bmad-output/implementation-artifacts/spec-epic-7-write-path.md`
   summary: The fee cap on every write has no effect. Writes are capped at xrpl.js's default of 2 XRP, not the intended 0.01 XRP.
@@ -264,212 +306,267 @@ Item 8 shipped as a refactor that preserves behaviour (`spec-sendtab-split.md`).
   resolution: (2026-10-04, `spec-fee-cap-and-shown-fee.md`) resolved. The bogus autofill argument is gone; `submitAndClassify` now refuses, after autofill and before signing, any `Fee` that is not a canonical positive drops string no larger than `MAX_FEE_DROPS` (10 000 drops, `money.ts` `feeWithinCap`, compared as `BigInt`), throwing `FeeAboveCapError` inside the existing `try`. `Client({ maxFeeXRP })` was deliberately NOT used: it clamps a spike fee below what the network wants instead of refusing. Scope (1): the explicit check applies to every type, including xrpl.js's special-cost types, so a future AccountDelete/AMMCreate/VaultCreate caller (fee = owner reserve, 0.2 XRP today) is refused by the choke point until a feature decides otherwise. Scope (2): the `MAX_FEE_XRP` comment is removed with the constant. The Send form refuses a fee read above the cap before the dialog, for XRP and token sends. The old test is replaced by ones that fail if the check is removed.
 
 ## Deferred from: build of epic 9 (2026-10-04)
+  triage: (2026-11-05, against origin/dev cec5be0) drop. Fixed: writes.ts runs `autofill(tx)` and then `feeWithinCap`, throwing `FeeAboveCapError`, on every write path.
 
 - source_spec: `_bmad-output/implementation-artifacts/spec-epic-9-address-tags.md`
   summary: The Address Book is not scoped to a network. A Testnet send to `(address, tag)` silences FR-21's first-send warning for the same pair on Mainnet, and Settings lists Testnet and Mainnet counterparties together.
   evidence: An entry is `{ address, destinationTag?, label? }` (`store/address-book.ts`) and `SendTab` tests it with `sameCounterparty` without the active network. Classic addresses are the same strings on both networks. Raised before as point 3 of `architecture/.../reviews/review-adversarial.md` ("Network scope"), and FR-21's "first time" is recorded as unscoped in `prds/.../review-fr-testability.md`. Outside Epic 9, whose identity is the pair by AD-6. Medium: it weakens a money-moving warning on Mainnet for anyone who rehearsed the same payment on Testnet first. Fixing it changes the persisted shape again (a `network` per entry and a migration that decides what an unscoped entry means), so it is a product decision for Otavio.
   resolution: (2026-10-04, `spec-epic-9-retro-28-29-address-book-tag-unknown-per-network.md`) resolved. Otavio decided (retro item 28): an entry records the network it was paid on, and identity is `(network, address, tag)`. `suppressesFirstSendWarning` silences the warning only for an entry recorded on the network being sent on; an entry with no recorded network (everything saved earlier) silences it nowhere, and with no tag its tag reads "not recorded". Persisted version stays 0. Settings lists every network's entries under a "Network" legend, deliberately not filtered to the active one; each row's explorer link uses its own network.
+  triage: (2026-11-05, against origin/dev cec5be0) drop. Fixed: Address Book entries carry a `network`, and the first-send warning is scoped by it.
 - source_spec: `_bmad-output/implementation-artifacts/spec-epic-9-address-tags.md`
   summary: At 320 px the Send confirm dialog's content box measures 5 px wider than its client width (`scrollWidth - clientWidth = 5`), though nothing was visibly clipped in the screenshot.
   evidence: Measured in the epic 9 browser pass (screenshot `e9-R2-notag-320-dark.png`, held in the session scratchpad). The full destination address in `DialogDescription` is the likely cause: it is one unbroken word. Not investigated further and not compared against the baseline; Epic 9 changed only the warning's words, not the description. Low.
+  triage: (2026-11-05, against origin/dev cec5be0) keep. Still true as far as code shows: the full address sits in DialogDescription with no break class. Not re-measured.
 - source_spec: `_bmad-output/implementation-artifacts/spec-fee-cap-and-shown-fee.md`
   summary: The Trust lines screen states no network fee, checks no fee against the 0.01 XRP cap before its confirm, and pays autofill's cushioned fee (×1.2), so a fee above the cap is learned only as a `FeeAboveCapError` toast after the unlock.
   evidence: Raised by review of the fee-cap build. The cap itself holds there (the choke point refuses before signing, tested), so nothing is overcharged; what is missing is Send's treatment — a shown, pinned fee and a pre-dialog refusal. Pre-existing: TrustLinesTab never showed a fee. Low-medium.
+  triage: (2026-11-05, against origin/dev cec5be0) keep. Still true: TrustLinesTab calls `submitTrustSet` with no fee shown and no fee pinned.
 - source_spec: `_bmad-output/implementation-artifacts/spec-fee-cap-and-shown-fee.md`
   summary: No page-level test makes a submit helper reject with `FeeAboveCapError` and checks that its sentence reaches the operator (Send's and Trust lines' catch blocks toast `err.message`).
   evidence: Raised by review of the fee-cap build. `writes.test.ts` pins the error and its wording; both catch blocks predate the change and pass the message through unchanged, and Send refuses an above-cap fee on the form before the dialog. A regression in either catch would go unnoticed. Low.
 
 ## Deferred from: build of the write guards (epic 7 retro items 20–22, 2026-10-04)
+  triage: (2026-11-05, against origin/dev cec5be0) keep. Still true: `FeeAboveCapError` is only tested in writes.test.ts, never at page level.
 
 - source_spec: `_bmad-output/implementation-artifacts/spec-guards-writes-choke-point.md`
   summary: The other `tsc` escape hatches (`as never`, `as unknown as T`, `@ts-expect-error`, `@ts-ignore`) are documented as unguarded in `anti-patterns.md` §11 but not banned in `src/lib/xrpl` outside tests.
   evidence: Raised by review. None remain there today (the build removed the last two `marker as never`), so a ban would cost nothing now and would turn the documented gap into a lint failure. It is a new guard, not part of items 20–22. Medium: each of them can hide an SDK argument mismatch exactly as `as any` did.
+  triage: (2026-11-05, against origin/dev cec5be0) keep. Still true: .oxlintrc.json overrides only `no-explicit-any`; nothing bans `as never` or `@ts-ignore`.
 - source_spec: `_bmad-output/implementation-artifacts/spec-guards-writes-choke-point.md`
   summary: An `account_tx` entry whose `meta` is `null` makes `fetchAccountTx` throw (`typeof null === 'object'`, then `meta.TransactionResult`), failing the whole History page.
   evidence: Raised by review. Pre-existing: the old `(meta as any).TransactionResult` had the same crash. xrpl.js types `meta` without `null` and rippled is not known to send one, so `maybe-false` on reachability; a fixture from a real response with `meta: null` would settle it. Low-medium if reachable.
+  triage: (2026-11-05, against origin/dev cec5be0) keep. Still true: `typeof meta !== 'object'` lets `null` through, and `meta.TransactionResult` then throws.
 - source_spec: `_bmad-output/implementation-artifacts/spec-guards-writes-choke-point.md`
   summary: A validated `meta` object with no `TransactionResult` makes `classify(undefined)` throw after a submit, so a possibly validated transaction is reported as an error.
   evidence: Raised by review. Pre-existing (the old `as any` read was identical) and typed away by xrpl.js, which declares `TransactionResult` required; unverified whether any server omits it. Medium if reachable, because it misreports a money-moving outcome.
+  triage: (2026-11-05, against origin/dev cec5be0) keep. Still true: writes.ts passes `meta.TransactionResult` unchecked to `classify`.
 - source_spec: `_bmad-output/implementation-artifacts/spec-guards-writes-choke-point.md`
   summary: No test pins that the `.oxlintrc.json` `no-explicit-any` override still matches `src/lib/xrpl`; a glob change or an oxlint release that read `overrides` differently would keep lint green.
   evidence: Raised by the verification-gap review (filed disposition: defer). Checked by hand on 2026-10-04 (oxlint 1.80.0): `as any` in `src/lib/xrpl/zz.ts` fails, in a colocated `zz.test.ts` passes, and the same in `src/hooks` passes. A vitest case spawning oxlint on a fixture would close it.
 
 ## Deferred from: build of epic 6 retro item 11 (full reset unregisters the service worker, 2026-10-04)
+  triage: (2026-11-05, against origin/dev cec5be0) keep. Still true: no test or script runs oxlint against the override.
 
 - source_spec: `_bmad-output/implementation-artifacts/spec-epic-6-retro-11-reset-unregisters-service-worker.md`
   summary: Offline start-up after a full reset has been verified only under `vite preview`, not on an installed home-screen PWA against `stage` with production's `no-cache` shell headers.
   evidence: Raised by review. The browser pass showed the fix (fresh worker, precache 14, offline reload served by the worker with the HTTP cache cleared and the server killed) and a negative control (unregister removed: precache `{}`, offline reload `net::ERR_FAILED`), but its scripts and screenshots live in a session scratchpad. The retro's F1 production consequence was inferred, and this check carries it forward. Settle it with one installed-PWA pass on `stage`: reset, reopen online, then reopen in airplane mode. Medium if it fails.
+  triage: (2026-11-05, against origin/dev cec5be0) keep. Not done: no installed-PWA pass on `stage` is recorded.
 - source_spec: `_bmad-output/implementation-artifacts/spec-epic-6-retro-11-reset-unregisters-service-worker.md`
   summary: A full reset made while offline leaves an app that cannot start until the device is back online, and neither reset screen warns about this before the user confirms.
   evidence: Raised by review pass 2. Before this change, an offline reset left a worker with an empty precache that fell back to the network, so this already happened, and the change does not cause it (`docs/decisions.md` §13 says so). A fix is a product call: a warning in the confirm dialog, or skipping `clearShell` while `navigator.onLine === false`.
+  triage: (2026-11-05, against origin/dev cec5be0) keep. Still true: the reset paths have no offline check or warning.
 - source_spec: `_bmad-output/implementation-artifacts/spec-epic-6-retro-11-reset-unregisters-service-worker.md`
   summary: Nothing keeps `navigator.serviceWorker.getRegistrations()`/`unregister()` inside `lib/teardown.ts` `clearShell`. No lint rule or scan does it, and `docs/agents/keys-and-secrets.md` has no explicit **Never** for it.
   evidence: Raised by review pass 2. Today the protection is the negative assertions in the lock, removal and teardown tests, which a new caller elsewhere (a "repair offline" button, a debug path) would not trip. The fix edits agent-context docs, or adds a scan like the AD-16 persistence scan that item 13 is already moving.
 
 ## Deferred from: code review of spec-passkey-signing, stories 1–2 (2026-10-13)
+  triage: (2026-11-05, against origin/dev cec5be0) keep. Still true: check-sw-register.mjs does not scan unregister, and keys-and-secrets.md has no matching Never.
 
 - source_spec: `_bmad-output/specs/spec-passkey-signing/SPEC.md`
   summary: A pooled custom-Node client that xrpl.js reconnects by itself after a drop is reused without `assertServesNetwork` running again (`src/lib/xrpl/client.ts`, `getXrplClient` / `connectCustomNode`).
   evidence: Unverified, medium if true (a Node repointed mid-session is trusted until the pool entry is replaced). Settle it by checking whether a dropped xrpl.js `Client` reconnects to the same URL and reports `isConnected()` true without passing through `connectCustomNode`; if so, retire the slot on `disconnected`.
+  triage: (2026-11-05, against origin/dev cec5be0) keep. Still true: client.ts reuses any connected client; `assertServesNetwork` runs only at connect.
 - source_spec: `_bmad-output/specs/spec-passkey-signing/stories/1-per-wallet-locks-in-the-vault-with-migration-of-existing-wallets.md`, `.../2-network-and-node-per-wallet-including-devnet.md`
   summary: Neither story had its browser pass, including whether `{label} · {Network}` clips in the 160px header picker.
   evidence: Recorded as not done in both stories' Verification sections. Needs a real browser on the header, the Settings Node section, the Onboarding network choice and a Devnet Wallet.
+  triage: (2026-11-05, against origin/dev cec5be0) drop. Done: story 2 records its browser pass on 2026-10-14, and the header picker no longer exists.
 - source_spec: `_bmad-output/specs/spec-passkey-signing/stories/4-per-wallet-open-check-auto-lock-and-locked-wallet-view.md`
   summary: A Wallet's stored `openCheck` is snapshotted at creation or migration and may go stale when a passkey is registered or removed (`storeWallet`, `migrateLegacyVault`).
   evidence: Unverified. Raised against the stories 1–2 diff; settle it in the stories 3–4 review by checking every path that registers or removes a passkey on a lock.
+  triage: (2026-11-05, against origin/dev cec5be0) drop. Fixed: editing the checks rewrites `openCheck` with the new lock; `migrateLegacyVault` is gone (FR-95).
 - source_spec: `_bmad-output/specs/spec-passkey-signing/stories/3-structural-signing-check-and-one-use-signer.md`
   summary: `revealSeed` goes through `unlockWalletForSigning`, which throws when an unresolved algorithm derives an address different from the stored one, so the user cannot reveal that Seed.
   evidence: Unverified; low to medium. Settle it by checking whether that state is reachable with a real Wallet and whether Seed reveal should fall back to the decrypted Seed when only the address check fails.
 
 ## Deferred from: code review of spec-passkey-signing, stories 3–4 (2026-10-13)
+  triage: (2026-11-05, against origin/dev cec5be0) keep. Still true: revealSeed throws on an address mismatch, and `unresolved` is still a valid algorithm.
 
 - source_spec: `_bmad-output/specs/spec-passkey-signing/SPEC.md`
   summary: `Gate` (`src/App.tsx`) has no `catch` on `listWallets` or `restoreOpenLocks`: a vault read error leaves `ready` false and the app blank, with no message and no retry.
   evidence: Verified by reading. The error screen is a product call (what to show, and it must not fall through to Onboarding with Wallets hidden). The pattern is not new in these stories.
+  triage: (2026-11-05, against origin/dev cec5be0) drop. Fixed: Gate catches the vault read and renders an error with Retry.
 - source_spec: `_bmad-output/specs/spec-passkey-signing/stories/4-per-wallet-open-check-auto-lock-and-locked-wallet-view.md`
   summary: `closeLock` / `closeAllLocks` fire `endLockSession` without awaiting and swallow its rejection, so a failed clear leaves a persisted session that a reload restores.
   evidence: `src/store/app-store.ts` `closeLock`. Unverified whether the failure is reachable; settle it by making the clear fail in a test and reloading.
+  triage: (2026-11-05, against origin/dev cec5be0) keep. Still true: app-store.ts fires `endLockSession` and swallows its rejection.
 - source_spec: `_bmad-output/specs/spec-passkey-signing/stories/4-per-wallet-open-check-auto-lock-and-locked-wallet-view.md`
   summary: Auto-lock can fire while a signing prompt or `submitAndClassify` is in flight; `txInFlight` exists and the lock path ignores it.
   evidence: Unverified, medium if true (the post-submit invalidation and the outcome target removed state). Needs a decision: defer the lock until the write settles, or show the outcome after it.
+  triage: (2026-11-05, against origin/dev cec5be0) keep. Still true: useAutoLock does not read `txInFlight`.
 - source_spec: `_bmad-output/specs/spec-passkey-signing/stories/4-per-wallet-open-check-auto-lock-and-locked-wallet-view.md`
   summary: `withAppPin` writes the App PIN's salt and verifier to the vault meta and the lock record in two separate writes, so a failure between them leaves an App PIN with no lock.
   evidence: `src/lib/crypto/lock.ts` `withAppPin` / `createLock`. Low to medium. A later `createLock` would then verify against a PIN the user never confirmed.
+  triage: (2026-11-05, against origin/dev cec5be0) keep. Partly fixed: a failed creation is undone by `discardUnusedAppPin`; a crash between the two writes still leaves a PIN.
 - source_spec: `_bmad-output/specs/spec-passkey-signing/stories/3-structural-signing-check-and-one-use-signer.md`
   summary: `sealSeedUnderSigningCheck`'s passkey branch reads the credential from the vault meta (the legacy passkey), not from the Wallet's own lock record.
   evidence: No non-test caller yet. Belongs to stories 5 and 8, which build the creation and edit flows that call it.
+  triage: (2026-11-05, against origin/dev cec5be0) drop. Obsolete: `sealSeedUnderSigningCheck` no longer exists; replaced by `sealUnderNewCredential`.
 - source_spec: `_bmad-output/specs/spec-passkey-signing/stories/4-per-wallet-open-check-auto-lock-and-locked-wallet-view.md`
   summary: `getLockInfo` for a non-legacy record with no `openCheck` field defaults to `'pin'` even when only a passkey wrapper exists.
   evidence: Unverified; settle it by checking whether any writer can produce such a record.
 
 ## Deferred from: code review of spec-passkey-signing, stories 5–6 (2026-10-14)
+  triage: (2026-11-05, against origin/dev cec5be0) drop. Fixed: `getLockInfo` reads `openCheck` with no default, and records failing `isOpenCheck` are dropped (FR-95).
 
 - source_spec: `_bmad-output/specs/spec-passkey-signing/stories/5-creation-flow-for-stored-seed-wallets-with-check-policy.md`
   summary: A Wallet created in `CreateWalletFlow` is written to IndexedDB (with its lock and any new App PIN verifier) before the backup step; only the store waits. Closing the tab there leaves a persisted Wallet whose Seed or ordinal was never shown, and a crash between `createLock` and `putStoredWallet` leaves an orphan lock record.
   evidence: Raised by three layers; already carried as a deferred item in stories 5 and 6. Needs a product call: write only after the backup, or mark a Wallet "backup not confirmed" and prompt on the next start (the latter also covers orphan locks).
+  triage: (2026-11-05, against origin/dev cec5be0) keep. Partly fixed: Mainnet passkey wallets confirm the written Seed before the write; other wallets are still written first.
 - source_spec: `_bmad-output/specs/spec-passkey-signing/stories/6-passkey-derived-seed-with-passkey-rule-and-kind-statement.md`
   summary: The Mainnet origin rule for Passkey-Derived Seeds is a denylist (`isTemporaryOrigin`: hosts ending `.b-cdn.net`). `getRpId` falls back to `location.hostname` when `__RP_ID__` is empty, so `localhost` or a stage host passes and the funds are bound to that rpId.
   evidence: Verified by reading `policy.ts` and `webauthn.ts`. An allowlist of the production rpId is blocked on the production-domain decision (`docs/decisions.md` §8.11).
+  triage: (2026-11-05, against origin/dev cec5be0) keep. Still true: policy.ts is a `.b-cdn.net` denylist and webauthn.ts falls back to `location.hostname`.
 - source_spec: `_bmad-output/specs/spec-passkey-signing/stories/6-passkey-derived-seed-with-passkey-rule-and-kind-statement.md`
   summary: `restorePasskeyWallet` has no screen, and when no App PIN exists it takes one typed PIN with no confirmation; the PIN dialog says "Enter your App PIN" even when a PIN is being created.
   evidence: Story 6 excludes the restore screen. Fix both with that screen.
+  triage: (2026-11-05, against origin/dev cec5be0) keep. Still true: `restorePasskeyWallet` has no UI caller, and the PIN prompt always says "Enter your App PIN".
 - source_spec: `_bmad-output/specs/spec-passkey-signing/stories/5-creation-flow-for-stored-seed-wallets-with-check-policy.md`
   summary: The retry in `withAppPin` for two flows creating the first App PIN at once has no test.
   evidence: Needs a concurrency harness over the IndexedDB mock; the case is two tabs creating together.
+  triage: (2026-11-05, against origin/dev cec5be0) keep. Still true: no test covers two concurrent first-PIN creations.
 - source_spec: `_bmad-output/specs/spec-passkey-signing/stories/6-passkey-derived-seed-with-passkey-rule-and-kind-statement.md`
   summary: The fail-closed guard in `openDerivedSeed` (missing `derived`, a stored form of the Seed present, or an unresolved algorithm) has no test.
   evidence: Needs a hand-built record; the guard is defensive.
 
 ## Deferred from: code review of spec-passkey-signing, stories 7–8 (2026-10-14)
+  triage: (2026-11-05, against origin/dev cec5be0) keep. Still true: the `openDerivedSeed` fail-closed guard has no test for derived records.
 
 - source_spec: `_bmad-output/specs/spec-passkey-signing/stories/3-structural-signing-check-and-one-use-signer.md`
   summary: `sealSeedUnderSigningCheck`'s `rev` compare-and-swap and `rev + 1` have no test, and the function has no non-test caller.
   evidence: A concurrent `editChecks` that changes only `lockId` or `openCheck` would no longer abort the seal if the check were removed. Add a test when the function gains a caller, or delete it.
+  triage: (2026-11-05, against origin/dev cec5be0) drop. Obsolete: `sealSeedUnderSigningCheck` no longer exists.
 - source_spec: `_bmad-output/specs/spec-passkey-signing/stories/7-written-seed-confirmation-and-seed-reveal-behind-the-signing-check.md`
   summary: `revealCheckSentence` in `SettingsTab.tsx` re-derives the keystore's reveal check-selection rule (they already differ: the keystore also tests `!stored.signing && !stored.sealedSeed`), against the "screens only render" rule.
   evidence: Expose the reveal check kind from the keystore or `policy.ts` and have the component only word it. Medium refactor, no failure demonstrated.
+  triage: (2026-11-05, against origin/dev cec5be0) keep. Still true: reveal-copy.ts still decides the reveal check itself instead of asking the keystore.
 - source_spec: `_bmad-output/specs/spec-passkey-signing/stories/8-edit-a-wallets-checks-and-passkey.md`
   summary: `editChecks` reads the lock twice outside a transaction (`getLockRecord` for the stamp, `getLockInfo` for the policy decision), and `lockStamp` omits the `none` lock's key, the PRF salt and the `rpId`.
   evidence: Unverified, low to medium. Another tab changing the lock between the reads would pass the compare-and-swap with decisions made on old info. Derive both from one read.
+  triage: (2026-11-05, against origin/dev cec5be0) keep. Partly fixed: `editChecks` is now serialised by a Web Lock, but still reads twice, and `lockStamp` omits the key, PRF salt and rpId.
 - source_spec: `_bmad-output/specs/spec-passkey-signing/stories/8-edit-a-wallets-checks-and-passkey.md`
   summary: After a failed `editChecks`, `discardUnusedAppPin` can delete an App PIN another tab has just created and not yet used.
   evidence: Same race as `withAppPin` (stories 5–6 deferred list); settle both together with a concurrency harness.
 
 ## Deferred from: code review of spec-passkey-signing, stories 9–11 (2026-10-14)
+  triage: (2026-11-05, against origin/dev cec5be0) drop. Fixed: `discardUnusedAppPin` runs inside `exclusiveVaultWrite`, under the same Web Lock as creation. No concurrency test.
 
 - source_spec: `_bmad-output/specs/spec-passkey-signing/stories/10-turn-the-account-master-key-off-and-on-from-settings.md`
   summary: Turning the master key off with a Regular Key that no Wallet on this device can sign as locks the Account for good. `masterKeyAction` and `twoDeviceBlockedReason` only require that a Regular Key is set; the confirm text warns but nothing prevents it.
   evidence: High impact, already recorded as deferred in story 10. Needs a product call: require a local Wallet that signs as that exact Regular Key (single-device path), and decide what the two-device path may assume, since the signer is not on this device.
+  triage: (2026-11-05, against origin/dev cec5be0) drop. Fixed: master-key.ts and two-device.ts refuse unless a Wallet on this device holds the Regular Key.
 - source_spec: `_bmad-output/specs/spec-passkey-signing/stories/11-two-device-signing-by-qr.md`
   summary: The offline review of a `SetRegularKey` shows a bare address: no "this key can send the account's funds" sentence, and no mention of an existing Regular Key that will stop working. Only `master-key-off` has a consequence line.
   evidence: Story 11 does not require it, but `ControlWalletDialog` says it on the single-device path and the offline device is where the owner can cross-check least.
+  triage: (2026-11-05, against origin/dev cec5be0) keep. Still true: the offline SetRegularKey review shows a bare "New Regular Key" with no consequence line.
 - source_spec: `_bmad-output/specs/spec-passkey-signing/stories/11-two-device-signing-by-qr.md`
   summary: The offline device needs `BarcodeDetector` to scan, which Safari and Firefox lack; the paste fallback is a long base64 JSON string.
   evidence: Decide between a bundled QR decoder (e.g. jsQR) and stating the supported browsers.
+  triage: (2026-11-05, against origin/dev cec5be0) keep. Still true: QrScanner.tsx needs BarcodeDetector, with no fallback decoder.
 - source_spec: `_bmad-output/specs/spec-passkey-signing/stories/9-controlling-wallet-regular-key-and-extra-passkey-key.md`
   summary: `storeWallet` checks the `(network, account, key)` duplicate before its write, not inside it, so two concurrent imports can both pass. `addControlledView` already repeats the check inside `mutateStoredWallet`.
   evidence: Same narrow race as the other deferred concurrency items; settle them together.
 
 ## Deferred from: browser passes of spec-passkey-signing (2026-10-14)
+  triage: (2026-11-05, against origin/dev cec5be0) drop. Fixed: the duplicate check runs inside `exclusiveVaultWrite` with the write.
 
 - source_spec: `_bmad-output/specs/spec-passkey-signing/browser-pass-2026-10-14.md`
   summary: Ten defects found in the browser passes; 1, 2, 4 and 5 were fixed in `74ab34d`, the rest are open: (1) a former Regular Key cannot be set again because its stale view hides it from `eligibleTargets`; (2) a send from an Account with the master key off ends as "expired" with no cause named; (3) toasts never expire (fixed in `2cc5012`); (4) the control result drops the Wallet's name; (5) wrong "another network" copy on removing a controlled view; (6) the picker cannot tell a Wallet from its controlled view; (7) the picker trigger clips the network suffix; (8) 320 px Settings overflow; (9) per-row Settings buttons share one accessible name; (10) controlled/uncontrolled Select warning.
   evidence: Defects 1 and 4 confirmed by reading `src/lib/control.ts` and `ControlWalletDialog.tsx`; 2 is inferred (the node's result code was not read). Details and screenshots' names are in the record.
+  triage: (2026-11-05, against origin/dev cec5be0) keep. Partly fixed: defects 1 to 5 fixed; 6 and 7 obsolete (no header picker); 8 to 10 need a browser pass.
 
 - source_spec: `_bmad-output/implementation-artifacts/spec-mobile-dialogs-s1-sheet.md`
   summary: iOS Safari does not honour `interactive-widget=resizes-content`, so the keyboard may cover a sheet's sticky footer.
   evidence: Unverified (maybe-false, medium if true); needs real iOS Safari, or a `visualViewport`-driven height.
+  triage: (2026-11-05, against origin/dev cec5be0) keep. Unverified: index.html still relies on `interactive-widget`. A real iOS Safari run decides it.
 - source_spec: `_bmad-output/implementation-artifacts/spec-mobile-dialogs-s1-sheet.md`
   summary: Name the sheet-footer shadow in DESIGN.md and record the viewport-meta change in docs/decisions.md.
   evidence: The shadow is a literal not in the shadow vocabulary; the meta change affects the whole app.
+  triage: (2026-11-05, against origin/dev cec5be0) keep. Doc not updated: DESIGN.md does not name the sheet-footer shadow, and decisions.md does not record the viewport meta.
 
 - source_spec: `_bmad-output/implementation-artifacts/spec-mobile-dialogs-s2-routed-screens.md`
   summary: Add wallet's sticky Create footer starts below the fold (top at 745 in a 568 viewport) at 320px with 200% text and only sticks into view after about 500px of scrolling.
   evidence: Measured in the batched browser pass; reachable, so rated partial against CAP-2 "within one scroll". Cause is `ScreenFooter` sitting inside the form container.
+  triage: (2026-11-05, against origin/dev cec5be0) keep. Unverified: Add wallet is now a quiz with a sticky footer. A browser measurement decides it.
 - source_spec: `_bmad-output/implementation-artifacts/spec-mobile-dialogs-s2-routed-screens.md`
   summary: The header wallet selector collapses to a 56px blank box at 320px with 200% text, and the Let another wallet sign alert legend chip overflows its plate by 10px.
   evidence: Measured (AppHeader trigger aria-label "Active wallet"; chip 184 vs plate 174). The header selector predates this work.
+  triage: (2026-11-05, against origin/dev cec5be0) keep. Partly fixed: the header selector is gone; the legend-chip overflow on ControlWalletScreen is unverified.
 - source_spec: `_bmad-output/implementation-artifacts/spec-mobile-dialogs-s5c-vocabulary-hierarchy-focus.md`
   summary: The Radio checked dot is a radial-gradient background that may not render under forced-colors (Windows High Contrast).
   evidence: Unverified (maybe-false, medium if true); settle with a Windows High Contrast run.
+  triage: (2026-11-05, against origin/dev cec5be0) keep. Partly fixed: radio.tsx adds a forced-colors gradient; not confirmed under Windows High Contrast.
 - source_spec: `_bmad-output/implementation-artifacts/spec-mobile-dialogs-s1-sheet.md`
   summary: Edit trust line limit sheet, import-warning sheet, the Mainnet typed phrase and the Mainnet "Use on Mainnet" confirm with funds were never opened in a browser; real touch input and real browser zoom were emulated only.
   evidence: No trust line, no seed with a master-key warning, and Mainnet is off limits for throwaway tests; Playwright mouse input hangs under coarse-pointer emulation.
 
 ## Deferred from: review of `_bmad-output/specs/spec-ui-audit-2026-10/stories/1-touch-sized-controls.md` (2026-10-18)
+  triage: (2026-11-05, against origin/dev cec5be0) keep. Not done: no later browser pass of those sheets is recorded.
 
 - source_spec: `_bmad-output/specs/spec-ui-audit-2026-10/stories/1-touch-sized-controls.md`
   summary: Record the touch-target rule (44px on coarse pointers, via `pointer-coarse:`) in DESIGN.md.
   evidence: The story adds a sizing rule with no home in DESIGN.md, so a later hand-made control will be built at `h-9` unnoticed.
+  triage: (2026-11-05, against origin/dev cec5be0) drop. Done: DESIGN.md states the 2.75rem coarse-pointer rule, fields included.
 - source_spec: `_bmad-output/specs/spec-ui-audit-2026-10/stories/1-touch-sized-controls.md`
   summary: Selects, inputs and the hand-made select (`select.tsx`, `input.tsx`, `ControlWalletDialog.tsx:194`) stay 36px on touch.
   evidence: Pre-existing; the story covers buttons, tab triggers, the checkbox and the Annunciator dismiss only.
+  triage: (2026-11-05, against origin/dev cec5be0) drop. Fixed: input.tsx and select.tsx use `pointer-coarse:h-11`; the hand-made select is gone.
 - source_spec: `_bmad-output/specs/spec-ui-audit-2026-10/stories/1-touch-sized-controls.md`
   summary: The browser pass did not reach the header lock button, TwoDeviceSign, TrustLineRow, dark theme, a funded account or a second wallet.
   evidence: Unverified (maybe-false, medium if true): the 44px buttons may overflow dense rows at 320px; needs a pass that reaches those screens.
+  triage: (2026-11-05, against origin/dev cec5be0) keep. Not done: no follow-up browser pass is recorded.
 - source_spec: `_bmad-output/specs/spec-ui-audit-2026-10/stories/1-touch-sized-controls.md`
   summary: The Settings "Remove all wallets from this device" button overhangs a 320px viewport by about 1.6px.
   evidence: Pre-existing; measured by the build agent; the fix is in `SettingsTab.tsx`, an uncommitted file.
 
 ## Deferred from: review of `_bmad-output/specs/spec-ui-audit-2026-10/stories/2-delete-the-unused-switch.md` (2026-10-18)
+  triage: (2026-11-05, against origin/dev cec5be0) drop. Fixed: SettingsTab is gone; RemoveAllPlate's button wraps within its width.
 
 - source_spec: `_bmad-output/specs/spec-ui-audit-2026-10/stories/2-delete-the-unused-switch.md`
   summary: Remove the now-unused `@radix-ui/react-switch` dependency from `package.json` and `bun.lock`.
   evidence: Nothing in `src` imports it since the switch was deleted (`package.json:34`, `bun.lock:13,368`); removing it changes the lockfile, so it needs its own deliberate change.
 
 ## Deferred from: review of `_bmad-output/specs/spec-signing-check-copy/stories/1-signing-check-copy.md` (2026-10-19)
+  triage: (2026-11-05, against origin/dev cec5be0) keep. Still true: `@radix-ui/react-switch` is still in package.json and bun.lock.
 
 - source_spec: `_bmad-output/specs/spec-signing-check-copy/stories/1-signing-check-copy.md`
   summary: Decide whether the "No Open Check" detail should name the consequence (anyone holding the device can open the wallet), and whether "Opens without asking", "Signs without asking again" and "shown with no further prompt" should share one phrase.
   evidence: Reviewer observation, maybe-false; the current wording is the owner-approved verdict of issues 8e and 8g, so changing it is a spec change. Settled by an owner decision on the wording.
   resolved: 2026-10-19, the owner chose the "Nothing is asked" style for Standard, No Open Check and the seed reveal (spec memlog); consequence wording for No Open Check is still open.
+  triage: (2026-11-05, against origin/dev cec5be0) keep. Still true: the No Open Check detail names no consequence. Needs an owner decision.
 
 - source_spec: `_bmad-output/specs/spec-no-legacy-lock/stories/1-first-run-import-gets-its-own-lock.md`
   summary: First-run Create (Onboarding `create` step) leaves the quiz's primary action below the fold at 320x568, at 100% and at 200% text.
   evidence: Same card and inline action row as first-run Import before story 1's round 2 fix; measured on Import in a real browser (Next at y=1245, Import wallet at y=5963 against a scroll area ending at 451 at 200% text). Add wallet avoids it with a sticky ScreenFooter through `CreateWalletFlow`'s `actionHost`. Pre-existing and outside story 1's intent, so it was not fixed there; the same host wiring would fix it. Needs a browser pass on Create after the change.
+  triage: (2026-11-05, against origin/dev cec5be0) keep. Partly fixed: Onboarding wires the sticky footer; a browser check at 320x568 decides the rest.
 
 - source_spec: `_bmad-output/specs/spec-no-legacy-lock/stories/2-remove-the-migration-the-old-pin-vault-and-the-legacy-lock.md`
   summary: Story 3 must cover vault-level records, not only the persisted app state: a Seed record with no `lockId` now reaches `toMetas` as `undefined`, and a record with no `views` is shown on the fallback network.
   evidence: Story 2 removed `?? LEGACY_LOCK_ID` in `keystore.ts` and the migration; `getLockInfo(undefined)` throws "Lock not found." (fails closed) and `viewsOf` (`keystore.ts:73`) still invents a Testnet view for a record with no `views`. FR-95 says such records are invalid and not shown. Story 3 should filter them where the vault is read (`listStoredWallets`/`toMetas`), then delete the "record is incomplete" guards at `keystore.ts` ~1139 and ~1174 and the `viewsOf` fallback.
+  triage: (2026-11-05, against origin/dev cec5be0) drop. Fixed: `isCompleteStoredWallet` filters vault records, and `viewsOf` no longer invents a view (FR-95 story 3).
 
 - source_spec: `_bmad-output/specs/spec-no-legacy-lock/stories/2-remove-the-migration-the-old-pin-vault-and-the-legacy-lock.md`
   summary: Story 3 should validate `openCheck` as one of `pin`, `passkey`, `none` (an `either` or missing value makes the record invalid) and make `LockRecord.openCheck` required.
   evidence: After `either` was deleted, `check-words.ts` and `reveal-copy.ts` default any unknown value to the "no authentication" wording, and `getLockInfo` reads an unknown value as `pin: false, passkey: false`. Reachable only by a record the removed migration wrote, so low, but a wrong "no check" statement on a protected wallet is the wrong direction to fail. Also decide whether a dropped record gets a visible notice or stays silent (FR-95 says not shown).
+  triage: (2026-11-05, against origin/dev cec5be0) drop. Fixed: `openCheck` is validated and required on both records (FR-95 story 3).
 
 - source_spec: `_bmad-output/specs/spec-no-legacy-lock/stories/2-remove-the-migration-the-old-pin-vault-and-the-legacy-lock.md`
   summary: Story 4 should rename the remaining `id: 'legacy'` lock fixtures and legacy-titled tests.
   evidence: `settings-address-book.test.tsx`, `settings-full-reset.test.tsx`, `unlock-hard-lock-reset.test.tsx` (`WALLET.lockId`, default `h.info`) and the `active-network.test.ts` describe "legacy persisted state is normalised on merge" still use the removed concept's name as a plain lock id; nothing asserts on them.
+  triage: (2026-11-05, against origin/dev cec5be0) drop. Fixed: no `legacy` lock fixtures or legacy-titled tests remain (FR-95 story 4).
 
 
 - source_spec: `_bmad-output/specs/spec-no-legacy-lock/SPEC.md`
   summary: Later, handle breaking changes to the wallet record shape in a smarter, deliberate way, instead of the one-off "skip the broken record" rule used under FR-95.
   evidence: Raised by Otavio on 2026-11-02 while scoping story 3. FR-95 deliberately drops migration and any defaulting, which is right while there are no users. Once there are real users, every change to the stored wallet record (a new field, a renamed field, a new Open Check kind) will be a breaking change, and "ignore it" would hide real wallets. The idea to design then: a version number on the stored record and on the saved app state, one small upgrade step per version run on load, and a visible "this wallet could not be read" notice rather than a silent skip. That is a design question for when the product has users, not something to build now. Touches `store/app-store.ts` (saved list), `lib/crypto/db.ts` (vault records) and the rule in `docs/decisions.md`.
+  triage: (2026-11-05, against origin/dev cec5be0) keep. Still open by design: future work, nothing to do while the product has no users.
 
 - source_spec: `_bmad-output/specs/spec-no-legacy-lock/stories/4-remove-the-older-build-and-shared-lock-copy-and-the-legacy-only-tests.md`
   summary: Remove the Address Book's special handling of old entries (saved with no recorded network, or with the destination tag "not recorded").
   evidence: `src/store/address-book.ts` (`migrateAddressBook`, `tagNotRecorded`, the `?` key tokens, "legacy entry" rules) and `SendTab.tsx:176` still treat such an entry as one that silences nothing. With no users such an entry cannot exist, so under FR-95 it should simply be invalid and dropped by the story 3 rule. Left out of story 4 on purpose (Otavio, 2026-11-02): it touches the first-send warning (FR-21), so it needs its own spec, tests and a browser check of that warning. The chooser spine already lists "Deleting the legacy Address Book code (FR-94, AD-50)" as deferred.
+  triage: (2026-11-05, against origin/dev cec5be0) keep. Still true: `migrateAddressBook` and `tagNotRecorded` remain in address-book.ts and are used by AddressBookPlate.
 
 
 - source_spec: `_bmad-output/specs/spec-no-legacy-lock/stories/4-remove-the-older-build-and-shared-lock-copy-and-the-legacy-only-tests.md`
   summary: At 320x568 with 200% text, the screens that use the sticky action footer leave almost no room: the Edit checks footer (Save and Cancel stacked, about 190px) is taller than the scroll area (about 199px), so Save is never fully on screen.
   evidence: Measured in a real browser on the Edit checks screen, with the footer `position: sticky` and content 3975px tall in a 199px scroll area; the page frame (header with the Wallets and lock keys, plus the reserved bottom strip) takes about 370px of the 568. Not caused by story 4 (the alert it removed sat in the scrolling content). Same class as `docs/sprints/mobile-dialogs-followup-findings.md` issues 1 and 2. Likely also affects the first-run Import footer from story 1 at the same size. A fix is a layout question for the frame at 200% text (smaller header, a collapsing bottom strip), not a per-screen patch.
+  triage: (2026-11-05, against origin/dev cec5be0) keep. Unverified: no change to the page frame seen. A browser re-measure decides it.

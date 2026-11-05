@@ -96,3 +96,51 @@ describe('fetchAccountState and fetchAccountLines and an account the ledger does
     },
   )
 })
+
+/** A fake client whose `account_tx` answers with `transactions`. */
+function installAnsweringClient(transactions: unknown[]) {
+  setXrplClientFactory(
+    () =>
+      ({
+        connect: async () => {},
+        isConnected: () => true,
+        disconnect: async () => {},
+        request: async () => ({ result: { transactions } }),
+      }) as unknown as Client,
+  )
+}
+
+const PAYMENT = {
+  TransactionType: 'Payment',
+  Account: ADDRESS,
+  Destination: 'rPT1Sjq2YGrBMTttX4GZHjKu9dyfzbpAYe',
+  DeliverMax: '1000000',
+  Fee: '12',
+}
+
+/** A row the ledger returned is never dropped, and an unreadable result is
+ * never shown as a failure: History would look complete, or invite a resend. */
+describe('fetchAccountTx and an entry whose result cannot be read', () => {
+  it.each([
+    ['meta: null', null],
+    ['meta without TransactionResult', {}],
+    ['an empty-string TransactionResult', { TransactionResult: '' }],
+  ])('keeps a validated entry with %s, marked unknown, amount only as an upper bound', async (_label, meta) => {
+    installAnsweringClient([
+      { tx_json: PAYMENT, hash: 'A', validated: true, meta },
+      { tx_json: PAYMENT, hash: 'B', validated: true, meta: { TransactionResult: 'tesSUCCESS', delivered_amount: '1000000' } },
+    ])
+    const { items } = await fetchAccountTx('testnet', ADDRESS)
+    expect(items.map((i) => i.hash)).toEqual(['A', 'B'])
+    expect(items[0]).toMatchObject({ validated: true, resultCode: 'unknown', amountDrops: '1000000', amountIsUpperBound: true })
+    expect(items[1]).toMatchObject({ resultCode: 'tesSUCCESS', amountDrops: '1000000' })
+    expect(items[1].amountIsUpperBound).toBeUndefined()
+  })
+
+  it('keeps an unvalidated entry with meta: null as Pending (no result code)', async () => {
+    installAnsweringClient([{ tx_json: PAYMENT, hash: 'P', validated: false, meta: null }])
+    const { items } = await fetchAccountTx('testnet', ADDRESS)
+    expect(items).toHaveLength(1)
+    expect(items[0]).toMatchObject({ hash: 'P', validated: false, resultCode: '' })
+  })
+})

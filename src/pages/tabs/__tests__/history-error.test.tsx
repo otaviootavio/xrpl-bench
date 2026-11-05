@@ -210,14 +210,16 @@ describe('HistoryTab — an amount not known to be delivered is an upper bound',
     expect(screen.queryByText(/nothing was delivered/)).toBeNull()
   })
 
-  it('does not word an unknown-outcome row (empty resultCode) as failed', () => {
-    const tx = { ...base, hash: 'UNKNOWN', resultCode: '', amountDrops: '5000000', amountIsUpperBound: true }
+  it("does not word an unknown-outcome row ('unknown' resultCode) as failed", () => {
+    const tx = { ...base, hash: 'UNKNOWN', validated: true, resultCode: 'unknown', amountDrops: '5000000', amountIsUpperBound: true }
     useAccountTxHistory.mockReturnValue(query({ data: page([tx]) }))
     render(<TooltipProvider><HistoryTab /></TooltipProvider>)
 
+    expect(screen.getByText('Result not read')).toBeTruthy()
     expandRow()
+    expect(screen.getByText(/without a readable result/)).toBeTruthy()
     expect(screen.getByText('Delivered amount is an upper bound')).toBeTruthy()
-    expect(screen.queryByText(/nothing was delivered/)).toBeNull()
+    expect(screen.queryByText('This payment failed — nothing was delivered')).toBeNull()
   })
 
   it('keeps a failed row\'s legend and its ≤ amount, with the result code unbreakable', () => {

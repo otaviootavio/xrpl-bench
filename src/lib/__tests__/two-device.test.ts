@@ -330,6 +330,14 @@ describe('the round trip', () => {
     expect((await submitReturned(onlineMeta as any, r.tx, signed, { queryClient: qc() })).status).toBe('expired')
   })
 
+  it('reports an unreadable result as unconfirmed, never expired or not-validated', async () => {
+    const r = await built()
+    const signed = await signOffline(r)
+    submitResult = () => ({ result: { meta: {}, ledger_index: 1010 } })
+    const out = await submitReturned(onlineMeta as any, r.tx, signed, { queryClient: qc() })
+    expect(out).toMatchObject({ status: 'unconfirmed', reason: expect.stringMatching(/^Outcome unknown\..*Hash: [0-9A-F]{64}$/) })
+  })
+
   it('words a tec result as claimed, with the fee charged, not as success', async () => {
     const r = await built()
     const signed = await signOffline(r)

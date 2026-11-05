@@ -295,6 +295,14 @@ describe('setRegularKey', () => {
     expect(viewsOfTarget()).toHaveLength(1)
   })
 
+  it('reports an unreadable result as unconfirmed with the hash, and adds no view', async () => {
+    ledger.outcome = { status: 'unknown', hash: 'H' }
+    const r = await setRegularKey(controller.id, target.id, ctx())
+    expect(r.status).toBe('unconfirmed')
+    expect(r.status === 'unconfirmed' && r.reason).toMatch(/Outcome unknown\..*Hash: H/)
+    expect(viewsOfTarget()).toHaveLength(1)
+  })
+
   it('adds no view when the re-read fails, and check-again runs the read and claim only', async () => {
     ledger.failReadsAfterSubmit = true
     const result = await setRegularKey(controller.id, target.id, ctx())

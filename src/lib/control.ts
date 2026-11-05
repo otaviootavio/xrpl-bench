@@ -3,7 +3,7 @@ import { addControlledView, listWallets, SigningCheckError, signingHandleFor, ty
 import { fetchAccountStateFresh } from '@/lib/xrpl/query-reads'
 import { invalidateAccountScoped } from '@/lib/xrpl/query-keys'
 import type { AccountState } from '@/lib/xrpl/reads'
-import { describeResultCode } from '@/lib/xrpl/result-codes'
+import { describeResultCode, UNKNOWN_OUTCOME_WORDS } from '@/lib/xrpl/result-codes'
 import { submitSetRegularKey, type SubmitOutcome } from '@/lib/xrpl/writes'
 
 /**
@@ -80,7 +80,7 @@ export type ControlResult =
   | { status: 'cancelled'; reason: string }
   /** The Signing Check was not passed (wrong PIN, locked out, unsupported). */
   | { status: 'check-failed'; reason: string }
-  | { status: 'not-validated'; outcome: Exclude<SubmitOutcome, { status: 'validated' }>; reason: string }
+  | { status: 'not-validated'; outcome: Exclude<SubmitOutcome, { status: 'validated' | 'unknown' }>; reason: string }
   /** The transaction validated (or its key was already set) but the fresh read
    * could not confirm it. No view was added; `confirmControl` retries the read only. */
   | { status: 'unconfirmed'; reason: string }
@@ -95,6 +95,8 @@ export function describeFailure(outcome: Exclude<SubmitOutcome, { status: 'valid
       return `${describeResultCode(outcome.resultCode)} The network fee was still charged.`
     case 'failed':
       return describeResultCode(outcome.resultCode)
+    case 'unknown':
+      return `${UNKNOWN_OUTCOME_WORDS} Hash: ${outcome.hash}`
   }
 }
 
@@ -200,6 +202,13 @@ export async function setRegularKey(controllerId: string, targetId: string, ctx:
       return claimed.status === 'controlled' ? { ...claimed, sent: true } : claimed
     }
     return { status: 'refused', reason: err instanceof Error ? err.message : 'Could not set the Regular Key.' }
+  }
+  if (outcome.status === 'unknown') {
+    // It may have set the key: the reads are refreshed so nothing stale says
+    // otherwise, and it is reported as unconfirmed ("Check again" re-reads),
+    // never as not applied.
+    await invalidateAccountScoped(ctx.queryClient, controller.network, controller.address)
+    return { status: 'unconfirmed', reason: describeFailure(outcome) }
   }
   if (outcome.status !== 'validated') return { status: 'not-validated', outcome, reason: describeFailure(outcome) }
 

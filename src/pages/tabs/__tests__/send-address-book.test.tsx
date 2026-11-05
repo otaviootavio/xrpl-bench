@@ -71,6 +71,7 @@ vi.mock('@/store/app-store', () => ({
 }))
 
 import { SendTab } from '../SendTab'
+import { toast } from '@/lib/notify'
 
 const EXCHANGE = 'rHb9CJAWyB4rj91VRWn96DkukG4bwdtyTh'
 const WALLET_ADDRESS = 'r4NagxniGTmPRr8yBRXRD6NNpZP7FfP4KR'
@@ -385,5 +386,32 @@ describe('SendTab — the entry a send writes', () => {
 
     expect(submitXrpPayment).toHaveBeenCalledOnce()
     expect(addAddressBookEntry).not.toHaveBeenCalled()
+  })
+})
+
+/** A validated submit whose result could not be read. It may have paid, so it
+ * is never reported as an error or as "not sent", the reads refresh, and the
+ * pair is not recorded as sent to. */
+describe('SendTab — an unknown outcome', () => {
+  it('shows "Outcome unknown" with the hash, warns rather than errors, and refreshes the reads', async () => {
+    const warning = vi.spyOn(toast, 'warning')
+    const error = vi.spyOn(toast, 'error')
+    const HASH = 'C0FFEE00000000000000000000000000000000000000000000000000000000AA'
+    submitXrpPayment.mockImplementation(opening({ status: 'unknown', hash: HASH }))
+    review('3')
+    await confirm()
+
+    expect(screen.getByText(/^Outcome unknown\./)).toBeTruthy()
+    expect(screen.getByText('Result not read')).toBeTruthy()
+    expect(screen.queryByText(/^Failed/)).toBeNull()
+    expect(screen.getByText(HASH)).toBeTruthy()
+    expect(warning).toHaveBeenCalledWith(expect.stringMatching(/^Outcome unknown\./), { action: 'send' })
+    expect(error).not.toHaveBeenCalled()
+    const keys = invalidateQueries.mock.calls.map(([arg]) => JSON.stringify(arg.queryKey))
+    expect(keys).toContain(JSON.stringify(['destinationInfo', 'testnet', EXCHANGE]))
+    expect(keys.some((k) => k.includes(WALLET_ADDRESS))).toBe(true)
+    expect(addAddressBookEntry).not.toHaveBeenCalled()
+    warning.mockRestore()
+    error.mockRestore()
   })
 })

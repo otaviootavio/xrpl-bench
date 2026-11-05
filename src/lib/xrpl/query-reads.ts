@@ -117,8 +117,14 @@ export function destinationInfoQueryOptions(network: NetworkId, destination: str
       }
       if (asset !== 'XRP' && state.exists) {
         const [currency, issuer] = asset.split('|')
-        const lines = await fetchAccountLines(network, destination, node)
-        info.hasTrustLine = lines.some((l) => l.currency === currency && l.account === issuer)
+        if (destination === issuer) {
+          // An issuer always receives its own token (it is redeemed), with no
+          // trust line to itself, so its lines are not read for this.
+          info.hasTrustLine = true
+        } else {
+          const lines = await fetchAccountLines(network, destination, node)
+          info.hasTrustLine = lines.some((l) => l.currency === currency && l.account === issuer)
+        }
       }
       return info
     },

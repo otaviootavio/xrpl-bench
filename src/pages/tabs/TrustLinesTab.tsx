@@ -16,7 +16,7 @@ import { submitTrustSet } from '@/lib/xrpl/writes'
 import { signingHandleFor } from '@/lib/crypto/keystore'
 import { useYieldingPrompts } from '@/hooks/usePrompts'
 import { formatXrp, displayCurrencyCode, coversOwnerReserve } from '@/lib/xrpl/money'
-import { describeResultCode } from '@/lib/xrpl/result-codes'
+import { describeResultCode, UNKNOWN_OUTCOME_WORDS } from '@/lib/xrpl/result-codes'
 import { invalidateAccountScoped } from '@/lib/xrpl/query-keys'
 import { useQueryClient } from '@tanstack/react-query'
 import { toast } from '@/lib/notify'
@@ -61,6 +61,13 @@ export function TrustLinesTab() {
         toast.warning('This transaction expired before validating. It was not applied — you can retry.', { action: 'trustline' })
       } else if (result.status === 'claimed') {
         toast.error(`${describeResultCode(result.resultCode)} The network fee was still charged.`, { action: 'trustline' })
+      } else if (result.status === 'unknown') {
+        // It may have applied: a warning naming the hash, never an error. The
+        // dialog closes, so one click cannot resubmit and pay a second fee.
+        toast.warning(`${UNKNOWN_OUTCOME_WORDS} Hash: ${result.hash}`, { action: 'trustline' })
+        setOpen(false)
+        setEditing(null)
+        setConfirmClose(null)
       } else {
         toast.error(describeResultCode(result.resultCode), { action: 'trustline' })
       }

@@ -95,7 +95,7 @@ export type MasterKeyResult =
   | { status: 'cancelled'; reason: string }
   /** The Signing Check was not passed (wrong PIN, locked out, unsupported). */
   | { status: 'check-failed'; reason: string }
-  | { status: 'not-validated'; outcome: Exclude<SubmitOutcome, { status: 'validated' }>; reason: string; state: MasterKeyStatus }
+  | { status: 'not-validated'; outcome: Exclude<SubmitOutcome, { status: 'validated' | 'unknown' }>; reason: string; state: MasterKeyStatus }
   /** Submitted, but the re-read failed: the state is unknown. */
   | { status: 'unconfirmed'; reason: string }
 
@@ -154,6 +154,9 @@ export async function setMasterKey(walletId: string, enable: boolean, ctx: SetMa
 
   const after = await reread(ctx, wallet)
   const shown = masterKeyStatus(after)
+  // Unreadable result: it may have applied. Unconfirmed ("Check again"
+  // re-reads), never "not validated". The reads were refreshed just above.
+  if (outcome.status === 'unknown') return { status: 'unconfirmed', reason: describeFailure(outcome) }
   if (outcome.status !== 'validated') return { status: 'not-validated', outcome, reason: describeFailure(outcome), state: shown }
   if (shown === 'unknown') return { status: 'unconfirmed', reason: MASTER_KEY_UNCONFIRMED }
   return { status: 'validated', state: shown }

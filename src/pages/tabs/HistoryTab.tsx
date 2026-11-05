@@ -154,14 +154,26 @@ export function HistoryTab() {
                     </div>
                   )}
                 </dl>
-                <p className="mt-2.5 text-sm leading-snug text-muted-foreground">{describeResultCode(tx.resultCode)}</p>
+                {/* `'unknown'`: validated, but the ledger returned no readable
+                    result. Said as such, never as a failure. An unvalidated
+                    row has no result yet, so it gets no sentence. */}
+                {tx.resultCode === 'unknown' ? (
+                  <p className="mt-2.5 text-sm leading-snug text-muted-foreground">
+                    The ledger returned this transaction without a readable result, so whether it succeeded is not known
+                    here. Check it by its hash before acting on it.
+                  </p>
+                ) : (
+                  tx.resultCode && (
+                    <p className="mt-2.5 text-sm leading-snug text-muted-foreground">{describeResultCode(tx.resultCode)}</p>
+                  )
+                )}
                 {/* The most consequential sentence on this surface: the figure
                     above is only an upper bound. It gets the caution lamp, not
                     a colour-only tint, and is worded by cause — a failed
                     payment delivered nothing, which is a different fact from
                     the ledger not reporting what arrived. */}
                 {tx.amountIsUpperBound &&
-                  (tx.resultCode && tx.resultCode !== 'tesSUCCESS' ? (
+                  (tx.resultCode && tx.resultCode !== 'tesSUCCESS' && tx.resultCode !== 'unknown' ? (
                     <Alert variant="warning" className="mt-2.5">
                       <AlertTitle>This payment failed — nothing was delivered</AlertTitle>
                       <AlertDescription>

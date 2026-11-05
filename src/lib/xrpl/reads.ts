@@ -219,7 +219,13 @@ export async function fetchAccountTx(
     const listed: ListedEntry = entry
     const tx = listed.tx_json ?? listed.tx
     const meta = entry.meta
-    if (!tx || typeof meta !== 'object') continue
+    if (!tx) continue
+    // A row whose meta is missing, `null` or carries no `TransactionResult` is
+    // kept, never skipped: a skipped row makes the page look complete when it
+    // is not. A validated one is marked `'unknown'` ("Result not read"), never
+    // `''` (which reads as "Failed"); an unvalidated one stays Pending.
+    const validated = !!entry.validated
+    const readCode = isRecord(meta) && typeof meta.TransactionResult === 'string' && meta.TransactionResult !== '' ? meta.TransactionResult : undefined
     // Every transaction type this account was involved in is listed, not just
     // Payments. Filtering to Payment hid the wallet's own TrustSet activity
     // entirely, and made `limit`-based pagination return near-empty pages.
@@ -231,8 +237,8 @@ export async function fetchAccountTx(
       counterparty: isSender ? (tx.Destination ?? '') : tx.Account,
       ...paymentAmountOf(tx, meta),
       date: typeof tx.date === 'number' ? tx.date + 946684800 : undefined, // ripple epoch -> unix epoch
-      validated: !!entry.validated,
-      resultCode: typeof meta === 'object' ? meta.TransactionResult ?? '' : '',
+      validated,
+      resultCode: readCode ?? (validated ? 'unknown' : ''),
       ledgerIndex: entry.ledger_index ?? undefined,
       destinationTag: tx.DestinationTag,
       feeDrops: tx.Fee,

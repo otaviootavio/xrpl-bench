@@ -403,6 +403,31 @@ describe('a trust-line change signs the limit and NoRipple', () => {
     expect(signed.LimitAmount).toEqual({ currency: 'USD', issuer: 'rPT1Sjq2YGrBMTttX4GZHjKu9dyfzbpAYe', value: '100' })
     expect(Number(signed.Flags) & TrustSetFlags.tfSetNoRipple).toBe(TrustSetFlags.tfSetNoRipple)
   })
+
+  it('signs exactly the fee the dialog showed, not the one autofill would compute', async () => {
+    // Autofill would attach '12'; the pinned '15' must be what is signed.
+    const client = installFakeClient()
+
+    await submitTrustSet('testnet', wallet, {
+      currency: 'USD',
+      issuer: 'rPT1Sjq2YGrBMTttX4GZHjKu9dyfzbpAYe',
+      limit: '0',
+      feeDrops: '15',
+    })
+
+    expect(decode(client.submitted[0]).Fee).toBe('15')
+  })
+
+  it('refuses a pinned fee above the cap before anything is signed', async () => {
+    const client = installFakeClient()
+    const open = vi.fn(wallet.open)
+
+    await expect(
+      submitTrustSet('testnet', { ...wallet, open }, { currency: 'USD', issuer: 'rPT1Sjq2YGrBMTttX4GZHjKu9dyfzbpAYe', limit: '1', feeDrops: '20000' }),
+    ).rejects.toBeInstanceOf(FeeAboveCapError)
+    expect(open).not.toHaveBeenCalled()
+    expect(client.submitted).toHaveLength(0)
+  })
 })
 
 /**

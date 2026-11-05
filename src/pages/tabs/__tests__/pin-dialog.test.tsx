@@ -38,6 +38,8 @@ vi.mock('@/components/wallet/SeedReveal', () => ({ SeedReveal: ({ getSeed }: { g
 vi.mock('@/components/wallet/CreateWalletFlow', () => ({ CreateWalletFlow: () => <p>flow</p> }))
 vi.mock('@/hooks/useTrustLines', () => ({ useTrustLines: () => ({ data: [], isLoading: false, isError: false, refetch: vi.fn() }) }))
 vi.mock('@/hooks/useServerReserves', () => ({ useServerReserves: () => ({ data: { baseReserveDrops: '1000000', ownerReserveDrops: '200000' } }) }))
+// The trust-line keys sign the fee they show, so the fee must be read for them to be enabled.
+vi.mock('@/hooks/useRecommendedFee', () => ({ useRecommendedFee: () => ({ data: '12', isLoading: false, isError: false, refetch: vi.fn() }) }))
 vi.mock('@/hooks/useSpendableBalance', () => ({
   useSpendableBalance: () => ({ status: 'ok', isLoading: false, reserveFailed: false, accountFailed: false, retryReserves: vi.fn(), spendableDrops: '25000000', reservedDrops: '1000000' }),
 }))

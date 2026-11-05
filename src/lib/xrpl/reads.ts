@@ -114,9 +114,15 @@ export async function fetchServerReserves(network: NetworkId, node?: string): Pr
   const client = await getXrplClient(network, node)
   const res = await client.request({ command: 'server_state' })
   const vl = res.result.state.validated_ledger
+  // A syncing node has no validated ledger, so no reserve to report. A
+  // remembered default would be a figure the ledger never stated, shown and
+  // guarded on as if read: the read fails instead, and every consumer fails closed.
+  if (vl?.reserve_base == null || vl.reserve_inc == null) {
+    throw new Error('The node has no validated ledger, so the reserves could not be read.')
+  }
   return {
-    baseReserveDrops: String(vl?.reserve_base ?? 1_000_000),
-    ownerReserveDrops: String(vl?.reserve_inc ?? 200_000),
+    baseReserveDrops: String(vl.reserve_base),
+    ownerReserveDrops: String(vl.reserve_inc),
   }
 }
 

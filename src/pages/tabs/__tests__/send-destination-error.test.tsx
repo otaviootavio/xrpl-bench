@@ -85,6 +85,7 @@ import { queryKeys } from '@/lib/xrpl/query-keys'
 // The real formatter, so a test asserting the figure cannot drift from the one
 // the row actually renders.
 import { formatXrp } from '@/lib/xrpl/money'
+import { toast } from '@/lib/notify'
 
 // Real addresses: `isValidClassicAddress` is the actual xrpl checksum check,
 // not a mock, so a made-up string would fail validation before anything this
@@ -218,6 +219,8 @@ afterEach(() => {
   cleanup()
   vi.useRealTimers()
   vi.clearAllMocks()
+  // Toast spies, restored even when an assertion before the end of a test fails.
+  vi.restoreAllMocks()
 })
 
 /**
@@ -704,12 +707,13 @@ describe('SendTab — the submit path re-checks before it spends', () => {
     expect(submitXrpPayment.mock.calls[0][2].feeDrops).toBe('10')
   })
 
-  it('disables both dialog controls while a send is in flight', async () => {
-    // The premise `doSend`'s re-entry guard rests on: React drops a press on a
-    // disabled control before any handler runs, so no second activation can
-    // reach the submit path. Dropping `disabled={busy}` would make a double
-    // press reachable — and `busy` there is a render closure, so the guard in
-    // `doSend` would not catch it either.
+  it('disables Confirm while a send is in flight, and leaves Cancel up until signing', async () => {
+    // `doSend`'s re-entry guard rests on Confirm alone being disabled: React
+    // drops a press on a disabled control before any handler runs, and `busy`
+    // in `doSend` is a render closure that a double press inside one flush
+    // would read as false. Cancel is a different control: it never reaches the
+    // submit path, it only calls the attempt off, so it stays enabled until a
+    // Signer exists.
     let release: (w: unknown) => void = () => {}
     signingHandleFor.mockImplementationOnce(() => new Promise((r) => (release = r)))
 
@@ -720,7 +724,8 @@ describe('SendTab — the submit path re-checks before it spends', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Confirm and send' }))
 
     expect((screen.getByRole('button', { name: 'Sending…' }) as HTMLButtonElement).disabled).toBe(true)
-    expect((screen.getByRole('button', { name: 'Cancel' }) as HTMLButtonElement).disabled).toBe(true)
+    // Nothing has been signed yet, so backing out is still possible (batch 2 C).
+    expect((screen.getByRole('button', { name: 'Cancel' }) as HTMLButtonElement).disabled).toBe(false)
 
     await act(async () => {
       release(fakeHandle())
@@ -1875,5 +1880,401 @@ describe('the readout rows render from the read state', () => {
     useRecommendedFee.mockReturnValue(feeRead({ data: '12', isError: true }))
     render(<SendTab />)
     expect(rowValue('Network fee').textContent).toBe('Unavailable')
+  })
+})
+
+/** A promise the test settles by hand: the slow node, in one place. */
+function deferred<T>() {
+  let resolve: (v: T) => void = () => {}
+  let reject: (e: unknown) => void = () => {}
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res
+    reject = rej
+  })
+  return { promise, resolve, reject }
+}
+
+/**
+ * Batch 2 C. Before a signature exists the operator can back out of a send
+ * that is still working (autofill, the Signing Check, the destination
+ * re-check), and nothing is signed or submitted afterwards whatever comes back.
+ * Once a Signer exists Cancel is gone. And a send that may have paid takes its
+ * amount with it, so one press of Review cannot pay the same figure again.
+ */
+describe('SendTab — Cancel before signing, and the amount after a send that may have paid', () => {
+  const cancelButton = () => screen.getByRole('button', { name: 'Cancel' }) as HTMLButtonElement
+  const amountField = () => screen.getByLabelText('Amount') as HTMLInputElement
+
+  async function reviewAndConfirm() {
+    fillValidForm()
+    settleClock()
+    fireEvent.click(reviewButton())
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Confirm and send' }))
+    })
+  }
+
+  async function pressCancel() {
+    await act(async () => {
+      fireEvent.click(cancelButton())
+    })
+  }
+
+  /** The dialog is gone, and the screen says what happened in its own words. */
+  function expectCancelledReport() {
+    expect(screen.queryByRole('button', { name: 'Confirm and send' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Sending…' })).toBeNull()
+    expect(screen.getByText('Cancelled. Nothing was sent.')).toBeTruthy()
+  }
+
+  it('cancels during a slow destination re-check: closes at once, and nothing is signed when it returns', async () => {
+    const recheck = deferred<unknown>()
+    fetchQuery.mockReturnValueOnce(recheck.promise)
+    render(<SendTab />)
+    await reviewAndConfirm()
+
+    // The re-check is still waiting on the node; nothing has been signed.
+    expect(fetchQuery).toHaveBeenCalledOnce()
+    expect(cancelButton().disabled).toBe(false)
+    await pressCancel()
+
+    expectCancelledReport()
+    // Not held by the read: the attempt is already released.
+    expect(reviewButton().disabled).toBe(false)
+
+    await act(async () => {
+      recheck.resolve(info())
+    })
+    expect(signed).not.toHaveBeenCalled()
+    expect(disposed).toHaveBeenCalledOnce()
+    expectCancelledReport()
+  })
+
+  it('cancels during autofill: the Signing Check is never asked and nothing is signed', async () => {
+    const autofill = deferred<void>()
+    const innerOpen = vi.fn(async () => ({ sign: (tx: unknown) => (signed(tx), { tx_blob: '00', hash: 'AA' }), dispose: () => disposed() }))
+    signingHandleFor.mockImplementation(async () => ({ address: WALLET_ADDRESS, open: innerOpen }))
+    let settled: unknown
+    submitXrpPayment.mockImplementation(async (_n: unknown, handle: { open(): Promise<{ sign(tx: unknown): unknown }> }) => {
+      await autofill.promise
+      try {
+        const signer = await handle.open()
+        signer.sign({})
+        return { status: 'validated', resultCode: 'tesSUCCESS', hash: 'AB' }
+      } catch (err) {
+        settled = err
+        throw err
+      }
+    })
+    render(<SendTab />)
+    await reviewAndConfirm()
+
+    expect(cancelButton().disabled).toBe(false)
+    await pressCancel()
+    expectCancelledReport()
+
+    await act(async () => {
+      autofill.resolve()
+    })
+    expect(innerOpen).not.toHaveBeenCalled()
+    expect(fetchQuery).not.toHaveBeenCalled()
+    expect(signed).not.toHaveBeenCalled()
+    // Refused by the screen's own cancel check, not by something unrelated.
+    expect((settled as { message?: string; reason?: string }).message).toBe('preflight-abort')
+    expect((settled as { reason?: string }).reason).toBe('cancelled')
+    expect(reviewButton().disabled).toBe(false)
+  })
+
+  it('cancels while the Signing Check prompt is open: a signer it hands back later is disposed unused', async () => {
+    const check = deferred<{ sign(tx: unknown): unknown; dispose(): void }>()
+    signingHandleFor.mockImplementation(async () => ({ address: WALLET_ADDRESS, open: () => check.promise }))
+    render(<SendTab />)
+    await reviewAndConfirm()
+
+    // A passkey prompt is the browser's own, so the confirm sheet is still up.
+    expect(cancelButton().disabled).toBe(false)
+    await pressCancel()
+    expectCancelledReport()
+
+    await act(async () => {
+      check.resolve({ sign: (tx: unknown) => (signed(tx), { tx_blob: '00', hash: 'AA' }), dispose: () => disposed() })
+    })
+    expect(fetchQuery).not.toHaveBeenCalled()
+    expect(signed).not.toHaveBeenCalled()
+    expect(disposed).toHaveBeenCalledOnce()
+    expect(reviewButton().disabled).toBe(false)
+  })
+
+  it('treats Escape before signing as Cancel, not as a dialog closing over a send that goes on', async () => {
+    const recheck = deferred<unknown>()
+    fetchQuery.mockReturnValueOnce(recheck.promise)
+    render(<SendTab />)
+    await reviewAndConfirm()
+
+    await act(async () => void fireEvent.keyDown(document.activeElement ?? document.body, { key: 'Escape' }))
+    expectCancelledReport()
+
+    await act(async () => {
+      recheck.resolve(info())
+    })
+    expect(signed).not.toHaveBeenCalled()
+  })
+
+  it('takes Cancel away once a signature exists, and "Sending…" stays', async () => {
+    const submit = deferred<unknown>()
+    submitXrpPayment.mockImplementation(async (_n: unknown, handle: { open(): Promise<{ sign(tx: unknown): unknown; dispose(): void }> }) => {
+      const signer = await handle.open()
+      signer.sign({})
+      signer.dispose()
+      return submit.promise
+    })
+    render(<SendTab />)
+    await reviewAndConfirm()
+
+    expect(signed).toHaveBeenCalledOnce()
+    expect(cancelButton().disabled).toBe(true)
+    expect(screen.getByRole('button', { name: 'Sending…' })).toBeTruthy()
+    // Escape cannot pull it off the screen either.
+    await act(async () => void fireEvent.keyDown(document.activeElement ?? document.body, { key: 'Escape' }))
+    expect(screen.getByRole('button', { name: 'Sending…' })).toBeTruthy()
+    expect(screen.queryByText('Cancelled. Nothing was sent.')).toBeNull()
+
+    await act(async () => {
+      submit.resolve({ status: 'validated', resultCode: 'tesSUCCESS', hash: 'AB' })
+    })
+    expect(screen.queryByText('Cancelled. Nothing was sent.')).toBeNull()
+  })
+
+  it('settles a discarded attempt quietly: no toast, no other report, and Review usable again', async () => {
+    const error = vi.spyOn(toast, 'error')
+    const warning = vi.spyOn(toast, 'warning')
+    const check = deferred<{ sign(tx: unknown): unknown; dispose(): void }>()
+    signingHandleFor.mockImplementation(async () => ({ address: WALLET_ADDRESS, open: () => check.promise }))
+    render(<SendTab />)
+    await reviewAndConfirm()
+    await pressCancel()
+    // Not held while the discarded Signing Check is still out.
+    expect(reviewButton().disabled).toBe(false)
+
+    // The prompt is dismissed after the Cancel, which the choke point sees as
+    // a rejection. That is not news about anything still being waited for.
+    await act(async () => {
+      check.reject(new Error('Cancelled. Nothing was signed.'))
+    })
+    expect(error).not.toHaveBeenCalled()
+    expect(warning).not.toHaveBeenCalled()
+    expect(screen.getByText('Cancelled. Nothing was sent.')).toBeTruthy()
+    expect(screen.queryByText('Payment not sent — destination check failed')).toBeNull()
+    expect(reviewButton().disabled).toBe(false)
+  })
+
+  it('does not let a re-check that fails after Cancel replace the report', async () => {
+    const recheck = deferred<unknown>()
+    fetchQuery.mockReturnValueOnce(recheck.promise)
+    const error = vi.spyOn(toast, 'error')
+    render(<SendTab />)
+    await reviewAndConfirm()
+    await pressCancel()
+
+    await act(async () => {
+      recheck.reject(new Error('rpc down'))
+    })
+    expect(screen.getByText('Cancelled. Nothing was sent.')).toBeTruthy()
+    expect(screen.queryByText('Payment not sent — destination check failed')).toBeNull()
+    expect(error).not.toHaveBeenCalled()
+  })
+
+  const escape = () => act(async () => void fireEvent.keyDown(document.activeElement ?? document.body, { key: 'Escape' }))
+  const openReview = () => fireEvent.click(reviewButton())
+  const confirmButton = () => screen.queryByRole('button', { name: 'Confirm and send' })
+
+  it('closes an idle confirm with Cancel, and again with Escape, reporting nothing', async () => {
+    render(<SendTab />)
+    fillValidForm()
+    settleClock()
+
+    openReview()
+    expect(confirmButton()).toBeTruthy()
+    await pressCancel()
+    expect(confirmButton()).toBeNull()
+
+    openReview()
+    expect(confirmButton()).toBeTruthy()
+    await escape()
+    expect(confirmButton()).toBeNull()
+
+    // Closing a confirm with nothing in flight calls nothing off.
+    expect(screen.queryByText('Cancelled. Nothing was sent.')).toBeNull()
+    expect(signingHandleFor).not.toHaveBeenCalled()
+  })
+
+  it('closes an idle confirm after a validated send', async () => {
+    render(<SendTab />)
+    await reviewAndConfirm()
+    expect(submitXrpPayment).toHaveBeenCalledOnce()
+
+    fireEvent.change(amountField(), { target: { value: '2' } })
+    openReview()
+    expect(confirmButton()).toBeTruthy()
+    await pressCancel()
+    expect(confirmButton()).toBeNull()
+    openReview()
+    await escape()
+    expect(confirmButton()).toBeNull()
+    expect(submitXrpPayment).toHaveBeenCalledOnce()
+  })
+
+  it('closes an idle confirm after a cancelled send, even while the discarded read is still out', async () => {
+    const recheck = deferred<unknown>()
+    fetchQuery.mockReturnValueOnce(recheck.promise)
+    render(<SendTab />)
+    await reviewAndConfirm()
+    await pressCancel()
+
+    openReview()
+    expect(confirmButton()).toBeTruthy()
+    await pressCancel()
+    expect(confirmButton()).toBeNull()
+
+    await act(async () => {
+      recheck.resolve(info())
+    })
+    expect(signed).not.toHaveBeenCalled()
+  })
+
+  it('cancels during the unlock: goes no further, not even into autofill', async () => {
+    const unlock = deferred<unknown>()
+    signingHandleFor.mockReturnValueOnce(unlock.promise)
+    render(<SendTab />)
+    await reviewAndConfirm()
+    await pressCancel()
+    expectCancelledReport()
+
+    await act(async () => {
+      unlock.resolve(fakeHandle())
+    })
+    expect(submitXrpPayment).not.toHaveBeenCalled()
+    expect(signed).not.toHaveBeenCalled()
+  })
+
+  it('cancels after the Signing Check returns and before the re-check starts', async () => {
+    // Cancel lands inside the check, just before it hands back its Signer.
+    signingHandleFor.mockImplementation(async () => ({
+      address: WALLET_ADDRESS,
+      open: async () => {
+        fireEvent.click(cancelButton())
+        return { sign: (tx: unknown) => (signed(tx), { tx_blob: '00', hash: 'AA' }), dispose: () => disposed() }
+      },
+    }))
+    render(<SendTab />)
+    await reviewAndConfirm()
+
+    expect(fetchQuery).not.toHaveBeenCalled()
+    expect(signed).not.toHaveBeenCalled()
+    expect(disposed).toHaveBeenCalledOnce()
+    expectCancelledReport()
+  })
+
+  it('lets a new attempt run while a cancelled one is still out, and the old one settling touches nothing', async () => {
+    const error = vi.spyOn(toast, 'error')
+    const check = deferred<{ sign(tx: unknown): unknown; dispose(): void }>()
+    signingHandleFor.mockImplementationOnce(async () => ({ address: WALLET_ADDRESS, open: () => check.promise }))
+    render(<SendTab />)
+    await reviewAndConfirm()
+    await pressCancel()
+
+    // A second attempt, start to finish, while the first Signing Check is out.
+    openReview()
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Confirm and send' }))
+    })
+    expect(signed).toHaveBeenCalledOnce()
+    expect(screen.getByText('1 XRP')).toBeTruthy()
+
+    // The first check now hands back a Signer: it is thrown away unused, and
+    // the second attempt's result stays on screen.
+    await act(async () => {
+      check.resolve({ sign: (tx: unknown) => (signed(tx), { tx_blob: '00', hash: 'AA' }), dispose: () => disposed() })
+    })
+    expect(signed).toHaveBeenCalledOnce()
+    expect(disposed).toHaveBeenCalledTimes(2)
+    expect(screen.getByText('AB')).toBeTruthy()
+    expect(screen.queryByText('Cancelled. Nothing was sent.')).toBeNull()
+    expect(error).not.toHaveBeenCalled()
+  })
+
+  it('withdraws the confirm when the amount changes under it, so the figure named is the figure signed', () => {
+    render(<SendTab />)
+    fillValidForm()
+    settleClock()
+    openReview()
+    expect(screen.getByText('Send 1 XRP?')).toBeTruthy()
+
+    fireEvent.change(amountField(), { target: { value: '2' } })
+    expect(confirmButton()).toBeNull()
+  })
+
+  it('cancels a token payment during the re-check, and clears its amount after a validated one', async () => {
+    useTrustLines.mockReturnValue({ data: [heldToken()] })
+    useDestinationInfo.mockReturnValue(query({ data: info({ asset: TOKEN_ASSET, hasTrustLine: true }) }))
+    const recheck = deferred<unknown>()
+    fetchQuery.mockReturnValueOnce(recheck.promise)
+    render(<SendTab />)
+    fireEvent.change(screen.getByTestId('asset'), { target: { value: TOKEN_ASSET } })
+    await reviewAndConfirm()
+
+    expect(submitIssuedPayment).toHaveBeenCalledOnce()
+    await pressCancel()
+    expectCancelledReport()
+    await act(async () => {
+      recheck.resolve(info({ asset: TOKEN_ASSET, hasTrustLine: true }))
+    })
+    expect(signed).not.toHaveBeenCalled()
+
+    fetchQuery.mockResolvedValue(info({ asset: TOKEN_ASSET, hasTrustLine: true }))
+    openReview()
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Confirm and send' }))
+    })
+    expect(signed).toHaveBeenCalledOnce()
+    expect(amountField().value).toBe('')
+    expect((screen.getByTestId('asset') as HTMLSelectElement).value).toBe(TOKEN_ASSET)
+    // The only record of how much went, now that the field is empty.
+    expect(screen.getByText('1 USD')).toBeTruthy()
+  })
+
+  it.each([
+    ['validated', { status: 'validated', resultCode: 'tesSUCCESS', hash: 'AB' }],
+    ['unknown', { status: 'unknown', hash: 'AB' }],
+  ])('clears the amount after a %s send, and keeps destination, tag and asset', async (_s, outcome) => {
+    submitXrpPayment.mockImplementation(opening(outcome))
+    render(<SendTab />)
+    fireEvent.change(screen.getByLabelText(/^Destination tag/), { target: { value: '42' } })
+    await reviewAndConfirm()
+
+    expect(amountField().value).toBe('')
+    // The outcome plate keeps the amount that was sent.
+    expect(screen.getByText('1 XRP')).toBeTruthy()
+    expect((screen.getByLabelText('Destination address') as HTMLInputElement).value).toBe(DESTINATION)
+    expect((screen.getByLabelText(/^Destination tag/) as HTMLInputElement).value).toBe('42')
+    expect((screen.getByTestId('asset') as HTMLSelectElement).value).toBe('XRP')
+    // One press cannot pay the same figure again.
+    expect(reviewButton().disabled).toBe(true)
+
+    fireEvent.change(amountField(), { target: { value: '2' } })
+    expect(reviewButton().disabled).toBe(false)
+  })
+
+  it.each([
+    ['expired', { status: 'expired', hash: 'AB' }],
+    ['failed', { status: 'failed', resultCode: 'tefPAST_SEQ', hash: 'AB' }],
+    ['claimed', { status: 'claimed', resultCode: 'tecNO_DST_INSUF_XRP', hash: 'AB' }],
+  ])('keeps the amount after a %s send — retrying that payment is legitimate', async (_s, outcome) => {
+    submitXrpPayment.mockImplementation(opening(outcome))
+    render(<SendTab />)
+    await reviewAndConfirm()
+
+    expect(submitXrpPayment).toHaveBeenCalledOnce()
+    expect(amountField().value).toBe('1')
   })
 })

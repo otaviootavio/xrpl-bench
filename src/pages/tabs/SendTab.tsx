@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -37,7 +37,33 @@ const MAX_DESTINATION_TAG = 4294967295
  * three times, because the retirement rule below switches on it exhaustively:
  * a new reason that forgets to say when it stops being true is a compile
  * error, not a message that outlives its cause. */
-type PreflightReason = 'failed' | 'tag-required' | 'guard-closed' | 'not-activated' | 'no-trust-line'
+type PreflightReason = 'failed' | 'tag-required' | 'guard-closed' | 'not-activated' | 'no-trust-line' | 'cancelled'
+
+/**
+ * One send attempt, as the dialog's Cancel and the screen's `open()` wrapper
+ * both see it. Mutable and read directly, never through React state: a click
+ * landing between `open()` returning a Signer and the next render would
+ * otherwise see Cancel still enabled and announce "nothing was sent" over a
+ * payment that is being signed.
+ *
+ * - `cancelled` — the operator pressed Cancel before signing started.
+ * - `signing` — `open()` has handed a Signer to the choke point; from here a
+ *   signature may exist and Cancel does nothing.
+ * - `cancelSignal` / `fireCancel` — a promise that settles on Cancel, raced
+ *   against the destination re-check so the abort does not wait for the read.
+ */
+type SendAttempt = {
+  cancelled: boolean
+  signing: boolean
+  cancelSignal: Promise<void>
+  fireCancel: () => void
+}
+
+function newSendAttempt(): SendAttempt {
+  let fire: () => void = () => {}
+  const cancelSignal = new Promise<void>((resolve) => (fire = resolve))
+  return { cancelled: false, signing: false, cancelSignal, fireCancel: () => fire() }
+}
 
 /** Whether two fee read states state the same fact: the same status and, for
  * a figure, the same drops string. Compared by value, never by reference
@@ -110,11 +136,28 @@ export function SendTab() {
    *   because a fee can go 10 → 15 → 10 and must not reopen the dialog on the
    *   way back.
    *
+   * - `amountLabel` — the amount and asset the dialog names. An amount or
+   *   asset that changes under the dialog withdraws the intent like a fee
+   *   that moves, so the figure named is always the figure signed.
+   *
    * The intent is withdrawn outright whenever the guard closes, or the fee
    * moves, outside a send (below, beside `confirmOpen`). */
-  const [confirmingFor, setConfirmingFor] = useState<{ checkedAt: number; fee: ReadState<string> } | null>(null)
+  const [confirmingFor, setConfirmingFor] = useState<{
+    checkedAt: number
+    fee: ReadState<string>
+    /** The amount and asset the dialog states, pinned at "Review payment". */
+    amountLabel: string
+  } | null>(null)
   const [busy, setBusy] = useState(false)
-  const [outcome, setOutcome] = useState<SubmitOutcome | null>(null)
+  /** The attempt in flight, for the dialog's Cancel; see `SendAttempt`. */
+  const attemptRef = useRef<SendAttempt | null>(null)
+  /** Mirrors `attemptRef.current.signing` for rendering only: it disables
+   * Cancel once a Signer exists. The handler decides on the ref, never on this. */
+  const [signingStarted, setSigningStarted] = useState(false)
+  /** The last result, with the amount and asset it sent: the form's amount is
+   * cleared after a send that may have paid, and this is then the only record
+   * on screen of how much went. */
+  const [outcome, setOutcome] = useState<(SubmitOutcome & { sentLabel: string }) | null>(null)
   /** Why the submit path refused to send, and the `(network, destination,
    * asset)` it refused for. Inline on the form, never a toast: a failed *read*
    * reports where the data would have been (AD-8).
@@ -193,6 +236,9 @@ export function SendTab() {
   })
   const fundsError = fundsCheck?.reason
 
+  /** The amount and asset as the operator reads them, e.g. "1 XRP". */
+  const amountLabel = asset === 'XRP' ? `${amount} XRP` : `${amount} ${displayCurrencyCode(asset.split('|')[0])}`
+
   const canSend =
     destinationValid &&
     !isSelfSend &&
@@ -237,6 +283,9 @@ export function SendTab() {
       case 'failed':
       case 'not-activated':
       case 'no-trust-line':
+      // The operator's own act, true of that attempt for good; the stamp and
+      // the next confirm retire it.
+      case 'cancelled':
         return true
     }
   }
@@ -269,7 +318,12 @@ export function SendTab() {
    * figure would reopen it unasked. Never while `busy`: once a send is under
    * way it signs the pinned figure, and "Sending…" must stay up.
    */
-  if (confirmingFor !== null && !busy && (!canSend || !sameFeeFact(confirmingFor.fee, feeState))) setConfirmingFor(null)
+  if (
+    confirmingFor !== null &&
+    !busy &&
+    (!canSend || !sameFeeFact(confirmingFor.fee, feeState) || confirmingFor.amountLabel !== amountLabel)
+  )
+    setConfirmingFor(null)
 
   /**
    * The confirm step's open state, derived — intent and the whole send guard
@@ -282,16 +336,28 @@ export function SendTab() {
    * screen mid-submission and leave the operator with no sign that a payment
    * is in flight. Outside `busy` the intent must also still be about the
    * destination reading it was formed against, and about the fee it pinned.
+   * The one way it closes during `busy` is the operator's own Cancel before a
+   * Signer exists (`cancelConfirm`), which withdraws the intent outright.
    */
   const confirmOpen =
     confirmingFor !== null &&
-    (busy || (canSend && confirmingFor.checkedAt === checkedAt && sameFeeFact(confirmingFor.fee, feeState)))
+    (busy ||
+      (canSend &&
+        confirmingFor.checkedAt === checkedAt &&
+        sameFeeFact(confirmingFor.fee, feeState) &&
+        confirmingFor.amountLabel === amountLabel))
   /** What `doSend` signs: the pin, never the live read. */
   const pinnedFee: ReadState<string> | null = confirmingFor?.fee ?? null
   /** What the dialog states: the same pin. The live read stands in only once
    * the intent is gone, i.e. while the dialog animates out, so its closing
    * frames do not flash "could not be read" over a fee that was read. */
   const dialogFee: ReadState<string> = pinnedFee ?? feeState
+  /** What the dialog names: the pin, so a send that clears the amount as the
+   * dialog closes never reads "Send  XRP?". */
+  const dialogAmountLabel = confirmingFor?.amountLabel ?? amountLabel
+
+  /** A refusal, stamped with the `(network, destination, asset)` it is about. */
+  const report = (reason: PreflightReason) => setPreflightReport({ network, destination, asset, reason })
 
   async function doSend() {
     if (!wallet || !vaultKey) return
@@ -302,7 +368,6 @@ export function SendTab() {
      */
     // A report, not a silent no-op: a dialog that vanishes on a press says
     // nothing about why nothing happened.
-    const report = (reason: PreflightReason) => setPreflightReport({ network, destination, asset, reason })
 
     // Re-entry returns silently rather than reporting. `canSend` contains
     // `!busy`, so without this a second entry would fall into the branch below
@@ -325,6 +390,9 @@ export function SendTab() {
       setConfirmingFor(null)
       return
     }
+    const attempt = newSendAttempt()
+    attemptRef.current = attempt
+    setSigningStarted(false)
     setBusy(true)
     setOutcome(null)
     setPreflightReport(null)
@@ -332,6 +400,8 @@ export function SendTab() {
     toast.resolve('send')
     try {
       const base = await signingHandleFor(wallet.id, { openKey: vaultKey, prompts })
+      // A Cancel during the unlock: go no further, not even into autofill.
+      if (attempt.cancelled) throw new PreflightAbort('cancelled')
 
       /**
        * Re-check the destination AFTER the Signing Check and immediately before
@@ -394,16 +464,33 @@ export function SendTab() {
       // refusal disposes the Signer and aborts with a sentinel.
       // Spread, not rebuilt: what the handle says about itself (`signsAsMaster`, which
       // the choke point reads to refuse a send the ledger can only reject) must reach it.
+      //
+      // `open()` is also the last point before a signature, so it is where a
+      // Cancel pressed before signing is honoured: on entry (a Cancel during
+      // autofill — the Signing Check is then never asked), after the Signing
+      // Check, and after the re-check, which is raced against the Cancel so
+      // the abort does not wait for a slow node. Marking `signing` happens in
+      // the same synchronous step as returning the Signer, so a Cancel either
+      // lands before it (and aborts) or after it (and does nothing).
       const signing: SigningHandle = {
         ...base,
         async open() {
+          if (attempt.cancelled) throw new PreflightAbort('cancelled')
           const signer = await base.open()
           try {
-            await recheckDestination()
+            if (attempt.cancelled) throw new PreflightAbort('cancelled')
+            const recheck = recheckDestination()
+            // A re-check that loses the race may still reject later; its
+            // answer is discarded, and must not surface as unhandled.
+            recheck.catch(() => {})
+            await Promise.race([recheck, attempt.cancelSignal])
+            if (attempt.cancelled) throw new PreflightAbort('cancelled')
           } catch (err) {
             signer.dispose()
             throw err
           }
+          attempt.signing = true
+          setSigningStarted(true)
           return signer
         },
       }
@@ -440,8 +527,16 @@ export function SendTab() {
           feeDrops,
         }, node)
       }
-      setOutcome(result)
+      // A result is only reached through a Signer, and Cancel does nothing once
+      // one exists, so this is never a cancelled attempt — and a submitted
+      // transaction is never hidden whatever the flag says.
+      setOutcome({ ...result, sentLabel: amountLabel })
       setConfirmingFor(null)
+      // A send that may have paid takes its amount with it, so "Review
+      // payment" cannot pay the same figure again with one press. Destination,
+      // tag and asset stay. An expiry, a rejection or a claim did not pay, and
+      // retrying the same payment there is legitimate.
+      if (result.status === 'validated' || result.status === 'unknown') setAmount('')
       if (result.status === 'validated') {
         toast.success('Payment sent.')
         // The pair actually paid, on the network it was submitted on — the
@@ -474,6 +569,11 @@ export function SendTab() {
         result.status === 'expired' ? queryClient.invalidateQueries({ queryKey: queryKeys.recommendedFee(network) }) : null,
       ])
     } catch (err: any) {
+      // A cancelled attempt was already reported, and its dialog closed, when
+      // Cancel was pressed. Whatever the discarded work settles with — a
+      // re-check that failed late, a Signing Check that was dismissed — is not
+      // news about anything the operator is still waiting for.
+      if (attempt.cancelled) return
       if (err instanceof PreflightAbort) {
         report(err.reason)
         setConfirmingFor(null)
@@ -487,13 +587,51 @@ export function SendTab() {
       // operator takes again, not a dialog left standing over a failure.
       setConfirmingFor(null)
     } finally {
-      setBusy(false)
+      // A cancelled attempt released all of this when Cancel was pressed, and
+      // a newer attempt may own it by now: its late settle touches nothing.
+      if (!attempt.cancelled) {
+        if (attemptRef.current === attempt) attemptRef.current = null
+        setSigningStarted(false)
+        setBusy(false)
+      }
     }
+  }
+
+  /**
+   * The dialog's Cancel, and every other way it is closed (Escape, the overlay,
+   * the sheet's close control).
+   *
+   * - No send under way: withdraw the intent, as always.
+   * - A send under way that has not reached a signature: abort it. The dialog
+   *   closes at once and says so; `open()` refuses to hand out a Signer for
+   *   this attempt, and what is still in flight is discarded when it settles.
+   * - A Signer exists: nothing. A signed transaction cannot be recalled, and
+   *   "Sending…" must stay on screen until it is classified.
+   *
+   * Decided on the attempt object, not on render state — see `SendAttempt`.
+   */
+  function cancelConfirm() {
+    const attempt = attemptRef.current
+    if (!attempt) {
+      setConfirmingFor(null)
+      return
+    }
+    if (attempt.signing || attempt.cancelled) return
+    attempt.cancelled = true
+    attempt.fireCancel()
+    // Released now, not when the discarded work settles: the operator is not
+    // held by a read or a prompt for a send they have already called off. A
+    // new attempt may start at once; the old one can never sign, because its
+    // `open()` refuses on the flag set above.
+    attemptRef.current = null
+    setSigningStarted(false)
+    setBusy(false)
+    setConfirmingFor(null)
+    report('cancelled')
   }
 
   if (!wallet) return <p className="text-muted-foreground">No active wallet.</p>
 
-  const amountLabel = asset === 'XRP' ? `${amount} XRP` : `${amount} ${displayCurrencyCode(asset.split('|')[0])}`
 
   return (
     <div className="flex flex-col gap-4">
@@ -577,6 +715,15 @@ export function SendTab() {
                 return destQuery.refetch()
               }}
             />
+          )}
+
+          {/* The operator's own Cancel, before anything was signed. A plain
+              report, not a warning or an error: nothing went wrong. */}
+          {preflight === 'cancelled' && (
+            <Alert>
+              <AlertTitle>Payment not sent</AlertTitle>
+              <AlertDescription>Cancelled. Nothing was sent.</AlertDescription>
+            </Alert>
           )}
 
           {preflight === 'guard-closed' && (
@@ -764,7 +911,7 @@ export function SendTab() {
             />
           )}
 
-          <Button onClick={() => setConfirmingFor({ checkedAt, fee: feeState })} disabled={!canSend}>
+          <Button onClick={() => setConfirmingFor({ checkedAt, fee: feeState, amountLabel })} disabled={!canSend}>
             Review payment
           </Button>
 
@@ -777,6 +924,9 @@ export function SendTab() {
                 />
                 <TxLink hash={outcome.hash} />
               </div>
+              <p className="text-sm">
+                Amount: <span className="font-data">{outcome.sentLabel}</span>
+              </p>
               {outcome.status === 'unknown' && <p className="text-sm">{UNKNOWN_OUTCOME_WORDS}</p>}
               {(outcome.status === 'failed' || outcome.status === 'claimed') && (
                 <p className="text-sm text-text-destructive">
@@ -803,12 +953,12 @@ export function SendTab() {
           not bring it back. So does the live fee read moving away from the
           figure pinned at "Review payment". Only an explicit "Review payment"
           does. */}
-      <Dialog open={confirmOpen && !promptOpen} onOpenChange={(o) => !o && setConfirmingFor(null)}>
+      <Dialog open={confirmOpen && !promptOpen} onOpenChange={(o) => !o && cancelConfirm()}>
         <DialogContent variant="sheet">
           <DialogHeader>
-            <DialogTitle>Send {amountLabel}?</DialogTitle>
+            <DialogTitle>Send {dialogAmountLabel}?</DialogTitle>
             <DialogDescription>
-              This sends {amountLabel} to {destination}
+              This sends {dialogAmountLabel} to {destination}
               {tagValue !== undefined ? ` (destination tag ${tagValue})` : ''} on {network},{' '}
               {/* "the current rate" named a figure that was never read. An XRP
                   send cannot reach this dialog without one; a token send can,
@@ -847,7 +997,10 @@ export function SendTab() {
               </Alert>
             ))}
           <DialogFooter>
-            <Button variant="outline" onClick={() => setConfirmingFor(null)} disabled={busy}>
+            {/* Available until a Signer exists: the autofill, the Signing Check
+                and the destination re-check can take tens of seconds on a slow
+                node, and nothing has been signed in any of them. */}
+            <Button variant="outline" onClick={cancelConfirm} disabled={busy && signingStarted}>
               Cancel
             </Button>
             {/* The one control in this app that moves funds, and therefore the

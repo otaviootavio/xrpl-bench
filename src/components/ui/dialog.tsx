@@ -144,7 +144,13 @@ function DialogContent({
         }}
         {...props}
       >
-        <div data-slot="dialog-body" className="grid min-h-0 gap-4 overflow-y-auto overscroll-contain p-4 [&_.panel-legend]:text-xs">
+        {/* A sheet's footer sticks to the bottom of this scroller below `sm`, so
+            the scroll padding keeps an element scrolled into view by focus
+            above the footer instead of under it (WCAG 2.4.11). */}
+        <div
+          data-slot="dialog-body"
+          className="grid min-h-0 gap-4 overflow-y-auto overscroll-contain p-4 [&_.panel-legend]:text-xs group-data-[variant=sheet]/dialog:max-sm:scroll-pb-24"
+        >
           {children}
         </div>
         <DialogPrimitive.Close

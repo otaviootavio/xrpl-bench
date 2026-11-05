@@ -2,7 +2,7 @@
 title: XRPL Bench
 status: draft
 created: 2026-09-12
-updated: 2026-11-02
+updated: 2026-11-04
 ---
 
 # PRD: XRPL Bench
@@ -1325,13 +1325,66 @@ this PRD previously failed to state.
   and changes to FR-10, FR-13, FR-14 and FR-77. Epics 17 to 19. Spec:
   `_bmad-output/specs/spec-wallet-chooser/SPEC.md`.
 
-- **Signer Wallet and Transmitter Wallet** — *raised 2026-11-02, not specified.*
+- **Offline signing** (was "Signer Wallet and Transmitter Wallet") — *raised
+  2026-11-02, scope widened 2026-11-04, not specified.*
   An offline Signer Wallet has no Network and no Node, and is made in the
   creation quiz with its own questions. It is paired with a Transmitter Wallet
   on another device that builds and sends the transaction. This would replace
   today's Controlling Wallet and two-device QR signing (FR-75, FR-78), which are
   built and stay as they are until then. Needs its own PRD pass, UX and
   architecture before any spec. FR-93 does not wait for it.
+  *2026-11-04:* offline signing and multi-signing are one feature, since both
+  are "built in one place, signed by one or more keys that may live elsewhere,
+  collected, then sent". The signers can be on many devices. Its new version
+  is the complete one and replaces FR-75 and FR-78. Open: whether delegates
+  (`DelegateSet`, live on Mainnet) are only shown or also set, and how long a
+  transaction may wait for signatures (sets the Ticket and
+  `LastLedgerSequence` rules). The earlier ideas for this area (topology
+  designer with presets, QR signature rounds, Tickets, cost preview, drift
+  alert, rehearse on Testnet) are in the 2026-10-06 brainstorm:
+  `_bmad-output/brainstorming/brainstorm-advanced-wallet-features-2026-10-06/`.
+  This widens the §6.2 multi-signing deferral and touches §2.2 (one operator,
+  one device), which this PRD pass must reconcile.
+
+- **State-machine model of the Wallet** — *raised 2026-11-04, exploratory, not
+  specified, no requirements.* Model XRPL Bench as a set of state machines to
+  answer two questions: **coverage** (which states the ledger allows for an
+  Account can a user reach, see and leave through the app) and **safety** (which
+  of those states are dangerous, and can the app lead a user into one). A first
+  split is by what moves the state: the user (XRPL Bench's own state: locks,
+  keys, Wallets, quizzes), validated transactions from anyone (ledger state),
+  reads (what the app knows), a transaction in progress, time (auto-lock,
+  `LastLedgerSequence`, expiries), the environment (Node connection, other
+  devices, app updates) and the protocol (amendments, reserves, fees). Most
+  dangerous states sit in the gap between two of these, for example a Regular
+  Key no device holds with the master key off, or a send that looked failed but
+  was validated. Known candidates to check first: a Regular Key no device holds;
+  a signer list that can no longer reach its quorum (a real case left 50,000 XRP
+  stuck); a signer list or delegate the app cannot see. If taken up, start with
+  a document only (the dangerous-state check, and today's send flow as a
+  transition table) before choosing any library. References:
+  - Ripple and Common Prefix formal specification and verification of the XRP
+    Ledger (ledger side, not wallets):
+    <https://dev.to/ripplexdev/a-formal-verification-of-the-xrp-ledger-51e4>,
+    <https://dev.to/ripplexdev/a-formal-verification-of-the-xrp-ledger-part-ii-4a0j>
+  - Ledger rules that already block some dangerous states:
+    <https://xrpl.org/blog/2019/fixmasterkeyasregularkey-enabled.md>,
+    <https://xrpl.org/docs/concepts/accounts/multi-signing>
+  - Multisign lockout case and the proposed nested-multisign amendment:
+    <https://u.today/xrp-wallet-users-alerted-as-xrpl-developer-flags-new-scam-risk>
+  - How Xaman presents turning the master key off:
+    <https://help.xaman.app/app/getting-started-with-xaman/how-to-disable-the-master-key>
+  - Transaction lifecycle and finality:
+    <https://xrpl.org/docs/concepts/transactions/reliable-transaction-submission/>
+  - Collecting signatures (quorum counter, queue, execute when met), Safe-based:
+    <https://support.roninchain.com/hc/en-us/articles/37622757377691-Multisig-Wallets-on-Ronin>
+  - Statechart method and checks: <https://prod.stately.ai/blog/2022-02-15-modelling-101-how-to-build-a-statechart-from-scratch>,
+    <https://stately.ai/docs/graph> (a path to every state, for reachability
+    and model-based tests)
+  - XState signing-gate example (RenVM):
+    <https://app.unpkg.com/@renproject/rentx@2.0.0-alpha.15/files/README.md>
+  - Draft diagrams from the 2026-11-04 session:
+    <https://claude.ai/artifact/GhGM51ehGcGyCkCsmafu6C>
 
 ## 7. Success Metrics
 

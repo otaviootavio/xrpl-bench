@@ -307,6 +307,13 @@ describe('setMasterKey', () => {
     expect(r.status === 'not-validated' && r.state).toBe('on')
   })
 
+  it('reports an unreadable result as unconfirmed with the hash, never not-validated', async () => {
+    ledger.outcome = { status: 'unknown', hash: 'H' }
+    const r = await setMasterKey(master.id, false, ctx())
+    expect(r.status).toBe('unconfirmed')
+    expect(r.status === 'unconfirmed' && r.reason).toMatch(/Outcome unknown\..*Hash: H/)
+  })
+
   it('reports submitted-but-unconfirmed when the re-read fails after validation', async () => {
     ledger.failReadsAfterSubmit = true
     const r = await setMasterKey(master.id, false, ctx())

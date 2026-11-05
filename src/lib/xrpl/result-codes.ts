@@ -22,3 +22,10 @@ const MESSAGES: Record<string, string> = {
 export function describeResultCode(code: string): string {
   return MESSAGES[code] ?? `Ledger returned: ${code}.`
 }
+
+/** The one sentence for a submit whose result could not be read (the write
+ * choke point's `unknown` outcome). It may have done what was asked, so it is
+ * never worded as a failure or as "not sent": the operator checks the hash
+ * before trying again, or pays twice. */
+export const UNKNOWN_OUTCOME_WORDS =
+  'Outcome unknown. The transaction reached a validated ledger, but its result could not be read. Check it by its hash before trying again.'

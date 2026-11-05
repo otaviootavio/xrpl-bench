@@ -396,7 +396,7 @@ export type ReturnedResult =
   | { status: 'validated'; outcome: Extract<SubmitOutcome, { status: 'validated' }> }
   /** Past `LastLedgerSequence`, or `tefMAX_LEDGER`. Not applied, not failed; the blob is never resubmitted. */
   | { status: 'expired'; reason: string }
-  | { status: 'not-validated'; outcome: Exclude<SubmitOutcome, { status: 'validated' | 'expired' }>; reason: string }
+  | { status: 'not-validated'; outcome: Exclude<SubmitOutcome, { status: 'validated' | 'expired' | 'unknown' }>; reason: string }
   /** Verification or a pre-submit read refused. Nothing was submitted. */
   | { status: 'refused'; reason: string }
   /** The submit threw: it may or may not have reached the ledger. */
@@ -444,6 +444,9 @@ export async function submitReturned(
   }
   await refresh(wallet, ctx.queryClient)
   if (outcome.status === 'validated') return { status: 'validated', outcome }
+  // In a validated ledger with an unreadable result: neither expired nor
+  // failed. Unconfirmed, with the hash to check; the blob is never resent.
+  if (outcome.status === 'unknown') return { status: 'unconfirmed', reason: describeFailure(outcome) }
   if (outcome.status === 'expired' || (outcome.status === 'failed' && outcome.resultCode === 'tefMAX_LEDGER')) {
     return { status: 'expired', reason: EXPIRED_WORDS }
   }

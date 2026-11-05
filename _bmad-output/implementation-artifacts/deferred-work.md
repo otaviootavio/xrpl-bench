@@ -164,6 +164,7 @@
 
 ## Deferred from: code review of story-5.5 (2026-09-29)
   triage: (2026-11-05, against origin/dev cec5be0) keep. Still true: `hasTrustLine` in query-reads.ts has no destination-is-issuer case, so SendTab still warns.
+  triage: (2026-11-05, fix/deferred-small-batch, spec-deferred-small-fixes-a) drop. Fixed: `destinationInfoQueryOptions` treats the issuer as always able to receive its own token and reads no lines for it.
 
 - source_spec: `_bmad-output/implementation-artifacts/spec-5-5-one-invalidation-group.md`
   summary: When `submitXrpPayment`/`submitTrustSet` throws (timeout, dropped socket, unknown outcome), SendTab and TrustLinesTab invalidate nothing, although the transaction may have applied.
@@ -336,10 +337,12 @@ Item 8 shipped as a refactor that preserves behaviour (`spec-sendtab-split.md`).
   summary: An `account_tx` entry whose `meta` is `null` makes `fetchAccountTx` throw (`typeof null === 'object'`, then `meta.TransactionResult`), failing the whole History page.
   evidence: Raised by review. Pre-existing: the old `(meta as any).TransactionResult` had the same crash. xrpl.js types `meta` without `null` and rippled is not known to send one, so `maybe-false` on reachability; a fixture from a real response with `meta: null` would settle it. Low-medium if reachable.
   triage: (2026-11-05, against origin/dev cec5be0) keep. Still true: `typeof meta !== 'object'` lets `null` through, and `meta.TransactionResult` then throws.
+  triage: (2026-11-05, fix/deferred-small-batch, spec-deferred-small-fixes-a) drop. Fixed: `fetchAccountTx` keeps every entry with a transaction; a validated row with no readable result is marked "Result not read".
 - source_spec: `_bmad-output/implementation-artifacts/spec-guards-writes-choke-point.md`
   summary: A validated `meta` object with no `TransactionResult` makes `classify(undefined)` throw after a submit, so a possibly validated transaction is reported as an error.
   evidence: Raised by review. Pre-existing (the old `as any` read was identical) and typed away by xrpl.js, which declares `TransactionResult` required; unverified whether any server omits it. Medium if reachable, because it misreports a money-moving outcome.
   triage: (2026-11-05, against origin/dev cec5be0) keep. Still true: writes.ts passes `meta.TransactionResult` unchecked to `classify`.
+  triage: (2026-11-05, fix/deferred-small-batch, spec-deferred-small-fixes-a) drop. Fixed: `submitAndClassify` returns a new `unknown` outcome, shown as "Outcome unknown" with the hash, never as failed.
 - source_spec: `_bmad-output/implementation-artifacts/spec-guards-writes-choke-point.md`
   summary: No test pins that the `.oxlintrc.json` `no-explicit-any` override still matches `src/lib/xrpl`; a glob change or an oxlint release that read `overrides` differently would keep lint green.
   evidence: Raised by the verification-gap review (filed disposition: defer). Checked by hand on 2026-10-04 (oxlint 1.80.0): `as any` in `src/lib/xrpl/zz.ts` fails, in a colocated `zz.test.ts` passes, and the same in `src/hooks` passes. A vitest case spawning oxlint on a fixture would close it.
@@ -527,6 +530,7 @@ Item 8 shipped as a refactor that preserves behaviour (`spec-sendtab-split.md`).
 
 ## Deferred from: review of `_bmad-output/specs/spec-signing-check-copy/stories/1-signing-check-copy.md` (2026-10-19)
   triage: (2026-11-05, against origin/dev cec5be0) keep. Still true: `@radix-ui/react-switch` is still in package.json and bun.lock.
+  triage: (2026-11-05, fix/deferred-small-batch, spec-deferred-small-fixes-a) drop. Fixed: removed from package.json and bun.lock.
 
 - source_spec: `_bmad-output/specs/spec-signing-check-copy/stories/1-signing-check-copy.md`
   summary: Decide whether the "No Open Check" detail should name the consequence (anyone holding the device can open the wallet), and whether "Opens without asking", "Signs without asking again" and "shown with no further prompt" should share one phrase.

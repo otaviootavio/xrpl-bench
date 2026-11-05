@@ -244,6 +244,27 @@ describe('the write choke point raises and clears the in-flight flag', () => {
     expect(log.at(-1)).toBe('in-flight:false')
   })
 
+  // An unreadable result is its own outcome: never 'failed' (which reads as
+  // "not sent" and invites paying twice), and never a throw.
+  it.each([
+    ['a meta without TransactionResult', {}],
+    ['an empty-string TransactionResult', { TransactionResult: '' }],
+    ['a null meta', null],
+    ['a binary (string) meta', 'ABCDEF'],
+    ['a non-string TransactionResult', { TransactionResult: 7 }],
+  ])('returns unknown, with the hash, for %s', async (_label, meta) => {
+    installFakeClient({ submit: async () => ({ result: { meta, ledger_index: 9 } }) })
+
+    const outcome = await submitXrpPayment('testnet', wallet, {
+      destination: 'rPT1Sjq2YGrBMTttX4GZHjKu9dyfzbpAYe',
+      amountDrops: '1000000',
+    })
+
+    expect(outcome.status).toBe('unknown')
+    expect(outcome.hash).toMatch(/^[0-9A-F]{64}$/)
+    expect(log.at(-1)).toBe('in-flight:false')
+  })
+
   it('classifies the expiry branch when the network moved past LastLedgerSequence', async () => {
     installFakeClient({
       submit: async () => {

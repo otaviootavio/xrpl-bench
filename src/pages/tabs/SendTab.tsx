@@ -24,7 +24,7 @@ import { useYieldingPrompts } from '@/hooks/usePrompts'
 import { formatXrp, xrpToDropsString, displayCurrencyCode, MAX_FEE_DROPS } from '@/lib/xrpl/money'
 import { checkFunds, heldTokenLines, selectedTokenLine, spendableReadState, tokenAssetKey } from '@/lib/xrpl/funds-check'
 import { readStateOf, type ReadState } from '@/lib/read-state'
-import { describeResultCode } from '@/lib/xrpl/result-codes'
+import { describeResultCode, UNKNOWN_OUTCOME_WORDS } from '@/lib/xrpl/result-codes'
 import { invalidateAccountScoped, invalidateDestinationCheck, queryKeys } from '@/lib/xrpl/query-keys'
 import { DESTINATION_CHECK_FRESHNESS_MS, fetchDestinationInfoOnce, type DestinationInfo } from '@/lib/xrpl/query-reads'
 import { useQueryClient } from '@tanstack/react-query'
@@ -453,6 +453,10 @@ export function SendTab() {
       } else if (result.status === 'claimed') {
         // tec*: in a validated ledger, did not go through, fee WAS taken.
         toast.error(`${describeResultCode(result.resultCode)} The network fee was still charged.`, { action: 'send' })
+      } else if (result.status === 'unknown') {
+        // Validated, result unreadable: it may well have paid. Never an error
+        // toast, which reads as "not sent" and invites paying twice.
+        toast.warning(`${UNKNOWN_OUTCOME_WORDS} Hash: ${result.hash}`, { action: 'send' })
       } else {
         toast.error(describeResultCode(result.resultCode), { action: 'send' })
       }
@@ -463,7 +467,8 @@ export function SendTab() {
         // or a rejection changed nothing on the destination's side. Without
         // this the form kept saying "not activated" for up to the freshness
         // window, and the next send's post-unlock probe was served from it.
-        result.status === 'validated' ? invalidateDestinationCheck(queryClient, network, destination) : null,
+        // An unknown outcome may have done exactly that, so it refreshes too.
+        result.status === 'validated' || result.status === 'unknown' ? invalidateDestinationCheck(queryClient, network, destination) : null,
         // An expired send was pinned to a fee that did not get in; a retry
         // must not pin that same cached figure again.
         result.status === 'expired' ? queryClient.invalidateQueries({ queryKey: queryKeys.recommendedFee(network) }) : null,
@@ -767,11 +772,12 @@ export function SendTab() {
             <div className="panel-plate flex flex-col gap-2 rounded-md p-3">
               <div className="flex items-center gap-2">
                 <TxStatusBadge
-                  resultCode={outcome.status === 'expired' ? 'expired' : outcome.resultCode}
+                  resultCode={outcome.status === 'expired' || outcome.status === 'unknown' ? outcome.status : outcome.resultCode}
                   validated={outcome.status !== 'expired'}
                 />
                 <TxLink hash={outcome.hash} />
               </div>
+              {outcome.status === 'unknown' && <p className="text-sm">{UNKNOWN_OUTCOME_WORDS}</p>}
               {(outcome.status === 'failed' || outcome.status === 'claimed') && (
                 <p className="text-sm text-text-destructive">
                   {describeResultCode(outcome.resultCode)}

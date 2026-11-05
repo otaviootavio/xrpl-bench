@@ -128,6 +128,10 @@ export type SubmitOutcome =
   /** Rejected before being applied (`tef*`/`tem*`/`ter*`) — no fee consumed. */
   | { status: 'failed'; hash: string; resultCode: string }
   | { status: 'expired'; hash: string } // LastLedgerSequence passed with no validated result — see docs/decisions.md
+  /** In a validated ledger, but the response carried no readable
+   * `TransactionResult`. NOT a failure and NOT "not sent": the caller must tell
+   * the operator to check the hash before trying again, and never resubmit. */
+  | { status: 'unknown'; hash: string }
 
 function classify(resultCode: string): 'validated' | 'claimed' | 'failed' {
   if (resultCode === 'tesSUCCESS') return 'validated'
@@ -197,8 +201,12 @@ export async function submitAndClassify(
     }
     try {
       const res = await client.submitAndWait(signed.tx_blob)
-      const meta = res.result.meta
-      const resultCode = typeof meta === 'object' && meta ? meta.TransactionResult : 'unknown'
+      const meta: unknown = res.result.meta
+      // A meta that is missing, not an object (binary meta) or has no string
+      // result is an unreadable outcome, never a failure: reading it as one
+      // would invite a resend that pays twice.
+      if (!isRecord(meta) || typeof meta.TransactionResult !== 'string' || meta.TransactionResult === '') return { status: 'unknown', hash: signed.hash }
+      const resultCode = meta.TransactionResult
       const status = classify(resultCode)
       return status === 'failed'
         ? { status, hash: signed.hash, resultCode }

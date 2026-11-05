@@ -11,7 +11,8 @@ import { StatusLegend, type LampTone } from '@/components/ui/lamp'
  * `tec*` results deliberately read differently from `tef*`/`tem*`: a `tec` is in
  * a validated ledger and consumed its fee, so the user is told the fee was
  * taken rather than being shown an undifferentiated "Failed"
- * (docs/decisions.md §5.5).
+ * (docs/decisions.md §5.5). `'unknown'` is the sentinel for a validated
+ * transaction whose result could not be read (History and Send both use it).
  *
  * Only the bracketed result code is unbreakable: `tecUNFUNDED_PAYMENT` split
  * across two lines would read as two codes. The words before it ("Failed — fee
@@ -41,6 +42,9 @@ export function TxStatusBadge({ resultCode, validated }: { resultCode?: string; 
   if (!validated) return <Status tone="neutral">Pending</Status>
   if (resultCode === 'tesSUCCESS') return <Status tone="live">Validated</Status>
   if (resultCode === 'expired') return <Status tone="caution">Expired — not applied</Status>
+  // Validated, but the ledger's answer carried no readable result: never
+  // "Failed", which would invite a resend that pays twice.
+  if (resultCode === 'unknown') return <Status tone="caution">Result not read</Status>
   if (resultCode?.startsWith('tec')) return <Status tone="caution" code={resultCode}>Failed — fee charged</Status>
   return <Status tone="alert" code={resultCode ?? ''}>Failed</Status>
 }

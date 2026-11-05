@@ -53,6 +53,7 @@ vi.mock('@/store/app-store', () => ({
 
 import { TrustLinesTab } from '../TrustLinesTab'
 import { queryKeys } from '@/lib/xrpl/query-keys'
+import { toast } from '@/lib/notify'
 
 const WALLET_ADDRESS = 'rBoGUS9uiK9m3Kk6qnGRvWWCwAeN8hF3wR'
 
@@ -108,6 +109,30 @@ describe('TrustLinesTab — a TrustSet discards the whole account group', () => 
     ]) {
       expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: key })
     }
+  })
+})
+
+describe('TrustLinesTab — an unknown outcome', () => {
+  it('warns with the hash, raises no error, and closes the dialog so one click cannot resubmit', async () => {
+    const warning = vi.spyOn(toast, 'warning')
+    const error = vi.spyOn(toast, 'error')
+    signingHandleFor.mockImplementation(async () => fakeHandle())
+    submitTrustSet.mockImplementation(opening({ status: 'unknown', hash: 'C0FFEE' }))
+    render(<TrustLinesTab />)
+    fireEvent.click(screen.getByRole('button', { name: 'Add trust line' }))
+    fireEvent.change(screen.getByLabelText('Issuer address'), { target: { value: ISSUER } })
+    fireEvent.change(screen.getByLabelText('Currency code'), { target: { value: 'USD' } })
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Create trust line' }))
+    })
+
+    expect(warning).toHaveBeenCalledOnce()
+    expect(warning.mock.calls[0][0]).toMatch(/^Outcome unknown\..*C0FFEE/)
+    expect(error).not.toHaveBeenCalled()
+    expect(screen.queryByRole('button', { name: 'Create trust line' })).toBeNull()
+    expect(screen.queryByLabelText('Issuer address')).toBeNull()
+    warning.mockRestore()
+    error.mockRestore()
   })
 })
 

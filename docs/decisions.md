@@ -1611,3 +1611,57 @@ the blob is never resubmitted. Scanning is `BarcodeDetector` over `getUserMedia`
 browser has both; otherwise, and always, the dialog takes the payload as pasted text. No new
 dependency; a scanner library (jsQR) would need an owner decision. Not verified: a real
 camera scan, or a Testnet round trip between two browser profiles.
+
+---
+
+## 16. A validated write whose result cannot be read is `unknown`, never failed
+
+Decided 2026-11-05, in
+`_bmad-output/implementation-artifacts/spec-deferred-small-fixes-a.md` and
+`spec-deferred-small-fixes-b-trust-lines-reserve-fee.md` (PR #63). This adds an
+outcome next to §5.5's `claimed`; it does not change §5.5 or §14.
+
+**The outcome.** `submitAndClassify` (`writes.ts`) returns
+`{ status: 'unknown', hash }` when `submitAndWait` answers with a validated
+transaction whose `meta` is missing, not an object (binary meta), or has no
+non-empty `TransactionResult`. It is not `failed`: the transaction is in a
+validated ledger and may have done what was asked, so reading it as a failure
+invites a resend that pays twice.
+
+**How it is shown.** One sentence, `UNKNOWN_OUTCOME_WORDS` in
+`result-codes.ts` ("Outcome unknown. … Check it by its hash before trying
+again."), followed by the hash. It is a warning, never an error. The caller
+refreshes the account-scoped reads (Send also refreshes the destination check,
+which the payment may have activated) and never resubmits; Trust lines closes
+its sheet so one more click cannot pay a second fee. Setting a Regular Key
+(`control.ts`), turning the Account Master Key off or on (`master-key.ts`) and
+two-device signing (`two-device.ts`) map `unknown` to their existing
+`unconfirmed` result, whose "check again" re-reads the ledger.
+
+**History.** `reads.ts` keeps a validated row whose result cannot be read and
+marks it `resultCode: 'unknown'`; `TxStatusBadge` shows it as "Result not read"
+in the caution tone. It is never `''`, which reads as "Failed", and never
+skipped, which would make the page look complete when it is not. An
+unvalidated row with no result stays Pending.
+
+---
+
+## 17. Dialog footers: sheet scroll padding, and keys that wrap
+
+Decided 2026-11-05, in `spec-deferred-small-fixes-b-trust-lines-reserve-fee.md`
+(PR #63) and `spec-batch2-d-footer-wrap-and-unknown-record.md`.
+
+**Sheet scroll padding.** Below `sm` a sheet's footer sticks to the bottom of
+its scrolling body, so the body (`data-slot="dialog-body"`) carries
+`scroll-pb-24`: an element scrolled into view by keyboard focus lands above the
+footer, not under it (WCAG 2.4.11, Focus Not Obscured).
+
+**Footer keys wrap.** Every key that is a direct child of a `DialogFooter`
+(`data-slot="button"`, so an `asChild` link too), in a sheet or a plain dialog
+and at every width, wraps its label, centred, and grows in height, as
+`ScreenFooter`'s keys do: `h-auto`, `min-h-9` (`min-h-11` on a coarse pointer),
+`whitespace-normal`, `py-1.5`, `text-center`. The shared `Button`'s defaults
+are unchanged outside dialog footers. The intent is that a one-line key keeps
+its usual height and a long label at 320px with 200% text is never cut off and
+never pushes the sheet body sideways; those layout results are checked by the
+browser pass, not by the gates.

@@ -2,7 +2,7 @@
 title: XRPL Bench
 status: draft
 created: 2026-09-12
-updated: 2026-11-04
+updated: 2026-11-05
 ---
 
 # PRD: XRPL Bench
@@ -383,7 +383,7 @@ including a reload inside a Wallet.
 - It reads only what the device already holds. It issues no ledger read and
   shows no balance.
 - With no Wallet on the device, the first-run flow is shown instead (§4.1).
-- *Planned, not built (§6.3).*
+- *Built (Epics 17 to 19).*
 
 #### FR-80: A failed read of the Wallet list is an error, never first run
 If the Wallets on the device, or the saved app state, cannot be read, the app
@@ -637,7 +637,7 @@ A Wallet is one address on one Network, for its whole life.
   (FR-75, FR-77) and the QR signing round (FR-78) keep working as built. A
   controlled Wallet has no key of its own, so it opens with the lock of the
   Wallet that holds the key: the one exception to "its own lock", until the
-  planned Signer and Transmitter work (§6.3).
+  Offline signing work (§6.2).
 - The quiz (FR-91) is unchanged: it already asks one Network at step 1 and locks
   it. Rename, Remove, the Mainnet floor (FR-65) and FR-13's removal rules are
   unchanged.
@@ -1282,48 +1282,44 @@ a path to the unlock or Seed surfaces.
 
 All thirteen shipped features in §4 — FR-1 through FR-59. Every one is
 implemented at the time of writing; for these, this PRD records the v1 boundary
-rather than proposing it. The planned §4.14 is in §6.3, not here.
+rather than proposing it. §4.14 (FR-60 to FR-78) and FR-79 to FR-95 have also
+shipped (PR #49 and Epics 17 to 23).
 FR-57 and FR-58 document money-correctness behaviour the code already has and
 this PRD previously failed to state.
 
-### 6.2 Out of Scope for MVP
+### 6.2 Not built yet
 
-- **Checks, Escrow, Payment Channels** — real XRPL features, each its own future
-  epic. Not required for a minimum functional self-custody wallet.
-- **Token issuing, Multi-Purpose Tokens and NFTs** — *raised 2026-11-02, deferred
-  and not specified.* Today the wallet holds XRP and Trust Line tokens as a holder
+One list for everything not built, whether it was called planned or deferred
+before (merged 2026-11-05: the owner treats both as "not built yet, later").
+Each item carries its status. What is out for good is §5, not here.
+
+- **Offline signing, with multi-signing** — *needs a PRD pass.* See the entry
+  below.
+- **State-machine model of the Wallet** — *exploratory.* See the entry below.
+- **Checks, Escrow, Payment Channels** — *not specified.* Real XRPL features,
+  each its own future epic. Not required for a minimum functional self-custody
+  wallet.
+- **Token issuing, Multi-Purpose Tokens and NFTs** — *raised 2026-11-02, not
+  specified.* Today the wallet holds XRP and Trust Line tokens as a holder
   only (§4.7). Deferred: the issuer side of Trust Line tokens, MPTs (holder and
   issuer) and NFTs (holder and creator). XRPL Bench is the interface between an
   XRPL user and native XRPL functionality, so when this is taken up its
   requirements come from the XRPL documentation and Ripple use cases, not from
   invented journeys. Each family is its own slice. NFT buy and sell offers need
   the §5 "not an exchange" question answered before any spec.
-- **Multi-signing and regular-key rotation** — same; and multi-party signing is a
-  different product shape from the single-operator assumption in §2.
-  *Narrowed by §4.14:* setting a Regular Key from a Controlling Wallet (FR-75)
-  and adding a passkey as an extra key (FR-76) are planned. Rotation as a
-  general feature and multi-signing remain out.
-- **User-editable RPC endpoints** — *planned in §4.14 (FR-61); still out of v1
-  as built.* v1 ships one hardcoded endpoint plus one
-  failover per Network (FR-41). **This is the deferral most likely to be missed
-  by an operator who does not trust the shipped endpoints**, and it is tracked
-  as an open question (§10) rather than left as an annotation, because an
-  operator who cannot choose an endpoint is trusting two servers the product
-  never asked them to evaluate.
-- **Automated live-ledger integration testing** — the Testnet validation pass is
-  manual and is a stated pre-release prerequisite, not an automated gate.
-- **RTL layout** — recorded as genuinely unreviewed rather than dismissed.
-- **Automated accessibility audit (axe)** — unavailable in the build environment;
-  the manual keyboard and screen-reader pass per component stands in for it.
+- **Regular-key rotation as a general feature** — *not specified.* Setting a
+  Regular Key from a Controlling Wallet (FR-75) and adding a passkey as an extra
+  key (FR-76) shipped in §4.14. Multi-signing moved into Offline signing.
+- **Automated live-ledger integration testing** — *not specified.* The Testnet
+  validation pass is manual and is a stated pre-release prerequisite, not an
+  automated gate.
+- **RTL layout** — *not reviewed.* Recorded as genuinely unreviewed rather than
+  dismissed.
+- **Automated accessibility audit (axe)** — *blocked.* Unavailable in the build
+  environment; the manual keyboard and screen-reader pass per component stands
+  in for it.
 
-### 6.3 Planned, not built
-
-- **§4.14 Per-Wallet Key Setup and Signing Checks** — FR-60 through FR-78. Its
-  phase-blockers, §10 questions 7 to 9, were answered 2026-10-10. FR-74 (existing Wallets carry over
-  unchanged) was its precondition; FR-95 removes the precondition by removing the older Wallets.
-- **§4.3 Wallet Chooser and per-Wallet Configure screen** — FR-79 through FR-90,
-  and changes to FR-10, FR-13, FR-14 and FR-77. Epics 17 to 19. Spec:
-  `_bmad-output/specs/spec-wallet-chooser/SPEC.md`.
+Details of the first two items:
 
 - **Offline signing** (was "Signer Wallet and Transmitter Wallet") — *raised
   2026-11-02, scope widened 2026-11-04, not specified.*
@@ -1343,8 +1339,8 @@ this PRD previously failed to state.
   designer with presets, QR signature rounds, Tickets, cost preview, drift
   alert, rehearse on Testnet) are in the 2026-10-06 brainstorm:
   `_bmad-output/brainstorming/brainstorm-advanced-wallet-features-2026-10-06/`.
-  This widens the §6.2 multi-signing deferral and touches §2.2 (one operator,
-  one device), which this PRD pass must reconcile.
+  Multi-signing now lives only here. It touches §2.2 (one operator, one
+  device), which this feature's PRD pass must reconcile.
 
 - **State-machine model of the Wallet** — *raised 2026-11-04, exploratory, not
   specified, no requirements.* Model XRPL Bench as a set of state machines to

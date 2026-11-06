@@ -180,8 +180,24 @@ const SHEET_FOOTER =
   'group-data-[variant=sheet]/dialog:max-sm:pt-3 group-data-[variant=sheet]/dialog:max-sm:pb-[max(1rem,env(safe-area-inset-bottom))] ' +
   'group-data-[variant=sheet]/dialog:max-sm:shadow-[0_-10px_10px_-10px_rgb(0_0_0/0.4)]'
 
+/** A footer key's label wraps, centred, and the key grows, as in `ScreenFooter`:
+ * at 320px with 200% text a one-line "Create trust line" was cut off and pushed
+ * the sheet body sideways. Targets `data-slot="button"`, so an `asChild` key
+ * (an `<a>`) wraps too. `py-1.5` keeps a one-line key at 100% text below the
+ * minimum, so `min-h-9` (36px, its usual height) and `min-h-11` (44px on a
+ * coarse pointer) govern and the key looks as before. */
+const FOOTER_KEYS =
+  '[&>[data-slot=button]]:h-auto [&>[data-slot=button]]:min-h-9 pointer-coarse:[&>[data-slot=button]]:min-h-11 ' +
+  '[&>[data-slot=button]]:whitespace-normal [&>[data-slot=button]]:py-1.5 [&>[data-slot=button]]:text-center'
+
 function DialogFooter({ className, ...props }: React.ComponentProps<'div'>) {
-  return <div className={cn('flex flex-col-reverse gap-2 sm:flex-row sm:justify-end', SHEET_FOOTER, className)} {...props} />
+  return (
+    <div
+      data-slot="dialog-footer"
+      className={cn('flex flex-col-reverse gap-2 sm:flex-row sm:justify-end', FOOTER_KEYS, SHEET_FOOTER, className)}
+      {...props}
+    />
+  )
 }
 function DialogTitle({ className, ...props }: React.ComponentProps<typeof DialogPrimitive.Title>) {
   return (

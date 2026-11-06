@@ -3,7 +3,7 @@ title: 'Batch 2 D: dialog footer labels wrap at 200% text; record the unknown ou
 type: 'bugfix'
 created: '2026-11-05'
 baseline_revision: 'ba57d913046ac4e4c8a1894ef9516ff824a052fc'
-status: 'in-review'
+status: 'done'
 review_loop_iteration: 0
 followup_review_recommended: false
 context: ['{project-root}/DESIGN.md']
@@ -91,3 +91,9 @@ deferred: []
 **Manual checks (browser pass, run separately):**
 - Add trust line sheet at 320x568 with root font-size 200%, light and dark: label wrapped, no sideways scroll, close X clear of the title.
 - Send confirm, Trust lines edit and close, and one other sheet at 320px 100%: footers look as before.
+
+**Browser pass (2026-11-06).** Commit e069c25, Playwright MCP Chromium (fine pointer) against the dev server, CDP virtual authenticator, Testnet throwaway wallets made with the create quiz and funded by the in-app faucet. Widths 320, 390, 1280; light and dark; 200% text as root font-size 200%. Screenshots in the session scratchpad `bp-batch2/`, opened before citing. Forced states are named as forced; every temporary switch was reverted and the tree was clean afterwards.
+- MET D1: Add trust line sheet at 320px, 200% text, light and dark: "Create trust line" wraps to two centred lines; `dialog-body` scrollWidth equals clientWidth (303); the close X clears the title.
+- MET D2: at 200% every focused field and key ends above the sticky footer (closest: Currency code, 2.7px clear).
+- MET D3: at 100% text, 320 and 1280, both themes, every footer key in the Send confirm, the add sheet and the close dialog measures 36px (fine pointer).
+- Seen, not caused here (logged in deferred-work): below `sm` the sticky footer stops above the sheet's bottom edge by the body's bottom padding (32px at 200% text), and form content shows through that strip.

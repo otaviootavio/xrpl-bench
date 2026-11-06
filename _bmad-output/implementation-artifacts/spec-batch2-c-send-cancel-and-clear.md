@@ -3,7 +3,7 @@ title: 'Batch 2 C: Send can be cancelled before signing, and clears the amount a
 type: 'bugfix'
 created: '2026-11-05'
 baseline_revision: 'ba57d913046ac4e4c8a1894ef9516ff824a052fc'
-status: 'in-review'
+status: 'done'
 review_loop_iteration: 0
 followup_review_recommended: false
 context: ['{project-root}/DESIGN.md']
@@ -115,3 +115,10 @@ The choke point already calls `signing.open()` as the last step before a signatu
 - Testnet, funded throwaway wallet. Slow the destination re-check with a temporary delay switch (reverted after): open Review, press Confirm, press Cancel while the re-check waits; the dialog closes, "Cancelled. Nothing was sent." shows, and no transaction appears for the account afterwards (`account_tx`).
 - Send a real small XRP payment: after "Validated", the amount field is empty, destination kept.
 - Cancel button reachable and focus visible at 320px, light and dark.
+
+**Browser pass (2026-11-06).** Commit e069c25, Playwright MCP Chromium (fine pointer) against the dev server, CDP virtual authenticator, Testnet throwaway wallets made with the create quiz and funded by the in-app faucet. Widths 320, 390, 1280; light and dark; 200% text as root font-size 200%. Screenshots in the session scratchpad `bp-batch2/`, opened before citing. Forced states are named as forced; every temporary switch was reverted and the tree was clean afterwards.
+- MET C1 (forced slow re-check, 15 s): Cancel enabled while the attempt waited; the dialog closed within 44 ms, "Cancelled. Nothing was sent." shown, Review usable; ~29 s later `account_tx` showed no new Payment, balance and Sequence unchanged.
+- MET C2: real 1 XRP send validated (3CE24A37…C6CD32, tesSUCCESS, fee 10 drops); amount cleared, destination kept, outcome panel "Amount: 1 XRP".
+- MET C3: an idle confirm closes with Cancel and with Escape, before any send and after the C2 send.
+- MET C4: at 320px Cancel reachable inside the viewport, `:focus-visible` ring shown in light and dark.
+- Not exercised: a coarse pointer (44px keys), and a PIN-prompt cancel (the wallets used ask nothing for signing).

@@ -159,3 +159,8 @@ Status: done
 **Verification.** `bun run lint` pass, `bun run build` pass, `bun run test` pass (129 files, 1905 tests), `bun run check:contrast` pass.
 
 **Residual risks.** The two deferred items above.
+
+**Browser pass, added 2026-11-06** (batch 2 pass, commit e069c25, Testnet):
+- MET: a token sent back to its own issuer (1 USD, B8065848…3966161, tesSUCCESS) showed no "can't hold this token" warning.
+- MET (forced unknown outcome: meta read as `{}`; the payment really validated, DFF31C45…29B07E): Send showed "Result not read", "Amount: 1 XRP", the "Outcome unknown" sentence and a caution (not an error) naming the hash; the reads refreshed.
+- MET (forced null meta on the first History entry): History rendered all rows; that row read "Result not read" with the "without a readable result" sentence and no "payment failed" alert.

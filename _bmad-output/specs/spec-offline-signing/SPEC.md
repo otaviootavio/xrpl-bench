@@ -95,6 +95,7 @@ A vision and a pain. Every XRPL Bench Wallet keeps its key on a device that is o
 - Setting or removing delegates (`DelegateSet`).
 - A multi-frame QR.
 - Migrating today's controlled accounts.
+- Defending against a compromised online device (Transmitter Wallet) beyond the checks already decided. It can supply wrong values within the allowed ranges, keep a Signed Transaction until it expires, send on another Network (`fact-check.md` case 1) or not send at all. Known issue, accepted (owner, 2026-11-07). The decided checks stay: they also catch mistakes.
 
 ## Success signal
 

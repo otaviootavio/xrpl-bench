@@ -1,0 +1,95 @@
+- id: "1"
+  title: Wallet kind on the record and the chooser card
+  description: >-
+    Give every Wallet one kind (Online, Offline, Transmitter) and show it in words on the chooser card; existing records read as Online with no migration (CAP-1).
+    This is the base every later story reads.
+  invoke_dev_with: >-
+    Fetch dev first; it may already hold this slice. Finish with a real-browser pass.
+- id: "2"
+  title: One Transmit step, and "Show the signed transaction before sending"
+  description: >-
+    Split the submit half out of today's write path so every Signed Transaction, signed here or scanned, enters one Transmit step with the CAP-5 checks; add the per-Wallet setting, off by default (CAP-5, CAP-6).
+    Online sending must behave exactly as before when the setting is off.
+  spec_checkpoint: true
+  done_checkpoint: true
+  invoke_dev_with: >-
+    Fetch dev first. This changes how money is sent today: keep outcome rules, fee cap and never-resubmit unchanged, and prove it with the existing write tests. Rules: route-checks.md "Transmit step". Finish with a real-browser pass.
+- id: "3"
+  title: Create and import ask for the kind; the Offline Wallet
+  description: >-
+    Add "Online wallet or offline wallet?" to quiz step 1 with texts A, B and E, the Mainnet safeguards, the synced-passkey warning and the one-Seed-one-Network warning; an Offline Wallet has a Network, no Node and issues no ledger read (CAP-2, CAP-16).
+    Words come from consequence-texts.md, unchanged.
+  spec_checkpoint: true
+  invoke_dev_with: >-
+    Fetch dev first. Copy texts verbatim from consequence-texts.md. Finish with a real-browser pass.
+- id: "4"
+  title: Transmitter Wallet, Sync to an address, delegates shown
+  description: >-
+    Add a Transmitter Wallet from the chooser (no Seed, never signs, own Node, Open Check and auto-lock), Sync it to an address for a read-only view, and show the Account's delegates (CAP-3, CAP-15).
+    Same address as an Offline Wallet on this device is warned, never refused.
+  spec_checkpoint: true
+  invoke_dev_with: >-
+    Fetch dev first. Reads go through the key factory scoped to Wallet and Network; failed reads show unknown. Finish with a real-browser pass.
+- id: "5"
+  title: Change a Wallet's kind, and the Was-online mark
+  description: >-
+    Add "Change to an offline wallet" (text C, confirm) and "Change to an online wallet" (text D, irreversible-class plus Signing Check), keeping the Network, and the permanent Was-online mark (CAP-4).
+    An imported Offline Wallet never carries the mark.
+  invoke_dev_with: >-
+    Fetch dev first. Finish with a real-browser pass.
+- id: "6"
+  title: Offline Send end to end by the Offline-builds route
+  description: >-
+    Build Send on the Offline Wallet, show the Data-to-Sign Request, answer it on the Transmitter with the online checks, check Data to Sign and sign offline, then transmit the signed QR (CAP-7, CAP-8, CAP-9, CAP-10 without retry).
+    Done when OS-SM-1 passes on Testnet: three scans, no field typed twice.
+  spec_checkpoint: true
+  done_checkpoint: true
+  invoke_dev_with: >-
+    Fetch dev first. Rules: route-checks.md "What travels by QR", "Offline Wallet, Offline-builds route", "Transmitter Wallet". Reuse qr-codec.ts with new kinds. Finish with a real-browser pass using two browser contexts.
+- id: "7"
+  title: Retry without paying twice
+  description: >-
+    Keep the signed list (no secret, survives a lock), detect a Same Build by content hash, show the earlier signing's record and re-sign with its Sequence unless the user confirms "This is a new payment" (CAP-10 retry).
+    No signed blob is stored.
+  spec_checkpoint: true
+  invoke_dev_with: >-
+    Fetch dev first. Rules: route-checks.md "Retry without paying twice". Finish with a real-browser pass.
+- id: "8"
+  title: Offline-builds route for trust lines and key actions
+  description: >-
+    Extend the Offline-builds route from Send to trust lines, Regular Key and master key actions, including the Transmitter's key-state read (CAP-8, CAP-9).
+    The new Regular Key address is typed or scanned on the offline device.
+  invoke_dev_with: >-
+    Fetch dev first. Finish with a real-browser pass.
+- id: "9"
+  title: Transmitter-builds route for every write
+  description: >-
+    A Synced Transmitter Builds an Unsigned Transaction for any write the app can build; the Offline Wallet shows every field and flag in words, refuses what it cannot show and warns on the risky fields (CAP-11).
+    Together with stories 6 and 8 this meets OS-SM-2.
+  spec_checkpoint: true
+  done_checkpoint: true
+  invoke_dev_with: >-
+    Fetch dev first. Rules: route-checks.md "Offline Wallet, Transmitter-builds route". Finish with a real-browser pass.
+- id: "10"
+  title: A key that Signs for another Account
+  description: >-
+    Record the Signs-for Account separately from the key address, set at create or import and in settings, and use it in the offline checks, the request, the card and FR-93's same-address refusal (CAP-13).
+    Offer it after an in-app Regular Key change.
+  invoke_dev_with: >-
+    Fetch dev first. Finish with a real-browser pass.
+- id: "11"
+  title: Regular Key and master key warnings
+  description: >-
+    Allow any Regular Key address and master key change the ledger allows, for every Wallet kind, with W1 to W5 and plain-word ledger refusals; no refusal of the app's own (CAP-14).
+    Master key off stays irreversible-class.
+  spec_checkpoint: true
+  invoke_dev_with: >-
+    Fetch dev first. Words from consequence-texts.md; ledger facts from fact-check.md cases 3 and 8. Finish with a real-browser pass.
+- id: "12"
+  title: Retire Operating another account and Two-device signing
+  description: >-
+    Remove the FR-75 and FR-78 screens from Local settings with no migration, and change the product PRD's planned-change pointers to replaced (CAP-12).
+    Runs last, once Signs for and the key warnings exist.
+  done_checkpoint: true
+  invoke_dev_with: >-
+    Fetch dev first. Pointer list: product-prd-changes.md. Finish with a real-browser pass.

@@ -44,9 +44,11 @@ One payload is one QR.
   Sequence, LastLedgerSequence, time. No secret; survives a lock.
 - **Same Build** = same type, destination, amount, token, tag, flags, compared
   by a hash of that content. Detected even when typed again after a lock.
-- On a Same Build it shows the earlier signing and reuses that Sequence instead
-  of the received one, so at most one can apply (`tefPAST_SEQ`, `fact-check.md`
-  case 4).
+- On a Same Build it shows the earlier signing's record and re-signs with that
+  Sequence instead of the received one, so at most one can apply
+  (`tefPAST_SEQ`, `fact-check.md` case 4). The signed blob is never stored;
+  the PRD's "shows the earlier signature" means this record (owner,
+  2026-11-07).
 - A new Sequence only after the warning that the earlier one may have been
   applied and the confirm "This is a new payment". The user decides.
 

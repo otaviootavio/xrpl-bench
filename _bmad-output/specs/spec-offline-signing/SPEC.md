@@ -111,5 +111,5 @@ A vision and a pain. Every XRPL Bench Wallet keeps its key on a device that is o
 
 ## Open Questions
 
-- Can a Data-to-Sign Request or Unsigned Transaction for a large Build exceed one QR (2,331 bytes)? Multi-frame QR is out of scope.
+- Can a Data-to-Sign Request or Unsigned Transaction for a large Build exceed one QR (2,331 bytes)? Multi-frame QR is out of scope. Open issue: settle it by building the largest transactions the app makes and testing them (owner, 2026-11-07).
 - A same-Sequence retry whose earlier signing was already applied returns `tefPAST_SEQ`. How does the Transmit step report it, so a plain "failed" does not lead the user to confirm "This is a new payment" and pay twice?

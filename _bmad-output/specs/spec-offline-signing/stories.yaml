@@ -50,7 +50,7 @@
   title: Retry without paying twice
   description: >-
     Keep the signed list (no secret, survives a lock), detect a Same Build by content hash, show the earlier signing's record and re-sign with its Sequence unless the user confirms "This is a new payment" (CAP-10 retry).
-    No signed blob is stored; a retry that returns tefPAST_SEQ is reported as probably already sent, never as failed.
+    No signed blob is stored; before re-signing, compare the received Sequence and ledger index with the earlier signing, and report a used Sequence as probably already sent, never as failed.
   spec_checkpoint: true
   invoke_dev_with: >-
     Fetch dev first. Rules: route-checks.md "Retry without paying twice". Finish with a real-browser pass.

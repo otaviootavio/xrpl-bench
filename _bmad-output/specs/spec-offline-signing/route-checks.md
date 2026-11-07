@@ -51,12 +51,23 @@ One payload is one QR.
   2026-11-07).
 - A new Sequence only after the warning that the earlier one may have been
   applied and the confirm "This is a new payment". The user decides.
-- A same-Sequence retry that returns `tefPAST_SEQ` is not a failure: that
-  Sequence is already used on the ledger, most likely by the earlier signing.
-  The Transmit step reports it as "the earlier signing probably went through,
-  check before paying again", never as "failed", so the user is not led to
-  "This is a new payment". The exact words are for UX in ASD-STE100; the rule
-  is the owner's (2026-11-07). `AccountTxnID` chaining is not used.
+- Before signing a Same Build, the Offline Wallet compares the received Data
+  to Sign with the listed earlier signing (no new value is needed):
+
+  | Received | Means | Offline Wallet does |
+  |---|---|---|
+  | Sequence higher than the earlier Sequence | That Sequence is used, most likely by the earlier signing | Says the earlier signing probably went through and to check before paying again; signs nothing unless the user confirms "This is a new payment" |
+  | Same Sequence, ledger index past the earlier LastLedgerSequence | The earlier signing can never apply | Signs again; no warning needed |
+  | Same Sequence, ledger index not past the earlier LastLedgerSequence | The earlier signing can still apply | Re-signs with the same Sequence, so at most one applies |
+
+- A same-Sequence retry that still returns `tefPAST_SEQ` at the Transmit step
+  is reported as "the earlier signing probably went through, check before
+  paying again", never as "failed".
+- Exact words are for UX in ASD-STE100; the rules are decided (2026-11-07).
+- `AccountTxnID` chaining is not used: it needs the `asfAccountTxnID` account
+  flag, a previous-transaction hash from the Transmitter (a new Data to Sign
+  value), and conflicts with Tickets; the Sequence comparison above covers the
+  same risk with values already received.
 
 ## Offline Wallet, Transmitter-builds route
 

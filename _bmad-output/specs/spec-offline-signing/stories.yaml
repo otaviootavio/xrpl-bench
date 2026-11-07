@@ -29,7 +29,7 @@
     Same address as an Offline Wallet on this device is warned, never refused.
   spec_checkpoint: true
   invoke_dev_with: >-
-    Fetch dev first. Reads go through the key factory scoped to Wallet and Network; failed reads show unknown. Finish with a real-browser pass.
+    Fetch dev first. Reads go through the key factory scoped to Wallet and Network; failed reads show unknown. Apply story 2's Transmit step (expected-Account rule) and the "Show the signed transaction before sending" setting to the Transmitter Wallet here. Finish with a real-browser pass.
 - id: "5"
   title: Change a Wallet's kind, and the Was-online mark
   description: >-

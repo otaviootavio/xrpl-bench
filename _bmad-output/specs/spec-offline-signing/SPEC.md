@@ -54,7 +54,7 @@ A vision and a pain. Every XRPL Bench Wallet keeps its key on a device that is o
   - **success:** The request appears only after review and nothing can change without restarting it; the Transmitter refuses in the online words whatever online Send refuses, never answers from a failed read, uses its own Network, and before a key change shows the key state and W4/W5, stating a failed read as unknown.
 - **CAP-10**
   - **intent:** The Offline Wallet signs only a transaction made from its kept Build plus a well-formed Data to Sign, and a retry never pays twice (OS-FR-16).
-  - **success:** Every Offline-builds rule in `route-checks.md` holds: exact Data to Sign set with matching request ID and Build hash, own LastLedgerSequence (~10 minutes), highest-seen ledger warning, fee cap, Network and Account refusals, Network in large type before the Signing Check; a Same Build shows the earlier signing's record and re-signs with that Sequence unless the user confirms "This is a new payment"; no signed blob is stored.
+  - **success:** Every Offline-builds rule in `route-checks.md` holds: exact Data to Sign set with matching request ID and Build hash, own LastLedgerSequence (~10 minutes), highest-seen ledger warning, fee cap, Network and Account refusals, Network in large type before the Signing Check; a Same Build shows the earlier signing's record and re-signs with that Sequence unless the user confirms "This is a new payment"; no signed blob is stored; a retry that returns `tefPAST_SEQ` is reported as "the earlier signing probably went through, check before paying again", never as failed.
 - **CAP-11**
   - **intent:** A Synced Transmitter Wallet Builds an Unsigned Transaction for any write the app can build, and the Offline Wallet shows every field before signing it (OS-FR-17, OS-FR-18).
   - **success:** Every Transmitter-builds rule in `route-checks.md` holds: every field and flag in words, Network large, expiry and window shown; refuses what it cannot show, a foreign Network or Account, a pre-set signature, a Fee over the cap and a partial payment; strong warnings on the listed risky fields; refusing signs nothing.
@@ -112,4 +112,3 @@ A vision and a pain. Every XRPL Bench Wallet keeps its key on a device that is o
 ## Open Questions
 
 - Can a Data-to-Sign Request or Unsigned Transaction for a large Build exceed one QR (2,331 bytes)? Multi-frame QR is out of scope. Open issue: settle it by building the largest transactions the app makes and testing them (owner, 2026-11-07).
-- A same-Sequence retry whose earlier signing was already applied returns `tefPAST_SEQ`. How does the Transmit step report it, so a plain "failed" does not lead the user to confirm "This is a new payment" and pay twice?

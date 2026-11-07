@@ -1,6 +1,7 @@
 ---
 id: SPEC-offline-signing
 companions:
+  - glossary.md
   - consequence-texts.md
   - route-checks.md
   - product-prd-changes.md
@@ -111,3 +112,4 @@ A vision and a pain. Every XRPL Bench Wallet keeps its key on a device that is o
 ## Open Questions
 
 - Can a Data-to-Sign Request or Unsigned Transaction for a large Build exceed one QR (2,331 bytes)? Multi-frame QR is out of scope.
+- A same-Sequence retry whose earlier signing was already applied returns `tefPAST_SEQ`. How does the Transmit step report it, so a plain "failed" does not lead the user to confirm "This is a new payment" and pay twice?

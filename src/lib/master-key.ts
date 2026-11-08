@@ -4,7 +4,7 @@ import { listWallets, SigningCheckError, signingHandleFor, type Prompts, type Wa
 import { fetchAccountStateFresh } from '@/lib/xrpl/query-reads'
 import { invalidateAccountScoped } from '@/lib/xrpl/query-keys'
 import type { AccountState } from '@/lib/xrpl/reads'
-import { submitMasterKeyFlag, type SubmitOutcome } from '@/lib/xrpl/writes'
+import { submitMasterKeyFlag, TransmitDeclinedError, TransmitRefusedError, type SubmitOutcome } from '@/lib/xrpl/writes'
 
 /**
  * Turning the Account Master Key off and on (FR-77; AD-29).
@@ -146,6 +146,8 @@ export async function setMasterKey(walletId: string, enable: boolean, ctx: SetMa
         ? { status: 'cancelled', reason: err.message }
         : { status: 'check-failed', reason: err.message }
     }
+    // Refused or declined at the Transmit step: nothing was submitted, whatever a re-read says.
+    if (err instanceof TransmitRefusedError || err instanceof TransmitDeclinedError) return { status: 'refused', reason: err.message }
     // The transaction may have been sent before the throw: only an unchanged re-read proves it was not.
     const after = await reread(ctx, wallet)
     if (!after || masterKeyStatus(after) !== masterKeyStatus(state)) return { status: 'unconfirmed', reason: MASTER_KEY_UNCONFIRMED }

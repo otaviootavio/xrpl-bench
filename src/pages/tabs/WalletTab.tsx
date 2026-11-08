@@ -1,6 +1,7 @@
 import { useEffect, useId, useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Button } from '@/components/ui/button'
+import { Checkbox } from '@/components/ui/checkbox'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { ConfigPlate } from '@/components/wallet/ConfigPlate'
@@ -27,7 +28,8 @@ import {
 import { launchFromConfigure, peekConfigureFocusReturn, clearConfigureFocusReturn } from '@/lib/configure-launch'
 import { useLockMinutesChanged } from '@/hooks/useLockMinutesChanged'
 import { usePrompts } from '@/hooks/usePrompts'
-import { renameWallet, setLockAutoLock, type WalletMeta } from '@/lib/crypto/keystore'
+import { listWallets, renameWallet, setLockAutoLock, setShowBeforeSending, type WalletMeta } from '@/lib/crypto/keystore'
+import { BEFORE_SENDING_DESCRIPTION, BEFORE_SENDING_PLATE, SHOW_BEFORE_SENDING } from '@/lib/transmit-words'
 import { notify } from '@/lib/notify'
 import { AUTO_LOCK_CHOICES } from '@/lib/crypto/policy'
 import { minutesLabel } from '@/lib/minutes-label'
@@ -343,6 +345,48 @@ function IdentityPlate({ wallet }: { wallet: WalletMeta }) {
   )
 }
 
+/**
+ * Before sending (OS-FR-10, CAP-6): "Show the signed transaction before sending",
+ * off by default, on Online and Transmitter Wallets only. The control is the
+ * Checkbox primitive with switch semantics (there is no Switch primitive in the
+ * panel vocabulary): it takes effect at once, on the next send.
+ */
+function BeforeSendingPlate({ wallet }: { wallet: WalletMeta }) {
+  const setWallets = useAppStore((s) => s.setWallets)
+  const [busy, setBusy] = useState(false)
+  const descriptionId = useId()
+
+  async function change(on: boolean) {
+    setBusy(true)
+    try {
+      await setShowBeforeSending(wallet.id, on)
+      setWallets(await listWallets())
+    } catch (err: unknown) {
+      notify.error(err instanceof Error ? err.message : String(err))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <ConfigPlate title={BEFORE_SENDING_PLATE}>
+      <label className="flex items-center gap-2 text-sm pointer-coarse:min-h-11">
+        <Checkbox
+          role="switch"
+          checked={wallet.showBeforeSending === true}
+          disabled={busy}
+          aria-describedby={descriptionId}
+          onCheckedChange={(v) => void change(v === true)}
+        />
+        {SHOW_BEFORE_SENDING}
+      </label>
+      <p id={descriptionId} className="text-sm text-muted-foreground">
+        {BEFORE_SENDING_DESCRIPTION}
+      </p>
+    </ConfigPlate>
+  )
+}
+
 /** The plates after Name and Address Book, per kind, in the spine's fixed order (EXPERIENCE
  * "Local settings plates, per kind"). The Online list is today's, unchanged. */
 function KindPlates({ wallet }: { wallet: WalletMeta }) {
@@ -357,6 +401,7 @@ function KindPlates({ wallet }: { wallet: WalletMeta }) {
           <ConfigPlate title="Node">
             <WalletNodeSection wallet={wallet} />
           </ConfigPlate>
+          <BeforeSendingPlate wallet={wallet} />
           <ConfigPlate title="Two-device signing">
             <TwoDeviceSign wallet={wallet} configureKey={TWO_DEVICE_KEY} />
           </ConfigPlate>
@@ -378,6 +423,7 @@ function KindPlates({ wallet }: { wallet: WalletMeta }) {
           <ConfigPlate title="Node">
             <WalletNodeSection wallet={wallet} />
           </ConfigPlate>
+          <BeforeSendingPlate wallet={wallet} />
         </>
       )
     default: {

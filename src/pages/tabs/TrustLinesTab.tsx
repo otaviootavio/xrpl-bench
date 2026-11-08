@@ -176,7 +176,11 @@ export function TrustLinesTab() {
       }
       await invalidateAccountScoped(queryClient, network, wallet.address)
     } catch (err: any) {
-      toast.error(err?.message ?? 'Failed to update trust line.', { action: 'trustline' })
+      // Do not send (OS-FR-10): nothing was sent, and the signed copy stays
+      // valid until its window ends. A caution (P-24), never an error. Read by
+      // name, so a test that mocks the writes module needs no extra export.
+      if (err?.name === 'TransmitDeclinedError') toast.warning(err.message, { action: 'trustline' })
+      else toast.error(err?.message ?? 'Failed to update trust line.', { action: 'trustline' })
     } finally {
       setBusy(false)
       setSubmittingFee(null)

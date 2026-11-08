@@ -1,6 +1,22 @@
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
-import { EXPIRED_NOTHING_SENT, fill, NOT_SENT, REFUSAL, STILL_VALID_WARNING } from '../transmit-words'
+import {
+  BEFORE_SENDING_DESCRIPTION,
+  BEFORE_SENDING_PLATE,
+  COPY_KEY,
+  DO_NOT_SEND_KEY,
+  EXPIRED_NOTHING_SENT,
+  fill,
+  LEDGER_UNREAD,
+  NOT_SENT,
+  REFUSAL,
+  SEND_IT_QUESTION,
+  SEND_KEY,
+  SHOW_BEFORE_SENDING,
+  SIGN_KEY,
+  STILL_VALID_WARNING,
+  TRANSACTION_HASH,
+} from '../transmit-words'
 
 /**
  * OS-FR-9, OS-FR-10, OS-FR-12: the Transmit step's words are copied from the UX
@@ -22,8 +38,9 @@ describe('Transmit step words (OS-FR-9, OS-FR-10)', () => {
     const p26 = row('P-26')
     expect(p26).toContain(`"${NOT_SENT}"`)
     for (const reason of Object.values(REFUSAL)) expect(p26).toContain(`"${reason}"`)
-    // Expiry is not a P-26 reason: it uses the fixed string.
-    expect(p26).toContain(`"${EXPIRED_NOTHING_SENT}"`)
+    // Expiry is not one of P-26's reasons: the row points to the fixed string
+    // instead, so the fixed string is quoted in the row as that pointer.
+    expect(p26).toContain(`(Expiry uses the fixed "${EXPIRED_NOTHING_SENT}")`)
   })
 
   it('P-24: the warning and its decline line, quoted whole', () => {
@@ -32,8 +49,26 @@ describe('Transmit step words (OS-FR-9, OS-FR-10)', () => {
     expect(p24).toContain(`Decline adds "${NOT_SENT}"`)
   })
 
-  it('the fixed expiry string is in the spec table', () => {
+  it('the fixed strings are in the spec table', () => {
     expect(TEXTS).toContain(`| Transmitter, window passed | "${EXPIRED_NOTHING_SENT}" |`)
+    expect(TEXTS).toContain(`| Show-before-sending prompt | "${SEND_IT_QUESTION}" |`)
+  })
+
+  it('P-44 and P-52 are quoted whole', () => {
+    expect(row('P-44')).toContain(`"${BEFORE_SENDING_DESCRIPTION}"`)
+    expect(row('P-52')).toContain(`"${TRANSACTION_HASH}"`)
+  })
+
+  it('the words the owner approved on 2026-11-08 (round two) are exactly these literals', () => {
+    expect([SEND_KEY, DO_NOT_SEND_KEY, COPY_KEY, SIGN_KEY, BEFORE_SENDING_PLATE, SHOW_BEFORE_SENDING]).toEqual([
+      'Send',
+      'Do not send',
+      'Copy',
+      'Sign',
+      'Before sending',
+      'Show the signed transaction before sending',
+    ])
+    expect(`${NOT_SENT} ${LEDGER_UNREAD}`).toBe('The app did not send the transaction. The app cannot read the ledger.')
   })
 
   it('fill puts each value in its own slot, in order, and keeps a slot with no value', () => {

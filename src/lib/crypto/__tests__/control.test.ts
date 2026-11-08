@@ -115,6 +115,8 @@ const ledger = vi.hoisted(() => ({
   applyOnValidated: true,
   /** The submit throws after (`sent`) or instead of (`unsent`) reaching the ledger. */
   throwOn: null as null | 'sent' | 'unsent',
+  /** The submit throws this error, unsent (a Transmit step refusal or decline). */
+  throwError: null as null | Error,
   submits: [] as { address: string; regularKey: string }[],
   reads: 0,
 }))
@@ -139,6 +141,7 @@ vi.mock('@/lib/xrpl/writes', async (importOriginal) => {
       signer.dispose()
       if (ledger.failReadsAfterSubmit) ledger.failReads = true
       if (ledger.throwOn === 'unsent') throw new Error('socket closed')
+      if (ledger.throwError) throw ledger.throwError
       ledger.submits.push({ address: signing.address, regularKey: params.regularKey })
       if (ledger.throwOn === 'sent') {
         ledger.state.regularKey = params.regularKey
@@ -151,6 +154,7 @@ vi.mock('@/lib/xrpl/writes', async (importOriginal) => {
 })
 
 import { QueryClient } from '@tanstack/react-query'
+import { TransmitDeclinedError, TransmitRefusedError } from '@/lib/xrpl/writes'
 import { decode } from 'xrpl'
 import { makePinLock, sealRecordUnderPin, storeSeedWallet } from './fixtures'
 import {
@@ -195,6 +199,7 @@ beforeEach(async () => {
   ledger.outcome = { status: 'validated', hash: 'H', resultCode: 'tesSUCCESS' }
   ledger.applyOnValidated = true
   ledger.throwOn = null
+  ledger.throwError = null
   ledger.submits = []
   ledger.reads = 0
   queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
@@ -338,6 +343,17 @@ describe('setRegularKey', () => {
     ledger.failReadsAfterSubmit = true
     const result = await setRegularKey(controller.id, target.id, ctx())
     expect(result.status).toBe('unconfirmed')
+    expect(viewsOfTarget()).toHaveLength(1)
+  })
+
+  it('a Transmit refusal or decline is refused with its words even when the re-read fails: nothing was sent (OS-FR-9)', async () => {
+    ledger.failReadsAfterSubmit = true
+    ledger.throwError = new TransmitRefusedError('expired', 'Expired. Nothing was sent.')
+    expect(await setRegularKey(controller.id, target.id, ctx())).toEqual({ status: 'refused', reason: 'Expired. Nothing was sent.' })
+    ledger.failReads = false
+    ledger.throwError = new TransmitDeclinedError(100)
+    const declined = await setRegularKey(controller.id, target.id, ctx())
+    expect(declined).toEqual({ status: 'refused', reason: new TransmitDeclinedError(100).message })
     expect(viewsOfTarget()).toHaveLength(1)
   })
 

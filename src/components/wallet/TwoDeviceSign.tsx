@@ -151,6 +151,7 @@ function CopyText({ text, label }: { text: string; label: string }) {
 
 function OnlinePanel({ wallet, onBusy }: { wallet: WalletMeta; onBusy: (busy: boolean) => void }) {
   const queryClient = useQueryClient()
+  const prompts = usePrompts()
   const account = useAccountState(wallet.network, wallet.address, wallet.node)
   const [kind, setKind] = useState<TwoDeviceKind>('payment')
   const [destination, setDestination] = useState('')
@@ -211,7 +212,7 @@ function OnlinePanel({ wallet, onBusy }: { wallet: WalletMeta; onBusy: (busy: bo
     setBusy(true)
     onBusy(true)
     try {
-      setResult(await submitReturned(wallet, built.tx, text, { queryClient }))
+      setResult(await submitReturned(wallet, built.tx, text, { queryClient, prompts }))
     } finally {
       inFlight.current = false
       setBusy(false)

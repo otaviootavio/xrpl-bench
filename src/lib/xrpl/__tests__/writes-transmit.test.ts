@@ -110,6 +110,7 @@ describe('a scanned Signed Transaction enters the same Transmit step (OS-FR-9)',
     const client = installFakeClient()
     await expect(transmitSignedTransaction('testnet', { txBlob: '00', network: 'testnet' }, master.address)).rejects.toMatchObject({ reason: 'signature' })
     expect(client.submitted).toEqual([])
+    expectDepthReleased()
   })
 
   it('refuses a blob signed for another Account, naming both', async () => {
@@ -145,6 +146,7 @@ describe('a scanned Signed Transaction enters the same Transmit step (OS-FR-9)',
       message: 'The app did not send the transaction. This is a partial payment. The app does not send partial payments.',
     })
     expect(client.submitted).toEqual([])
+    expectDepthReleased()
   })
 
   it('refuses a blob past its LastLedgerSequence with the fixed words', async () => {
@@ -158,10 +160,62 @@ describe('a scanned Signed Transaction enters the same Transmit step (OS-FR-9)',
     expectDepthReleased()
   })
 
-  it('sends at exactly its LastLedgerSequence: the ledger can still apply it', async () => {
+  it('refuses at exactly its LastLedgerSequence: that ledger is already validated, so it can no longer apply', async () => {
     const client = installFakeClient({ validated: [100] })
     const blob = master.sign(payment({ LastLedgerSequence: 100 })).tx_blob
+    await expect(transmitSignedTransaction('testnet', { txBlob: blob, network: 'testnet' }, master.address)).rejects.toMatchObject({ reason: 'expired' })
+    expect(client.submitted).toEqual([])
+    expectDepthReleased()
+  })
+
+  it('sends one ledger before its LastLedgerSequence', async () => {
+    const client = installFakeClient({ validated: [99] })
+    const blob = master.sign(payment({ LastLedgerSequence: 100 })).tx_blob
     await transmitSignedTransaction('testnet', { txBlob: blob, network: 'testnet' }, master.address)
+    expect(client.submitted).toEqual([blob])
+  })
+
+  it('refuses a blob with no LastLedgerSequence: it could stay valid for ever', async () => {
+    const client = installFakeClient()
+    const tx = payment()
+    delete tx.LastLedgerSequence
+    const blob = master.sign(tx).tx_blob
+    await expect(transmitSignedTransaction('testnet', { txBlob: blob, network: 'testnet' }, master.address)).rejects.toMatchObject({
+      reason: 'no-window',
+      message: 'The app did not send the transaction.',
+    })
+    expect(client.submitted).toEqual([])
+    expectDepthReleased()
+  })
+
+  it('refuses an envelope naming a Network this build does not know, before reading the blob', async () => {
+    const client = installFakeClient()
+    await expect(transmitSignedTransaction('testnet', { txBlob: 'not a blob', network: 'xahau' }, master.address)).rejects.toMatchObject({
+      reason: 'network',
+      message: 'The app did not send the transaction. This transaction is for xahau. This wallet sends on Testnet.',
+    })
+    expect(client.submitted).toEqual([])
+    expectDepthReleased()
+  })
+
+  it('checks the Network before the signature on a scanned blob', async () => {
+    installFakeClient()
+    await expect(transmitSignedTransaction('testnet', { txBlob: '00', network: 'mainnet' }, master.address)).rejects.toMatchObject({ reason: 'network' })
+  })
+
+  it('applies a reviewer when one is given: a "no" sends nothing, a rejection is a "no"', async () => {
+    const client = installFakeClient({ validated: [80] })
+    const blob = master.sign(payment()).tx_blob
+    await expect(
+      transmitSignedTransaction('testnet', { txBlob: blob, network: 'testnet' }, master.address, undefined, async () => false),
+    ).rejects.toBeInstanceOf(TransmitDeclinedError)
+    await expect(
+      transmitSignedTransaction('testnet', { txBlob: blob, network: 'testnet' }, master.address, undefined, async () => {
+        throw new Error('screen gone')
+      }),
+    ).rejects.toBeInstanceOf(TransmitDeclinedError)
+    expect(client.submitted).toEqual([])
+    await transmitSignedTransaction('testnet', { txBlob: blob, network: 'testnet' }, master.address, undefined, async () => true)
     expect(client.submitted).toEqual([blob])
   })
 
@@ -170,7 +224,7 @@ describe('a scanned Signed Transaction enters the same Transmit step (OS-FR-9)',
     const blob = master.sign(payment()).tx_blob
     await expect(transmitSignedTransaction('testnet', { txBlob: blob, network: 'testnet' }, master.address)).rejects.toMatchObject({
       reason: 'ledger-unread',
-      message: 'The app did not send the transaction.',
+      message: 'The app did not send the transaction. The app cannot read the ledger.',
     })
     expect(client.submitted).toEqual([])
     expectDepthReleased()
@@ -181,6 +235,7 @@ describe('a scanned Signed Transaction enters the same Transmit step (OS-FR-9)',
     const blob = master.sign(payment({ Fee: '10001' })).tx_blob
     await expect(transmitSignedTransaction('testnet', { txBlob: blob, network: 'testnet' }, master.address)).rejects.toBeInstanceOf(FeeAboveCapError)
     expect(client.submitted).toEqual([])
+    expectDepthReleased()
   })
 })
 
@@ -227,6 +282,7 @@ describe('the online write path enters the Transmit step with no extra round tri
       submitAndClassify('testnet', handle(master), { TransactionType: 'Payment', Account: other.address, Destination: DEST, Amount: '1' }),
     ).rejects.toMatchObject({ reason: 'account' })
     expect(client.submitted).toEqual([])
+    expectDepthReleased()
   })
 })
 
@@ -280,13 +336,43 @@ describe('"Show the signed transaction before sending" (OS-FR-10)', () => {
     expectDepthReleased()
   })
 
-  it('refuses after a yes when the window passed during the review', async () => {
-    const client = installFakeClient({ validated: [80, 101] })
-    await expect(
-      submitXrpPayment('testnet', handle(master, { reviewBeforeSending: async () => true }), { destination: DEST, amountDrops: '1' }),
-    ).rejects.toMatchObject({ reason: 'expired', message: 'Expired. Nothing was sent.' })
+  it('reports today\'s expired outcome, sending nothing, when the window passed during the review', async () => {
+    const client = installFakeClient({ validated: [80, 100] })
+    const outcome = await submitXrpPayment('testnet', handle(master, { reviewBeforeSending: async () => true }), { destination: DEST, amountDrops: '1' })
+    expect(outcome.status).toBe('expired')
     expect(client.submitted).toEqual([])
     expectDepthReleased()
+  })
+
+  it('refuses after a yes when the fresh read fails, and sends nothing', async () => {
+    const client = installFakeClient({ validated: [80] })
+    let reads = 0
+    ;(client as any).request = async () => {
+      log.push('request')
+      if (reads++ === 0) return { result: { ledger_index: 80 } }
+      throw new Error('socket closed')
+    }
+    await expect(
+      submitXrpPayment('testnet', handle(master, { reviewBeforeSending: async () => true }), { destination: DEST, amountDrops: '1' }),
+    ).rejects.toMatchObject({ reason: 'ledger-unread', message: 'The app did not send the transaction. The app cannot read the ledger.' })
+    expect(client.submitted).toEqual([])
+    expectDepthReleased()
+  })
+
+  it('treats a rejected review as a decline, and sends nothing', async () => {
+    const client = installFakeClient()
+    await expect(
+      submitXrpPayment('testnet', handle(master, { reviewBeforeSending: async () => { throw new Error('unmounted') } }), { destination: DEST, amountDrops: '1' }),
+    ).rejects.toBeInstanceOf(TransmitDeclinedError)
+    expect(client.submitted).toEqual([])
+    expectDepthReleased()
+  })
+
+  it('shows the review the LastLedgerSequence read off the signed blob', async () => {
+    const client = installFakeClient({ validated: [80, 81] })
+    const seen: SignedForReview[] = []
+    await submitXrpPayment('testnet', handle(master, { reviewBeforeSending: async (s) => (seen.push(s), true) }), { destination: DEST, amountDrops: '1' })
+    expect(seen[0].lastLedgerSequence).toBe(decode(client.submitted[0]).LastLedgerSequence)
   })
 })
 

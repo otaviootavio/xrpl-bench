@@ -74,7 +74,7 @@ vi.mock('idb', () => ({
 }))
 
 import type { StoredWallet } from '../db'
-import { listWallets, renameWallet, setShowBeforeSending, setWalletNode, signingHandleFor, type Prompts } from '../keystore'
+import { listWallets, renameWallet, setShowBeforeSending, SettingNotForOfflineError, setWalletNode, signingHandleFor, type Prompts } from '../keystore'
 
 const rec = (id: string, view: Record<string, unknown> = {}): StoredWallet =>
   ({
@@ -125,6 +125,23 @@ describe('"Show the signed transaction before sending" on the record (OS-FR-10)'
     expect(row('t').views).toEqual([{ walletId: 't', network: 'testnet' }])
     expect((await setShowBeforeSending('s', false)).showBeforeSending).toBeUndefined()
     expect(row('s').views[0]).toEqual({ walletId: 's', network: 'testnet' })
+  })
+
+  it('leaves the other view of the same record untouched, on and off', async () => {
+    put({ ...rec('s'), views: [{ walletId: 's', network: 'testnet' }, { walletId: 's2', network: 'testnet', accountAddress: 'rOther' }] })
+    await setShowBeforeSending('s2', true)
+    expect(row('s').views).toEqual([{ walletId: 's', network: 'testnet' }, { walletId: 's2', network: 'testnet', accountAddress: 'rOther', showBeforeSending: true }])
+    await setShowBeforeSending('s', true)
+    await setShowBeforeSending('s2', false)
+    expect(row('s').views).toEqual([{ walletId: 's', network: 'testnet', showBeforeSending: true }, { walletId: 's2', network: 'testnet', accountAddress: 'rOther' }])
+  })
+
+  it('refuses to turn it on for an Offline Wallet, writing nothing; turning it off is allowed', async () => {
+    put(rec('off', { kind: 'offline' }))
+    const before = JSON.stringify(row('off'))
+    await expect(setShowBeforeSending('off', true)).rejects.toBeInstanceOf(SettingNotForOfflineError)
+    expect(JSON.stringify(row('off'))).toBe(before)
+    await expect(setShowBeforeSending('off', false)).resolves.toMatchObject({ kind: 'offline' })
   })
 
   it('survives a rename and a Node change', async () => {

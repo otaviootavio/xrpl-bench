@@ -146,6 +146,7 @@ vi.mock('@/lib/xrpl/writes', async (importOriginal) => {
 })
 
 import { QueryClient } from '@tanstack/react-query'
+import { TransmitDeclinedError, TransmitRefusedError } from '@/lib/xrpl/writes'
 import { makePinLock, sealRecordUnderPin, storeSeedWallet } from './fixtures'
 import {
   addControlledView,
@@ -340,6 +341,23 @@ describe('setMasterKey', () => {
       throw new Error('socket closed')
     }
     expect((await setMasterKey(master.id, false, ctx())).status).toBe('unconfirmed')
+  })
+
+  it('a Transmit refusal or decline is refused with its words even when the re-read fails: nothing was sent (OS-FR-9)', async () => {
+    ledger.throwOnSubmit = () => {
+      ledger.failReads = true
+      throw new TransmitRefusedError('ledger-unread', 'The app did not send the transaction. The app cannot read the ledger.')
+    }
+    expect(await setMasterKey(master.id, false, ctx())).toEqual({
+      status: 'refused',
+      reason: 'The app did not send the transaction. The app cannot read the ledger.',
+    })
+    ledger.failReads = false
+    ledger.throwOnSubmit = () => {
+      ledger.failReads = true
+      throw new TransmitDeclinedError(100)
+    }
+    expect(await setMasterKey(master.id, false, ctx())).toEqual({ status: 'refused', reason: new TransmitDeclinedError(100).message })
   })
 
   it('counts a wrong PIN and not a cancel, and sends nothing for either', async () => {

@@ -20,6 +20,7 @@ import { useTrustLines } from '@/hooks/useTrustLines'
 import { useDestinationCheck } from '@/hooks/useDestinationCheck'
 import { submitXrpPayment, submitIssuedPayment, type SigningHandle, type SubmitOutcome } from '@/lib/xrpl/writes'
 import { signingHandleFor } from '@/lib/crypto/keystore'
+import { SIGN_KEY } from '@/lib/transmit-words'
 import { useYieldingPrompts } from '@/hooks/usePrompts'
 import { formatXrp, xrpToDropsString, displayCurrencyCode, MAX_FEE_DROPS } from '@/lib/xrpl/money'
 import { checkFunds, heldTokenLines, selectedTokenLine, spendableReadState, tokenAssetKey } from '@/lib/xrpl/funds-check'
@@ -579,7 +580,11 @@ export function SendTab() {
         setConfirmingFor(null)
         return
       }
-      toast.error(err?.message ?? 'Send failed.', { action: 'send' })
+      // Do not send (OS-FR-10): nothing was sent, and the signed copy stays
+      // valid until its window ends. A caution (P-24), never an error. Read by
+      // name, so a test that mocks the writes module needs no extra export.
+      if (err?.name === 'TransmitDeclinedError') toast.warning(err.message, { action: 'send' })
+      else toast.error(err?.message ?? 'Send failed.', { action: 'send' })
       // The intent to confirm goes too, deliberately rather than as a side
       // effect of whether the probe happened to bump `dataUpdatedAt`. A throw
       // here means the unlock or the submit call itself failed; the toast says
@@ -1004,10 +1009,19 @@ export function SendTab() {
               Cancel
             </Button>
             {/* The one control in this app that moves funds, and therefore the
-                only one that may wear --commit. See button.tsx. */}
-            <Button variant="commit" onClick={doSend} disabled={busy}>
-              {busy ? 'Sending…' : 'Confirm and send'}
-            </Button>
+                only one that may wear --commit. See button.tsx. With "Show the
+                signed transaction before sending" on, this key only signs: it is
+                "Sign" in the default finish, and the commit key is Send on the
+                screen that follows (EXPERIENCE "Transmit step"). */}
+            {wallet.showBeforeSending ? (
+              <Button onClick={doSend} disabled={busy}>
+                {SIGN_KEY}
+              </Button>
+            ) : (
+              <Button variant="commit" onClick={doSend} disabled={busy}>
+                {busy ? 'Sending…' : 'Confirm and send'}
+              </Button>
+            )}
           </DialogFooter>
         </DialogContent>
       </Dialog>

@@ -4,7 +4,7 @@ import { fetchAccountStateFresh } from '@/lib/xrpl/query-reads'
 import { invalidateAccountScoped } from '@/lib/xrpl/query-keys'
 import type { AccountState } from '@/lib/xrpl/reads'
 import { describeResultCode, UNKNOWN_OUTCOME_WORDS } from '@/lib/xrpl/result-codes'
-import { submitSetRegularKey, type SubmitOutcome } from '@/lib/xrpl/writes'
+import { submitSetRegularKey, TransmitDeclinedError, TransmitRefusedError, type SubmitOutcome } from '@/lib/xrpl/writes'
 
 /**
  * Controlling Wallet, Regular Key (FR-75, FR-76; AD-18, AD-29).
@@ -187,6 +187,8 @@ export async function setRegularKey(controllerId: string, targetId: string, ctx:
         ? { status: 'cancelled', reason: err.message }
         : { status: 'check-failed', reason: err.message }
     }
+    // Refused or declined at the Transmit step: nothing was submitted, whatever a re-read says.
+    if (err instanceof TransmitRefusedError || err instanceof TransmitDeclinedError) return { status: 'refused', reason: err.message }
     // The transaction may have been sent before the throw: only a read that still
     // shows the old Regular Key proves it was not.
     let after: AccountState | null = null

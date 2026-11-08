@@ -14,6 +14,7 @@ const h = vi.hoisted(() => ({
   hookArgs: vi.fn(),
   wallets: [] as unknown[],
   restored: [] as Array<{ lockId: string; key: unknown; autoLockMinutes: number }>,
+  setShowBeforeSending: vi.fn(),
 }))
 vi.mock('idb-keyval', () => ({ get: async () => undefined, set: async () => {}, del: async () => {} }))
 vi.mock('@/lib/xrpl/client', () => ({
@@ -38,7 +39,7 @@ vi.mock('@/lib/crypto/lock', () => ({
   hasAppPin: async () => true,
 }))
 vi.mock('@/lib/crypto/auth', () => ({ wipeVault: async () => {} }))
-vi.mock('@/lib/crypto/keystore', () => ({ listWallets: async () => h.wallets }))
+vi.mock('@/lib/crypto/keystore', () => ({ listWallets: async () => h.wallets, setShowBeforeSending: h.setShowBeforeSending }))
 
 import App from '../App'
 import { useAppStore } from '@/store/app-store'
@@ -134,7 +135,7 @@ describe('a Transmitter Wallet (OS-FR-1, OS-FR-4)', () => {
   it('Local settings: P-5 and no key rows, checks without the Signing Check or Edit checks, a Node, no Seed', async () => {
     await openApp('transmitter')
     await openSettings()
-    expect(plateTitles()).toEqual(['This wallet', 'Name', 'Address Book', 'Checks', 'Node', 'Remove this wallet'])
+    expect(plateTitles()).toEqual(['This wallet', 'Name', 'Address Book', 'Checks', 'Node', 'Before sending', 'Remove this wallet'])
     const identity = screen.getByRole('region', { name: 'This wallet' })
     expect(identity.textContent).toBe(`This wallet${NOT_SYNCED}`)
     const checks = screen.getByRole('region', { name: 'Checks' })
@@ -162,9 +163,35 @@ describe('an Online Wallet keeps today\'s screens', () => {
       'Seed',
       'Operating another account',
       'Node',
+      'Before sending',
       'Two-device signing',
       'Remove this wallet',
     ])
+  })
+})
+
+describe('the Before sending plate (OS-FR-10)', () => {
+  it('Online: the switch is named by the setting, described by P-44, off by default, and turns it on', async () => {
+    h.setShowBeforeSending.mockImplementation(async () => {
+      h.wallets = [{ ...meta('online'), showBeforeSending: true }]
+    })
+    await openApp('online')
+    await openSettings()
+    const control = screen.getByRole('switch', { name: 'Show the signed transaction before sending' })
+    expect(control.getAttribute('aria-checked')).toBe('false')
+    expect(screen.getByText(/This setting is off by default\. When it is on, the app shows the hash/)).toBeTruthy()
+    await act(async () => {
+      fireEvent.click(control)
+    })
+    expect(h.setShowBeforeSending).toHaveBeenCalledWith('w1', true)
+    await waitFor(() => expect(screen.getByRole('switch', { name: 'Show the signed transaction before sending' }).getAttribute('aria-checked')).toBe('true'))
+  })
+
+  it('Offline: no Before sending plate', async () => {
+    await openApp('offline')
+    await openSettings()
+    expect(plateTitles()).not.toContain('Before sending')
+    expect(screen.queryByRole('switch')).toBeNull()
   })
 })
 

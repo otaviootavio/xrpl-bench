@@ -452,7 +452,21 @@ export async function signingHandleFor(walletId: string, ctx: SigningContext): P
     },
     // Only when the setting is on: with it off the handle is what it was before
     // the setting existed. Without a reviewer the answer is "no" (fail closed).
-    ...(review ? { reviewBeforeSending: (signed: SignedForReview) => ctx.prompts.reviewSignedTransaction?.(signed) ?? Promise.resolve(false) } : {}),
+    ...(review ? { reviewBeforeSending: reviewerOf(ctx.prompts) } : {}),
+  }
+}
+
+/** The review a Wallet's sends go through when its setting is on; without a
+ * reviewer in the prompts the answer is "no" (fail closed). */
+function reviewerOf(prompts: Prompts): (signed: SignedForReview) => Promise<boolean> {
+  return (signed) => prompts.reviewSignedTransaction?.(signed) ?? Promise.resolve(false)
+}
+
+/** Refused: an Offline Wallet never sends, so it has no such setting (OS-FR-10, OS-FR-11). */
+export class SettingNotForOfflineError extends Error {
+  constructor() {
+    super('An offline wallet does not send, so this setting is not for it.')
+    this.name = 'SettingNotForOfflineError'
   }
 }
 
@@ -462,6 +476,10 @@ export async function signingHandleFor(walletId: string, ctx: SigningContext): P
 export async function setShowBeforeSending(walletId: string, on: boolean): Promise<WalletMeta> {
   const record = findSeedRecord(await listStoredWallets(), walletId)
   if (!record) throw new Error('Wallet not found in local vault.')
+  const view = viewsOf(record).find((v) => v.walletId === walletId)
+  // Not reachable from the UI (the plate is not on an Offline Wallet); refused
+  // so no caller can store it there.
+  if (on && view && kindOfView(view) === 'offline') throw new SettingNotForOfflineError()
   await mutateStoredWallet(record.id, (current) => ({
     ...current,
     views: viewsOf(current).map((v) => {

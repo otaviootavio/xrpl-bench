@@ -22,6 +22,30 @@ export const REFUSAL = {
 /** Fixed string: the Transmit step outcome when the window has passed before sending. */
 export const EXPIRED_NOTHING_SENT = 'Expired. Nothing was sent.'
 
+/**
+ * Approved by the owner on 2026-11-08 (story 2, round two), exactly as written.
+ * They have no source file, so `transmit-words.test.ts` pins them as literals.
+ */
+export const LEDGER_UNREAD = 'The app cannot read the ledger.'
+export const SEND_KEY = 'Send'
+export const DO_NOT_SEND_KEY = 'Do not send'
+export const COPY_KEY = 'Copy'
+/** The Online confirm key when the setting is on: it signs, it does not send. */
+export const SIGN_KEY = 'Sign'
+export const BEFORE_SENDING_PLATE = 'Before sending'
+/** The setting's name (SPEC CAP-6, OS-FR-10), also the switch's label. */
+export const SHOW_BEFORE_SENDING = 'Show the signed transaction before sending'
+
+/** Fixed string: the show-before-sending question. */
+export const SEND_IT_QUESTION = 'Send it to the ledger?'
+
+/** P-44: the Before sending plate's description. */
+export const BEFORE_SENDING_DESCRIPTION =
+  'This setting is off by default. When it is on, the app shows the hash, the fields and a copy button. Then the app asks before it sends.'
+
+/** P-52: the hash row's label. */
+export const TRANSACTION_HASH = 'Transaction hash'
+
 /** P-24: the warning after a decline or a copy. */
 export const STILL_VALID_WARNING = 'WARNING: This signed transaction is valid until ledger {n}. Until then, a person who has it can send it.'
 

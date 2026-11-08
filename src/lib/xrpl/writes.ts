@@ -1,10 +1,10 @@
 import { type AccountSet, AccountSetAsfFlags, decode, hashes, type Payment, PaymentFlags, type SetRegularKey, type SubmittableTransaction, type TrustSet, TrustSetFlags, verifySignature } from 'xrpl'
 import { getXrplClient, holdXrplClient } from './client'
-import { NETWORKS, type NetworkId } from './networks'
+import { isNetworkId, NETWORKS, type NetworkId } from './networks'
 import { MAX_FEE_DROPS, feeWithinCap, formatXrp, isCanonicalPositiveDrops } from './money'
 import { isRecord } from './narrow'
 import { fetchAccountState } from './reads'
-import { EXPIRED_NOTHING_SENT, NOT_SENT, REFUSAL, STILL_VALID_WARNING, fill } from '../transmit-words'
+import { EXPIRED_NOTHING_SENT, LEDGER_UNREAD, NOT_SENT, REFUSAL, STILL_VALID_WARNING, fill } from '../transmit-words'
 
 /**
  * Reports whether a transaction is currently in flight.
@@ -120,7 +120,7 @@ export interface SigningHandle {
    * settle it on every exit (decline, unmount, lock): the in-flight depth stays
    * raised until it does, because a live signed blob exists.
    */
-  reviewBeforeSending?(signed: SignedForReview): Promise<boolean>
+  reviewBeforeSending?: ReviewBeforeSending
 }
 
 /** What the review is shown: the blob, its hash, the Network it is for, and the
@@ -129,7 +129,7 @@ export interface SignedForReview {
   txBlob: string
   hash: string
   network: NetworkId
-  lastLedgerSequence: number | undefined
+  lastLedgerSequence: number
 }
 
 /**
@@ -138,11 +138,15 @@ export interface SignedForReview {
  */
 export interface SignedTransaction {
   txBlob: string
-  network: NetworkId
+  /** As the envelope names it: checked, never trusted to be a known Network. */
+  network: NetworkId | string
 }
 
 /** Why the Transmit step refused a Signed Transaction. Nothing was submitted. */
-export type TransmitRefusal = 'signature' | 'account' | 'network' | 'partial-payment' | 'expired' | 'ledger-unread'
+export type TransmitRefusal = 'signature' | 'account' | 'network' | 'partial-payment' | 'expired' | 'no-window' | 'ledger-unread'
+
+/** Asks the user "Send it to the ledger?" (OS-FR-10). A rejection is a "no". */
+export type ReviewBeforeSending = (signed: SignedForReview) => Promise<boolean>
 
 /**
  * The Transmit step refused (route-checks.md "Transmit step", OS-FR-9). Nothing
@@ -164,13 +168,9 @@ export class TransmitRefusedError extends Error {
  * is P-24 and its decline line.
  */
 export class TransmitDeclinedError extends Error {
-  readonly lastLedgerSequence: number | undefined
-  constructor(lastLedgerSequence: number | undefined) {
-    super(
-      lastLedgerSequence === undefined
-        ? NOT_SENT
-        : `${fill(STILL_VALID_WARNING, lastLedgerSequence)} ${NOT_SENT}`,
-    )
+  readonly lastLedgerSequence: number
+  constructor(lastLedgerSequence: number) {
+    super(`${fill(STILL_VALID_WARNING, lastLedgerSequence)} ${NOT_SENT}`)
     this.name = 'TransmitDeclinedError'
     this.lastLedgerSequence = lastLedgerSequence
   }
@@ -247,7 +247,6 @@ export async function submitAndClassify(
     // before the window is fixed. It may take as long as the user does.
     const signer = await signing.open()
     let signed: { tx_blob: string; hash: string }
-    let lastLedgerSequence: number | undefined
     // The validated ledger read for the window, moments before signing. With
     // no pause before sending, the past-LastLedgerSequence check uses it, so
     // the send makes no extra round trip.
@@ -263,25 +262,26 @@ export async function submitAndClassify(
         validatedAtSigning = validated
         toSign = { ...prepared, LastLedgerSequence: validated + LEDGER_WINDOW }
       }
-      lastLedgerSequence = toSign.LastLedgerSequence
       signed = signer.sign(toSign)
     } finally {
       signer.dispose()
     }
-    if (signing.reviewBeforeSending) {
-      const send = await signing.reviewBeforeSending({ txBlob: signed.tx_blob, hash: signed.hash, network, lastLedgerSequence })
-      if (!send) throw new TransmitDeclinedError(lastLedgerSequence)
-      // Time passed: the window is judged on a fresh read.
-      validatedAtSigning = undefined
+    try {
+      return await transmit(
+        client,
+        network,
+        signed,
+        { signedNetwork: network, expectedAccount: signing.address, validatedIndex: validatedAtSigning },
+        signing.reviewBeforeSending,
+        node,
+      )
+    } catch (err) {
+      // An online write whose window passed before it was sent (after a long
+      // review) is today's `expired` outcome: not applied, retry with a fresh
+      // one. The screens' expired handling then applies (fee re-read, panel).
+      if (err instanceof TransmitRefusedError && err.reason === 'expired') return { status: 'expired', hash: signed.hash }
+      throw err
     }
-    return await transmit(
-      client,
-      network,
-      signed,
-      { signedNetwork: network, expectedAccount: signing.address, validatedIndex: validatedAtSigning },
-      lastLedgerSequence,
-      node,
-    )
   })
 }
 
@@ -330,29 +330,18 @@ export function transmitSignedTransaction(
   signed: SignedTransaction,
   expectedAccount: string,
   node?: string,
+  review?: ReviewBeforeSending,
 ): Promise<SubmitOutcome> {
   return withWriteInFlight(network, node, async (client) => {
+    // The Network first, as route-checks orders it, before the blob is read.
+    assertNetwork(signed.network, network)
     let hash: string
     try {
       hash = hashes.hashSignedTx(signed.txBlob)
     } catch {
       throw refuse('signature', REFUSAL.signature)
     }
-    let lastLedgerSequence: number | undefined
-    try {
-      const value: unknown = decode(signed.txBlob).LastLedgerSequence
-      if (typeof value === 'number') lastLedgerSequence = value
-    } catch {
-      // A blob that does not decode is refused by the checks below.
-    }
-    return transmit(
-      client,
-      network,
-      { tx_blob: signed.txBlob, hash },
-      { signedNetwork: signed.network, expectedAccount },
-      lastLedgerSequence,
-      node,
-    )
+    return transmit(client, network, { tx_blob: signed.txBlob, hash }, { signedNetwork: signed.network, expectedAccount }, review, node)
   })
 }
 
@@ -362,20 +351,54 @@ function refuse(reason: TransmitRefusal, detail?: string): TransmitRefusedError 
 }
 
 /**
+ * The Network the Signed Transaction names must be this Wallet's. On Mainnet,
+ * Testnet and Devnet a blob carries no `NetworkID` (it is only for chains above
+ * 1024), so this compares the ENVELOPE's Network: it stops a mistake, not a
+ * compromised sender (route-checks "Known limit", fact-check case 1). Story 4's
+ * scanner must pass the Network its signed-QR envelope names, never its own.
+ */
+function assertNetwork(signedNetwork: NetworkId | string, network: NetworkId): void {
+  if (signedNetwork === network) return
+  const named = isNetworkId(signedNetwork) ? NETWORKS[signedNetwork].label : String(signedNetwork)
+  throw refuse('network', fill(REFUSAL.network, named, NETWORKS[network].label))
+}
+
+/**
+ * Refuses a blob whose window has passed: the ledger can no longer apply it
+ * once the validated ledger has reached its LastLedgerSequence. `validated` is
+ * the index as just read; when absent it is read now, and a failed read
+ * refuses (a failed read never relaxes a guard).
+ */
+async function assertWindowOpen(
+  client: Awaited<ReturnType<typeof holdXrplClient>>['client'],
+  lastLedgerSequence: number,
+  validated: number | undefined,
+): Promise<void> {
+  if (validated === undefined) {
+    try {
+      const res = await client.request({ command: 'ledger', ledger_index: 'validated' })
+      if (typeof res.result.ledger_index === 'number') validated = res.result.ledger_index
+    } catch {
+      // Stated below as a refusal, never as "not expired".
+    }
+    if (validated === undefined) throw refuse('ledger-unread', LEDGER_UNREAD)
+  }
+  if (validated >= lastLedgerSequence) throw refuse('expired')
+}
+
+/**
  * The Transmit step's checks (route-checks.md, OS-FR-9), on the blob that will
- * be sent, before anything is submitted. Throws on the first that fails.
- * `validatedIndex` is the validated ledger as just read; when absent it is read
- * now, and a failed read refuses (a failed read never relaxes a guard).
+ * be sent, before anything is submitted. Throws on the first that fails, in
+ * this order: Network, signature, Account, partial payment, fee cap, window.
+ * Returns the blob's LastLedgerSequence.
  */
 async function checkSignedTransaction(
   client: Awaited<ReturnType<typeof holdXrplClient>>['client'],
   network: NetworkId,
   txBlob: string,
-  check: { signedNetwork: NetworkId; expectedAccount: string; validatedIndex?: number },
-): Promise<void> {
-  if (check.signedNetwork !== network) {
-    throw refuse('network', fill(REFUSAL.network, NETWORKS[check.signedNetwork].label, NETWORKS[network].label))
-  }
+  check: { signedNetwork: NetworkId | string; expectedAccount: string; validatedIndex?: number },
+): Promise<number> {
+  assertNetwork(check.signedNetwork, network)
   let tx: Record<string, unknown>
   let verified = false
   try {
@@ -396,22 +419,11 @@ async function checkSignedTransaction(
   }
   // Checked again on what is sent, whatever signed it (decisions §14).
   if (!feeWithinCap(tx.Fee)) throw new FeeAboveCapError(tx.Fee)
+  // A blob with no window could stay valid for ever: never sent (P-26 heading).
   const lastLedgerSequence = tx.LastLedgerSequence
-  if (typeof lastLedgerSequence === 'number') {
-    let validated = check.validatedIndex
-    if (validated === undefined) {
-      try {
-        const res = await client.request({ command: 'ledger', ledger_index: 'validated' })
-        if (typeof res.result.ledger_index === 'number') validated = res.result.ledger_index
-      } catch {
-        // Stated below as a refusal, never as "not expired".
-      }
-      // The P-26 heading alone: no approved sentence says why (story 2,
-      // Implementation Notes). Nothing was submitted.
-      if (validated === undefined) throw refuse('ledger-unread')
-    }
-    if (validated > lastLedgerSequence) throw refuse('expired')
-  }
+  if (typeof lastLedgerSequence !== 'number') throw refuse('no-window')
+  await assertWindowOpen(client, lastLedgerSequence, check.validatedIndex)
+  return lastLedgerSequence
 }
 
 /**
@@ -424,11 +436,24 @@ async function transmit(
   client: Awaited<ReturnType<typeof holdXrplClient>>['client'],
   network: NetworkId,
   signed: { tx_blob: string; hash: string },
-  check: { signedNetwork: NetworkId; expectedAccount: string; validatedIndex?: number },
-  lastLedgerSequence: number | undefined,
+  check: { signedNetwork: NetworkId | string; expectedAccount: string; validatedIndex?: number },
+  review: ReviewBeforeSending | undefined,
   node: string | undefined,
 ): Promise<SubmitOutcome> {
-  await checkSignedTransaction(client, network, signed.tx_blob, check)
+  const lastLedgerSequence = await checkSignedTransaction(client, network, signed.tx_blob, check)
+  if (review) {
+    // "Show the signed transaction before sending" (OS-FR-10). A rejected
+    // review is a "no": nothing is sent, the same as Do not send.
+    let send = false
+    try {
+      send = await review({ txBlob: signed.tx_blob, hash: signed.hash, network, lastLedgerSequence })
+    } catch {
+      send = false
+    }
+    if (!send) throw new TransmitDeclinedError(lastLedgerSequence)
+    // Time passed during the review: the window is judged on a fresh read.
+    await assertWindowOpen(client, lastLedgerSequence, undefined)
+  }
   try {
     const res = await client.submitAndWait(signed.tx_blob)
     const meta: unknown = res.result.meta
@@ -665,6 +690,7 @@ export function submitSignedBlob(
   tx: SubmittableTransaction,
   txBlob: string,
   node?: string,
+  review?: ReviewBeforeSending,
 ): Promise<SubmitOutcome> {
   const signing: SigningHandle = {
     address: tx.Account,
@@ -672,6 +698,8 @@ export function submitSignedBlob(
       sign: () => ({ tx_blob: txBlob, hash: hashes.hashSignedTx(txBlob) }),
       dispose: () => {},
     }),
+    // The sending Wallet's "Show the signed transaction before sending".
+    ...(review ? { reviewBeforeSending: review } : {}),
   }
   return submitAndClassify(network, signing, tx, node)
 }

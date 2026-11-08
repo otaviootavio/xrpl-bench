@@ -339,7 +339,7 @@ describe('the round trip', () => {
       if (reads++ === 0) return { result: { ledger_index: last } }
       throw new Error('ledger down')
     }
-    expect(await submitReturned(onlineMeta as any, r.tx, signed, { queryClient: qc() })).toMatchObject({ status: 'refused', reason: 'The app did not send the transaction.' })
+    expect(await submitReturned(onlineMeta as any, r.tx, signed, { queryClient: qc() })).toMatchObject({ status: 'refused', reason: 'The app did not send the transaction. The app cannot read the ledger.' })
     expect(submitted).toEqual([])
   })
 

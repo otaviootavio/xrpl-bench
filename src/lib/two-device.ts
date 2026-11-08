@@ -14,8 +14,10 @@ import {
   prepareUnsigned,
   signPrepared,
   submitSignedBlob,
+  TransmitDeclinedError,
   TransmitRefusedError,
   validatedLedgerIndex,
+  type SignedForReview,
   type SubmitOutcome,
 } from '@/lib/xrpl/writes'
 
@@ -416,10 +418,10 @@ async function refresh(wallet: Pick<WalletMeta, 'network' | 'address'>, queryCli
 
 /** Verifies, then submits through `submitSignedBlob` and the choke point. Only `validated` is success. */
 export async function submitReturned(
-  wallet: Pick<WalletMeta, 'network' | 'node' | 'address'>,
+  wallet: Pick<WalletMeta, 'network' | 'node' | 'address' | 'showBeforeSending'>,
   sent: SubmittableTransaction,
   signedText: string,
-  ctx: { queryClient: QueryClient },
+  ctx: { queryClient: QueryClient; prompts?: Prompts },
 ): Promise<ReturnedResult> {
   const verified = await verifySigned(wallet, sent, signedText, ctx)
   if (verified.status === 'refused') return verified
@@ -432,7 +434,14 @@ export async function submitReturned(
   }
   let outcome: SubmitOutcome
   try {
-    outcome = await submitSignedBlob(wallet.network, sent, verified.txBlob, wallet.node)
+    // "Show the signed transaction before sending" applies here too; with no
+    // prompts to answer it, a Wallet with the setting on declines (fail closed).
+    const prompts = ctx.prompts
+    const review =
+      wallet.showBeforeSending === true
+        ? (signed: SignedForReview) => prompts?.reviewSignedTransaction?.(signed) ?? Promise.resolve(false)
+        : undefined
+    outcome = await submitSignedBlob(wallet.network, sent, verified.txBlob, wallet.node, review)
   } catch (err) {
     if (err instanceof FeeAboveCapError) return { status: 'refused', reason: err.message }
     // The Transmit step refused before submitting (OS-FR-9): nothing was sent,
@@ -440,6 +449,7 @@ export async function submitReturned(
     if (err instanceof TransmitRefusedError) {
       return err.reason === 'expired' ? { status: 'expired', reason: EXPIRED_WORDS } : { status: 'refused', reason: err.message }
     }
+    if (err instanceof TransmitDeclinedError) return { status: 'refused', reason: err.message }
     if (err instanceof Error && err.message.includes('tefMAX_LEDGER')) return { status: 'expired', reason: EXPIRED_WORDS }
     // The outcome is unknown: re-read so balance and sequence are not stale.
     await refresh(wallet, ctx.queryClient)

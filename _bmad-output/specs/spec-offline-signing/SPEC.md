@@ -17,7 +17,7 @@ sources:
 
 # Offline Signing
 
-Planned, not built. Covers the offline signing feature PRD (OS-FR-1 to OS-FR-23); the OS-FR ids are the requirement references. The product PRD stays authoritative for every shared rule; `product-prd-changes.md` lists the rules this feature changes.
+Planned, not built. Covers the offline signing feature PRD (OS-FR-1 to OS-FR-24); the OS-FR ids are the requirement references. The product PRD stays authoritative for every shared rule; `product-prd-changes.md` lists the rules this feature changes.
 
 ## Why
 
@@ -30,7 +30,7 @@ A vision and a pain. Every XRPL Bench Wallet keeps its key on a device that is o
   - **success:** The chooser card shows the kind in words; an Offline card shows "Offline" and its Network, a Transmitter card its Network and, when Synced, the address; existing records read as Online Wallets with no change and no migration; an Online Wallet keeps today's screens; an Offline Wallet's screens are New transaction, Sign a transaction from the Transmitter, Receive (no read), its signed list and Local settings, with no balance or history; a Transmitter Wallet's screens are Transmit and Local settings, plus a read-only Account view and New transaction when Synced; on Offline and Transmitter Wallets a key change is a type in New transaction, not a setting; a Transmitter never changes kind.
 - **CAP-2**
   - **intent:** The create and import quiz asks "Online wallet or offline wallet?" in step 1, after Create or Import and before Label and Network, with its consequences (OS-FR-2, OS-FR-7, OS-FR-8).
-  - **success:** Text A or B shows before the user can continue; Offline keeps the Network question and drops the Node question; text B's two warnings must be acknowledged; Mainnet safeguards apply to an Offline Mainnet Wallet exactly as online; import works for both kinds and importing into an Offline Wallet shows text E, which must be acknowledged; an offline Passkey-Derived Seed on a synced or unknown passkey shows the synced-passkey warning, never a refusal.
+  - **success:** Text A or B shows before the user can continue; Offline keeps the Network question and drops the Node question; text B's warning must be acknowledged; Mainnet safeguards apply to an Offline Mainnet Wallet exactly as online; import works for both kinds and importing into an Offline Wallet shows text E, which must be acknowledged; an Offline Wallet always uses a Stored Seed, so it has no Seed Method question and never a Passkey-Derived Seed (OS-FR-8, owner 2026-11-08: built-in passkeys sync to the cloud); a passkey may still be its Open Check or Signing Check.
 - **CAP-3**
   - **intent:** From the chooser, a user adds a Transmitter Wallet (Label and Network, no Seed) and can Sync it to an address (OS-FR-3, OS-FR-4).
   - **success:** It can be made with or without an address; it never signs and nothing in it offers to; it has a Node and its own Open Check and auto-lock under FR-65 (required on Mainnet), and no written-Seed or passkey-origin safeguard; Sync shows the Account read-only (balance, history, trust lines) and can be changed or removed without re-creating; an unsynced one still transmits and answers requests; the same address as an Offline and a Transmitter Wallet on one device is warned, never refused.
@@ -73,16 +73,19 @@ A vision and a pain. Every XRPL Bench Wallet keeps its key on a device that is o
 - **CAP-16**
   - **intent:** The user is warned not to use one Seed on more than one Network (OS-FR-23).
   - **success:** The warning shows on create and import, for every kind that holds a Seed, before the Seed is saved.
+- **CAP-17**
+  - **intent:** A payload too big for one QR code moves as an animated QR with fountain codes (OS-FR-24).
+  - **success:** Every payload is a UR (BCR-2020-005) with fountain codes: one still code when it fits, an animation when it does not; the scanner starts at any frame, survives missed frames, shows its progress and accepts only a complete payload with a correct checksum; frames change not more than three times each second; the animation has Pause and next-frame keys and starts paused under reduced motion; every check runs on the whole payload; a scan is one payload, so OS-SM-1 still counts three scans.
 
 ## Constraints
 
 - Consequence texts A–E, warnings W1–W5, the OS-FR-23 warning and the fixed strings are shown in the words in `consequence-texts.md`; UX lays them out and never rewords them (OS-FR-12).
 - An Offline Wallet never reads from or sends to the ledger. It has a Network and no Node; the Network is what the two devices agree on and both screens show.
 - The Offline Wallet builds a transaction only from its kept Build plus the exact Data to Sign set; no other value from the online device is used.
-- Trust the user: the app warns, never refuses, on Regular Key and master key actions, a synced passkey, and an Offline plus Transmitter Wallet for one address. It refuses only what it cannot show in words or what is malformed. Ledger refusals stay.
+- Trust the user: the app warns, never refuses, on Regular Key and master key actions and an Offline plus Transmitter Wallet for one address. It refuses only what it cannot show in words or what is malformed. Ledger refusals stay.
 - Mainnet safeguards (FR-63, FR-65, FR-72) are required for an Offline Mainnet Wallet, and Open Check with auto-lock for a Mainnet Transmitter. Never skippable.
 - Offline to online and master key off are irreversible-class: a typed or held confirm plus the Wallet's Signing Check.
-- Devices talk only by QR, one payload per QR, one transaction per round. No server or relay.
+- Devices talk only by QR: one payload per hand-off, as one still code or an animated QR (OS-FR-24), and one transaction per round. No server or relay.
 - Inherited, unchanged: money as strings/BigInt; no secret in storage, state or URL; every ledger read through the key factory scoped to Wallet and Network; a failed read is never empty, current or safe; the service worker never caches RPC; outcomes as today (`unknown` per decisions §16); fee cap per decisions §14; the app never builds a partial payment (FR-58).
 
 ## Non-goals
@@ -93,7 +96,6 @@ A vision and a pain. Every XRPL Bench Wallet keeps its key on a device that is o
 - Signing ahead of time, several transactions per round, Tickets.
 - A server or relay between devices.
 - Setting or removing delegates (`DelegateSet`).
-- A multi-frame QR.
 - Migrating today's controlled accounts.
 - Defending against a compromised online device (Transmitter Wallet) beyond the checks already decided. It can supply wrong values within the allowed ranges, keep a Signed Transaction until it expires, send on another Network (`fact-check.md` case 1) or not send at all. Known issue, accepted (owner, 2026-11-07). The decided checks stay: they also catch mistakes.
 
@@ -112,4 +114,4 @@ A vision and a pain. Every XRPL Bench Wallet keeps its key on a device that is o
 
 ## Open Questions
 
-- Can a Data-to-Sign Request or Unsigned Transaction for a large Build exceed one QR (2,331 bytes)? Multi-frame QR is out of scope. Open issue: settle it by building the largest transactions the app makes and testing them (owner, 2026-11-07).
+- None. Large payloads are settled by OS-FR-24 (owner, 2026-11-08): an animated QR with fountain codes. Building the largest transactions the app makes still sets the test data for CAP-17.

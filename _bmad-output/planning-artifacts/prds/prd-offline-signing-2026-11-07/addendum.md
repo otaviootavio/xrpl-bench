@@ -6,8 +6,9 @@ Technical notes for architecture. Not requirements.
 
 - `src/lib/qr-codec.ts` (AD-30): payloads `xrplbench:1:u:` (unsigned, with a
   `network_id` envelope field, since the ledger's `NetworkID` field exists only
-  above 1024) and `xrplbench:1:s:` (signed blob). One payload is one QR, max
-  2,331 bytes at error correction M. The Data-to-Sign Request and Data to Sign
+  above 1024) and `xrplbench:1:s:` (signed blob). Today one payload is one QR, max
+  2,331 bytes at error correction M. OS-FR-24 replaces this transport with UR
+  encoding and fountain codes (next section); the payload kinds stay. The Data-to-Sign Request and Data to Sign
   need two new kinds in the same codec (for example `r:` and `d:`).
 - `src/lib/two-device.ts` (FR-78, CAP-13): builds the unsigned transaction,
   checks it on the offline side (refuses another Account, unknown fields, Fee
@@ -61,3 +62,46 @@ LastLedgerSequence. Accepted risk; the warning is OS-FR-23. Sources:
 - Scam pattern: phishing site asked users to sign SetRegularKey to the
   attacker's address (2022).
   https://ripplenews24.com/xumm-support-warned-of-a-new-scam-trick/
+
+## Animated QR (OS-FR-24, research 2026-11-08)
+
+- Blockchain Commons Uniform Resources (UR, BCR-2020-005) encode binary data
+  for QR codes and split large payloads into a multipart UR shown as an
+  animated QR. The multipart form uses Luby transform (fountain) codes: the
+  receiver can start at any frame and recover from missed frames.
+  https://developer.blockchaincommons.com/animated-qrs/ ,
+  https://www.blockchaincommons.com/specifications/Blockchain-Commons-URs-Support-Airgapped-PSBTs/
+- Keystone uses animated UR codes for sign requests and signatures; OneKey's
+  air-gap guide says scanners need a UR v2 (fountain) decoder.
+  https://developers.keyst.one/docs/integration-tutorial-advanced/bitcoin ,
+  https://developer.onekey.so/en/air-gap/
+- Libraries: reference implementations exist in C++, Rust, Swift and Python;
+  architecture picks the JavaScript one and audits it (no new dependency is
+  taken without review).
+- Frame rate: libraries default to about 8 to 10 frames each second. OS-FR-24
+  caps the rate at three each second for the WCAG 2.3.1 flash limit; fountain
+  codes make a slower rate cost only time.
+- Alternative not chosen: Coinkite BBQr, numbered parts without fountain
+  codes (https://github.com/coinkite/BBQr). Simpler, but a missed part must be
+  waited for in the next loop.
+
+## Passkeys and an offline key (OS-FR-8, research 2026-11-08)
+
+- The app derives a Passkey-Derived Seed with the WebAuthn PRF extension
+  (`src/lib/crypto/webauthn.ts`).
+- Built-in passkeys sync: iCloud Keychain must be on to save a passkey on a
+  Mac, and Chrome and Android store passkeys in Google Password Manager, which
+  syncs them across the signed-in devices.
+  https://discussions.apple.com/thread/256201514 ,
+  https://support.apple.com/en-gb/120758 ,
+  https://developers.google.com/identity/passkeys/supported-environments
+- The Backup Eligibility flag tells a syncable passkey from a device-bound one
+  only after the passkey is made; browser hints toward a security key are
+  advisory. https://mojoauth.com/blog/webauthn-be-bs-flags-synced-vs-device-bound-passkey ,
+  https://passkeys.dev/docs/advanced/client-hints/
+- PRF with a security key works in Chromium-based browsers; Safari does not
+  expose PRF for security keys.
+  https://developers.yubico.com/WebAuthn/Concepts/PRF_Extension/Developers_Guide_to_PRF.html ,
+  https://github.com/kummahiih/private-circle/blob/main/docs/WEBAUTHN_PRF_SUPPORT.md
+- Not verified: whether a phone can make a passkey with all radios off.
+  OS-FR-8 makes the question moot for the Offline Wallet.

@@ -14,8 +14,10 @@ words (`fact-check.md` cases 3 and 8). Facts behind the rules are in
 | Unsigned Transaction | Synced Transmitter → Offline | Every field set, plus an envelope with the Network and the validated ledger index | OS-FR-17, OS-FR-18 |
 | Signed Transaction | Offline → Transmitter | Signed blob, plus an envelope naming the Network | OS-FR-11 |
 
-All four are kinds of today's one codec (`src/lib/qr-codec.ts`, `addendum.md`).
-One payload is one QR.
+All four are kinds of one codec (`src/lib/qr-codec.ts`, `addendum.md`), carried
+as a UR with fountain codes (OS-FR-24): one still code when the payload fits,
+an animated QR when it does not. Every rule below runs on the whole payload,
+after the scanner has all of it.
 
 ## Offline Wallet, Offline-builds route
 

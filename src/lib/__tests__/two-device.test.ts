@@ -319,6 +319,30 @@ describe('the round trip', () => {
     expect(submitted).toEqual([])
   })
 
+  it('reports a refusal at the Transmit step as expired or refused, never as "may have been sent" (OS-FR-9)', async () => {
+    const r = await built()
+    const signed = await signOffline(r)
+    const last = (r.tx as any).LastLedgerSequence as number
+    // The pre-check here reads a ledger inside the window; the Transmit step's own
+    // read, a moment later, is past it.
+    let reads = 0
+    const client = { isConnected: () => true, connect: async () => {}, autofill: async (tx: any) => tx,
+      request: async () => ({ result: { ledger_index: reads++ === 0 ? last : last + 1 } }),
+      submitAndWait: async (blob: string) => (submitted.push(blob), submitResult()) }
+    setXrplClientFactory(() => client as any)
+    resetXrplClients()
+    expect(await submitReturned(onlineMeta as any, r.tx, signed, { queryClient: qc() })).toMatchObject({ status: 'expired' })
+    expect(submitted).toEqual([])
+    // And a read that fails at the Transmit step is a refusal: nothing was sent.
+    reads = 0
+    client.request = async () => {
+      if (reads++ === 0) return { result: { ledger_index: last } }
+      throw new Error('ledger down')
+    }
+    expect(await submitReturned(onlineMeta as any, r.tx, signed, { queryClient: qc() })).toMatchObject({ status: 'refused', reason: 'The app did not send the transaction.' })
+    expect(submitted).toEqual([])
+  })
+
   it('reports tefMAX_LEDGER as expired, not failed', async () => {
     const r = await built()
     const signed = await signOffline(r)

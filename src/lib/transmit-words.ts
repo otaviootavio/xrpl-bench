@@ -2,7 +2,7 @@
  * The approved words of the Transmit step (OS-FR-9, OS-FR-10, OS-FR-12). Each
  * template is copied character for character from the offline signing UX spine
  * (`_bmad-output/planning-artifacts/ux-designs/ux-xrpl-wallet-2026-11-07/EXPERIENCE.md`,
- * P-24, P-26 and P-28, approved by the owner on 2026-11-08) or from the spec's
+ * P-24 and P-26, approved by the owner on 2026-11-08) or from the spec's
  * fixed strings (`_bmad-output/specs/spec-offline-signing/consequence-texts.md`).
  * `transmit-words.test.ts` compares each one with its source file. A `{name}`
  * is a slot, filled in order by `fill`.
@@ -21,9 +21,6 @@ export const REFUSAL = {
 
 /** Fixed string: the Transmit step outcome when the window has passed before sending. */
 export const EXPIRED_NOTHING_SENT = 'Expired. Nothing was sent.'
-
-/** P-28, first sentence: the ledger could not be read. */
-export const LEDGER_UNREAD = 'The app cannot read the ledger.'
 
 /** P-24: the warning after a decline or a copy. */
 export const STILL_VALID_WARNING = 'WARNING: This signed transaction is valid until ledger {n}. Until then, a person who has it can send it.'

@@ -14,6 +14,7 @@ import {
   prepareUnsigned,
   signPrepared,
   submitSignedBlob,
+  TransmitRefusedError,
   validatedLedgerIndex,
   type SubmitOutcome,
 } from '@/lib/xrpl/writes'
@@ -434,6 +435,11 @@ export async function submitReturned(
     outcome = await submitSignedBlob(wallet.network, sent, verified.txBlob, wallet.node)
   } catch (err) {
     if (err instanceof FeeAboveCapError) return { status: 'refused', reason: err.message }
+    // The Transmit step refused before submitting (OS-FR-9): nothing was sent,
+    // so it is never reported as "may have been sent".
+    if (err instanceof TransmitRefusedError) {
+      return err.reason === 'expired' ? { status: 'expired', reason: EXPIRED_WORDS } : { status: 'refused', reason: err.message }
+    }
     if (err instanceof Error && err.message.includes('tefMAX_LEDGER')) return { status: 'expired', reason: EXPIRED_WORDS }
     // The outcome is unknown: re-read so balance and sequence are not stale.
     await refresh(wallet, ctx.queryClient)

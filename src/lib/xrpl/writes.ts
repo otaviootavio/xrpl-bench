@@ -4,7 +4,7 @@ import { NETWORKS, type NetworkId } from './networks'
 import { MAX_FEE_DROPS, feeWithinCap, formatXrp, isCanonicalPositiveDrops } from './money'
 import { isRecord } from './narrow'
 import { fetchAccountState } from './reads'
-import { EXPIRED_NOTHING_SENT, LEDGER_UNREAD, NOT_SENT, REFUSAL, STILL_VALID_WARNING, fill } from '../transmit-words'
+import { EXPIRED_NOTHING_SENT, NOT_SENT, REFUSAL, STILL_VALID_WARNING, fill } from '../transmit-words'
 
 /**
  * Reports whether a transaction is currently in flight.
@@ -356,8 +356,9 @@ export function transmitSignedTransaction(
   })
 }
 
-function refuse(reason: TransmitRefusal, detail: string): TransmitRefusedError {
-  return new TransmitRefusedError(reason, reason === 'expired' ? detail : `${NOT_SENT} ${detail}`)
+function refuse(reason: TransmitRefusal, detail?: string): TransmitRefusedError {
+  if (reason === 'expired') return new TransmitRefusedError(reason, EXPIRED_NOTHING_SENT)
+  return new TransmitRefusedError(reason, detail === undefined ? NOT_SENT : `${NOT_SENT} ${detail}`)
 }
 
 /**
@@ -405,9 +406,11 @@ async function checkSignedTransaction(
       } catch {
         // Stated below as a refusal, never as "not expired".
       }
-      if (validated === undefined) throw refuse('ledger-unread', LEDGER_UNREAD)
+      // The P-26 heading alone: no approved sentence says why (story 2,
+      // Implementation Notes). Nothing was submitted.
+      if (validated === undefined) throw refuse('ledger-unread')
     }
-    if (validated > lastLedgerSequence) throw refuse('expired', EXPIRED_NOTHING_SENT)
+    if (validated > lastLedgerSequence) throw refuse('expired')
   }
 }
 

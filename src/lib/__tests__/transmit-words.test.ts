@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
-import { EXPIRED_NOTHING_SENT, fill, LEDGER_UNREAD, NOT_SENT, REFUSAL, STILL_VALID_WARNING } from '../transmit-words'
+import { EXPIRED_NOTHING_SENT, fill, NOT_SENT, REFUSAL, STILL_VALID_WARNING } from '../transmit-words'
 
 /**
  * OS-FR-9, OS-FR-10, OS-FR-12: the Transmit step's words are copied from the UX
@@ -30,10 +30,6 @@ describe('Transmit step words (OS-FR-9, OS-FR-10)', () => {
     const p24 = row('P-24')
     expect(p24).toContain(`"${STILL_VALID_WARNING}"`)
     expect(p24).toContain(`Decline adds "${NOT_SENT}"`)
-  })
-
-  it('P-28: the failed-read sentence is its first sentence', () => {
-    expect(row('P-28')).toContain(`"${LEDGER_UNREAD} `)
   })
 
   it('the fixed expiry string is in the spec table', () => {

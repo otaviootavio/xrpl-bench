@@ -170,7 +170,7 @@ describe('a scanned Signed Transaction enters the same Transmit step (OS-FR-9)',
     const blob = master.sign(payment()).tx_blob
     await expect(transmitSignedTransaction('testnet', { txBlob: blob, network: 'testnet' }, master.address)).rejects.toMatchObject({
       reason: 'ledger-unread',
-      message: 'The app did not send the transaction. The app cannot read the ledger.',
+      message: 'The app did not send the transaction.',
     })
     expect(client.submitted).toEqual([])
     expectDepthReleased()

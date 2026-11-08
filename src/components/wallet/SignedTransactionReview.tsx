@@ -73,14 +73,17 @@ export function SignedTransactionReview({ signed, onAnswer }: { signed: SignedFo
           questionRef.current?.focus()
         }}
       >
-        <div className="grid gap-1">
-          <h3 className="panel-legend">{TRANSACTION_HASH}</h3>
+        {/* Right padding keeps the first row clear of the sheet's close control. */}
+        <div className="grid min-w-0 gap-1 pr-8">
+          <h3 className="panel-legend [overflow-wrap:anywhere]">{TRANSACTION_HASH}</h3>
           <p className="font-data text-[0.8125rem] leading-relaxed tracking-tight [overflow-wrap:anywhere]">{signed.hash}</p>
         </div>
-        <dl className="grid gap-2">
+        {/* Every cell may break anywhere: a ledger field name (LastLedgerSequence)
+            in the tracked legend face is wider than a 320px sheet at 200% text. */}
+        <dl className="grid min-w-0 gap-2">
           {fields.map(([name, value]) => (
-            <div key={name} className="grid gap-0.5">
-              <dt className="panel-legend">{name}</dt>
+            <div key={name} className="grid min-w-0 gap-0.5">
+              <dt className="panel-legend [overflow-wrap:anywhere]">{name}</dt>
               <dd className="font-data text-[0.8125rem] leading-relaxed tracking-tight [overflow-wrap:anywhere]">{value}</dd>
             </div>
           ))}
@@ -101,7 +104,7 @@ export function SignedTransactionReview({ signed, onAnswer }: { signed: SignedFo
             )}
           </div>
         </div>
-        <DialogTitle ref={questionRef} tabIndex={-1}>
+        <DialogTitle ref={questionRef} tabIndex={-1} className="[overflow-wrap:anywhere]">
           {SEND_IT_QUESTION}
         </DialogTitle>
         <DialogFooter>

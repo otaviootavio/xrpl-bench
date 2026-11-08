@@ -2,7 +2,7 @@
 title: XRPL Bench — Offline signing
 status: final
 created: 2026-11-07
-updated: 2026-11-07
+updated: 2026-11-08
 parent: _bmad-output/planning-artifacts/prds/prd-xrpl-wallet-2026-09-12/prd.md
 ---
 
@@ -141,6 +141,10 @@ Node, Regular Key, Account Master Key) keep their meaning.
 
 - **Build** — fill in what a transaction does (type, destination, amount,
   token, limits) and review it.
+- **New transaction** — the screen of an Offline Wallet or a Synced
+  Transmitter Wallet where the user picks a type of transaction (payment,
+  trust line, Regular Key, master key, and on a Transmitter every write the app
+  can build) and Builds it.
 - **Same Build** — two Builds with the same content (type, destination,
   amount, token, tag, flags), compared by a hash of that content.
 - **Data-to-Sign Request** — the QR an Offline Wallet shows after a Build,
@@ -167,10 +171,13 @@ Node, Regular Key, Account Master Key) keep their meaning.
 
 ### 4.1 Wallet kinds
 
-**Description:** Every Wallet has a kind. The create quiz asks for it first,
-with its consequences. A Wallet's kind can be changed later from its own
-settings, with the consequences shown again. A Transmitter Wallet is added from
-the chooser like any Wallet but holds no Seed.
+**Description:** Every Wallet has a kind, and each kind is its own type of
+Wallet, with screens made for its job. An Offline Wallet is not an Online
+Wallet with parts removed, and a Transmitter Wallet is not one either. The
+create quiz asks for the kind first, with its consequences. An Online or
+Offline Wallet's kind can be changed later from its own settings, with the
+consequences shown again. A Transmitter Wallet is added from the chooser like
+any Wallet but holds no Seed, and its kind never changes.
 
 #### OS-FR-1: Every Wallet has one kind
 
@@ -182,6 +189,20 @@ A Wallet is an Online Wallet, an Offline Wallet or a Transmitter Wallet.
   address, Network or checks. No data migration (FR-95).
 - An Offline Wallet card shows "Offline" and its Network; a Transmitter Wallet
   card shows its Network and, when Synced, the address.
+- Each kind has its own screens. *Decided 2026-11-07.*
+  - **Online Wallet:** today's screens, unchanged.
+  - **Offline Wallet** (a signer): New transaction, Sign a transaction from the
+    Transmitter, Receive (address and QR, no read), the list of what it
+    signed, and Local settings. It has no balance and no history screen.
+  - **Transmitter Wallet** (a carrier): Transmit (answer a request, send a
+    Signed Transaction) and Local settings. When Synced, it also shows the
+    Account read-only (balance, history, trust lines, key state, delegates)
+    and New transaction, which Builds an Unsigned Transaction. Nothing in it
+    signs.
+- On an Offline or Transmitter Wallet, a Regular Key or master key change is a
+  type of transaction in New transaction, not a setting.
+- A Transmitter Wallet's kind never changes. It holds no key, so it cannot
+  become an Online or Offline Wallet. *Decided 2026-11-07.*
 
 #### OS-FR-2: The create quiz asks "Online wallet or offline wallet?"
 
@@ -412,13 +433,14 @@ verbs, because they are the app's own button names.)
 ### 4.4 Offline-builds route
 
 **Description:** Realizes OS-UJ-1. The user does all the Building on the
-Offline Wallet, with the same screens an Online Wallet uses, minus every read.
+Offline Wallet, from its New transaction screen, with the same fields and
+review an Online Wallet uses, minus every read.
 Only when the Build is reviewed does the app ask for Data to Sign.
 
-#### OS-FR-13: An Offline Wallet Builds with the normal screens
+#### OS-FR-13: An Offline Wallet Builds with the online fields and review
 
-Send, trust lines and key actions are available on an Offline Wallet with the
-same fields and the same review.
+Payments, trust lines and key actions are types in the Offline Wallet's New
+transaction screen, with the same fields and the same review as online.
 
 **Consequences (testable):**
 - Where the online screen shows a read (balance, spendable, destination check,
@@ -506,8 +528,8 @@ A Synced Transmitter Wallet Builds an Unsigned Transaction for its Synced
 address and hands it to the Offline Wallet by QR.
 
 **Consequences (testable):**
-- It uses the online screens and checks for the Synced address and shows the
-  Unsigned Transaction QR.
+- Its New transaction screen uses the online fields and checks for the Synced
+  address and shows the Unsigned Transaction QR.
 - It covers every write the app can build, not only XRP payments, Regular Key
   and master key.
 

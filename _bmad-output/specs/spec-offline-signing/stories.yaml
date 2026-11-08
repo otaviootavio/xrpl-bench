@@ -1,7 +1,7 @@
 - id: "1"
   title: Wallet kind on the record and the chooser card
   description: >-
-    Give every Wallet one kind (Online, Offline, Transmitter) and show it in words on the chooser card; existing records read as Online with no migration (CAP-1).
+    Give every Wallet one kind (Online, Offline, Transmitter) and show it in words on the chooser card; existing records read as Online with no migration; open each kind into its own screens (CAP-1).
     This is the base every later story reads.
   invoke_dev_with: >-
     Fetch dev first; it may already hold this slice. Finish with a real-browser pass.

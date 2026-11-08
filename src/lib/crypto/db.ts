@@ -50,7 +50,16 @@ export interface WalletView {
    * `address`. A claim only; whether the key still controls the Account is
    * always read from the ledger, never from this field. */
   accountAddress?: string
+  /** The Wallet's kind (OS-FR-1, CAP-1). Absent is an Online Wallet, so every
+   * record made before the kind existed reads as Online with nothing rewritten.
+   * Only the two non-Online kinds are ever stored. A view with any other value
+   * is not shown (`keystore.toMetas`): it is never read as Online. */
+  kind?: 'offline' | 'transmitter'
 }
+
+/** Every Wallet is one of three kinds (OS-FR-1). `online` is the absent
+ * `WalletView.kind`. */
+export type WalletKind = 'online' | 'offline' | 'transmitter'
 
 /** A Seed record. `id` is the Seed id and, for the first view, also its
  * walletId, so a persisted `activeWalletId` keeps working. Everything after

@@ -247,6 +247,14 @@ export function leaveToChooser(): void {
   notify()
 }
 
+/** Replaces a task screen a Wallet's kind does not have with that Wallet's own shell (OS-FR-1). */
+export function resetToWalletShell(walletId: string): void {
+  const path = walletScreenPath('wallet', walletId)
+  if (window.location.pathname === path) return
+  window.history.replaceState(window.history.state, '', path)
+  notify()
+}
+
 /** Replaces an unreachable location (no such Wallet, no Wallets at all) with the shell. */
 export function resetToHome(): void {
   if (window.location.pathname === CHOOSER_PATH) return

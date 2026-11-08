@@ -24,7 +24,7 @@ import { useAppStore } from '@/store/app-store'
 const PLATE_ORDER = ['This wallet', 'Account', 'Name', 'Address Book', 'Checks', 'Seed', 'Operating another account', 'Node', 'Two-device signing', 'Remove this wallet']
 
 const W = (id: string, lockId: string, extra = {}) =>
-  ({ id, seedId: id, lockId, label: id, address: `r${id}`, createdAt: 1, network: 'testnet', algorithm: 'ed25519', seedMethod: 'stored', openCheck: 'pin', signingCheck: 'standard', ...extra }) as never
+  ({ id, seedId: id, lockId, label: id, address: `r${id}`, createdAt: 1, network: 'testnet', algorithm: 'ed25519', seedMethod: 'stored', openCheck: 'pin', signingCheck: 'standard', kind: 'online', ...extra }) as never
 const KEY = {} as CryptoKey
 
 function mount() {

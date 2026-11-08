@@ -36,7 +36,7 @@ import { WalletTab } from '@/pages/tabs/WalletTab'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { useAppStore } from '@/store/app-store'
 
-const W = { id: 'w1', seedId: 's1', lockId: 'lockA', label: 'Savings', address: 'rAddr', createdAt: 1, network: 'mainnet', algorithm: 'ed25519', openCheck: 'pin', signingCheck: 'standard' }
+const W = { id: 'w1', seedId: 's1', lockId: 'lockA', label: 'Savings', address: 'rAddr', createdAt: 1, network: 'mainnet', algorithm: 'ed25519', openCheck: 'pin', signingCheck: 'standard', kind: 'online' }
 
 function mount(wallet: Record<string, unknown> = W) {
   return render(

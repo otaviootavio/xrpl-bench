@@ -4,6 +4,8 @@ import { StatusLegend } from '@/components/ui/lamp'
 import { AddressLink } from '@/components/wallet/AddressLink'
 import { DEVNET_NOTICE } from '@/components/wallet/DevnetNotice'
 import { NO_OPEN_CHECK_ANSWER } from '@/components/wallet/check-words'
+import { KindStamp } from '@/components/wallet/KindStamp'
+import { NOT_SYNCED } from '@/lib/wallet-kind-words'
 import { NETWORKS } from '@/lib/xrpl/networks'
 import { enterWallet } from '@/store/app-store'
 import type { OpenCard, WalletCardData } from '@/store/wallet-groups'
@@ -64,13 +66,20 @@ export function WalletCard({
     <li data-wallet-id={card.walletId} className="panel-plate flex flex-col gap-3 rounded-md px-4 pb-4 pt-3">
       <CardHead name={card.label} tone={open ? 'live' : 'neutral'} state={open ? 'Open' : 'Locked'} active={active} />
       <div className="flex flex-col gap-2 rounded-md border border-border bg-background px-3 py-2 shadow-[inset_0_1px_3px_0_color-mix(in_oklab,var(--foreground)_18%,transparent)]">
+        {/* The kind first, then the Network: record fields, so a locked card shows them too (OS-FR-1, AD-26). */}
         <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+          <KindStamp kind={card.kind} />
           <span className="font-legend text-[0.6875rem] font-semibold uppercase tracking-[0.1em] text-foreground">{label}</span>
           {card.network === 'mainnet' && <Badge variant="warning">Real funds</Badge>}
           {card.network === 'devnet' && <Badge variant="warning">Not stable</Badge>}
         </div>
         <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
-          <AddressLink address={card.address} network={card.network} className="min-w-0" />
+          {/* A Transmitter Wallet has no address until Sync exists (P-5); the record's address is never shown for it. */}
+          {card.kind === 'transmitter' ? (
+            <span className="min-w-0 text-sm text-muted-foreground">{NOT_SYNCED}</span>
+          ) : (
+            <AddressLink address={card.address} network={card.network} className="min-w-0" />
+          )}
           <div className="flex flex-wrap gap-2">
             <Button
               type="button"

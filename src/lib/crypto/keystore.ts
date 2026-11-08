@@ -35,6 +35,7 @@ import {
   type SigningCheck,
   type SigningSeal,
   type StoredWallet,
+  type WalletKind,
   type WalletView,
 } from './db'
 
@@ -65,6 +66,18 @@ export interface WalletMeta {
   signingCheck: SigningCheck
   /** When the Seed was written down and confirmed (FR-72). Absent: never. */
   writtenSeedConfirmedAt?: number
+  /** Online, Offline or Transmitter (OS-FR-1). Each kind opens its own screens. */
+  kind: WalletKind
+}
+
+/** The kind a stored view names: absent is Online, a stored non-Online kind is
+ * itself, and anything else (a typo, a kind from a later build, even a literal
+ * `'online'`, which is never written) is `null`, so that view is not shown
+ * (OS-FR-1: fail closed, never read as Online). */
+function kindOfView(v: WalletView): WalletKind | null {
+  const raw: unknown = (v as { kind?: unknown }).kind
+  if (raw === undefined) return 'online'
+  return raw === 'offline' || raw === 'transmitter' ? raw : null
 }
 
 function viewsOf(w: StoredWallet): WalletView[] {
@@ -72,7 +85,15 @@ function viewsOf(w: StoredWallet): WalletView[] {
 }
 
 function toMetas(w: StoredWallet): WalletMeta[] {
-  return viewsOf(w).map((v) => ({
+  return viewsOf(w).flatMap((v): WalletMeta[] => {
+    const kind = kindOfView(v)
+    if (kind === null) return []
+    return [toMeta(w, v, kind)]
+  })
+}
+
+function toMeta(w: StoredWallet, v: WalletView, kind: WalletKind): WalletMeta {
+  return {
     id: v.walletId,
     seedId: w.id,
     lockId: w.lockId,
@@ -87,7 +108,8 @@ function toMetas(w: StoredWallet): WalletMeta[] {
     openCheck: w.openCheck,
     signingCheck: w.signingCheck,
     ...(w.writtenSeedConfirmedAt !== undefined ? { writtenSeedConfirmedAt: w.writtenSeedConfirmedAt } : {}),
-  }))
+    kind,
+  }
 }
 
 function findSeedRecord(all: StoredWallet[], walletId: string): StoredWallet | undefined {

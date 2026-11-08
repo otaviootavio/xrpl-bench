@@ -27,7 +27,7 @@ import { TooltipProvider } from '@/components/ui/tooltip'
 import { RENAME_ERRORS, RENAME_HELP, RENAME_WRITE_FAILED } from '@/components/wallet/rename-copy'
 import { useAppStore } from '@/store/app-store'
 
-const base = { lockId: 'lockA', createdAt: 1, network: 'mainnet', algorithm: 'ed25519', openCheck: 'pin', signingCheck: 'standard' }
+const base = { lockId: 'lockA', createdAt: 1, network: 'mainnet', algorithm: 'ed25519', openCheck: 'pin', signingCheck: 'standard', kind: 'online' }
 const W = { ...base, id: 'w1', seedId: 's1', label: 'Savings', address: 'rA' }
 const SIBLING = { ...base, id: 'w1b', seedId: 's1', label: 'Savings', address: 'rA2', network: 'testnet' }
 const OTHER = { ...base, id: 'w2', seedId: 's2', label: 'Travel', address: 'rB' }

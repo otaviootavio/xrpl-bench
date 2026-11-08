@@ -38,7 +38,7 @@ import { AppSettings } from '@/pages/AppSettings'
 import { useAppStore } from '@/store/app-store'
 
 const W = (id: string, lockId: string) =>
-  ({ id, seedId: id, lockId, label: `Wallet ${id}`, address: `r${id}`, createdAt: 1, network: 'testnet', algorithm: 'ed25519', openCheck: 'pin', signingCheck: 'standard' }) as never
+  ({ id, seedId: id, lockId, label: `Wallet ${id}`, address: `r${id}`, createdAt: 1, network: 'testnet', algorithm: 'ed25519', openCheck: 'pin', signingCheck: 'standard', kind: 'online' }) as never
 const wrap = (ui: React.ReactNode) => render(<QueryClientProvider client={new QueryClient()}>{ui}</QueryClientProvider>)
 
 /** Every per-wallet control Settings used to carry, by the accessible names it had. */

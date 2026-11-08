@@ -1,9 +1,12 @@
 import type { WalletMeta } from '@/lib/crypto/keystore'
 
 type NetworkId = WalletMeta['network']
+type WalletKind = WalletMeta['kind']
 
-/** A closed lock: the five things a card may show and nothing else (AD-43, AD-26, FR-93).
- * Do not add a field (no Node, check kind or balance): the chooser cannot render what this type does not hold. */
+/** A closed lock: the six things a card may show and nothing else (AD-43, AD-26, FR-93).
+ * The kind joined the Network as a record field, not an Account read (UX owner ruling,
+ * 2026-11-08: a locked card still shows its name, kind and Network; OS-FR-1).
+ * Do not add another field (no Node, check kind or balance): the chooser cannot render what this type does not hold. */
 export interface LockedCard {
   state: 'locked'
   walletId: string
@@ -11,6 +14,7 @@ export interface LockedCard {
   label: string
   address: string
   network: NetworkId
+  kind: WalletKind
 }
 
 export interface OpenCard extends Omit<LockedCard, 'state'> {
@@ -74,10 +78,11 @@ export function listWalletCards(wallets: readonly WalletMeta[], openLocks: Reado
           label: w.label,
           address: w.address,
           network: w.network,
+          kind: w.kind,
           allowsLock: w.openCheck !== 'none',
           hasNode: w.node !== undefined && w.node !== '',
         }
       : // Explicit fields, not a spread: a field added for the open variant must not reach a locked card.
-        { state: 'locked', walletId: w.id, lockId: w.lockId, label: w.label, address: w.address, network: w.network },
+        { state: 'locked', walletId: w.id, lockId: w.lockId, label: w.label, address: w.address, network: w.network, kind: w.kind },
   )
 }

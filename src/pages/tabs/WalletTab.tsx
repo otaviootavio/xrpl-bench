@@ -7,6 +7,7 @@ import { ConfigPlate } from '@/components/wallet/ConfigPlate'
 import { AddressBookPlate } from '@/components/wallet/AddressBookPlate'
 import { AddressDisplay } from '@/components/wallet/AddressDisplay'
 import { NetworkPlate } from '@/components/wallet/NetworkPlate'
+import { KindStamp } from '@/components/wallet/KindStamp'
 import { RemoveDialog, type RemoveTarget } from '@/components/wallet/RemoveDialog'
 import { removeBodyFor, type RemoveBody } from '@/components/wallet/remove-copy'
 import { RenameDialog } from '@/components/wallet/RenameDialog'
@@ -37,6 +38,7 @@ import { confirmRemoveWallet, openWalletNow } from '@/lib/remove-wallet'
 import { leaveToChooser, walletScreenPath } from '@/lib/route'
 import { NETWORKS } from '@/lib/xrpl/networks'
 import { queryKeys } from '@/lib/xrpl/query-keys'
+import { NOT_SYNCED } from '@/lib/wallet-kind-words'
 
 /** A key that wraps its legend rather than push a plate past 320px or 200% text. */
 const KEY = 'h-auto min-h-8 w-fit max-w-full whitespace-normal py-1 pointer-coarse:min-h-11'
@@ -165,7 +167,10 @@ function NamePlate({ wallet }: { wallet: WalletMeta }) {
   )
 }
 
+/** The checks of this Wallet. A Transmitter Wallet holds no key, so it shows its
+ * Open Check and auto-lock only: no Signing Check row and no Edit checks key (OS-FR-3). */
 function ChecksPlate({ wallet }: { wallet: WalletMeta }) {
+  const signs = wallet.kind !== 'transmitter'
   // The same read Edit checks makes, from the same key: one cache entry per lock.
   const lock = useQuery({ queryKey: queryKeys.lockInfo(wallet.lockId), queryFn: () => getLockInfo(wallet.lockId) })
   const signing = wallet.seedMethod === 'passkey-derived' ? 'passkey' : wallet.signingCheck
@@ -193,23 +198,27 @@ function ChecksPlate({ wallet }: { wallet: WalletMeta }) {
             <dd className="mt-0.5 break-words">{openCheckWords(lock.data.openCheck)}</dd>
             {lock.data.openCheck === 'none' && <dd className="text-xs text-muted-foreground">{NO_OPEN_CHECK_DETAIL}</dd>}
           </div>
-          <div className="min-w-0">
-            <dt className="panel-legend">{SIGNING_CHECK_QUESTION}</dt>
-            <dd className="mt-0.5 break-words">{signingWords(signing)}</dd>
-          </div>
+          {signs && (
+            <div className="min-w-0">
+              <dt className="panel-legend">{SIGNING_CHECK_QUESTION}</dt>
+              <dd className="mt-0.5 break-words">{signingWords(signing)}</dd>
+            </div>
+          )}
         </dl>
       )}
       <AutoLockRow key={wallet.lockId} lockId={wallet.lockId} minutes={lock.isError || !lock.data ? null : lock.data.autoLockMinutes} />
-      <Button
-        type="button"
-        variant="outline"
-        size="sm"
-        className={KEY}
-        data-configure-key={EDIT_CHECKS_KEY}
-        onClick={() => launchFromConfigure(walletScreenPath('edit-checks', wallet.id), EDIT_CHECKS_KEY)}
-      >
-        Edit checks
-      </Button>
+      {signs && (
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          className={KEY}
+          data-configure-key={EDIT_CHECKS_KEY}
+          onClick={() => launchFromConfigure(walletScreenPath('edit-checks', wallet.id), EDIT_CHECKS_KEY)}
+        >
+          Edit checks
+        </Button>
+      )}
     </ConfigPlate>
   )
 }
@@ -315,6 +324,14 @@ function SetupLine({ term, value }: { term: string; value: string }) {
  * below show them. The words are the quiz's (`walk-questions`).
  */
 function IdentityPlate({ wallet }: { wallet: WalletMeta }) {
+  // A Transmitter Wallet holds no key, so it has no key rows; until Sync exists it has no address either (P-5).
+  if (wallet.kind === 'transmitter') {
+    return (
+      <ConfigPlate title="This wallet">
+        <p className="text-sm">{NOT_SYNCED}</p>
+      </ConfigPlate>
+    )
+  }
   return (
     <ConfigPlate title="This wallet">
       <AddressDisplay address={wallet.address} />
@@ -326,11 +343,56 @@ function IdentityPlate({ wallet }: { wallet: WalletMeta }) {
   )
 }
 
+/** The plates after Name and Address Book, per kind, in the spine's fixed order (EXPERIENCE
+ * "Local settings plates, per kind"). The Online list is today's, unchanged. */
+function KindPlates({ wallet }: { wallet: WalletMeta }) {
+  switch (wallet.kind) {
+    case 'online':
+      return (
+        <>
+          <ChecksPlate wallet={wallet} />
+          <SeedPlate wallet={wallet} />
+          {/* A wallet either operates another account or holds the Account Master Key, so this plate always has something to say. */}
+          <ControlPlate wallet={wallet} />
+          <ConfigPlate title="Node">
+            <WalletNodeSection wallet={wallet} />
+          </ConfigPlate>
+          <ConfigPlate title="Two-device signing">
+            <TwoDeviceSign wallet={wallet} configureKey={TWO_DEVICE_KEY} />
+          </ConfigPlate>
+        </>
+      )
+    case 'offline':
+      // No Node: an Offline Wallet never touches the ledger. Key changes are New transaction types, not plates.
+      return (
+        <>
+          <ChecksPlate wallet={wallet} />
+          <SeedPlate wallet={wallet} />
+        </>
+      )
+    case 'transmitter':
+      // No Seed: a Transmitter Wallet holds no key.
+      return (
+        <>
+          <ChecksPlate wallet={wallet} />
+          <ConfigPlate title="Node">
+            <WalletNodeSection wallet={wallet} />
+          </ConfigPlate>
+        </>
+      )
+    default: {
+      const unknown: never = wallet.kind
+      void unknown
+      return null
+    }
+  }
+}
+
 /**
  * The Local settings tab (FR-88, CAP-1): this wallet's own settings, a plate per concern in a fixed order,
- * in one column and with no jump list. `Main` mounts it only inside `OpenWallet`, so the lock is
- * open (AD-32); this component trusts that and reads no other Wallet. App-level plates (Remove all,
- * Version) are not here: they belong to `/settings`.
+ * in one column and with no jump list. `Main` mounts it only for an open Wallet, inside that kind's
+ * shell, so the lock is open (AD-32); this component trusts that and reads no other Wallet. The plates
+ * depend on the kind (OS-FR-1). App-level plates (Remove all, Version) are not here: they belong to `/settings`.
  */
 export function WalletTab({ wallet }: { wallet: WalletMeta }) {
   // Landing: only when a task screen opened from this tab has just returned, put focus on the key
@@ -351,21 +413,16 @@ export function WalletTab({ wallet }: { wallet: WalletMeta }) {
           <span className="panel-legend block">Local settings</span>{' '}
           <span className="mt-0.5 block break-words text-lg font-semibold">{wallet.label}</span>
         </h1>
-        <NetworkPlate />
+        {/* The kind first, then the Network: the chooser card's order (OS-FR-1). */}
+        <div className="flex flex-wrap items-center gap-2">
+          <KindStamp kind={wallet.kind} />
+          <NetworkPlate />
+        </div>
       </div>
       <IdentityPlate wallet={wallet} />
       <NamePlate wallet={wallet} />
       <AddressBookPlate walletId={wallet.id} />
-      <ChecksPlate wallet={wallet} />
-      <SeedPlate wallet={wallet} />
-      {/* A wallet either operates another account or holds the Account Master Key, so this plate always has something to say. */}
-      <ControlPlate wallet={wallet} />
-      <ConfigPlate title="Node">
-        <WalletNodeSection wallet={wallet} />
-      </ConfigPlate>
-      <ConfigPlate title="Two-device signing">
-        <TwoDeviceSign wallet={wallet} configureKey={TWO_DEVICE_KEY} />
-      </ConfigPlate>
+      <KindPlates wallet={wallet} />
       <RemovePlate wallet={wallet} />
     </div>
   )

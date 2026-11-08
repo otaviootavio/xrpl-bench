@@ -582,3 +582,15 @@ Item 8 shipped as a refactor that preserves behaviour (`spec-sendtab-split.md`).
 - source_spec: `_bmad-output/implementation-artifacts/spec-batch2-d-footer-wrap-and-unknown-record.md`
   summary: Below `sm`, a sheet's sticky footer stops above the sheet's bottom edge by the dialog body's bottom padding (16px at 100% text, 32px at 200%), and form content shows through that strip under the footer.
   evidence: Seen in the batch 2 browser pass on 2026-11-06 (d1-addtrust-320-200pct-*.png, session scratchpad: a clipped "ISSUER ADDRESS" label visible under the footer). Sticky `bottom: 0` is measured inside the scroll container's padding box (`p-4` on `[data-slot=dialog-body]`). Pre-existing; not caused by the footer wrap. Settle by removing the body's bottom padding for sheets below `sm` (the footer already pads itself) and re-measuring.
+
+- source_spec: `_bmad-output/specs/spec-offline-signing/stories/1-wallet-kind-on-the-record-and-the-chooser-card.md`
+  summary: "Let another wallet sign" (operate another account) offers Offline and Transmitter Wallets as target accounts, because `eligibleTargets` in `src/lib/control.ts` does not look at the kind.
+  evidence: Found in the story 1 review on 2026-11-08. It cannot be reached until story 3 creates Offline Wallets, and story 12 removes the screen (OS-FR-19); OS-FR-21 lets any address be a Regular Key. Settle in story 3: either filter by kind or accept it until story 12.
+
+- source_spec: `_bmad-output/specs/spec-offline-signing/stories/1-wallet-kind-on-the-record-and-the-chooser-card.md`
+  summary: The Remove dialog of a Transmitter Wallet uses the Seed sentences from `removeBodyFor` ("the encrypted seed"), but a Transmitter holds no key.
+  evidence: Found in the story 1 review on 2026-11-08. `src/lib/remove-copy.ts` has no kind branch. Story 4 makes the Transmitter record without a Seed; its remove words need an approved string.
+
+- source_spec: `_bmad-output/specs/spec-offline-signing/stories/1-wallet-kind-on-the-record-and-the-chooser-card.md`
+  summary: The kind is stored per Wallet view, but the Seed, Seed Method and Signing Check belong to the Seed record, so one Seed could hold an Online and an Offline Wallet.
+  evidence: Unverified (medium if a problem). Found in the story 1 review on 2026-11-08. A kind per Wallet matches the glossary. Stories 3 and 5 (create Offline, change kind) decide whether one Seed may hold Wallets of two kinds, and whether to refuse it.

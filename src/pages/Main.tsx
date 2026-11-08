@@ -8,6 +8,7 @@ import { TrustLinesTab } from './tabs/TrustLinesTab'
 import { WalletTab } from './tabs/WalletTab'
 import { Unlock } from './Unlock'
 import { WalletScreens } from './WalletScreens'
+import { OfflineWallet, TransmitterWallet } from './kind/KindWallets'
 import { useRoute } from '@/hooks/useRoute'
 import { isTaskRoute } from '@/lib/route'
 import { clearConfigureFocusReturn } from '@/lib/configure-launch'
@@ -15,7 +16,7 @@ import { useActiveWallet, useActiveNetwork, useActiveNode, useWalletIsOpen } fro
 import { useIncomingPaymentNotifications } from '@/hooks/useIncomingPaymentNotifications'
 import { useAccountLiveUpdates } from '@/hooks/useAccountLiveUpdates'
 
-/** The Local settings tab for the active Wallet; `OpenWallet` mounts it, so the lock is open. */
+/** The Local settings tab for the active Wallet; `OnlineWallet` mounts it, so the lock is open. */
 function WalletPanel() {
   const wallet = useActiveWallet()
   return wallet ? <WalletTab key={wallet.id} wallet={wallet} /> : null
@@ -44,10 +45,10 @@ const PANELS = [
   { value: 'wallet', label: 'Local settings', heading: null, Panel: WalletPanel },
 ] as const
 
-/** The six panels and every ledger hook behind them. Mounted ONLY while the
- * active Wallet's lock is open (AD-26): a closed one has no address in play, so
- * nothing here can issue a request that carries it. */
-function OpenWallet() {
+/** An Online Wallet: the six panels and every ledger hook behind them. Mounted ONLY
+ * while the active Wallet's lock is open (AD-26): a closed one has no address in
+ * play, so nothing here can issue a request that carries it. */
+function OnlineWallet() {
   const network = useActiveNetwork()
   const node = useActiveNode()
   const wallet = useActiveWallet()
@@ -80,11 +81,26 @@ function OpenWallet() {
   )
 }
 
-/** The wallet content: the Unlock view or the open wallet. The lifecycle hooks,
+/** The wallet content: the Unlock view or the open wallet, by kind. The kind is
+ * chosen here, above every ledger hook: only an Online Wallet mounts them, so an
+ * Offline Wallet never asks the pool for a client (OS-FR-1). The lifecycle hooks,
  * chassis, header, skip link and main region live in `AppShell` (AD-31). */
 export function Main() {
   const wallet = useActiveWallet()
   const open = useWalletIsOpen(wallet?.id)
   if (!wallet) return null
-  return open ? <OpenWallet /> : <Unlock key={wallet.id} wallet={wallet} />
+  if (!open) return <Unlock key={wallet.id} wallet={wallet} />
+  switch (wallet.kind) {
+    case 'online':
+      return <OnlineWallet />
+    case 'offline':
+      return <OfflineWallet key={wallet.id} wallet={wallet} />
+    case 'transmitter':
+      return <TransmitterWallet key={wallet.id} wallet={wallet} />
+    default: {
+      const unknown: never = wallet.kind
+      void unknown
+      return null
+    }
+  }
 }

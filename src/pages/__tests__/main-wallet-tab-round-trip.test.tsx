@@ -64,7 +64,7 @@ import { TooltipProvider } from '@/components/ui/tooltip'
 import { PromptsContext } from '@/hooks/usePrompts'
 import { useAppStore } from '@/store/app-store'
 
-const A = { createdAt: 1, algorithm: 'ed25519', openCheck: 'pin', signingCheck: 'standard', network: 'testnet', id: 'a', seedId: 'a', lockId: 'X', label: 'Alpha', address: 'rAlphaAddr' }
+const A = { createdAt: 1, algorithm: 'ed25519', openCheck: 'pin', signingCheck: 'standard', kind: 'online', network: 'testnet', id: 'a', seedId: 'a', lockId: 'X', label: 'Alpha', address: 'rAlphaAddr' }
 
 beforeEach(() => {
   window.history.replaceState(null, '', '/')

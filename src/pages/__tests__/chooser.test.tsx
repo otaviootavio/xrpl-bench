@@ -34,7 +34,7 @@ import { accountExplorerUrl } from '@/lib/xrpl/networks'
 
 type Net = 'mainnet' | 'testnet' | 'devnet'
 const W = (id: string, seedId: string, lockId: string, label: string, network: Net, createdAt: number, extra = {}) =>
-  ({ id, seedId, lockId, label, address: `r${id.toUpperCase()}ADDRESS${'x'.repeat(12)}`, createdAt, network, algorithm: 'ed25519', openCheck: 'pin', signingCheck: 'standard', ...extra }) as never
+  ({ id, seedId, lockId, label, address: `r${id.toUpperCase()}ADDRESS${'x'.repeat(12)}`, createdAt, network, algorithm: 'ed25519', openCheck: 'pin', signingCheck: 'standard', kind: 'online', ...extra }) as never
 const KEY = {} as CryptoKey
 
 function mount() {

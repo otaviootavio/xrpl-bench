@@ -90,12 +90,13 @@ and nothing on them is decorative.
 No new token. Three rationing decisions, all owner-confirmed on 2026-11-07:
 
 - **Commit orange is spent only where funds leave.** That is the Transmitter
-  Wallet's Send key at the Transmit step, and the "Send it to the ledger?"
-  confirm key when "Show the signed transaction before sending" is on. On an
-  Online Wallet with the setting off, it stays where it is today: the Send
+  Wallet's **Send** key at the Transmit step. It shows every round, after the
+  checks, and the scan never sends by itself. It is also on the "Send it to
+  the ledger?" key when "Show the signed transaction before sending" is on. On
+  an Online Wallet with the setting off, it stays where it is today: the Send
   dialog's confirm. The offline **Sign** key is a `default` key. It makes a
-  valid blob but sends nothing (memlog, 2026-11-07). One call site per screen
-  still holds. No screen shows two commit keys.
+  valid blob but sends nothing. All of this was decided by the owner on
+  2026-11-07 (memlog). There is still one commit key per screen, never two.
 - **Wallet kind is not a colour.** The kind stamp is the neutral `outline`
   badge with the kind's word. Online, Offline and Transmitter look the same
   except for the word.
@@ -157,9 +158,8 @@ QR frame. The QR's white plate keeps its square corners.
   settings, each with its one sentence in caption text (OS-FR-7).
 - **Signing-network well** (`{components.signing-network-well}`). The readout
   well, legend "Network" top left, no lamp: the offline device cannot know a
-  live state. Below the well's hairline rule, as scale marks: "Window: about 10
-  minutes" and "Valid until ledger 91 204 377". The second value is in the data
-  face.
+  live state. Below the well's hairline rule, as scale marks: the window (P-13)
+  and the valid-until ledger (P-51). The values are in the data face.
 - **QR hand-off plate** (`{components.qr-handoff-plate}`). Title (the payload's
   name), a row with the Network label and its stamp, the code, the scan count
   caption ("Scan 1 of 3"), then the lines. On the signed plate the lines are
@@ -174,18 +174,25 @@ QR frame. The QR's white plate keeps its square corners.
   its place. Nothing after it is shown as signable.
 - **Consequence block** (`{components.consequence-block}`). Texts A–E. Plain
   lines are a bulleted list in body text. Each WARNING line is its own caution
-  Alert, and an "I have read this warning" checkbox follows it when the spec
+  Alert, and the acknowledgement checkbox (P-6 in EXPERIENCE.md) follows it when the spec
   requires an acknowledgement. Text C's three steps are an ordered list. The
   words are copied from `consequence-texts.md`: no reflow into other
   sentences, no summary line in their place.
 - **Earlier-signing record** (`{components.earlier-signing-record}`). Recessed
-  dl: Sequence, Transaction hash (full, wrapping, data face), Valid until
-  ledger, Signed at (local time).
+  dl with the P-52 terms: Sequence, the transaction hash (full, wrapping, data
+  face), the valid-until ledger and the time signed (local time).
 - **Keys.** Inherited variants. `commit` per §Colors. "Change to an online
   wallet" and "Turn off the master key" open their confirm with a `danger`
-  key. The confirm itself is the existing irreversible-class dialog (typed or
-  held confirm, `destructive` fill). "Change to an offline wallet" uses an
-  `outline` key and a plain confirm.
+  key. Each opens a task screen, not a dialog. The typed phrase field sits
+  inline, and the final key stays `aria-disabled` until the phrase is typed.
+  It is the existing master-key pattern moved onto the task screen. The
+  Signing Check follows. "Change to an offline wallet" uses an `outline` key
+  and a plain confirm on its task screen.
+- **Other new plates** (Delegates, Key state, Synced address, Before sending,
+  Signed by this wallet, the Transmitter's check results) are a plain
+  `card-plate` with a `dl` under the root rules. They have no device of their
+  own. A plate title never holds an address: the address is a `dl` row in the
+  data face.
 
 ## Do's and Don'ts
 
@@ -203,10 +210,16 @@ QR frame. The QR's white plate keeps its square corners.
 
 - **Don't** colour-code Wallet kinds, and don't use a lamp for a kind. A kind
   is a fixed label.
-- **Don't** render a ledger value on an Offline Wallet as a number. Where an
-  online screen shows a reading, the offline screen shows the words "Comes from
-  the Transmitter" in the place of the number.
+- **Don't** render, on an Offline Wallet, a value that the online screen
+  *reads* (balance, spendable, a trust-line list, the fee estimate). In its
+  place the offline screen shows P-1. Values that arrived in Data to Sign or
+  an Unsigned Transaction (Sequence, Fee, LastLedgerSequence) are shown as
+  numbers on the signing review.
 - **Don't** put a second panel-scale number on the signing review. The Network
   is its readout.
 - **Don't** place the QR code beside text at any width.
-- **Don't** reword, shorten, merge or uppercase any approved string.
+- **Don't** reword, shorten or merge any approved string, and don't change its
+  characters in the DOM. The inherited key legend and placard may set it in
+  uppercase by CSS `text-transform`, because that face is the system's. An
+  approved string longer than a key legend or title, such as a sentence in a
+  text block or an Alert body, is never uppercased.

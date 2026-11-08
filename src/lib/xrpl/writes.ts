@@ -199,33 +199,7 @@ export async function submitAndClassify(
     } finally {
       signer.dispose()
     }
-    try {
-      const res = await client.submitAndWait(signed.tx_blob)
-      const meta: unknown = res.result.meta
-      // A meta that is missing, not an object (binary meta) or has no string
-      // result is an unreadable outcome, never a failure: reading it as one
-      // would invite a resend that pays twice.
-      if (!isRecord(meta) || typeof meta.TransactionResult !== 'string' || meta.TransactionResult === '') return { status: 'unknown', hash: signed.hash }
-      const resultCode = meta.TransactionResult
-      const status = classify(resultCode)
-      return status === 'failed'
-        ? { status, hash: signed.hash, resultCode }
-        : { status, hash: signed.hash, resultCode, ledgerIndex: res.result.ledger_index }
-    } catch (err: unknown) {
-      // The "stuck/expired" case from docs/decisions.md: the network moved past
-      // this transaction's LastLedgerSequence without it appearing in a
-      // validated ledger. It may simply never have been included. NEVER
-      // resubmit this exact signed blob — the caller must build a fresh
-      // transaction with a new sequence.
-      //
-      // Detected structurally (comparing the validated ledger index against the
-      // tx's own LastLedgerSequence) rather than by matching on error-message
-      // text, which silently reclassifies whenever xrpl.js rewords it.
-      if (await isExpiry(err, network, lastLedgerSequence, node)) {
-        return { status: 'expired', hash: signed.hash }
-      }
-      throw err
-    }
+    return await transmit(client, network, signed, lastLedgerSequence, node)
   } finally {
     // Nested so the depth is lowered even if releasing the client throws: a
     // depth stranded above zero would refuse every update for the session.
@@ -235,6 +209,48 @@ export async function submitAndClassify(
       inFlightDepth -= 1
       if (inFlightDepth === 0) reportTxInFlight(false)
     }
+  }
+}
+
+/**
+ * The Transmit step's core (OS-FR-9): the one place a Signed Transaction is
+ * submitted and its outcome classified, whatever signed it. Private, and only
+ * ever called inside the in-flight depth a caller raised, on a client the
+ * caller holds. It submits the blob once and never resubmits it.
+ */
+async function transmit(
+  client: Awaited<ReturnType<typeof holdXrplClient>>['client'],
+  network: NetworkId,
+  signed: { tx_blob: string; hash: string },
+  lastLedgerSequence: number | undefined,
+  node: string | undefined,
+): Promise<SubmitOutcome> {
+  try {
+    const res = await client.submitAndWait(signed.tx_blob)
+    const meta: unknown = res.result.meta
+    // A meta that is missing, not an object (binary meta) or has no string
+    // result is an unreadable outcome, never a failure: reading it as one
+    // would invite a resend that pays twice.
+    if (!isRecord(meta) || typeof meta.TransactionResult !== 'string' || meta.TransactionResult === '') return { status: 'unknown', hash: signed.hash }
+    const resultCode = meta.TransactionResult
+    const status = classify(resultCode)
+    return status === 'failed'
+      ? { status, hash: signed.hash, resultCode }
+      : { status, hash: signed.hash, resultCode, ledgerIndex: res.result.ledger_index }
+  } catch (err: unknown) {
+    // The "stuck/expired" case from docs/decisions.md: the network moved past
+    // this transaction's LastLedgerSequence without it appearing in a
+    // validated ledger. It may simply never have been included. NEVER
+    // resubmit this exact signed blob — the caller must build a fresh
+    // transaction with a new sequence.
+    //
+    // Detected structurally (comparing the validated ledger index against the
+    // tx's own LastLedgerSequence) rather than by matching on error-message
+    // text, which silently reclassifies whenever xrpl.js rewords it.
+    if (await isExpiry(err, network, lastLedgerSequence, node)) {
+      return { status: 'expired', hash: signed.hash }
+    }
+    throw err
   }
 }
 

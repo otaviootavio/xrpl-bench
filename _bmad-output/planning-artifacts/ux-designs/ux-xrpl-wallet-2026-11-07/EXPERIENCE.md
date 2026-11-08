@@ -32,7 +32,8 @@ floor), React 19, Tailwind v4, shadcn in the repo, no backend, and one location
 scheme in `src/lib/route.ts`. What is new is that **one operator now holds two
 devices**. One is an offline phone with an Offline Wallet. The other is an
 online phone or computer with a Transmitter Wallet (OS-UJ-1). They talk only by
-QR: one payload per QR, one transaction per round, no relay.
+QR: one payload per hand-off, as one still code or an animated QR (OS-FR-24),
+one transaction per round, no relay.
 
 Binding rules, inherited and not restated: the CLAUDE.md non-negotiables,
 `docs/decisions.md` §3/§4, the fee cap (§14), the `unknown` outcome (§16) and
@@ -62,7 +63,7 @@ Transaction, Transmit step.
 |---|---|---|---|
 | **Chooser** (changed) | Launch; Wallets key | Cards for all three kinds; **Add wallet** and **Add a Transmitter wallet** (P-2) keys | OS-FR-1, OS-FR-3 |
 | **Create/Import quiz, step 1** (changed) | Add wallet | Create or Import → **"Online wallet or offline wallet?"** with Text A/B (and Text E on Import + Offline) → Label → Network (→ Seed on Import) | OS-FR-2, OS-FR-7, OS-FR-8 |
-| **Quiz walk** (changed) | Step 1 Next | Node (Online only), Seed Method, Signature type, Open Check + auto-lock, Signing Check, **"This key signs for another account"** (optional), Review with the OS-FR-23 warning | OS-FR-2, OS-FR-20, OS-FR-23 |
+| **Quiz walk** (changed) | Step 1 Next | Node (Online only), Seed Method (Online only: an Offline Wallet always uses a Stored Seed, OS-FR-8), Signature type, Open Check + auto-lock, Signing Check, **"This key signs for another account"** (optional), Review with the OS-FR-23 warning | OS-FR-2, OS-FR-20, OS-FR-23 |
 | **Add Transmitter quiz** (new) | Add a Transmitter wallet | Label + Network → Node → Open Check + auto-lock → Address (optional, "Sync to an address") → Review | OS-FR-3, OS-FR-4 |
 | **Offline Wallet: a signer** (its own type) | Open on an Offline card | **New transaction · Sign · Receive · Signed · Local settings** | OS-FR-1, OS-FR-13, OS-FR-21 |
 | **Transmitter Wallet: a carrier** (its own type) | Open on a Transmitter card | Unsynced: **Transmit · Local settings**. Synced: **Transmit · Account · History · New transaction · Local settings** | OS-FR-1, OS-FR-3, OS-FR-4, OS-FR-17, OS-FR-22 |
@@ -109,7 +110,7 @@ disappears, focus moves to Transmit.
 | Plate | Online | Offline | Transmitter | OS-FR |
 |---|---|---|---|---|
 | This wallet (address or P-5, Signature type, Seed Method) | ✓ | ✓ | ✓ address or P-5 only: no key rows | — |
-| **Wallet kind** (kind stamp, Was-online stamp + P-4, change key) | ✓ "Change to an offline wallet" | ✓ "Change to an online wallet" | ✓ no change key: a Transmitter never changes kind (owner, 2026-11-08) | OS-FR-1, OS-FR-5–7 |
+| **Wallet kind** (kind stamp, Was-online stamp + P-4, change key) | ✓ "Change to an offline wallet"; `aria-disabled` with P-63 for a Passkey-Derived Seed Wallet (OS-FR-5, OS-FR-8) | ✓ "Change to an online wallet" | ✓ no change key: a Transmitter never changes kind (owner, 2026-11-08) | OS-FR-1, OS-FR-5–7 |
 | **Synced address** ("Sync to an address", change, remove) | — | — | ✓ | OS-FR-4 |
 | Name, Address Book | ✓ | ✓ | ✓ | — |
 | Checks | ✓ | ✓ | ✓ (Open Check + auto-lock only) | OS-FR-3 |
@@ -160,8 +161,7 @@ is copied from `consequence-texts.md`, and a test compares the two.
 |---|---|---|
 | "Online wallet or offline wallet?" | Quiz step 1, the radio group legend, after Create or Import | — |
 | Text A | Under the kind radios when Online is chosen | No |
-| Text B | Under the kind radios when Offline is chosen. Six plain lines as a list, then each WARNING as its own caution Alert | **Yes, each of the two warnings**, one checkbox each (P-6). Next stays `aria-disabled` with P-7 until both are checked |
-| Text B, second WARNING (synced passkey) | Again on the passkey kind statement after the passkey ceremony, when the Wallet is Offline and the passkey is synced or unknown (OS-FR-8) | **Yes** (P-6); Finish waits on it |
+| Text B | Under the kind radios when Offline is chosen. Six plain lines as a list, then each WARNING as its own caution Alert | **Yes**, one checkbox under the warning (P-6). Next stays `aria-disabled` with P-7 until it is checked |
 | Text E | Quiz step 1 when Import + Offline are both chosen, above the Seed field | **Yes** (P-6) |
 | OS-FR-23 | Review step, caution Alert above the final Create/Import key, for every kind that holds a Seed (Online and Offline, create and import) | No, it is shown before the Seed is saved |
 | Text C | "Change to an offline wallet" screen, then its steps 1–3 again on the result | Confirm key only |
@@ -258,6 +258,9 @@ ASD-STE100 dictionary is not done yet.
 | P-59 | QR plate key, and the camera status | Key "Make the code larger" (the code fills the screen; "Back" returns). Status on a read: "The app read the code." |
 | P-60 | Kind radio changed after warnings were ticked | Status: "The text below changed. Select the box below each warning again." |
 | P-61 | Confirm before the kept transaction is erased | "Erase the kept transaction? The signed transaction is valid until ledger {n}." Keys "Erase" · "Keep it" |
+| P-63 | "Change to an offline wallet" reason, Passkey-Derived Seed Wallet | "This wallet uses a Passkey-Derived Seed. The passkey syncs to the cloud. Thus this wallet cannot be an offline wallet." |
+| P-64 | Animated QR keys and caption | Keys "Pause" · "Continue" · "Next frame". Caption: "This code has more than one frame. Keep the camera on the code until the other device reads all of it." |
+| P-65 | Scan plate progress, animated QR | "The app read {n} percent of the code." When complete: "The app read the code." |
 | P-62 | Selector labels and screen titles | Offline: "New transaction", "Sign", "Receive", "Signed" (title "Signed by this wallet"). Transmitter: "Transmit", "Account", "History", "New transaction". Type list: "Payment", "Trust line", "Regular Key", "Master key", and on a Transmitter "Other transactions" (opens every other write the app can build) |
 
 ## Component Patterns
@@ -268,8 +271,8 @@ Behavioural. The visual specs are in `DESIGN.md`.
 |---|---|---|
 | **Kind radios** | Quiz step 1 | Native radio group, legend "Online wallet or offline wallet?". **No default**: neither is checked on arrival, so the consequences are read before a choice. Choosing one shows its text in place below the group. Switching resets that text's acknowledgements. Network locks after step 1, as today. |
 | **Consequence block** | Texts A–E | Plain lines are a list. Each WARNING is a caution Alert. Where acknowledgement is required, a checkbox (P-6) follows each warning Alert and the step's forward key is `aria-disabled` with P-7 in visible text until every box is ticked. Nothing is collapsed or behind a "more" key. |
-| **QR hand-off plate** | Request, Data to Sign, Unsigned, Signed | Shows one payload. It names the payload in its title and the Network in its second row, and shows the scan count ("Scan 1 of 3"). Re-rendering for a changed payload replaces the image. A stale code is never shown under a new title (today's `QrCode` already guarantees this). No auto-advance: the device cannot know the other side scanned it. |
-| **Scan plate** | Every receive | Camera key plus paste field (today's `QrScanner`). It accepts only the payload kinds this screen expects. Any other kind is answered with "This is a {kind}. This screen needs a {kind}." `[ASSUMPTION P-36]`, and the scanner stays ready. |
+| **QR hand-off plate** | Request, Data to Sign, Unsigned, Signed | Shows one payload, as a UR with fountain codes (OS-FR-24): one still code when it fits, else an animated QR that loops at not more than three frames each second, with **Pause** and **Next frame** keys (P-64). Under reduced motion it starts paused and the user steps with Next frame. It names the payload in its title and the Network in its second row, and shows the scan count ("Scan 1 of 3"). Re-rendering for a changed payload replaces the image. A stale code is never shown under a new title (today's `QrCode` already guarantees this). No auto-advance: the device cannot know the other side scanned it. |
+| **Scan plate** | Every receive | Camera key plus paste field (today's `QrScanner`). For an animated QR it keeps reading and shows its progress (P-65, `role="status"` at each quarter, not each frame). It accepts the payload only when it is complete and its checksum is correct, and every check runs on the whole payload. It accepts only the payload kinds this screen expects. Any other kind is answered with "This is a {kind}. This screen needs a {kind}." `[ASSUMPTION P-36]`, and the scanner stays ready. |
 | **Transmit scanner** | Transmitter | One scanner. A Data-to-Sign Request opens the answer screen. A Signed Transaction opens the Transmit step. An Unsigned Transaction gets "Scan this with the offline wallet, not here." |
 | **Read-placeholder** | Offline New transaction forms | In the exact slot of the online reading: legend unchanged, value replaced by P-1 in body text. Never "0", "—", a skeleton, or a cached figure. |
 | **Signing review** | Offline, both routes, before the Signing Check | The fixed string "You are signing for {Network}" is the screen's heading (`h2`, one text node, set in the well) and takes focus on arrival. Then the field list of the **complete** transaction (Account, which is the Signs-for Account, then the signing key, type, Destination, tag, Amount, Fee, Sequence, LastLedgerSequence, flags in words), then warnings, then keys **Sign** (default) and **Do not sign** (P-34). For a master key off or a Change to an online wallet, the typed phrase sits above Sign. Sign starts the Wallet's Signing Check. |
@@ -431,6 +434,16 @@ Everything in the inherited floor applies. In addition:
 | Retry case (a) | — | Its caution's heading |
 | Kind radio changed after ticks | `role="status"`: P-60 | Unchanged |
 
+### Animated QR (WCAG 2.2.2, 2.3.1)
+
+- Not more than three frames each second, so a loop stays under the flash
+  limit. Fountain codes make a slower rate cost only time, and the owner
+  accepts the wait.
+- Pause and Next frame keys on every animated code. Under reduced motion the
+  code starts paused, and the scanner still gets every frame by Next frame.
+- "Make the code larger" works on an animated code too.
+- The screen reader hears the progress at each quarter, not at each frame.
+
 ### Round timing (WCAG 2.2.1)
 
 - The signing window (LastLedgerSequence) is a security limit set by the
@@ -453,13 +466,14 @@ Everything in the inherited floor applies. In addition:
 
 1. The chooser shows **Add wallet**. He presses it.
 2. Step 1: Create. "Online wallet or offline wallet?" Neither is chosen. He
-   picks Offline. Text B appears in place: six lines, then two caution Alerts.
-3. Next is `aria-disabled` with P-7. He ticks P-6 under each warning.
+   picks Offline. Text B appears in place: six lines, then one caution Alert.
+3. Next is `aria-disabled` with P-7. He ticks P-6 under the warning.
 4. Label "Savings". Network: Mainnet. No Node question follows.
-5. The walk asks Seed Method (Stored Seed), Signature type, Open Check with
-   auto-lock and Signing Check, all with the Mainnet safeguards as online. The
-   written-Seed confirm is required for a passkey-only setup (FR-72).
-   "This key signs for another account" is left unticked.
+5. There is no Seed Method question: an Offline Wallet always uses a Stored
+   Seed (OS-FR-8). The walk asks Signature type, Open Check with auto-lock and
+   Signing Check, with the Mainnet safeguards as online. A passkey can be his
+   Open Check or Signing Check. "This key signs for another account" is left
+   unticked.
 6. Review lists every answer. The OS-FR-23 warning sits above **Create** as a
    caution.
 7. **Climax:** the chooser shows his card: `[Offline] MAINNET [Real funds]`,
@@ -467,10 +481,9 @@ Everything in the inherited floor applies. In addition:
    transaction, Sign, Receive, Signed and Local settings. Receive shows the
    address to deposit to.
 
-Edge: Passkey-Derived Seed with a synced passkey. After the ceremony, the kind
-statement shows Text B's second WARNING again with P-6. Finish waits for it,
-and nothing is refused (OS-FR-8). Edge: Import + Offline shows Text E above the
-Seed field, with P-6.
+Edge: Import + Offline shows Text E above the Seed field, with P-6. Edge: an
+Online Wallet with a Passkey-Derived Seed shows "Change to an offline wallet"
+`aria-disabled` with P-63 (OS-FR-5, OS-FR-8).
 
 ### Flow 2 — Adding the Transmitter and syncing it (Otavio, daily phone)
 
@@ -620,7 +633,8 @@ transaction. This transaction is for Testnet. This wallet is for Mainnet."
 | 5 | Wallet kind plate; Text C screen | 6 | key-change-kind |
 | 6 | Text D screen, irreversible confirm, P-35 | 6 | key-change-kind |
 | 7 | Was-online stamp + P-4; Text E on import | 1, 6 | key-create-kind-step, key-change-kind |
-| 8 | Passkey kind statement + Text B warning 2 | 1 (edge) | key-local-settings |
+| 8 | No Seed Method question for Offline; P-63 on a Passkey-Derived Seed Wallet's change key | 1 | key-create-kind-step, key-change-kind |
+| 24 | Animated QR on every QR plate; progress on every scan plate; P-64, P-65 | 3, 5 | key-route-transmitter-builds |
 | 9 | Transmit step, P-25/P-26, expiry | 3, 5 | both route mocks |
 | 10 | Before sending plate; show-before-sending screen; P-24 | 8 | key-transmit-show-before-sending |
 | 11 | Signed QR plate, no Send key, P-12 | 3 | key-route-offline-builds |
@@ -639,7 +653,7 @@ transaction. This transaction is for Testnet. This wallet is for Mainnet."
 
 ## Open Questions
 
-1. **Proposed strings P-1 to P-62** need owner approval. Until then they are
+1. **Proposed strings P-1 to P-65** need owner approval. Until then they are
    drafts, and a build must not ship them.
 2. *Resolved 2026-11-08.* Each kind is its own type of Wallet. On Offline and
    Transmitter Wallets, key changes are types in New transaction. The Online
@@ -650,12 +664,11 @@ transaction. This transaction is for Testnet. This wallet is for Mainnet."
    identical payment waits until the first is applied or expired.
 5. *Resolved 2026-11-08.* The offline card's address is a link like on every
    card, although it does not work on a disconnected device.
-6. **Synced-passkey warning timing.** Whether a passkey is synced is known only
-   after the ceremony, so the warning comes on the kind statement, after the
-   passkey exists. Text B's general warning was already acknowledged at step 1.
-7. **Large Builds and one QR** (spec Open Question) are unchanged here. A
-   request that does not fit needs a stated refusal. Its words wait on the size
-   test.
+6. *Resolved 2026-11-08.* An Offline Wallet always uses a Stored Seed
+   (OS-FR-8): built-in passkeys sync to the cloud, so there is no synced-passkey
+   warning to time. Text B keeps one WARNING.
+7. *Resolved 2026-11-08.* A payload too big for one QR code is an animated QR
+   with fountain codes (OS-FR-24). Nothing is refused for size.
 8. *Owner 2026-11-08: keep today's lock rules and the P-58 warning; no pause.*
    **Auto-lock during a round** (accessibility review, WCAG 2.2.1). Two
    phones mean idle time on each. This spine adds a screen wake lock while a

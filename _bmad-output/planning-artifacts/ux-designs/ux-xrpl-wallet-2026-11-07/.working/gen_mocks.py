@@ -225,9 +225,13 @@ def well(net, marks):
             f'<h2 style="margin:0;font-weight:inherit"><span class="pre" style="display:block">You are signing for</span> <span class="big" style="display:block;overflow-wrap:anywhere">{net}</span></h2>'
             f'<div class="marks">{m}</div></div>')
 
-def qrplate(title, net, count, lines, seed, extra=''):
+def anim_keys():
+    return ('<p class="cap2" style="color:var(--ink)">This code has more than one frame. Keep the camera on the code until the other device reads all of it.</p>'
+            + keys(k('Pause', 'out sm'), k('Next frame', 'out sm')))
+
+def qrplate(title, net, count, lines, seed, extra='', animated=False):
     ls = ''.join(f'<p class="cap2" style="color:var(--ink)">{esc(x)}</p>' for x in lines)
-    return plate('', f'<h2 class="title">{esc(title)}</h2>{stamps_net(net)}{qr(seed, f"QR code: {title.lower()}, {net}")}<p class="count">{count}</p>{keys(k('Make the code larger', 'out sm'))}{ls}{extra}')
+    return plate('', f'<h2 class="title">{esc(title)}</h2>{stamps_net(net)}{qr(seed, f"QR code: {title.lower()}, {net}")}<p class="count">{count}</p>{(anim_keys() if animated else '')}{keys(k('Make the code larger', 'out sm'))}{ls}{extra}')
 
 def stamps_net(net):
     s = f'<span class="netlabel">{net}</span>' + ('<span class="stamp warn">Real funds</span>' if net == 'Mainnet' else '')
@@ -269,14 +273,14 @@ page('key-create-kind-step.html', 'Create quiz: the kind step',
      'OS-FR-2, OS-FR-7, OS-FR-8, OS-FR-23. Step 1 asks the kind right after Create or Import and before Label and Network. Texts are copied from consequence-texts.md by the generator, never retyped.',
      [row('<b>Online chosen.</b> Text A shows in place. No acknowledgement.',
           phone('Add wallet — step 1', plate('', quiz(1, 8, 'Create or import', path + kind_radios('online') + render_text('A') + lblnet)))),
-      row('<b>Offline chosen.</b> Text B: six lines, then each WARNING as its own caution with its checkbox. Next waits on both boxes (P-7). Left: not yet ticked. The walk that follows has no Node step: 7 steps, where Online has 8.',
-          phone('Add wallet — step 1, before ticking', plate('', quiz(1, 7, 'Create or import', path + kind_radios('offline') + render_text('B', ack=False).replace('</p></div>', '</p><div class="ack"><i aria-hidden="true"></i><span>I read this warning.</span></div></div>') + lblnet, ('Next', 'dis', 'Read each warning. Then select the box below it.'))))),
+      row('<b>Offline chosen.</b> Text B: six lines, then its WARNING as a caution with its checkbox. Next waits on the box (P-7). Left: not yet ticked. The walk that follows has no Node and no Seed Method step (Stored Seed only): 6 steps, where Online has 8.',
+          phone('Add wallet — step 1, before ticking', plate('', quiz(1, 6, 'Create or import', path + kind_radios('offline') + render_text('B', ack=False).replace('</p></div>', '</p><div class="ack"><i aria-hidden="true"></i><span>I read this warning.</span></div></div>') + lblnet, ('Next', 'dis', 'Read each warning. Then select the box below it.'))))),
       row('<b>Import + Offline.</b> Text E above the Seed field, acknowledged.',
           phone('Add wallet — step 1, import', plate('', quiz(1, 5, 'Create or import', path_imp + kind_radios('offline') + '<p class="cap2">Text B shows here as above (not repeated in this frame).</p>' + render_text('E', ack=True) + lblnet + '<div class="field"><span class="legend">Seed</span><div class="in data">s••••••••••••••••••••••••••••</div></div>')))),
       row('<b>Optional step: Signs for (OS-FR-20).</b> Unticked by default; ticked, it asks for the Account address.',
-          phone('Add wallet — step 6', plate('', quiz(6, 7, 'This key signs for another account', '<label class="ack" style="margin:0"><i aria-hidden="true">✓</i><span>This key signs for another account</span></label><div class="field"><span class="legend">Account address</span><div class="in data">' + ADDR + '</div></div><p class="cap2">This key must be the Regular Key of that account.</p>')))),
+          phone('Add wallet — step 5', plate('', quiz(5, 6, 'This key signs for another account', '<label class="ack" style="margin:0"><i aria-hidden="true">✓</i><span>This key signs for another account</span></label><div class="field"><span class="legend">Account address</span><div class="in data">' + ADDR + '</div></div><p class="cap2">This key must be the Regular Key of that account.</p>')))),
       row('<b>Review.</b> The OS-FR-23 warning sits above the final key, for every kind that holds a Seed, create and import.',
-          phone('Add wallet — Review', plate('', quiz(7, 7, 'Review', fl([('Kind', 'Offline wallet', False), ('Label', 'Savings', False), ('Network', 'Mainnet', False), ('Seed Method', 'Stored Seed', False), ('Open Check', 'App PIN', False), ('Auto-lock', '5 minutes', False), ('Signing Check', 'App PIN', False)]) + alert('caution', 'Caution', esc(SEED_NET)), ('Create', '', ''))))),
+          phone('Add wallet — Review', plate('', quiz(6, 6, 'Review', fl([('Kind', 'Offline wallet', False), ('Label', 'Savings', False), ('Network', 'Mainnet', False), ('Seed Method', 'Stored Seed (always, for an offline wallet)', False), ('Open Check', 'App PIN', False), ('Auto-lock', '5 minutes', False), ('Signing Check', 'App PIN', False)]) + alert('caution', 'Caution', esc(SEED_NET)), ('Create', '', ''))))),
       ])
 
 # ---------- 2. chooser + transmitter ----------
@@ -364,8 +368,9 @@ page('key-route-offline-builds.html', 'Offline-builds route, two devices (OS-UJ-
 off2 = lambda who, body: phone(who, body, tabs='offline', active='Sign', wallet='Savings', kind='Offline')
 tx_send = picker('Payment', more=True) + plate('Payment', '<div class="field"><span class="legend">Destination address</span><div class="in data">' + DEST + '</div></div><div class="field"><span class="legend">Amount</span><div class="in data">250 USD</div></div>'
                 + fl([('Spendable', '1 840.50 USD'), ('Destination check', '<span class="ok">found, trust line set</span>', False), ('Network fee', '0.000012 XRP')]) + keys(k('Make the unsigned transaction')))
-unsigned = qrplate('Unsigned transaction', 'Mainnet', 'Scan 1 of 2', ['Scan this code with the offline wallet. Then scan the signed code from the offline wallet.'], 4) + scanplate('the signed transaction', 'Scan the signed code from the offline wallet.', 'Scan 2 of 2')
+unsigned = qrplate('Unsigned transaction', 'Mainnet', 'Scan 1 of 2', ['Scan this code with the offline wallet. Then scan the signed code from the offline wallet.'], 4, animated=True) + scanplate('the signed transaction', 'Scan the signed code from the offline wallet.', 'Scan 2 of 2')
 off_entry = plate('Sign a transaction from your Transmitter', '<div class="scan"><span class="k out sm">Stop the camera</span><p class="idle">Camera on.</p></div>')
+off_reading = plate('Sign a transaction from your Transmitter', '<div class="scan"><span class="k out sm">Stop the camera</span><p class="idle">Camera on, reading an animated code.</p><p class="data" role="status" style="margin:0">The app read 60 percent of the code.</p></div>')
 review2 = (well('Mainnet', ['Time limit: 18 ledgers', 'Valid until ledger 91 204 385'])
            + plate('Transaction', fl([('Type', 'Payment', False), ('Account', ADDR), ('Destination', DEST), ('Amount', '250 USD (issuer rvYAfWj5gh67oV6fW32ZzP3Aw4Eubs59B)'), ('SendMax', 'Not more than 251.25 USD can leave your account', False)])
                    + alert('caution', 'Caution', 'Not more than 251.25 USD can leave your account. This is more than the amount above.')
@@ -376,7 +381,7 @@ signed2 = qrplate('Signed transaction', 'Mainnet', 'Scan 2 of 2', ['The app did 
 page('key-route-transmitter-builds.html', 'Transmitter-builds route, two devices (OS-UJ-2)',
      'OS-FR-17, OS-FR-18, OS-FR-9. The Synced Transmitter builds; the Offline Wallet shows every field in words and only signs.',
      [row('<b>1. Build on the Transmitter</b> with live reads. The final key makes an Unsigned Transaction (default key; nothing is sent).', off2('Offline — idle', off_entry), phone('Transmitter — New transaction', tx_send, tabs='tx', active='New transaction', wallet='Savings (send)', kind='Transmitter')),
-      row('<b>2. Unsigned QR (Scan 1 of 2).</b> The offline phone scans it from "Sign a transaction from your Transmitter" (P-3).', off2('Offline — scanning', off_entry), phone('Transmitter — unsigned', unsigned, tabs='tx', active='New transaction', wallet='Savings (send)', kind='Transmitter')),
+      row('<b>2. Unsigned QR (Scan 1 of 2), here an animated code (OS-FR-24).</b> Not more than three frames each second, with Pause and Next frame. The offline phone reads it from "Sign a transaction from your Transmitter" (P-3) and shows its progress (P-65).', off2('Offline — reading', off_reading), phone('Transmitter — unsigned', unsigned, tabs='tx', active='New transaction', wallet='Savings (send)', kind='Transmitter')),
       row('<b>3. Signing review.</b> Every field and flag in words; risky field (SendMax) with its caution directly under the row; the window shown in ledgers.', off2('Offline — signing review', review2), phone('Transmitter — waiting', unsigned, tabs='tx', active='New transaction', wallet='Savings (send)', kind='Transmitter')),
       row('<b>4. Signed QR (Scan 2 of 2) → Transmit step checks → orange Send.</b>', off2('Offline — signed', signed2), phone('Transmitter — ready to send', ready.replace('400 XRP', '250 USD').replace('91 204 377', '91 204 385'), tabs='tx', active='New transaction', wallet='Savings (send)', kind='Transmitter')),
       row('<b>5. Validated.</b>', off2('Offline — signed', signed2), phone('Transmitter — validated', validated.replace('400 XRP', '250 USD').replace('91 204 377', '91 204 385'), tabs='tx', active='New transaction', wallet='Savings (send)', kind='Transmitter')),
@@ -412,6 +417,7 @@ text_d = plate('', '<h2 class="title">Change to an online wallet</h2>' + render_
                + keys(k('Back', 'out'), k('Change to an online wallet', 'dis', 'Type the words above. Then the Signing Check follows.')))
 page('key-change-kind.html', 'Change of kind (OS-UJ-3)', 'OS-FR-5, OS-FR-6, OS-FR-7. Text C with a plain confirm; Text D is irreversible-class (typed confirm on Mainnet, then the Signing Check). The typed phrase is the existing master-key pattern; its words are proposed.',
      [row('<b>Wallet kind plate, Online.</b>', on('Online — Local settings', kind_plate)),
+      row('<b>Online Wallet with a Passkey-Derived Seed (OS-FR-5, OS-FR-8).</b> The change key stays visible, aria-disabled, with its reason (P-63).', on('Online, passkey seed — Local settings', plate('Wallet kind', stamps('Online', 'Mainnet') + keys(k('Change to an offline wallet', 'out dis', 'This wallet uses a Passkey-Derived Seed. The passkey syncs to the cloud. Thus this wallet cannot be an offline wallet.'))))),
       row('<b>Text C.</b> Every line, both warnings and the three steps, in full.', on('Online — change', text_c)),
       row('<b>After.</b> Was online is permanent; the never-online steps are shown again. The Node plate is gone.', phone('Offline — Local settings', steps_plate + after, tabs='offline', active='Local settings', wallet='Daily', kind='Offline', was=True)),
       row('<b>Text D.</b> Node chosen, typed confirm, then the Signing Check. Same address on the same Network as another Wallet is refused (P-35).', phone('Offline — change to online', text_d, tabs='offline', active='Local settings', wallet='Daily', kind='Offline', was=True)),
@@ -472,18 +478,11 @@ tx_ls = (lsh('Savings (send)') + pl('This wallet', fl([('Address', ADDR)]) + '<p
     + pl('Synced address', fl([('Address', ADDR)]) + keys(k('Sync to an address', 'out sm'), k('Remove the address', 'out sm')))
     + pl('Name') + pl('Address Book') + pl('Checks', '<p class="cap2">Open Check and auto-lock only.</p>')
     + pl('Node') + before + pl('Remove this wallet'))
-w2 = next(it for it in TEXT['B'] if 'synced passkey' in it['text'])
-m = re.match(r'\*\*(.*?)\*\*(.*)', w2['text'])
-passkey = plate('', '<h2 class="legend" style="color:var(--ink)">Write down your ordinal</h2><p class="cap2">As today, then:</p>'
-    + '<p><strong>This passkey is synced</strong></p>'
-    + alert('caution', 'Caution', f'<strong>{esc(m.group(1))}</strong>{esc(m.group(2))}').replace('</p></div>', '</p><div class="ack"><i aria-hidden="true"></i><span>I read this warning.</span></div></div>')
-    + keys(k('Finish', 'dis', 'Read each warning. Then select the box below it.')))
-page('key-local-settings.html', 'Local settings and Signed, per Wallet type', 'OS-FR-5 to OS-FR-7, OS-FR-10, OS-FR-19, OS-FR-20, OS-FR-8. Plates in their fixed order; "As today" plates are unchanged. "Operating another account" and "Two-device signing" are gone from every kind. Plate contents beyond the new ones are not redrawn.',
+page('key-local-settings.html', 'Local settings and Signed, per Wallet type', 'OS-FR-5 to OS-FR-7, OS-FR-10, OS-FR-19, OS-FR-20. Plates in their fixed order; "As today" plates are unchanged. "Operating another account" and "Two-device signing" are gone from every kind. Plate contents beyond the new ones are not redrawn.',
      [row('<b>Online.</b> Keys replaces Operating another account; Before sending is new.', phone('Online — Local settings', online_ls, tabs='online', active='Local settings', wallet='Daily', kind='Online')),
       row('<b>Offline.</b> No Node, no Before sending, no Keys: key changes are types in New transaction, and the signed list is its own screen.', phone('Offline — Local settings', offline_ls, tabs='offline', active='Local settings', wallet='Savings', kind='Offline', was=True)),
       row('<b>Transmitter.</b> No Seed, no Signing Check, no change of kind, no Keys: key changes are types in New transaction.', phone('Transmitter — Local settings', tx_ls, tabs='tx', active='Local settings', wallet='Savings (send)', kind='Transmitter')),
       row('<b>Offline, Signed.</b> The signed list as its own screen: read-only, no secret, survives a lock.', phone('Offline — Signed', plate('Signed by this wallet', '<div class="rec">' + fl([('Sequence', '4128'), ('Transaction hash', HASH), ('Valid until ledger', '91 204 377'), ('Signed at', '14:02', False)]) + '</div><p class="cap2">The app does not keep signed transactions. This list has no secret.</p>') + plate('Signed by this wallet — empty', '<p>This wallet did not sign a transaction yet.</p>'), tabs='offline', active='Signed', wallet='Savings', kind='Offline', was=True)),
-      row('<b>Synced-passkey warning (OS-FR-8).</b> Offline + Passkey-Derived Seed, passkey synced or unknown: Text B\'s second warning again after the passkey ceremony, acknowledged before Finish. A warning, never a refusal.', phone('Add wallet — after the passkey', passkey)),
       ])
 
 print('ok', sorted(W), {k: len(v) for k, v in TEXT.items()})

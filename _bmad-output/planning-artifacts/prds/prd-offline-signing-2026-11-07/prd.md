@@ -157,6 +157,9 @@ Node, Regular Key, Account Master Key) keep their meaning.
   waiting for a signature.
 - **Signed Transaction** — a transaction with its signature, ready for the
   Transmit step.
+- **Animated QR** — a payload too big for one QR code, shown as a loop of
+  frames (a UR with fountain codes). The scanner reads frames in any order
+  until it has the whole payload (OS-FR-24).
 - **Transmit step** — the one step every Signed Transaction passes through to
   reach the ledger, for every Wallet kind.
 
@@ -215,8 +218,10 @@ consequences (OS-FR-12, texts A and B) before the user can continue.
   question.
 - The Mainnet safeguards apply to an Offline Wallet on Mainnet exactly as to an
   Online Wallet on Mainnet.
-- Choosing Offline Wallet shows the two warnings of text B; the user cannot
-  continue without acknowledging them.
+- Choosing Offline Wallet shows the warning of text B; the user cannot
+  continue without acknowledging it.
+- Choosing Offline Wallet removes the Seed Method question: an Offline Wallet
+  always uses a Stored Seed (OS-FR-8).
 - Import works for both kinds.
 
 #### OS-FR-3: Add a Transmitter Wallet
@@ -260,6 +265,10 @@ The Wallet's settings offer "Change to an offline wallet". It shows text C
   and checks.
 - The Wallet carries the Was-online mark for good (OS-FR-7).
 - The app shows how to get a never-online key (text C, steps 1 to 3).
+- A Wallet whose Seed Method is Passkey-Derived Seed cannot change to an
+  Offline Wallet: its key can be made again from the passkey, which syncs to
+  the cloud (OS-FR-8). The control is shown with its reason, not hidden.
+  *Decided 2026-11-08.*
 
 #### OS-FR-6: Change an Offline Wallet to an Online Wallet
 
@@ -285,15 +294,28 @@ on its card and in its settings, with one sentence on why it matters.
   Instead, importing a Seed into an Offline Wallet shows text E (OS-FR-12) and
   the user must acknowledge it. *Decided 2026-11-07.*
 
-#### OS-FR-8: An offline passkey-derived key needs a device-bound passkey
+#### OS-FR-8: An Offline Wallet uses a Stored Seed
 
-An Offline Wallet whose Seed Method is Passkey-Derived Seed (product PRD FR-63)
-needs a passkey bound to the device.
+An Offline Wallet always uses a Stored Seed, created or imported. It never uses
+a Passkey-Derived Seed (product PRD FR-63). *Decided 2026-11-08, replacing the
+2026-11-07 rule that warned about a synced passkey.*
+
+**Why:** the passkeys built into phones and computers (iCloud Keychain, Google
+Password Manager) always sync to the cloud. A Seed made from such a passkey can
+be made again on any device signed in to that account, so the key is not
+offline. A hardware security key does not sync, but the passkey PRF extension
+that the app uses works with security keys only in Chromium-based browsers, not
+in Safari. Research and sources: `addendum.md`, "Passkeys and an offline key".
 
 **Consequences (testable):**
-- If the passkey is synced, or the app cannot tell, it shows the
-  synced-passkey warning (text B) and the user must acknowledge it. A synced
-  passkey is warned about, never refused. *Decided 2026-11-07.*
+- The quiz asks no Seed Method question for an Offline Wallet.
+- The Mainnet safeguards that apply only to a Passkey-Derived Seed (FR-63
+  origin, FR-72 written Seed) do not arise for an Offline Wallet. The Open
+  Check and auto-lock (FR-65) still apply on Mainnet.
+- A passkey can still be an Open Check or a Signing Check of an Offline
+  Wallet: it unlocks the Seed that is stored, encrypted, on this device, and
+  the Seed never leaves the device.
+- A Passkey-Derived Seed Wallet cannot change to an Offline Wallet (OS-FR-5).
 
 ### 4.2 The Transmit step
 
@@ -351,6 +373,30 @@ Transmitter Wallet scans and sends.
 - The signed QR names the Network, so the Transmit step can compare it
   (OS-FR-9).
 
+#### OS-FR-24: A payload too big for one QR code is an animated QR
+
+Every payload that moves between the devices (Data-to-Sign Request, Data to
+Sign, Unsigned Transaction, Signed Transaction) is encoded as a Uniform
+Resource (UR, Blockchain Commons BCR-2020-005) with fountain codes. A payload
+that fits in one QR code is one still code. A larger one is an animated QR: the
+screen loops through frames, and the scanner reads frames until it has the
+whole payload. This is the method Keystone and Sparrow use. *Decided
+2026-11-08.*
+
+**Consequences (testable):**
+- The scanner can start at any frame and can miss frames. It shows how much of
+  the payload it has read, and it accepts the payload only when it is complete
+  and its checksum is correct.
+- The animation changes frames not more than three times each second, so it
+  stays under the flash limit of WCAG 2.3.1. The round is slow by design
+  (OS-SM-C1), and the owner accepts the wait.
+- The animation has a Pause key and a key that shows the next frame, and it
+  starts paused when the system asks for reduced motion (WCAG 2.2.2).
+- One transaction per round stays. A scan is one payload, whatever its number
+  of frames, so OS-SM-1 still counts three scans.
+- Every check in OS-FR-9 to OS-FR-18 runs on the whole payload after it is
+  read, never on a part.
+
 ### 4.3 Consequence texts
 
 **Description:** The fixed words the app shows when a Wallet kind is chosen or
@@ -382,9 +428,6 @@ change.
 - **WARNING: The app cannot make your device offline.** You must disconnect it
   before you create this wallet. Turn off Wi-Fi, mobile data and Bluetooth. Do
   not connect the device again.
-- **WARNING: Do not use a synced passkey for an offline wallet.** A synced
-  passkey goes to the cloud. If the key comes from a synced passkey, the wallet
-  is not offline.
 
 **Text C. Change an online wallet to an offline wallet**
 - This wallet stops all connections to the XRP Ledger.
@@ -703,8 +746,8 @@ sent on another." Facts: `fact-check.md` case 1.
 ### 6.1 In Scope
 
 - Wallet kinds and changing them (4.1).
-- The Transmit step and the "Show the signed transaction before sending"
-  setting (4.2).
+- The Transmit step, the "Show the signed transaction before sending"
+  setting, and the animated QR for large payloads (4.2).
 - The consequence texts (4.3).
 - The Offline-builds route (4.4).
 - The Transmitter-builds route (4.5).
@@ -717,7 +760,6 @@ sent on another." Facts: `fact-check.md` case 1.
 - Multi-signing (own PRD).
 - Tickets, for windows longer than a QR round.
 - Setting delegates (`DelegateSet`). Showing them is in scope (OS-FR-22).
-- A multi-frame QR for transactions too big for one code.
 
 ## 7. Success Metrics
 
@@ -735,15 +777,19 @@ Single operator, so these are checks rather than targets.
 
 ## 8. Open Questions
 
-1. **Request transport.** Can a Data-to-Sign Request for a large Build exceed
-   one QR? (Today's codec refuses over 2,331 bytes.) A multi-frame QR is listed
-   under Later (§6.2).
+None open. The request-transport question is settled below (OS-FR-24).
 
 **Settled 2026-11-07:**
 - The signing window is about ten minutes (OS-FR-16).
 - Today's controlled accounts are dropped, not migrated (OS-FR-19).
-- The same address as an Offline and a Transmitter Wallet on one device, and a
-  synced passkey, are warned about, never refused (OS-FR-3, OS-FR-8).
+- The same address as an Offline and a Transmitter Wallet on one device is
+  warned about, never refused (OS-FR-3).
+
+**Settled 2026-11-08:**
+- An Offline Wallet always uses a Stored Seed; a synced passkey is no longer a
+  case to warn about (OS-FR-8). Text B loses its synced-passkey warning.
+- A payload too big for one QR code is shown as an animated QR with fountain
+  codes (OS-FR-24). It was a non-goal before.
 - An Offline Wallet has a Network and no Node (§3, OS-FR-2).
 - The Mainnet safeguards stay required (§3, OS-FR-2).
 - Delegates are shown (OS-FR-22).

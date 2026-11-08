@@ -17,7 +17,7 @@
 - id: "3"
   title: Create and import ask for the kind; the Offline Wallet
   description: >-
-    Add "Online wallet or offline wallet?" to quiz step 1 with texts A, B and E, the Mainnet safeguards, the synced-passkey warning and the one-Seed-one-Network warning; an Offline Wallet has a Network, no Node and issues no ledger read (CAP-2, CAP-16).
+    Add "Online wallet or offline wallet?" to quiz step 1 with texts A, B and E, the Mainnet safeguards and the one-Seed-one-Network warning; an Offline Wallet always uses a Stored Seed (no Seed Method question), and has a Network, no Node and issues no ledger read (CAP-2, CAP-16).
     Words come from consequence-texts.md, unchanged.
   spec_checkpoint: true
   invoke_dev_with: >-
@@ -93,3 +93,11 @@
   done_checkpoint: true
   invoke_dev_with: >-
     Fetch dev first. Pointer list: product-prd-changes.md. Finish with a real-browser pass.
+- id: "13"
+  title: Animated QR with fountain codes for every payload
+  description: >-
+    Carry the four payloads as a UR with fountain codes: one still code when it fits, an animated QR when it does not, with a progress readout on the scanner (CAP-17).
+    Not more than three frames each second; Pause and next-frame keys; paused under reduced motion. Build it before story 6, which uses it.
+  spec_checkpoint: true
+  invoke_dev_with: >-
+    Fetch dev first. Pick and audit a JavaScript UR (BCR-2020-005) library with architecture before adding it. Test with the largest transactions the app makes. Finish with a real-browser pass using two browser contexts.

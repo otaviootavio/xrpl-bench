@@ -13,7 +13,7 @@ become "Replaced by" (OS-FR-19).
 | FR-75 Controlling Wallet, on-device targets only | Removed; any address can be the Regular Key; the app warns, never refuses | OS-FR-19, OS-FR-20, OS-FR-21 |
 | FR-77 master key off offered only after a validated on-device Regular Key | Never refused by the app; warned (W1–W5, test offered); stays irreversible-class | OS-FR-21 |
 | FR-78 Two-device signing by QR (three types, ~5 min) | Removed; replaced by Wallet kinds and the two routes for every write, ~10 min | OS-FR-19, OS-FR-17 |
-| FR-91 create quiz step 1 | Adds the kind question after Create or Import, before Label and Network | OS-FR-2 |
+| FR-91 create quiz step 1 | Adds the kind question after Create or Import, before Label and Network; an Offline Wallet skips the Seed Method question (Stored Seed only) | OS-FR-2, OS-FR-8 |
 | FR-93 same address on same Network refused | Compares the Signs-for Account and the Network; Offline and Transmitter for one address on one device are warned, not refused | OS-FR-20, OS-FR-3 |
 | FR-93 / FR-95 controlled-Wallet lock exception | Gone with FR-75; no migration of controlled Wallets | OS-FR-19 |
 | FR-94 Local settings list (Operating another account, Two-device signing) | Both removed; adds the kind change and "Show the signed transaction before sending" | OS-FR-5, OS-FR-6, OS-FR-10, OS-FR-19 |

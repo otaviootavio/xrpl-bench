@@ -48,6 +48,9 @@ meaning.
   waiting for a signature.
 - **Signed Transaction** — a transaction with its signature, ready for the
   Transmit step.
+- **Animated QR** — a payload too big for one QR code, shown as a loop of
+  frames (a UR with fountain codes). The scanner reads frames in any order
+  until it has the whole payload (OS-FR-24).
 - **Transmit step** — the one step every Signed Transaction passes through to
   reach the ledger, for every Wallet kind.
 

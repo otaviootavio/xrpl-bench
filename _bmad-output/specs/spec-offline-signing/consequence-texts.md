@@ -26,9 +26,6 @@ in ASD-STE100. UX may lay these out; it never rewords them without a PRD change
 - **WARNING: The app cannot make your device offline.** You must disconnect it
   before you create this wallet. Turn off Wi-Fi, mobile data and Bluetooth. Do
   not connect the device again.
-- **WARNING: Do not use a synced passkey for an offline wallet.** A synced
-  passkey goes to the cloud. If the key comes from a synced passkey, the wallet
-  is not offline.
 
 ### Text C. Change an online wallet to an offline wallet
 - This wallet stops all connections to the XRP Ledger.

@@ -188,6 +188,10 @@ The spec leaves these to UX (`route-checks.md`, "Exact words are for UX"). They
 are drafts until the owner approves them, and a build must not ship one
 unapproved.
 
+**Approved (owner, 2026-11-08):** every string P-1 to P-65 below, exactly as
+written on that day. A build copies them unchanged. A later change to any of
+them needs a new approval.
+
 Rewritten on 2026-11-08 under the ASD-STE100 writing rules (owner): one
 instruction in each sentence, active voice, no phrasal verbs, "approximately"
 for quantities, and articles kept. Words already in an approved text (for

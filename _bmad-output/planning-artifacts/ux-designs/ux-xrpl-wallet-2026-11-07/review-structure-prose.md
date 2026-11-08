@@ -1,0 +1,57 @@
+# Review: structure and prose — offline signing UX spines
+
+Run: `skill:bmad-review lenses=structure,prose`, 2026-11-07. Report only; neither spine was edited.
+
+**Read of purpose.** These two files exist to help the builders of the offline signing feature (and the owner, who approves strings) put every spec rule on the right screen, in the right order, with the right words. DESIGN.md is the visual delta; EXPERIENCE.md is the behaviour delta.
+
+**Structure model.** Reference/Database (random access, consistent schema), with Key Flows as a linear guide inside it. Reader: humans. Style guide: Microsoft Writing Style Guide, overridden for strings by ASD-STE100.
+
+**Scope rules used.** The approved strings from `consequence-texts.md` (Texts A–E, W1–W5, OS-FR-23, every fixed short string) were not reviewed for wording. Suggestions for P-1 to P-49 are in ASD-STE100 and are **suggestions for owner approval** only. House voice kept: "key" for a button, "plate", "stamp", "lamp" (the Bench Panel vocabulary).
+
+**Word counts.** DESIGN.md 1,598 words. EXPERIENCE.md 7,233 words (of which the proposed strings table is 1,324). Accepting every structure finding saves about 250–350 words (about 4% of the total). The spines are already dense; the value here is in consistency, not length.
+
+## High
+
+- **[high]** The acknowledgement checkbox has two different labels. DESIGN.md says "I have read this warning". P-6 says "I read this warning." A builder reading only DESIGN.md ships an unapproved string, and "have read" is not an ASD-STE100 tense (DESIGN.md, Components, "Consequence block"). *Fix:* in DESIGN.md, name the label by id ("a checkbox labelled P-6 follows it") and do not quote it.
+- **[high]** The coverage table points to a section that does not exist. The OS-FR-12 row says "grep check (§Finalize note)", and neither file has a Finalize section. OS-FR-12 (approved words are never reworded) is the rule this table should prove (EXPERIENCE.md, Coverage). *Fix:* point to the real check, which is the test named in §Voice and Tone ("a test compares the two"), or add the missing note.
+
+## Medium
+
+- **[medium]** DESIGN.md has user-facing strings that are not in the P-table, so they escape the owner's approval gate: "Valid until ledger {n}" (well scale mark), "Transaction hash", "Valid until ledger", "Signed at" (earlier-signing record labels) (DESIGN.md, Components). *Fix:* add them to the P-table as new P-ids and name them by id in DESIGN.md, as "Window: about 10 minutes" should also be named (P-13).
+- **[medium]** DESIGN.md quotes P-1 without its id and without its full stop: "Comes from the Transmitter" against P-1 "Comes from the Transmitter." The rule is also behaviour, which EXPERIENCE.md already owns (Read-placeholder row) (DESIGN.md, Don't). *Fix:* write "shows P-1 (EXPERIENCE.md) in place of the number", or cut the bullet and keep the visual half ("never a number").
+- **[medium]** Flow 1 quotes a fragment of the approved OS-FR-23 warning ("Do not use one seed on more than one network…"). Foundation rule 3 says the spine names approved words by id only. A truncated quote is the easiest one to copy wrong (EXPERIENCE.md, Flow 1, step 6). *Fix:* "Above **Create** sits the OS-FR-23 caution."
+- **[medium]** The ship rule for drafts has two strengths. The P-table intro says "a build must not ship one unapproved"; Open Question 1 says "a build should not ship them" (EXPERIENCE.md, Proposed strings; Open Questions 1). *Fix:* use "must not" in both, or cut the sentence from Open Question 1 and keep only the question.
+- **[medium]** One component has three names. The component row and Offline round table say "Kept Build plate"; Flows 3 and 4 say "Kept transaction plate" and "the Kept transaction"; P-18's title is "Kept transaction". The Foundation asks for no synonyms (EXPERIENCE.md, Component Patterns; State Patterns; Flows 3–4). *Fix:* pick one internal name (for example "Kept Build plate") and keep "Kept transaction" only where the on-screen title is meant.
+- **[medium]** Assumption marks are mixed with string ids: `[ASSUMPTION P-36]`, `[ASSUMPTION P-37]`, `[ASSUMPTION P-38]`. The preamble defines the two marks separately, and the combined form is not defined (EXPERIENCE.md, Component Patterns "Scan plate"; State Patterns "Reviewed"; Flow 5). *Fix:* write the P-id alone; add `[ASSUMPTION]` only where the behaviour, not the words, is a guess.
+- **[medium]** The certainty about the locked-card rule disagrees between sections. The chooser card section marks "already relaxed in Epic 22" as `[ASSUMPTION]`; Conflicts states "superseded by Epics 22–23 in code" as fact (EXPERIENCE.md, Chooser card; Conflicts). *Fix:* check the code once and state the result the same way in both places.
+- **[medium]** The "no hidden controls" rule lists two exceptions, but the spine hides two more: the Sign key is "not rendered" after a refused field, and "This is a new payment" is "not offered" in retry case (c) (EXPERIENCE.md, Accessibility Floor; Field list row; Retry). *Fix:* add both to the exception list, or reword the rule to cover "an action that does not exist in this state".
+- **[medium]** "One accessible string" for the signing-network well is stated three times: the DESIGN.md frontmatter note, DESIGN.md Typography, and EXPERIENCE.md Accessibility Floor (MERGE, saves about 40 words). *Fix:* keep the accessibility rule in EXPERIENCE.md only; DESIGN.md keeps the two-line typesetting and points to it.
+- **[medium]** DESIGN.md's commit-orange bullet carries behaviour that the Transmit step table already owns ("It shows every round, after the checks, and the scan never sends by itself"), and it states the owner decision twice ("all owner-confirmed on 2026-11-07" and "All of this was decided by the owner on 2026-11-07 (memlog)") (DESIGN.md, Colors; CONDENSE, saves about 40 words). *Fix:* "Commit orange is spent only where funds leave: the Send key at the Transmit step, and the Send key under 'Send it to the ledger?'. With the setting off, an Online Wallet keeps today's dialog confirm. The offline Sign key is `default`. One commit key per screen."
+- **[medium]** The proposed strings table (1,324 words) sits in the middle of the spine, but the owner reviews and approves it on its own schedule (EXPERIENCE.md, Proposed strings; QUESTION). *Fix:* consider moving it to a separate `proposed-strings.md` next to the spine, and keep a one-line pointer and the P-id convention here. The flows still read by id.
+- **[medium]** "No auto-advance" is hard to follow: "waits for the user, who presses nothing and moves to the other device" (EXPERIENCE.md, Interaction Primitives). *Fix:* "A device that shows a code does not move on by itself. The user goes to the other device and scans. The showing device moves on when it scans the answer."
+- **[medium]** Flow 7 step 5 holds two branches in one parenthesis split by a semicolon (EXPERIENCE.md, Flow 7). *Fix:* split into sub-steps: "If the Regular Key is a Wallet here, the test signs an empty AccountSet with it and shows the outcome. If not, the screen tells him to test it in that wallet."
+- **[medium]** P-7, suggestion for owner approval: "Read and tick each warning to continue." has two instructions and a purpose clause. *Fix (ASD-STE100):* "Read each warning. Then select its checkbox."
+- **[medium]** P-14, suggestion for owner approval: "The ledger index is higher than the time since the last index allows." is hard to parse. *Fix (ASD-STE100):* "The ledger index is too high for the time since the last index."
+- **[medium]** P-20, suggestion for owner approval: "Its Sequence is used." is passive and can read as "it is in use now". *Fix (ASD-STE100):* "The ledger used its Sequence."
+- **[medium]** P-44, suggestion for owner approval: two fragments with no subject. *Fix (ASD-STE100):* "This setting is off by default. When it is on, the app shows the hash, the fields and a Copy key. Then it asks before it sends."
+
+## Low
+
+- **[low]** DESIGN.md Do's and Don'ts mostly repeat the body (commit orange, kind colour, QR beside text) (DESIGN.md, Do's and Don'ts; PRESERVE). *Fix:* keep them; they are the format's quick-check list. Only the P-1 bullet needs the change above.
+- **[low]** The frontmatter comment "No new colour tokens…" repeats Colors "No new token" (DESIGN.md, frontmatter; PRESERVE). *Fix:* keep it; it is the note a builder sees next to the tokens.
+- **[low]** "When a Transmitter is Synced or unsynced, the tab set changes on the next render" describes a state, not a change (EXPERIENCE.md, Tabs by kind). *Fix:* "When a Transmitter becomes Synced or unsynced, …". Also choose one capitalisation for Synced: the table has "Transmitter, unsynced" and "Transmitter, Synced".
+- **[low]** "tick" and "check" are both used for the checkbox ("both are checked", "He ticks", "every box is ticked") (EXPERIENCE.md, Approved strings; Component Patterns; Flow 1). *Fix:* use one verb, and the same one as P-7.
+- **[low]** "Nothing account-scoped that reads mounts for it" is hard to parse (EXPERIENCE.md, Foundation, rule 1). *Fix:* "No account-scoped read mounts for it."
+- **[low]** "The tab sets differ by kind, so the visible h1 of each tab names it as today": the "so" link is unclear (EXPERIENCE.md, Accessibility Floor). *Fix:* "The tab sets differ by kind. Each tab keeps its visible h1, as today."
+- **[low]** "he is offered to set the Regular Key wallet" is ungrammatical (EXPERIENCE.md, Flow 7, step 6). *Fix:* "the app offers to set the Regular Key wallet to 'Signs for' this Account."
+- **[low]** Open Questions 3 and 6 state a decision and ask nothing (EXPERIENCE.md, Open Questions; QUESTION). *Fix:* end each with the question ("Confirm: no kind change for a Transmitter?" / "Confirm: the warning comes after the ceremony?"), or move 6 to Flow 1's edge note.
+- **[low]** The Conflicts list has a blank line between bullets 1 and 2 only, so it renders as a loose list (EXPERIENCE.md, Conflicts). *Fix:* remove the blank line.
+- **[low]** P-39 uses curly quotes and an unquoted instruction form. Every other P-row uses straight quotes around the exact words (EXPERIENCE.md, Proposed strings). *Fix:* "Type 'change to online' to confirm." with the typed phrase marked as the part the user types.
+- **[low]** P-17 "Malformed", suggestion for owner approval: "This data has a value that is not correct or is missing." *Fix (ASD-STE100):* "A value in this data is missing or not correct."
+- **[low]** P-18, suggestion for owner approval: "until you mark the result" does not match the key the user presses ("The result is known"). *Fix (ASD-STE100):* "This device keeps the transaction until you select 'The result is known'. A lock erases it."
+- **[low]** P-8, suggestion for owner approval: "then" in "The offline key is then on a device…" is unclear. *Fix (ASD-STE100):* "If you continue, the offline key is on a device that connects to the internet."
+- **[low]** P-36 uses `{kind}` twice but no list says which word each payload kind uses (EXPERIENCE.md, Proposed strings). *Fix:* add the four payload nouns (for example "request", "data to sign", "unsigned transaction", "signed transaction") to the row, for owner approval.
+
+## Summary
+
+2 high, 17 medium, 14 low (33 total). Estimated reduction if all structure findings are accepted: about 250–350 words, about 4% of 8,831. No comprehension trade-off: nothing proposed cuts an example, a flow or a table.

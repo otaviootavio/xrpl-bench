@@ -21,7 +21,7 @@ One payload is one QR.
 
 | Rule | Kind | OS-FR |
 |---|---|---|
-| Builds Send, trust lines and key actions with the online screens' fields and review | — | OS-FR-13 |
+| Builds payments, trust lines and key actions from New transaction, with the online fields and review | — | OS-FR-13 |
 | Where the online screen shows a read (balance, spendable, destination check, fee), says the value comes from the Transmitter; never a guess, never blank as zero | — | OS-FR-13 |
 | Request appears only after review; changing anything after it is shown restarts the request | — | OS-FR-14 |
 | A new Regular Key address is typed or scanned on the offline device, never taken from the Transmitter | — | OS-FR-21 |

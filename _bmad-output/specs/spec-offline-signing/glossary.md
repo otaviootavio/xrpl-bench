@@ -32,6 +32,10 @@ meaning.
 
 - **Build** — fill in what a transaction does (type, destination, amount,
   token, limits) and review it.
+- **New transaction** — the screen of an Offline Wallet or a Synced
+  Transmitter Wallet where the user picks a type of transaction (payment,
+  trust line, Regular Key, master key, and on a Transmitter every write the app
+  can build) and Builds it.
 - **Same Build** — two Builds with the same content (type, destination,
   amount, token, tag, flags), compared by a hash of that content.
 - **Data-to-Sign Request** — the QR an Offline Wallet shows after a Build,

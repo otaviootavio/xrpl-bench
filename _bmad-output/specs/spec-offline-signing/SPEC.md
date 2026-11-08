@@ -26,8 +26,8 @@ A vision and a pain. Every XRPL Bench Wallet keeps its key on a device that is o
 ## Capabilities
 
 - **CAP-1**
-  - **intent:** Every Wallet has exactly one kind: Online, Offline or Transmitter (OS-FR-1).
-  - **success:** The chooser card shows the kind in words; an Offline card shows "Offline" and its Network, a Transmitter card its Network and, when Synced, the address; existing records read as Online Wallets with no change and no migration.
+  - **intent:** Every Wallet has exactly one kind: Online, Offline or Transmitter, and each kind is its own type of Wallet with its own screens (OS-FR-1).
+  - **success:** The chooser card shows the kind in words; an Offline card shows "Offline" and its Network, a Transmitter card its Network and, when Synced, the address; existing records read as Online Wallets with no change and no migration; an Online Wallet keeps today's screens; an Offline Wallet's screens are New transaction, Sign a transaction from the Transmitter, Receive (no read), its signed list and Local settings, with no balance or history; a Transmitter Wallet's screens are Transmit and Local settings, plus a read-only Account view and New transaction when Synced; on Offline and Transmitter Wallets a key change is a type in New transaction, not a setting; a Transmitter never changes kind.
 - **CAP-2**
   - **intent:** The create and import quiz asks "Online wallet or offline wallet?" in step 1, after Create or Import and before Label and Network, with its consequences (OS-FR-2, OS-FR-7, OS-FR-8).
   - **success:** Text A or B shows before the user can continue; Offline keeps the Network question and drops the Node question; text B's two warnings must be acknowledged; Mainnet safeguards apply to an Offline Mainnet Wallet exactly as online; import works for both kinds and importing into an Offline Wallet shows text E, which must be acknowledged; an offline Passkey-Derived Seed on a synced or unknown passkey shows the synced-passkey warning, never a refusal.
@@ -47,7 +47,7 @@ A vision and a pain. Every XRPL Bench Wallet keeps its key on a device that is o
   - **intent:** An Offline Wallet hands its Signed Transaction out by QR and never transmits (OS-FR-11).
   - **success:** No Send button anywhere in it; its last screen is the signed QR, which names the Network and says the transaction is not sent until a Transmitter sends it and until when it is valid.
 - **CAP-8**
-  - **intent:** An Offline Wallet Builds Send, trust line and key actions with the online screens, minus every read (OS-FR-13).
+  - **intent:** An Offline Wallet Builds payments, trust lines and key actions from its New transaction screen, with the online fields and review, minus every read (OS-FR-13).
   - **success:** Each read is stated as coming from the Transmitter, never guessed or blank-as-zero; the Build is kept after signing until the outcome is marked known, cancelled or replaced, and a lock erases it.
 - **CAP-9**
   - **intent:** After review, the Offline Wallet asks for Data to Sign by QR and a Transmitter Wallet answers it after the online pre-flight checks (OS-FR-14, OS-FR-15).

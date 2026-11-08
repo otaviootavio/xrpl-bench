@@ -596,17 +596,5 @@ Item 8 shipped as a refactor that preserves behaviour (`spec-sendtab-split.md`).
   evidence: Unverified (medium if a problem). Found in the story 1 review on 2026-11-08. A kind per Wallet matches the glossary. Stories 3 and 5 (create Offline, change kind) decide whether one Seed may hold Wallets of two kinds, and whether to refuse it.
 
 - source_spec: `_bmad-output/specs/spec-offline-signing/stories/2-one-transmit-step-and-show-the-signed-transaction-before-sending.md`
-  summary: The show-before-sending screen and the Local settings control for "Show the signed transaction before sending" are not built (CAP-6 user-facing criteria unmet).
-  evidence: Their words are not approved: the keys "Send" and "Do not send", the copy key "Copy", the Online confirm key "Sign" when the setting is on, and the plate title "Before sending" (or approval to use the setting name as title and label). The setting is stored and enforced in lib (story 2); with no control it stays off. Settle once the owner approves the words.
-
-- source_spec: `_bmad-output/specs/spec-offline-signing/stories/2-one-transmit-step-and-show-the-signed-transaction-before-sending.md`
-  summary: `useYieldingPrompts` returns a Prompts with `pin` only, so a future `reviewSignedTransaction` provider would be dropped for Send and Trust line, and every send there would be declined (fail closed).
-  evidence: Story 2 added `Prompts.reviewSignedTransaction?` and the handle's gate; `src/hooks/usePrompts.ts` does not forward it. The provider for the review screen must be counted in `useYieldingPrompts` so the sheet yields while it is open.
-
-- source_spec: `_bmad-output/specs/spec-offline-signing/stories/2-one-transmit-step-and-show-the-signed-transaction-before-sending.md`
-  summary: A declined send (setting on) shows its P-24 message in an error-toned toast, from SendTab's generic catch.
-  evidence: Seen in the story 2 browser pass (forced setting on, no reviewer). P-24 is a warning; catch `TransmitDeclinedError` in SendTab and TrustLinesTab and use the warning tone, when the review screen is built.
-
-- source_spec: `_bmad-output/specs/spec-offline-signing/stories/2-one-transmit-step-and-show-the-signed-transaction-before-sending.md`
   summary: No session-wide guard refuses a second transmit of a Signed Transaction already sent.
   evidence: Story 2 keeps never-resubmit structural (one submission per entry, no blob kept). Re-scanning the same signed QR on a Transmitter is story 4's; a guard there needs approved refusal words.

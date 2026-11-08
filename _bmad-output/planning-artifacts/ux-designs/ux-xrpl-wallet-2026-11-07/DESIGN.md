@@ -170,11 +170,14 @@ QR frame. The QR's white plate keeps its square corners.
 - **QR hand-off plate** (`{components.qr-handoff-plate}`). Title (the payload's
   name), a row with the Network label and its stamp, the code, the scan count
   caption ("Scan 1 of 3"), then the lines. On the signed plate the lines are
-  the not-sent and valid-until lines (OS-FR-11).
+  the not-sent and valid-until lines (OS-FR-11). An animated code (OS-FR-24)
+  keeps the same white plate and size. Below it are an `outline` Pause key and
+  a Next frame key, and the P-64 caption. Nothing else moves on the screen.
 - **Scan plate** (`{components.scan-plate}`). Today's `QrScanner` (camera key,
   paste fallback), with one line naming the payload it accepts. What it
   rejects is an inline error Alert under it. The scanner stays mounted, so a
-  second try needs no extra press.
+  second try needs no extra press. While it reads an animated code, a
+  progress line in the data face (P-65) sits under the camera view.
 - **Transaction field list** (`{components.tx-field-list}`). One row per field
   and per flag. A risky row carries an inline caution Alert directly under it,
   inside the list. A refused row stops the list and shows the refusal Alert in

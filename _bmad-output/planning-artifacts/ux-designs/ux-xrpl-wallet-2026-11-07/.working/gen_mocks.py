@@ -191,9 +191,9 @@ def fl(rows):
 
 TABS = {
     'online': ['Balances', 'Send', 'Receive', 'History', 'Tokens', 'Local settings'],
-    'offline': ['Send', 'Receive', 'Tokens', 'Keys', 'Local settings'],
+    'offline': ['New transaction', 'Sign', 'Receive', 'Signed', 'Local settings'],
     'tx-unsynced': ['Transmit', 'Local settings'],
-    'tx': ['Transmit', 'Balances', 'History', 'Tokens', 'Send', 'Local settings'],
+    'tx': ['Transmit', 'Account', 'History', 'New transaction', 'Local settings'],
 }
 
 def phone(who, body, tabs=None, active=None, wallet=None, kind=None, net='Mainnet', was=False):
@@ -239,6 +239,10 @@ def scanplate(title, line, count, state='ready', extra=''):
     return plate('', f'<h2 class="title">Scan {esc(title)}</h2><p class="count">{count}</p><p class="cap2" style="color:var(--ink)">{esc(line)}</p><div class="scan">{inner}</div>{extra}')
 
 ADDR = 'rPT1Sjq2YGrBMTttX4GZHjKu9dyfzbpAYe'
+def picker(sel, more=False):
+    types = ['Payment', 'Trust line', 'Regular Key', 'Master key'] + (['Other writes…'] if more else [])
+    opts = ''.join(f'<span class="k {"" if t == sel else "out"} sm">{t}</span>' for t in types)
+    return plate('New transaction', '<p class="cap2">Type</p><div class="keys" role="radiogroup">' + opts + '</div>')
 DEST = 'rHb9CJAWyB4rj91VRWn96DkukG4bwdtyTh'
 REGK = 'rGWrZyQqhTp9Xu7G5Pkayo7bXjH4k4QYpf'
 HASH = 'E3FE6EA3D48F0C2B639448020EA4F03D4F4F8FFDB243A852A0F59177921B4879'
@@ -296,6 +300,8 @@ sync_step = plate('', quiz(4, 5, 'Sync to an address',
     + keys(k('Skip this step', 'out'))))
 
 balances = ('<div class="well"><div class="wl">XRP balance</div><div class="big">1 250.000</div><div class="marks"><span>Spendable 1 249.000</span><span>Reserved 1.000</span></div></div>'
+            + plate('Trust lines', fl([('USD · rvYAfWj5gh67oV6fW32ZzP3Aw4Eubs59B', '1 840.50')]))
+            + plate('Key state', fl([('Regular Key', 'None', False), ('Master key', 'On', False), ('Signer list', 'None', False)]))
             + plate('Delegates', alert('caution', 'Caution', '<strong>WARNING: A delegate can send transactions for this account.</strong>')
                     + fl([('Delegate', 'rDsbeomae4FXwgQTJp9Rs64Qg9vDiTCdBv'), ('May do', 'Payment', False)]))
             + plate('Delegates — none', '<p>None.</p>') + plate('Delegates — read failed', '<p>Unknown. Could not read.</p>'))
@@ -310,8 +316,8 @@ page('key-chooser-and-transmitter.html', 'Chooser cards, Transmitter Wallet and 
           phone('Chooser', chooser)),
       row('<b>Add Transmitter wallet, step 4.</b> Same-address warning (P-8): a warning, never a refusal. Earlier steps: Label + Network, Node, Open Check + auto-lock (required on Mainnet). No Seed, no Signing Check.',
           phone('Add Transmitter wallet', sync_step)),
-      row('<b>Synced Transmitter, Balances.</b> Read-only Account. The Delegates plate in its three states.',
-          phone('Transmitter, synced', balances, tabs='tx', active='Balances', wallet='Savings (send)', kind='Transmitter')),
+      row('<b>Synced Transmitter, Account.</b> One read-only screen: balance, trust lines, key state, Delegates (shown in its three states).',
+          phone('Transmitter, synced — Account', balances, tabs='tx', active='Account', wallet='Savings (send)', kind='Transmitter')),
       row('<b>Offline Wallet, Receive.</b> Only the address and its QR: no read, no balance, no funded check.',
           phone('Offline — Receive', plate('Receive', stamps_net('Mainnet') + qr(9, 'QR code: address of Savings, Mainnet') + '<p class="data" style="margin:0">' + ADDR + '</p>' + keys(k('Copy the address', 'out sm'))), tabs='offline', active='Receive', wallet='Savings', kind='Offline', was=True)),
       row('<b>Unsynced Transmitter.</b> Two tabs. It still answers requests and transmits.',
@@ -319,10 +325,10 @@ page('key-chooser-and-transmitter.html', 'Chooser cards, Transmitter Wallet and 
       ])
 
 # ---------- 3. offline-builds route ----------
-off = lambda who, body: phone(who, body, tabs='offline', active='Send', wallet='Savings', kind='Offline')
+off = lambda who, body: phone(who, body, tabs='offline', active='New transaction', wallet='Savings', kind='Offline')
 tx = lambda who, body: phone(who, body, tabs='tx', active='Transmit', wallet='Savings (send)', kind='Transmitter')
 
-send_form = plate('Send', '<div class="field"><span class="legend">Destination address</span><div class="in data">' + DEST + '</div></div>'
+send_form = picker('Payment') + plate('Payment', '<div class="field"><span class="legend">Destination address</span><div class="in data">' + DEST + '</div></div>'
                   + '<div class="field"><span class="legend">Destination tag</span><div class="in data">50211</div></div>'
                   + '<div class="field"><span class="legend">Amount (XRP)</span><div class="in data">400</div></div>'
                   + fl([('Spendable', P1, False), ('Destination check', P1, False), ('Network fee', P1, False)])
@@ -345,7 +351,7 @@ expired = plate('', alert('alert', 'Error', 'Expired. Nothing was sent.'))
 
 page('key-route-offline-builds.html', 'Offline-builds route, two devices (OS-UJ-1)',
      'OS-FR-11, OS-FR-13 to OS-FR-16, OS-FR-9. Left: Offline Wallet on the old phone. Right: Transmitter Wallet on the daily phone. Three scans, nothing typed twice (OS-SM-1). The side-by-side layout is for review only; each phone is its own screen.',
-     [row('<b>1. Build.</b> Every reading the online screen has reads "Comes from the Transmitter." (P-1).', off('Offline — Send', send_form), tx('Transmitter — Transmit tab', tx_scan)),
+     [row('<b>1. Build.</b> New transaction → Payment. Every reading the online screen has reads "Comes from the Transmitter." (P-1).', off('Offline — Send', send_form), tx('Transmitter — Transmit tab', tx_scan)),
       row('<b>2. Request shown (Scan 1 of 3).</b> The Data-to-Sign scanner waits below. The Transmitter scans.', off('Offline — request', request + data_scan), tx('Transmitter — scanning', tx_scan)),
       row('<b>3. Transmitter answers (Scan 2 of 3).</b> The online pre-flight checks, in words, then the Data to Sign. A failed read gives no QR (P-28).', off('Offline — waiting', data_scan), tx('Transmitter — answer', checks + data_qr)),
       row('<b>4. Signing review.</b> The Network is the screen\'s readout: "You are signing for Mainnet". The Sign key is a default key, not commit orange: signing sends nothing.', off('Offline — signing review', review), tx('Transmitter — waiting', tx_scan)),
@@ -355,11 +361,11 @@ page('key-route-offline-builds.html', 'Offline-builds route, two devices (OS-UJ-
       ])
 
 # ---------- 4. transmitter-builds ----------
-off2 = lambda who, body: phone(who, body, tabs='offline', active='Send', wallet='Savings', kind='Offline')
-tx_send = plate('Send', '<div class="field"><span class="legend">Destination address</span><div class="in data">' + DEST + '</div></div><div class="field"><span class="legend">Amount</span><div class="in data">250 USD</div></div>'
+off2 = lambda who, body: phone(who, body, tabs='offline', active='Sign', wallet='Savings', kind='Offline')
+tx_send = picker('Payment', more=True) + plate('Payment', '<div class="field"><span class="legend">Destination address</span><div class="in data">' + DEST + '</div></div><div class="field"><span class="legend">Amount</span><div class="in data">250 USD</div></div>'
                 + fl([('Spendable', '1 840.50 USD'), ('Destination check', '<span class="ok">exists, trust line set</span>', False), ('Network fee', '0.000012 XRP')]) + keys(k('Make the unsigned transaction')))
 unsigned = qrplate('Unsigned transaction', 'Mainnet', 'Scan 1 of 2', ['Scan this code with the offline wallet. Then scan the signed code from it.'], 4) + scanplate('the signed transaction', 'Scan the signed code from the offline wallet.', 'Scan 2 of 2')
-off_entry = plate('Sign a transaction from your Transmitter', '<div class="scan"><span class="k out sm">Stop the camera</span><p class="idle">Camera on.</p></div>') + plate('Send', '<p class="cap2">Build here: the Send form, as in the other route.</p>')
+off_entry = plate('Sign a transaction from your Transmitter', '<div class="scan"><span class="k out sm">Stop the camera</span><p class="idle">Camera on.</p></div>')
 review2 = (well('Mainnet', ['Window: 18 ledgers', 'Valid until ledger 91 204 385'])
            + plate('Transaction', fl([('Type', 'Payment', False), ('Account', ADDR), ('Destination', DEST), ('Amount', '250 USD (issuer rvYAfWj5gh67oV6fW32ZzP3Aw4Eubs59B)'), ('SendMax', 'At most 251.25 USD can leave your account', False)])
                    + alert('caution', 'Caution', 'At most 251.25 USD can leave your account. This is more than the amount above.')
@@ -369,11 +375,11 @@ refused = (plate('', alert('alert', 'Error', '<strong>Not signed.</strong> This 
 signed2 = qrplate('Signed transaction', 'Mainnet', 'Scan 2 of 2', ['This transaction is not sent. Scan this code with the Transmitter wallet to send it.', 'It is valid until ledger 91 204 385, about 1 minute after 14:02.'], 5)
 page('key-route-transmitter-builds.html', 'Transmitter-builds route, two devices (OS-UJ-2)',
      'OS-FR-17, OS-FR-18, OS-FR-9. The Synced Transmitter builds; the Offline Wallet shows every field in words and only signs.',
-     [row('<b>1. Build on the Transmitter</b> with live reads. The final key makes an Unsigned Transaction (default key; nothing is sent).', off2('Offline — idle', off_entry), phone('Transmitter — Send', tx_send, tabs='tx', active='Send', wallet='Savings (send)', kind='Transmitter')),
-      row('<b>2. Unsigned QR (Scan 1 of 2).</b> The offline phone scans it from "Sign a transaction from your Transmitter" (P-3).', off2('Offline — scanning', off_entry), phone('Transmitter — unsigned', unsigned, tabs='tx', active='Send', wallet='Savings (send)', kind='Transmitter')),
-      row('<b>3. Signing review.</b> Every field and flag in words; risky field (SendMax) with its caution directly under the row; the window shown in ledgers.', off2('Offline — signing review', review2), phone('Transmitter — waiting', unsigned, tabs='tx', active='Send', wallet='Savings (send)', kind='Transmitter')),
-      row('<b>4. Signed QR (Scan 2 of 2) → Transmit step checks → orange Send.</b>', off2('Offline — signed', signed2), phone('Transmitter — ready to send', ready.replace('400 XRP', '250 USD').replace('91 204 377', '91 204 385'), tabs='tx', active='Send', wallet='Savings (send)', kind='Transmitter')),
-      row('<b>5. Validated.</b>', off2('Offline — signed', signed2), phone('Transmitter — validated', validated.replace('400 XRP', '250 USD').replace('91 204 377', '91 204 385'), tabs='tx', active='Send', wallet='Savings (send)', kind='Transmitter')),
+     [row('<b>1. Build on the Transmitter</b> with live reads. The final key makes an Unsigned Transaction (default key; nothing is sent).', off2('Offline — idle', off_entry), phone('Transmitter — New transaction', tx_send, tabs='tx', active='New transaction', wallet='Savings (send)', kind='Transmitter')),
+      row('<b>2. Unsigned QR (Scan 1 of 2).</b> The offline phone scans it from "Sign a transaction from your Transmitter" (P-3).', off2('Offline — scanning', off_entry), phone('Transmitter — unsigned', unsigned, tabs='tx', active='New transaction', wallet='Savings (send)', kind='Transmitter')),
+      row('<b>3. Signing review.</b> Every field and flag in words; risky field (SendMax) with its caution directly under the row; the window shown in ledgers.', off2('Offline — signing review', review2), phone('Transmitter — waiting', unsigned, tabs='tx', active='New transaction', wallet='Savings (send)', kind='Transmitter')),
+      row('<b>4. Signed QR (Scan 2 of 2) → Transmit step checks → orange Send.</b>', off2('Offline — signed', signed2), phone('Transmitter — ready to send', ready.replace('400 XRP', '250 USD').replace('91 204 377', '91 204 385'), tabs='tx', active='New transaction', wallet='Savings (send)', kind='Transmitter')),
+      row('<b>5. Validated.</b>', off2('Offline — signed', signed2), phone('Transmitter — validated', validated.replace('400 XRP', '250 USD').replace('91 204 377', '91 204 385'), tabs='tx', active='New transaction', wallet='Savings (send)', kind='Transmitter')),
       row('<b>Edge: wrong Network.</b> Refused with the reason; the list stops; nothing is signed.', off2('Offline — refused', refused)),
       ])
 
@@ -424,16 +430,16 @@ page('key-transmit-show-before-sending.html', 'Transmit step: show the signed tr
       ])
 
 # ---------- 8. key warnings ----------
-offk = lambda who, body: phone(who, body, tabs='offline', active='Keys', wallet='Savings', kind='Offline')
+offk = lambda who, body: phone(who, body, tabs='offline', active='New transaction', wallet='Savings', kind='Offline')
 wq = lambda n: esc(W[n]['quote'])
-regkey = plate('Regular Key', fl([('Regular Key now', P1, False)]) + '<div class="field"><span class="legend">New Regular Key address</span><div class="in data">' + REGK + '</div></div>'
+regkey = picker('Regular Key') + plate('Regular Key', fl([('Regular Key now', P1, False)]) + '<div class="field"><span class="legend">New Regular Key address</span><div class="in data">' + REGK + '</div></div>'
                + '<span class="k out sm">Scan an address with the camera</span>'
                + alert('caution', 'Caution', '<strong>' + esc(W['W1']['title']) + '</strong> ' + wq('W1'))
                + '<p class="cap2">No W5 here: this device cannot know if a Regular Key is set. The Transmitter reads it and shows W5.</p>' + keys(k('Review')))
-black = plate('Regular Key', '<div class="field"><span class="legend">New Regular Key address</span><div class="in data">rrrrrrrrrrrrrrrrrrrrrhoLvTp</div></div>' + alert('caution', 'Caution', '<strong>' + esc(W['W2']['title']) + '</strong> ' + wq('W2')) + keys(k('Review')))
+black = picker('Regular Key') + plate('Regular Key', '<div class="field"><span class="legend">New Regular Key address</span><div class="in data">rrrrrrrrrrrrrrrrrrrrrhoLvTp</div></div>' + alert('caution', 'Caution', '<strong>' + esc(W['W2']['title']) + '</strong> ' + wq('W2')) + keys(k('Review')))
 w3 = (well('Mainnet', ['Window: 18 ledgers']) + plate('Transaction', fl([('Type', 'SetRegularKey', False), ('Account', ADDR)]) + alert('caution', 'Caution', '<strong>' + esc(W['W3']['title']) + '</strong> ' + wq('W3')) + fl([('New Regular Key', REGK)])
       + alert('caution', 'Caution', '<strong>' + esc(W['W1']['title']) + '</strong> ' + wq('W1'))) + keys(k('Sign'), k('Do not sign', 'out')))
-w4 = plate('Turn off the master key', fl([('Regular Key', P1, False)])
+w4 = picker('Master key') + plate('Turn off the master key', fl([('Regular Key', P1, False)])
            + keys(k('Test the Regular Key', 'out')) + '<p class="cap2">Offered, never required. If the Regular Key is a wallet on this device, the test is a round with that wallet. If not, test it in the wallet that holds it.</p>'
            + alert('caution', 'Caution', wq('W4'))
            + '<p class="cap2">The typed confirm and the Signing Check come on the signing review, after the Data to Sign.</p>' + keys(k('Review')))
@@ -441,10 +447,10 @@ state = plate('Key state', fl([('Account', ADDR), ('Regular Key', REGK), ('Maste
               + alert('caution', 'Caution', '<strong>' + esc(W['W5']['title']) + '</strong> ' + wq('W5')))
 refusal = plate('', alert('alert', 'Error', '<strong>Only the master key can turn off the master key.</strong> The network fee was still charged.') + fl([('Ledger result', 'tecNEED_MASTER_KEY (claimed: applied, fee taken)')]))
 page('key-warnings.html', 'Key warnings W1 to W5', 'OS-FR-21. The app warns and never refuses a key action the ledger would accept; every warning appears before the Signing Check. W-texts are copied from consequence-texts.md by the generator.',
-     [row('<b>Set a Regular Key, offline Build.</b> The address is typed or scanned on the offline device. W1: the address is not a Wallet here.', offk('Offline — Keys', regkey)),
-      row('<b>W2, a black-hole address.</b>', offk('Offline — Keys', black)),
-      row('<b>W3 on the signing review</b> of a SetRegularKey the device did not build (Transmitter-builds).', phone('Offline — signing review', w3, tabs='offline', active='Send', wallet='Savings', kind='Offline')),
-      row('<b>W4 before the master key goes off.</b> "Test the Regular Key" first, then the W4 sentence. The typed confirm comes on the signing review.', offk('Offline — Keys', w4)),
+     [row('<b>Regular Key, offline Build</b> (New transaction → Regular Key). The address is typed or scanned on the offline device. W1: the address is not a Wallet here.', offk('Offline — New transaction', regkey)),
+      row('<b>W2, a black-hole address.</b>', offk('Offline — New transaction', black)),
+      row('<b>W3 on the signing review</b> of a SetRegularKey the device did not build (Transmitter-builds).', phone('Offline — signing review', w3, tabs='offline', active='Sign', wallet='Savings', kind='Offline')),
+      row('<b>W4 before the master key goes off.</b> "Test the Regular Key" first, then the W4 sentence. The typed confirm comes on the signing review.', offk('Offline — New transaction', w4)),
       row('<b>Transmitter answer to a key-change request, and a later ledger refusal.</b> Key state read from the ledger; a failed read is "Unknown", never safe. A tec refusal is today\'s claimed outcome with the reason in words, never "Not sent."', tx('Transmitter — key state', state), tx('Transmitter — ledger refusal', refusal)),
       ])
 
@@ -461,12 +467,10 @@ online_ls = (lsh('Daily') + pl('This wallet', fl([('Address', 'rN7n7otQDd6FczFgL
 offline_ls = (lsh('Savings') + pl('This wallet', fl([('Address', ADDR), ('Signature type', 'Ed25519', False), ('Seed Method', 'Stored Seed', False)]))
     + pl('Wallet kind', stamps('Offline', 'Mainnet', was=True) + '<p class="cap2">The key of this wallet was on a device that connected to the internet.</p>' + keys(k('Change to an online wallet', 'danger')))
     + pl('Name') + pl('Address Book') + pl('Checks') + pl('Seed') + signsfor
-    + pl('Signed by this wallet', '<div class="rec">' + fl([('Sequence', '4128'), ('Transaction hash', HASH), ('Valid until ledger', '91 204 377'), ('Signed at', '14:02', False)]) + '</div><p class="cap2">No signed transaction is kept. This list holds no secret.</p>')
     + pl('Remove this wallet'))
 tx_ls = (lsh('Savings (send)') + pl('This wallet', fl([('Address', ADDR)]) + '<p class="cap2">No key. This wallet never signs.</p>') + pl('Wallet kind', stamps('Transmitter', 'Mainnet'))
     + pl('Synced address', fl([('Address', ADDR)]) + keys(k('Sync to an address', 'out sm'), k('Remove the sync', 'out sm')))
     + pl('Name') + pl('Address Book') + pl('Checks', '<p class="cap2">Open Check and auto-lock only.</p>')
-    + pl('Keys', fl([('Regular Key', 'None', False), ('Master key', 'On', False)]) + '<p class="cap2">A key change made here is an unsigned transaction for the offline wallet.</p>' + keys(k('Set a Regular Key', 'out sm')))
     + pl('Node') + before + pl('Remove this wallet'))
 w2 = next(it for it in TEXT['B'] if 'synced passkey' in it['text'])
 m = re.match(r'\*\*(.*?)\*\*(.*)', w2['text'])
@@ -474,10 +478,11 @@ passkey = plate('', '<h2 class="legend" style="color:var(--ink)">Write down your
     + '<p><strong>This passkey is synced</strong></p>'
     + alert('caution', 'Caution', f'<strong>{esc(m.group(1))}</strong>{esc(m.group(2))}').replace('</p></div>', '</p><div class="ack"><i aria-hidden="true"></i><span>I read this warning.</span></div></div>')
     + keys(k('Finish', 'dis', 'Read and tick each warning to continue.')))
-page('key-local-settings.html', 'Local settings per Wallet kind', 'OS-FR-5 to OS-FR-7, OS-FR-10, OS-FR-19, OS-FR-20, OS-FR-8. Plates in their fixed order; "As today" plates are unchanged. "Operating another account" and "Two-device signing" are gone from every kind. Plate contents beyond the new ones are not redrawn.',
+page('key-local-settings.html', 'Local settings and Signed, per Wallet type', 'OS-FR-5 to OS-FR-7, OS-FR-10, OS-FR-19, OS-FR-20, OS-FR-8. Plates in their fixed order; "As today" plates are unchanged. "Operating another account" and "Two-device signing" are gone from every kind. Plate contents beyond the new ones are not redrawn.',
      [row('<b>Online.</b> Keys replaces Operating another account; Before sending is new.', phone('Online — Local settings', online_ls, tabs='online', active='Local settings', wallet='Daily', kind='Online')),
-      row('<b>Offline.</b> No Node, no Before sending; the signed list is read-only. Key actions are on the Keys tab.', phone('Offline — Local settings', offline_ls, tabs='offline', active='Local settings', wallet='Savings', kind='Offline', was=True)),
-      row('<b>Transmitter.</b> No Seed and no Signing Check; Synced address; Keys builds an unsigned transaction.', phone('Transmitter — Local settings', tx_ls, tabs='tx', active='Local settings', wallet='Savings (send)', kind='Transmitter')),
+      row('<b>Offline.</b> No Node, no Before sending, no Keys: key changes are types in New transaction, and the signed list is its own screen.', phone('Offline — Local settings', offline_ls, tabs='offline', active='Local settings', wallet='Savings', kind='Offline', was=True)),
+      row('<b>Transmitter.</b> No Seed, no Signing Check, no change of kind, no Keys: key changes are types in New transaction.', phone('Transmitter — Local settings', tx_ls, tabs='tx', active='Local settings', wallet='Savings (send)', kind='Transmitter')),
+      row('<b>Offline, Signed.</b> The signed list as its own screen: read-only, no secret, survives a lock.', phone('Offline — Signed', plate('Signed by this wallet', '<div class="rec">' + fl([('Sequence', '4128'), ('Transaction hash', HASH), ('Valid until ledger', '91 204 377'), ('Signed at', '14:02', False)]) + '</div><p class="cap2">No signed transaction is kept. This list holds no secret.</p>') + plate('Signed by this wallet — empty', '<p>Nothing signed yet.</p>'), tabs='offline', active='Signed', wallet='Savings', kind='Offline', was=True)),
       row('<b>Synced-passkey warning (OS-FR-8).</b> Offline + Passkey-Derived Seed, passkey synced or unknown: Text B\'s second warning again after the passkey ceremony, acknowledged before Finish. A warning, never a refusal.', phone('Add wallet — after the passkey', passkey)),
       ])
 

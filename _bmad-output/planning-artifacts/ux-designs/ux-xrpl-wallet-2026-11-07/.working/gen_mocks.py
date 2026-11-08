@@ -300,7 +300,7 @@ sync_step = plate('', quiz(4, 5, 'Sync to an address',
     + keys(k('Skip this step', 'out'))))
 
 balances = ('<div class="well"><div class="wl">XRP balance</div><div class="big">1 250.000</div><div class="marks"><span>Spendable 1 249.000</span><span>Reserved 1.000</span></div></div>'
-            + plate('Trust lines', fl([('USD · rvYAfWj5gh67oV6fW32ZzP3Aw4Eubs59B', '1 840.50')]))
+            + plate('Trust lines', fl([('USD', '1 840.50 (issuer rvYAfWj5gh67oV6fW32ZzP3Aw4Eubs59B)')]))
             + plate('Key state', fl([('Regular Key', 'None', False), ('Master key', 'On', False), ('Signer list', 'None', False)]))
             + plate('Delegates', alert('caution', 'Caution', '<strong>WARNING: A delegate can send transactions for this account.</strong>')
                     + fl([('Delegate', 'rDsbeomae4FXwgQTJp9Rs64Qg9vDiTCdBv'), ('May do', 'Payment', False)]))

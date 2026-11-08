@@ -1,6 +1,6 @@
 import { decodeSeed, ECDSA, Wallet } from 'xrpl'
 import { canonicalNodeUrl, NETWORKS, type NetworkId } from '@/lib/xrpl/networks'
-import type { Signer, SigningHandle } from '@/lib/xrpl/writes'
+import type { SignedForReview, Signer, SigningHandle } from '@/lib/xrpl/writes'
 import { aesDecrypt, aesEncrypt } from './aes'
 import { deriveAesKeyFromBits, generateOrdinal, isOrdinal, seedSalt, walletFromSeedPrf } from './derive'
 import { buildLock, createLock, deleteLock, discardAllLocks, discardAppPin, discardUnusedAppPin, getLockInfo, hasAppPin, openLock, setAutoLockMinutes, withAppPin, type CheckResult } from './lock'
@@ -68,6 +68,9 @@ export interface WalletMeta {
   writtenSeedConfirmedAt?: number
   /** Online, Offline or Transmitter (OS-FR-1). Each kind opens its own screens. */
   kind: WalletKind
+  /** "Show the signed transaction before sending" is on (OS-FR-10). Absent: off.
+   * Never set on an Offline Wallet, which never transmits. */
+  showBeforeSending?: true
 }
 
 /** The kind a stored view names: absent is Online, a stored non-Online kind is
@@ -109,7 +112,14 @@ function toMeta(w: StoredWallet, v: WalletView, kind: WalletKind): WalletMeta {
     signingCheck: w.signingCheck,
     ...(w.writtenSeedConfirmedAt !== undefined ? { writtenSeedConfirmedAt: w.writtenSeedConfirmedAt } : {}),
     kind,
+    ...(showsBeforeSending(v, kind) ? { showBeforeSending: true as const } : {}),
   }
+}
+
+/** The setting is on only when exactly `true` is stored, and never for an
+ * Offline Wallet (OS-FR-10: Online and Transmitter only). */
+function showsBeforeSending(v: WalletView, kind: WalletKind): boolean {
+  return kind !== 'offline' && (v as { showBeforeSending?: unknown }).showBeforeSending === true
 }
 
 function findSeedRecord(all: StoredWallet[], walletId: string): StoredWallet | undefined {
@@ -192,6 +202,13 @@ export type { CheckResult }
  * prompt is the browser's own. */
 export interface Prompts {
   pin(info: { triesRemaining: number }): Promise<string | null>
+  /**
+   * "Show the signed transaction before sending" (OS-FR-10): shows the signed
+   * blob and answers "Send it to the ledger?". Asked only for a Wallet whose
+   * setting is on. Absent while that setting is on, every send is declined:
+   * nothing is sent without the review the user asked for.
+   */
+  reviewSignedTransaction?(signed: SignedForReview): Promise<boolean>
 }
 
 /** What a check needs. `openKey` is the session's key: it opens a Standard
@@ -421,6 +438,9 @@ export async function openSigner(walletId: string, ctx: SigningContext): Promise
 export async function signingHandleFor(walletId: string, ctx: SigningContext): Promise<SigningHandle> {
   const stored = await seedRecordFor(walletId)
   const address = accountOf(stored, walletId)
+  const view = viewsOf(stored).find((v) => v.walletId === walletId)
+  const kind = view ? kindOfView(view) : null
+  const review = view && kind !== null && showsBeforeSending(view, kind)
   return {
     address,
     // The key is the Account's own (master) key unless this is a controlled view.
@@ -430,7 +450,29 @@ export async function signingHandleFor(walletId: string, ctx: SigningContext): P
       if (result.status !== 'ok') throw new SigningCheckError(result)
       return result.value
     },
+    // Only when the setting is on: with it off the handle is what it was before
+    // the setting existed. Without a reviewer the answer is "no" (fail closed).
+    ...(review ? { reviewBeforeSending: (signed: SignedForReview) => ctx.prompts.reviewSignedTransaction?.(signed) ?? Promise.resolve(false) } : {}),
   }
+}
+
+/** Turns "Show the signed transaction before sending" on or off for one Wallet's
+ * view only (OS-FR-10). Stores `true` or removes the field, and touches nothing
+ * else. Returns the Wallet's refreshed meta. */
+export async function setShowBeforeSending(walletId: string, on: boolean): Promise<WalletMeta> {
+  const record = findSeedRecord(await listStoredWallets(), walletId)
+  if (!record) throw new Error('Wallet not found in local vault.')
+  await mutateStoredWallet(record.id, (current) => ({
+    ...current,
+    views: viewsOf(current).map((v) => {
+      if (v.walletId !== walletId) return v
+      const { showBeforeSending: _previous, ...rest } = v
+      return on ? { ...rest, showBeforeSending: true as const } : rest
+    }),
+  }))
+  const meta = (await listWallets()).find((w) => w.id === walletId)
+  if (!meta) throw new Error('Wallet not found in local vault.')
+  return meta
 }
 
 /** The one sanctioned way a Seed leaves `lib/crypto`: the same check as

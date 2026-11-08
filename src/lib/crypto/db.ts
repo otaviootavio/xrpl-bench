@@ -55,6 +55,11 @@ export interface WalletView {
    * Only the two non-Online kinds are ever stored. A view with any other value
    * is not shown (`keystore.toMetas`): it is never read as Online. */
   kind?: 'offline' | 'transmitter'
+  /** "Show the signed transaction before sending" (OS-FR-10, CAP-6). Absent is
+   * off, so every Wallet, new and existing, starts with it off and nothing is
+   * rewritten. Only `true` is ever stored. It has no effect on an Offline
+   * Wallet, which never transmits (OS-FR-11). */
+  showBeforeSending?: true
 }
 
 /** Every Wallet is one of three kinds (OS-FR-1). `online` is the absent

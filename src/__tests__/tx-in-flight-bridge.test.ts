@@ -37,10 +37,15 @@ vi.mock('@/components/AppShell', () => ({ AppShell: () => null, walletInView: (_
 // A stand-in signer rather than a real `Wallet`: under jsdom, `@noble`'s
 // Uint8Array realm check rejects a key derived there, and nothing in this
 // test is about key derivation — `submitAndClassify` only reads `.address`
-// and calls `.sign()`.
+// and calls `.sign()`. The Transmit step verifies the signature and the Account
+// (OS-FR-9), so `.sign()` returns a real blob, signed beforehand outside jsdom by
+// the test seed `sEdTM1uX8pu2do5XvTnutH6HsouMaM2`: a 1 XRP Payment to
+// DESTINATION, Fee 12, Sequence 1, LastLedgerSequence 70.
+const SIGNED_BLOB =
+  '12000022000000002400000001201B000000466140000000000F424068400000000000000C7321EDA57EBBCB502C2009EFE17229E8DC865DCCB192C52D7888D624DC9EBADDB815F07440B482A4CBE8A2076AD7CF51268F097151D4182BDBEE1DEE6BBA82E3DA0BF8F99AE246E5D95834C3E177AB9821A282E7E93453F9A856AA09A67707110C2CFCA00A8114A6070B8A1822E3322676A99F0C804EE2D15B82708314F667B0CA50CC7709A220B0561B85E53A48461FA8'
 const wallet = {
-  address: 'rN7n7otQDd6FczFgLdSqtcsAUxDkw6fzRH',
-  open: async () => ({ sign: () => ({ tx_blob: '00', hash: 'ABCD' }), dispose: () => {} }),
+  address: 'rG31cLyErnqeVj2eomEjBZtq7PYaupGYzL',
+  open: async () => ({ sign: () => ({ tx_blob: SIGNED_BLOB, hash: 'ABCD' }), dispose: () => {} }),
 }
 const DESTINATION = 'rPT1Sjq2YGrBMTttX4GZHjKu9dyfzbpAYe'
 

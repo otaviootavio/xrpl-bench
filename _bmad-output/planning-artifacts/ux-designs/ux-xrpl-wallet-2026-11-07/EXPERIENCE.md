@@ -60,10 +60,10 @@ Transaction, Transmit step.
 
 | Surface | Reached from | Holds | OS-FR |
 |---|---|---|---|
-| **Chooser** (changed) | Launch; Wallets key | Cards for all three kinds; **Add wallet** and **Add Transmitter wallet** (P-2) keys | OS-FR-1, OS-FR-3 |
+| **Chooser** (changed) | Launch; Wallets key | Cards for all three kinds; **Add wallet** and **Add a Transmitter wallet** (P-2) keys | OS-FR-1, OS-FR-3 |
 | **Create/Import quiz, step 1** (changed) | Add wallet | Create or Import → **"Online wallet or offline wallet?"** with Text A/B (and Text E on Import + Offline) → Label → Network (→ Seed on Import) | OS-FR-2, OS-FR-7, OS-FR-8 |
 | **Quiz walk** (changed) | Step 1 Next | Node (Online only), Seed Method, Signature type, Open Check + auto-lock, Signing Check, **"This key signs for another account"** (optional), Review with the OS-FR-23 warning | OS-FR-2, OS-FR-20, OS-FR-23 |
-| **Add Transmitter quiz** (new) | Add Transmitter wallet | Label + Network → Node → Open Check + auto-lock → Address (optional, "Sync to an address") → Review | OS-FR-3, OS-FR-4 |
+| **Add Transmitter quiz** (new) | Add a Transmitter wallet | Label + Network → Node → Open Check + auto-lock → Address (optional, "Sync to an address") → Review | OS-FR-3, OS-FR-4 |
 | **Offline Wallet: a signer** (its own type) | Open on an Offline card | **New transaction · Sign · Receive · Signed · Local settings** | OS-FR-1, OS-FR-13, OS-FR-21 |
 | **Transmitter Wallet: a carrier** (its own type) | Open on a Transmitter card | Unsynced: **Transmit · Local settings**. Synced: **Transmit · Account · History · New transaction · Local settings** | OS-FR-1, OS-FR-3, OS-FR-4, OS-FR-17, OS-FR-22 |
 | **New transaction** (new) | Offline Wallet; Synced Transmitter | First the type (Payment, Trust line, Regular Key, Master key; on a Transmitter every write the app can build), then that type's online fields and review | OS-FR-1, OS-FR-13, OS-FR-17, OS-FR-21 |
@@ -135,7 +135,7 @@ Network row now starts with the kind stamp.
 | Kind | Network row | Address row | Extra lines |
 |---|---|---|---|
 | Online | `[Online] MAINNET [Real funds]` | address link | "Signs for r…" when it differs from the key address |
-| Offline | `[Offline] [Was online] MAINNET [Real funds]` | address, plain text, **not a link**: opening the explorer is a network connection, and an Offline Wallet makes none `[ASSUMPTION]` | P-4 under the row when marked; "Signs for r…" when different |
+| Offline | `[Offline] [Was online] MAINNET [Real funds]` | address link, the same as on every card (owner, 2026-11-08). The link does not work on a disconnected device, and that is accepted. | P-4 under the row when marked; "Signs for r…" when different |
 | Transmitter | `[Transmitter] MAINNET [Real funds]` | Synced address link, or "Not synced" (P-5) | — |
 
 A locked card still shows its name, kind and Network. The kind and Network are
@@ -148,7 +148,7 @@ Network row in Epic 22. The kind joins that row.
 The voice is ASD-STE100, matching the approved texts: short sentences, one
 instruction each, the ledger's own words (Sequence, LastLedgerSequence, Fee,
 ledger index) without explanation. Each screen says what happened, what did not
-happen and what the user can do. "Nothing was sent" and "Nothing was signed"
+happen and what the user can do. "The app did not send the transaction" and "The app did not sign the transaction"
 are stated every time they are true.
 
 ### Approved strings: where each one goes
@@ -188,70 +188,77 @@ The spec leaves these to UX (`route-checks.md`, "Exact words are for UX"). They
 are drafts until the owner approves them, and a build must not ship one
 unapproved.
 
+Rewritten on 2026-11-08 under the ASD-STE100 writing rules (owner): one
+instruction in each sentence, active voice, no phrasal verbs, "approximately"
+for quantities, and articles kept. Words already in an approved text (for
+example "turn off the master key" and "sync") stay as the approved text has
+them. These drafts follow the writing rules. A word-by-word check against the
+ASD-STE100 dictionary is not done yet.
+
 | Id | Where | Words |
 |---|---|---|
-| P-1 | Offline Wallet, every place an online screen shows a reading | "Comes from the Transmitter." |
-| P-2 | Chooser key | "Add Transmitter wallet" |
-| P-3 | Offline Sign screen title (selector label "Sign") | "Sign a transaction from your Transmitter" |
+| P-1 | Offline Wallet, every place an online screen shows a reading | "The Transmitter wallet gives this value." |
+| P-2 | Chooser key | "Add a Transmitter wallet" |
+| P-3 | Offline Sign screen title (selector label "Sign") | "Sign a transaction from your Transmitter wallet" |
 | P-4 | Beside "Was online" | "The key of this wallet was on a device that connected to the internet." |
 | P-5 | Transmitter card / This wallet plate, unsynced | "Not synced" |
 | P-6 | Acknowledge checkbox under a warning | "I read this warning." |
-| P-7 | Next blocked reason | "Read and tick each warning to continue." |
-| P-8 | Same address as Offline and Transmitter, whichever comes second: Add Transmitter, Sync, create or import of an Offline Wallet, and "Change to an offline wallet" (for the last three the words are "WARNING: A Transmitter wallet on this device has this address. The offline key is then on a device that connects to the internet.") | "WARNING: An offline wallet on this device has this address. The offline key is then on a device that connects to the internet." |
+| P-7 | Next blocked reason | "Read each warning. Then select the box below it." |
+| P-8 | Same address as Offline and Transmitter, whichever comes second. Add Transmitter and Sync: first form. Create or import of an Offline Wallet, and "Change to an offline wallet": second form | "WARNING: An offline wallet on this device has this address. Thus the offline key is on a device that connects to the internet." / "WARNING: A Transmitter wallet on this device has this address. Thus the offline key is on a device that connects to the internet." |
 | P-9 | Request QR plate line | "Scan this code with the Transmitter wallet on your online device." |
-| P-10 | Request QR plate, change key, and its line | Key "Change the transaction". Line: "If you change the transaction, the request starts again." |
+| P-10 | Request QR plate, change key, and its line | Key "Change the transaction". Line: "If you change the transaction, the app starts the request again." |
 | P-11 | Data-to-Sign scan plate line | "Scan the data to sign from the Transmitter wallet." |
-| P-12 | Signed QR plate lines (OS-FR-11) | "This transaction is not sent. Scan this code with the Transmitter wallet to send it." / "It is valid until ledger {n}, about {duration} after {time}." ({duration} is "10 minutes" on the Offline-builds route, and the envelope's window on the other) |
-| P-13 | Signing review scale mark | "Window: about 10 minutes" (Offline-builds) / "Window: {n} ledgers" (Transmitter-builds) |
-| P-14 | Highest-seen ledger warning | "The ledger index is lower than an index this wallet saw before." / "The ledger index is higher than the time since the last index allows." Then: "Make sure that the Transmitter is correct before you sign." |
-| P-15 | Window longer than usual (Transmitter-builds) | "This transaction stays valid for longer than usual: {n} ledgers. Anyone who has it can send it until then." |
-| P-16 | Refusal heading on the offline device | "Not signed." followed by the reason, P-17 |
-| P-17 | Refusal reasons, offline | Request ID or Build hash: "This data is for a different request." · Malformed: "This data has a value that is not correct or is missing." · Fee: "The Fee is more than the fee limit." · Network: "This is for {Network}. This wallet is for {Network}." · Account: "This transaction is for {address}. This wallet signs for {address}." · Unknown type or field: "This app cannot show {name} in words." · Pre-set signature: "This transaction already has a signature." · Partial payment: "This is a partial payment. This app does not sign partial payments." |
-| P-18 | Kept transaction plate | Title "Kept transaction". Line "This device keeps the transaction until you mark the result. A lock erases it." Keys: "The result is known" · "Start the request again" · "Cancel this transaction" |
+| P-12 | Signed QR plate lines (OS-FR-11) | "The app did not send this transaction. To send it, scan this code with the Transmitter wallet." / "This transaction is valid until ledger {n}. That is approximately {duration} after {time}." ({duration} is "10 minutes" on the Offline-builds route, and the envelope's window on the other) |
+| P-13 | Signing review scale mark | "Time limit: approximately 10 minutes" (Offline-builds) / "Time limit: {n} ledgers" (Transmitter-builds) |
+| P-14 | Highest-seen ledger warning | "The ledger index is lower than an index that this wallet received before." / "The ledger index is too high for the time since the last index." Then: "Make sure that the Transmitter wallet is correct before you sign." |
+| P-15 | Window longer than usual (Transmitter-builds) | "This transaction is valid for more time than usual: {n} ledgers. During this time, a person who has the transaction can send it." |
+| P-16 | Refusal heading on the offline device | "The app did not sign the transaction." followed by the reason, P-17 |
+| P-17 | Refusal reasons, offline | Request ID or Build hash: "This data is for a different request." · Malformed: "This data has an incorrect value, or a value is missing." · Fee: "The fee is more than the fee limit." · Network: "This transaction is for {Network}. This wallet is for {Network}." · Account: "This transaction is for {address}. This wallet signs for {address}." · Unknown type or field: "The app cannot show {name} in words." · Pre-set signature: "This transaction has a signature already." · Partial payment: "This is a partial payment. The app does not sign partial payments." |
+| P-18 | Kept transaction plate | Title "Kept transaction". Line "This device keeps the transaction until you record the result. A lock erases the transaction." Keys: "I know the result" · "Start the request again" · "Cancel this transaction" |
 | P-19 | Same Build notice at review | "You signed the same transaction before." + the earlier-signing record |
-| P-20 | Retry case (a): higher Sequence received | "The earlier transaction probably went through. Its Sequence is used. Check the history on the Transmitter before you pay again." Keys: "Check first" · "This is a new payment" |
-| P-21 | Retry case (b): window of the earlier one passed | "The earlier transaction cannot go through now. This signing is the only one." |
-| P-22 | Retry case (c): earlier one still valid | "This uses the Sequence of the earlier transaction. Only one of the two can go through." |
-| P-23 | Transmit step, `tefPAST_SEQ` on a same-Sequence retry | Outcome legend "Probably sent before". Line "The earlier transaction probably went through. Check before you pay again." Never "Failed". |
-| P-24 | Show-before-sending, decline and copy warning (OS-FR-10) | "WARNING: This signed transaction stays valid until ledger {n}. Anyone who has it can send it until then." Decline adds "Nothing was sent." |
-| P-25 | Transmit step check list | "Signature: correct" · "Account: {address}, as expected" · "Network: {Network}" · "Window: open until ledger {n}" |
-| P-26 | Transmit step refusals | "Not sent." then: "The signature is not correct." · "This transaction is for {Network}. This wallet sends on {Network}." · "This transaction is signed by {address}. The expected account is {address}." · "This is a partial payment. This app does not send partial payments." (Expiry uses the fixed "Expired. Nothing was sent.") |
-| P-27 | Transmit step, no expected Account (unsynced, not an answered request) | "Make sure that this is your account: {address}. If you press Send, you confirm it." |
-| P-28 | Transmitter answer screen, failed read | "Could not read the ledger. No data to sign was made." Key "Read again" |
-| P-29 | Key state row, failed read | "Unknown. Could not read." |
+| P-20 | Retry case (a): higher Sequence received | "The ledger probably applied the earlier transaction. The ledger used its Sequence. Look at the history on the Transmitter wallet before you pay again." Keys: "Check first" · "This is a new payment" |
+| P-21 | Retry case (b): window of the earlier one passed | "The ledger cannot apply the earlier transaction now. Only this transaction can apply." |
+| P-22 | Retry case (c): earlier one still valid | "This transaction uses the Sequence of the earlier transaction. The ledger can apply only one of the two." (No "This is a new payment" here: owner 2026-11-08, a second identical payment waits until the first is applied or expired.) |
+| P-23 | Transmit step, `tefPAST_SEQ` on a same-Sequence retry | Outcome legend "Probably sent before". Line "The ledger probably applied the earlier transaction. Look at the history before you pay again." Never "Failed". |
+| P-24 | Show-before-sending, decline and copy warning (OS-FR-10) | "WARNING: This signed transaction is valid until ledger {n}. Until then, a person who has it can send it." Decline adds "The app did not send the transaction." |
+| P-25 | Transmit step check list | "Signature: correct" · "Account: {address}, correct" · "Network: {Network}" · "Time limit: valid until ledger {n}" |
+| P-26 | Transmit step refusals | "The app did not send the transaction." then: "The signature is not correct." · "This transaction is for {Network}. This wallet sends on {Network}." · "The account {address} signed this transaction. The correct account is {address}." · "This is a partial payment. The app does not send partial payments." (Expiry uses the fixed "Expired. Nothing was sent.") |
+| P-27 | Transmit step, no expected Account (unsynced, not an answered request) | "Make sure that this is your account: {address}. When you select Send, you confirm the account." |
+| P-28 | Transmitter answer screen, failed read | "The app cannot read the ledger. The app did not make data to sign." Key "Read again" |
+| P-29 | Key state row, failed read | "Unknown. The app cannot read this value." |
 | P-30 | Regular Key target is a Wallet here | "This key is the wallet {name} on this device." |
 | P-31 | Ledger refusals in words (OS-FR-21), as the reason inside today's outcome | `temBAD_REGKEY` is a **failed** outcome, nothing applied: "The Regular Key cannot be the address of the account." · `tecNO_ALTERNATIVE_KEY` and `tecNEED_MASTER_KEY` are **claimed** outcomes (applied, fee taken, Sequence used), shown with today's claimed words ("The network fee was still charged."): "The ledger needs a Regular Key or a signer list first." · "Only the master key can turn off the master key." Never "Not sent." for a tec result |
 | P-32 | Delegates plate | "WARNING: A delegate can send transactions for this account." Empty: "None." Failed read: P-29 |
-| P-33 | Unsigned QR plate line (Transmitter-builds) | "Scan this code with the offline wallet. Then scan the signed code from it." |
-| P-34 | Offline refuse key, and its result | Key "Do not sign". Result: "Nothing was signed." |
+| P-33 | Unsigned QR plate line (Transmitter-builds) | "Scan this code with the offline wallet. Then scan the signed code from the offline wallet." |
+| P-34 | Offline refuse key, and its result | Key "Do not sign". Result: "The app did not sign the transaction." |
 | P-35 | Change kind result, Offline → Online refused | "Another wallet on this device has this address on {Network}." |
-| P-36 | Scan plate, wrong payload kind | "This is a {kind}. This screen needs a {kind}." Transmit, Unsigned scanned: "Scan this with the offline wallet, not here." |
+| P-36 | Scan plate, wrong payload kind | "This code is a {kind}. This screen needs a {kind}." Transmit, Unsigned scanned: "Scan this code with the offline wallet. Do not scan it here." |
 | P-37 | Offline review key | "Show the request" |
 | P-38 | Synced Transmitter review key (Transmitter-builds) | "Make the unsigned transaction" |
 | P-39 | Typed confirm, Change to an online wallet (Mainnet) | Type “change to online” to confirm (same pattern as today's “turn off”) |
 | P-40 | Signs-for step, under the address | "This key must be the Regular Key of that account." |
-| P-41 | Add Transmitter, Sync step | "Optional. You can sync later in Local settings." Key "Skip this step" |
-| P-42 | Transmit, scanner line | "Scan a code from your offline wallet: a request for data to sign, or a signed transaction." |
-| P-43 | Change to offline, result | "This wallet is now an offline wallet. The node setting is gone. The network is {Network}." |
-| P-44 | Before sending plate, description | "Off by default. Shows the hash, the fields and a copy key, then asks before it sends." |
+| P-41 | Add Transmitter, Sync step | "You can do this step later in Local settings." Key "Skip this step" |
+| P-42 | Transmit, scanner line | "Scan a code from your offline wallet. The code can be a request for data to sign or a signed transaction." |
+| P-43 | Change to offline, result | "This wallet is now an offline wallet. The app removed the node setting. The network is {Network}." |
+| P-44 | Before sending plate, description | "This setting is off by default. When it is on, the app shows the hash, the fields and a copy button. Then the app asks before it sends." |
 | P-45 | Offline Receive key | "Copy the address" |
-| P-46 | Synced address plate key | "Remove the sync" |
+| P-46 | Synced address plate key | "Remove the address" |
 | P-47 | Online Keys plate keys, and the Regular Key / Master key types in New transaction | "Set a Regular Key" · "Remove the Regular Key" · "Turn off the master key" (existing words) · "Turn on the master key" |
-| P-48 | Transmitter This wallet plate, and its New transaction key types | "No key. This wallet never signs." · "A key change made here is an unsigned transaction for the offline wallet." |
+| P-48 | Transmitter This wallet plate, and its New transaction key types | "This wallet has no key. It cannot sign." · "When you change a key here, the app makes an unsigned transaction for the offline wallet." |
+| P-49 | Signed by this wallet plate line | "The app does not keep signed transactions. This list has no secret." |
+| P-50 | Test the Regular Key, on an Offline Wallet | "The test is optional. If the Regular Key is a wallet on this device, do the test with that wallet. If not, do the test in the wallet that has the key." |
 | P-51 | Signing-network well, scale mark | "Valid until ledger {n}" |
 | P-52 | Earlier-signing record and field-list terms | "Sequence" · "Transaction hash" · "Valid until ledger" · "Signed at" (field names in the ledger's words: "LastLedgerSequence", "Fee" and the others stay as the ledger names them) |
-| P-50 | Test the Regular Key, on an Offline Wallet | "Offered, never required. If the Regular Key is a wallet on this device, the test is a round with that wallet. If not, test it in the wallet that holds it." |
-| P-49 | Signed by this wallet plate line | "No signed transaction is kept. This list holds no secret." |
-| P-53 | Risky fields on the offline signing review (route-checks.md), one caution each under its row | `SendMax`: "At most {amount} can leave your account. This is more than the amount above." · `Paths`: "This payment can go through other currencies. The amount that leaves your account can change." · `DeliverMin`: "The destination can get less than the amount above, but not less than {amount}." · Memos: "This transaction has a memo. The memo is public on the ledger: {memo text}." · `Delegate`: "This transaction is sent for another account by a delegate: {address}." · `TicketSequence`: "This transaction uses a Ticket, not a Sequence. It can stay valid for longer." · A flag that cannot be undone: "{flag in words}. This cannot be undone." (for example "No freeze. This cannot be undone.") |
-| P-54 | After a Regular Key change built in this app is validated (OS-FR-20) | Key is a Wallet here: "Set the wallet {name} to sign for this account?" Keys "Set it" · "Not now". Key elsewhere: "Set the wallet that holds this key to sign for this account. Do this in that wallet." |
-| P-55 | Transmitter answer refusals | Network: "Not answered. This request is for {Network}. This wallet is for {Network}." · Synced to another address: "Not answered. This request is for {address}. This wallet is synced to {address}." |
-| P-56 | Offline empty and read states | Offline Trust line type, in the place of the current trust lines: P-1. Signed by this wallet, empty: "Nothing signed yet." |
-| P-57 | Mock and screen lines not listed above | "Scan this code with the offline wallet." (Data to Sign plate) · "Checked on {Network}" and the results "exists", "given", "enough", "under the fee limit" · "Scan the data to sign" / "Scan the signed transaction" (scan plate titles) · "Scan {payload} with the camera" / "Stop the camera" (today's scanner words) · "Scan an address with the camera" |
-| P-58 | Before an auto-lock during a round | "This wallet locks in 1 minute. A lock erases the kept transaction." Key "Stay unlocked" |
-| P-59 | QR plate key, and the camera status | Key "Show larger" (the code fills the screen; "Back" returns). Status on a read: "Code read." |
-| P-60 | Kind radio changed after warnings were ticked | Status: "The text below changed. Tick each warning again." |
-| P-62 | Selector labels and screen titles | Offline: "New transaction", "Sign", "Receive", "Signed" (title "Signed by this wallet"). Transmitter: "Transmit", "Account", "History", "New transaction". Type list: "Payment", "Trust line", "Regular Key", "Master key", and on a Transmitter "Other writes…" (opens every other write the app can build) |
-| P-61 | Confirm before the kept transaction is erased | "Erase the kept transaction? The signed transaction stays valid until ledger {n}." Keys "Erase" · "Keep it" |
+| P-53 | Risky fields on the offline signing review (route-checks.md), one caution each under its row | `SendMax`: "Not more than {amount} can leave your account. This is more than the amount above." · `Paths`: "The ledger can send this payment through other currencies. Thus the amount that leaves your account can change." · `DeliverMin`: "The destination can receive less than the amount above. The minimum is {amount}." · Memos: "This transaction has a memo. All persons can read the memo on the ledger: {memo text}." · `Delegate`: "A delegate sends this transaction for the account {address}." · `TicketSequence`: "This transaction uses a Ticket, not a Sequence. It can stay valid for a longer time." · A flag that cannot be undone: "{flag in words}. You cannot undo this." (for example "No freeze. You cannot undo this.") |
+| P-54 | After a Regular Key change built in this app is validated (OS-FR-20) | Key is a Wallet here: "Set the wallet {name} to sign for this account?" Keys "Set it" · "Not now". Key elsewhere: "In the wallet that has this key, set the key to sign for this account." |
+| P-55 | Transmitter answer refusals | Network: "The app did not answer. This request is for {Network}. This wallet is for {Network}." · Synced to another address: "The app did not answer. This request is for {address}. This wallet is synced to {address}." |
+| P-56 | Offline empty and read states | Offline Trust line type, in the place of the current trust lines: P-1. Signed by this wallet, empty: "This wallet did not sign a transaction yet." |
+| P-57 | Mock and screen lines not listed above | "Scan this code with the offline wallet." (Data to Sign plate) · "Checked on {Network}" and the results "found", "supplied", "sufficient", "less than the fee limit" · "Scan the data to sign" / "Scan the signed transaction" (scan plate titles) · "Scan {payload} with the camera" / "Stop the camera" (today's scanner words) · "Scan an address with the camera" |
+| P-58 | Before an auto-lock during a round | "This wallet locks in 1 minute. A lock erases the kept transaction." Key "Keep it unlocked" |
+| P-59 | QR plate key, and the camera status | Key "Make the code larger" (the code fills the screen; "Back" returns). Status on a read: "The app read the code." |
+| P-60 | Kind radio changed after warnings were ticked | Status: "The text below changed. Select the box below each warning again." |
+| P-61 | Confirm before the kept transaction is erased | "Erase the kept transaction? The signed transaction is valid until ledger {n}." Keys "Erase" · "Keep it" |
+| P-62 | Selector labels and screen titles | Offline: "New transaction", "Sign", "Receive", "Signed" (title "Signed by this wallet"). Transmitter: "Transmit", "Account", "History", "New transaction". Type list: "Payment", "Trust line", "Regular Key", "Master key", and on a Transmitter "Other transactions" (opens every other write the app can build) |
 
 ## Component Patterns
 
@@ -269,7 +276,7 @@ Behavioural. The visual specs are in `DESIGN.md`.
 | **Kind stamp, Was-online stamp** | Card, Local settings heading, Wallet kind plate | Static text, no interaction. The Was-online stamp is always followed by P-4. |
 | **Signing-network well** | Signing review | Not a control. Holds the screen's heading (above). |
 | **Transaction field list** | Signing review, Transmit step, show-before-sending | One row per field and flag, in words. `SendMax` reads "At most {amount} can leave your account". A risky row (route-checks.md list) carries its caution Alert directly under it, in the words of P-53. A refused field ends the list with the P-16/P-17 refusal, and the Sign key is not rendered, because there is nothing left to sign. |
-| **Kept transaction plate** | Offline, after signing | P-18. It stays on New transaction while the Wallet is unlocked, and New transaction opens on it until the outcome is marked. "Start the request again" re-opens the request QR with a new request ID, using the same Build. "The result is known" and "Cancel this transaction" erase the Build, so each asks first (P-61). |
+| **Kept transaction plate** | Offline, after signing | P-18. It stays on New transaction while the Wallet is unlocked, and New transaction opens on it until the outcome is marked. "Start the request again" re-opens the request QR with a new request ID, using the same Build. "I know the result" and "Cancel this transaction" erase the Build, so each asks first (P-61). |
 | **Earlier-signing record** | Retry, Signed-by-this-wallet plate | Read-only. Holds no blob and no key. Survives a lock. |
 | **Irreversible confirm** | Change to an online wallet; master key off | Today's master-key pattern: typed phrase on Mainnet (held key until typed), then the Signing Check. |
 | **Commit key** | Transmit step only | See §State Patterns, "Transmit step". At most one per screen. |
@@ -287,7 +294,7 @@ Behavioural. The visual specs are in `DESIGN.md`.
 | **Request shown** | Request QR plate ("Data to sign needed", Scan 1 of 3, P-9, P-10) and the Data-to-Sign scan plate under it (Scan 2 of 3, P-11). The Build fields are read-only. | Data to Sign scanned; Change the transaction (back to Building with a new request ID) |
 | Data refused | Refusal Alert (P-16/P-17) under the scan plate. The request QR stays. | Another scan |
 | **Signing review** | Signing-network well, complete field list, P-13, P-14 when tripped, W1–W5 when they apply | Sign → Signing Check; Do not sign → Request shown |
-| **Signed** | Signed QR plate (Scan 3 of 3, P-12) and the Kept transaction plate (P-18). No Send key anywhere. | The result is known / Cancel → Building (empty); Start the request again → Request shown |
+| **Signed** | Signed QR plate (Scan 3 of 3, P-12) and the Kept transaction plate (P-18). No Send key anywhere. | I know the result / Cancel → Building (empty); Start the request again → Request shown |
 | Locked at any point | The kept Build and request ID are erased. On the next unlock the tab opens empty. The signed list stays. | — |
 
 ### Retry (OS-FR-16)
@@ -304,10 +311,10 @@ of three things happens:
 | (b) Same Sequence, index past earlier LastLedgerSequence | Signing review with notice P-21 | Sign · Do not sign |
 | (c) Same Sequence, index not past | Signing review with notice P-22. The earlier Sequence is used. | Sign · Do not sign |
 
-In (c), "This is a new payment" is **not offered**. The received Sequence is the
+In (c), "This is a new payment" is **not offered** (owner, 2026-11-08). The received Sequence is the
 earlier one, so a second Sequence is not available until the first resolves.
-`[ASSUMPTION]` This reads route-checks.md's "new Sequence only after the
-warning" as applying where a new Sequence exists.
+The owner confirmed this reading on 2026-11-08: the round is slow, and waiting
+is accepted.
 
 ### Transmitter answer (OS-FR-15)
 
@@ -330,7 +337,7 @@ warning" as applying where a new Sequence exists.
 | Unsigned shown | Unsigned QR plate (Scan 1 of 2, P-33) and the signed-QR scanner below it (Scan 2 of 2) | Scans. A wrong kind gets P-36 |
 | Refused on the offline side | Still waiting | P-16/P-17 under the scanner, nothing signed, scanner ready |
 | Signing review | Waiting | As the Offline-builds review, plus P-13 in ledgers, P-15 when longer than usual, P-53 under risky rows, W1/W3 where they apply |
-| Do not sign | Waiting; the user goes back on this device by hand | "Nothing was signed." (P-34), back to the Sign screen |
+| Do not sign | Waiting; the user goes back on this device by hand | P-34, back to the Sign screen |
 | Signed | Scans → Transmit step (checks, fields, Send) | Signed QR (Scan 2 of 2). The signing joins "Signed by this wallet", and Same Build detection applies on later Builds of this Wallet. No kept Build: the Build is the Transmitter's |
 | Window passed | "Expired. Nothing was sent." The Unsigned plate offers to make it again with new values | — |
 | Transmitter locked, or Sync removed, mid-round | The Unsigned Transaction is dropped. A signed QR scanned later still enters the Transmit step; with no Sync and no answered request, the expected Account is confirmed on screen (P-27) | — |
@@ -351,12 +358,12 @@ warning" as applying where a new Sequence exists.
 Show-before-sending screen: hash (data face, full), decoded field list, a
 **Copy** key (copying shows P-24 inline and keeps it on screen), then "Send it
 to the ledger?" with **Send** (commit) and **Do not send** (outline). Do not
-send shows P-24 plus "Nothing was sent.", and the blob is dropped from memory.
+send shows P-24 plus its decline line, and the blob is dropped from memory.
 
 Outcomes: validated, claimed, failed and unknown, worded as today. Expired is
 "Expired. Nothing was sent." `tefPAST_SEQ` on a same-Sequence retry is P-23
 (legend "Probably sent before", caution tone), never "Failed". A refusal is
-P-26 under "Not sent.". A possibly-applied transaction is never offered a
+P-26 under its heading line. A possibly-applied transaction is never offered a
 resend key.
 
 ## Interaction Primitives
@@ -412,7 +419,7 @@ Everything in the inherited floor applies. In addition:
 
 | Event | Announced by | Focus |
 |---|---|---|
-| A code is read by the camera | `role="status"`: P-59 "Code read." plus a short vibration where the device has one | Unchanged |
+| A code is read by the camera | `role="status"`: P-59 plus a short vibration where the device has one | Unchanged |
 | Transmitter is reading or checking | `role="status"`: "Checking {address} on {Network}" | Unchanged |
 | Checks done, Data to Sign QR shown | — | The QR plate's title |
 | Transmit step ready to send | — | The plate heading, **never** the orange Send |
@@ -420,7 +427,7 @@ Everything in the inherited floor applies. In addition:
 | A refusal (P-16/P-17, P-26, P-55, P-36) | `role="alert"` | Stays on the scanner, which stays on |
 | Signing review opens | — | The "You are signing for {Network}" heading |
 | Signing Check dialog closes after signing | — | The signed QR plate's title (the Sign key is gone) |
-| "Nothing was signed." / "Nothing was sent." / P-24 after Copy | `role="status"` | Unchanged |
+| P-34 / P-24 decline line / P-24 after Copy | `role="status"` | Unchanged |
 | Retry case (a) | — | Its caution's heading |
 | Kind radio changed after ticks | `role="status"`: P-60 | Unchanged |
 
@@ -456,7 +463,7 @@ Everything in the inherited floor applies. In addition:
 6. Review lists every answer. The OS-FR-23 warning sits above **Create** as a
    caution.
 7. **Climax:** the chooser shows his card: `[Offline] MAINNET [Real funds]`,
-   with no balance and no link out. Opening it shows a signer: New
+   with no balance, and its address is a link as on every card. Opening it shows a signer: New
    transaction, Sign, Receive, Signed and Local settings. Receive shows the
    address to deposit to.
 
@@ -469,7 +476,7 @@ Seed field, with P-6.
 
 → `mockups/key-chooser-and-transmitter.html` (the spine wins on conflict)
 
-1. Chooser → **Add Transmitter wallet** (P-2).
+1. Chooser → **Add a Transmitter wallet** (P-2).
 2. Label "Savings (send)". Network Mainnet, locked after this step.
 3. Node: built-in. Open Check and auto-lock: required on Mainnet, as for any
    Mainnet Wallet. There is no Seed and no Signing Check question.
@@ -494,10 +501,10 @@ Left is the offline phone, right is the daily phone. See
 | 1 | New transaction → Payment: destination, tag, amount. Spendable, destination check and fee show P-1. **Review** | — |
 | 2 | Review → "Show the request": QR plate "Data to sign needed", Mainnet, Scan 1 of 3 | Transmit → scanner |
 | 3 | Waits; the scan plate for Data to Sign is ready below (Scan 2 of 3) | Scans. "Checking r… on Mainnet". The destination exists, the tag is given, and reserve, spendable and fee cap pass, each shown in words. Data to Sign QR, Scan 2 of 3 |
-| 4 | Scans. Checks pass. **Signing review**: well "You are signing for **Mainnet**", the complete transaction, "Window: about 10 minutes" | Waits on Transmit |
+| 4 | Scans. Checks pass. **Signing review**: well "You are signing for **Mainnet**", the complete transaction, "Time limit: approximately 10 minutes" | Waits on Transmit |
 | 5 | **Sign** → Signing Check → signed QR, Scan 3 of 3, P-12; Kept transaction plate below | Scans the signed QR (Scan 3 of 3) → checks (P-25), the fields, and the orange **Send** |
 | 6 | — | Send → **Climax: "Validated"** with amount and hash |
-| 7 | He presses "The result is known". The Build is cleared. | — |
+| 7 | He presses "I know the result". The Build is cleared. | — |
 
 Edge, slow: at step 6 the window has passed. The Transmitter says "Expired.
 Nothing was sent." On the old phone the Kept transaction is still there, and he
@@ -516,7 +523,7 @@ so the review shows P-19 and the retry table decides (case b).
    keys "Check first" and "This is a new payment".
 4. He presses "Check first". On the daily phone, History shows the payment
    validated.
-5. **Climax:** he presses "The result is known" on the old phone, and nothing is
+5. **Climax:** he presses "I know the result" on the old phone, and nothing is
    paid twice.
 
 Variant: same Sequence, earlier window still open → P-22, and he re-signs with
@@ -535,13 +542,14 @@ See `mockups/key-route-transmitter-builds.html`.
 3. Old phone → Sign ("Sign a transaction from your Transmitter", P-3) →
    scans.
 4. Signing review: the well shows **Mainnet**, every field and flag in words,
-   and "Window: 18 ledgers". Risky rows carry their caution (for example
+   and "Time limit: 18 ledgers". Risky rows carry their caution (for example
    `SendMax` as "At most … can leave your account").
 5. Sign → signed QR, Scan 2 of 2. The daily phone scans it → Transmit step
    checks → **Send** → **Climax: "Validated"**.
 
-Edge: the Unsigned Transaction is for Testnet → "Not signed. This is for
-Testnet. This wallet is for Mainnet." (P-16/P-17). No Sign key is shown.
+Edge: the Unsigned Transaction is for Testnet → "The app did not sign the
+transaction. This transaction is for Testnet. This wallet is for Mainnet."
+(P-16/P-17). No Sign key is shown.
 
 ### Flow 6 — Moving a wallet offline, and back (OS-UJ-3)
 
@@ -599,7 +607,7 @@ Testnet. This wallet is for Mainnet." (P-16/P-17). No Sign key is shown.
 2. Send → the dialog's key is now "Sign" (default) → Signing Check.
 3. The hash, decoded fields and Copy key. Copy → P-24 appears and stays.
 4. **Climax:** "Send it to the ledger?" → **Send** (the screen's one commit
-   key) → Validated. Or Do not send → P-24 + "Nothing was sent."
+   key) → Validated. Or Do not send → P-24 and its decline line.
 
 ## Coverage: OS-FR → surface → flow → mock
 
@@ -637,10 +645,11 @@ Testnet. This wallet is for Mainnet." (P-16/P-17). No Sign key is shown.
    Transmitter Wallets, key changes are types in New transaction. The Online
    Wallet keeps its Keys plate.
 3. *Resolved 2026-11-08.* A Transmitter never changes kind.
-4. **Retry case (c)** does not offer "This is a new payment" (see §State
-   Patterns). Confirm the reading.
-5. **Offline card address not linked** to the explorer. Confirm, or link as on
-   Online.
+4. *Resolved 2026-11-08.* Retry case (c) does not offer "This is a new
+   payment". The process is slow, and the owner accepts the wait: a second
+   identical payment waits until the first is applied or expired.
+5. *Resolved 2026-11-08.* The offline card's address is a link like on every
+   card, although it does not work on a disconnected device.
 6. **Synced-passkey warning timing.** Whether a passkey is synced is known only
    after the ceremony, so the warning comes on the kind statement, after the
    passkey exists. Text B's general warning was already acknowledged at step 1.
@@ -656,7 +665,7 @@ Testnet. This wallet is for Mainnet." (P-16/P-17). No Sign key is shown.
 9. *Owner 2026-11-08: stated as a known limit.* **No camera, no route.** Across the air gap there is nothing to paste into,
    so a user who cannot use a camera cannot run either route. This spine
    states it as a known limit and makes the camera path as easy as it can (a
-   continuous scan, "Show larger", spoken status). A typed text form of a
+   continuous scan, "Make the code larger", spoken status). A typed text form of a
    2 KB payload is not offered. Confirm.
 
 ## Notes For The Build (today's code that must change)

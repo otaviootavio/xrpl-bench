@@ -134,6 +134,13 @@ Inherited ladder; no new spacing token.
 - **A QR plate puts the code first in its plate**, under the title and Network
   row, centred, drawn at `qrDrawSize()`. Explanatory lines go under the code,
   never beside it, so the code stays large at 320px.
+- **Each Wallet type has its own screens** (EXPERIENCE.md, "Screens by
+  type"). They share the function-selector primitive and the panel
+  vocabulary, and nothing else: no type shows another type's screen with its
+  readings removed.
+- **New transaction opens with the type** as a row of `outline` keys with the
+  chosen one in the `default` fill (radiogroup semantics, like the Range
+  Selector), then the type's form below it.
 - **The two devices are separate screens.** The side-by-side frames in
   `mockups/` are for review only. No screen depends on the other being visible.
 

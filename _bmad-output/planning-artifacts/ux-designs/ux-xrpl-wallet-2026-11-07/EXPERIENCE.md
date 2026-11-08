@@ -140,7 +140,7 @@ Network row now starts with the kind stamp.
 | Transmitter | `[Transmitter] MAINNET [Real funds]` | Synced address link, or "Not synced" (P-5) | — |
 
 A locked card still shows its name, kind and Network. The kind and Network are
-record fields, not Account reads, so AD-26 holds. `[ASSUMPTION]` The
+record fields, not Account reads, so AD-26 holds (owner, 2026-11-08). The
 2026-10-19 rule "a locked card shows its name only" was already relaxed for the
 Network row in Epic 22. The kind joins that row.
 
@@ -452,9 +452,9 @@ Everything in the inherited floor applies. In addition:
   user gets instead is a restart that costs one press ("Start the request
   again" or "Make the unsigned transaction"), with nothing typed again.
 - While a round screen is up (a QR shown or a scanner waiting), the app holds
-  a screen wake lock so neither phone sleeps. `[ASSUMPTION]` The browser's
-  Wake Lock API; where it is not available, nothing changes.
-- One minute before an auto-lock during a round, P-58 shows with "Stay
+  a screen wake lock so neither phone sleeps (owner, 2026-11-08). It uses the
+  browser's Wake Lock API; where it is not available, nothing changes.
+- One minute before an auto-lock during a round, P-58 shows with "Keep it
   unlocked". The lock rule itself is unchanged (Open Question 8).
 - The scanner reads continuously once the camera is on. No press per frame.
 

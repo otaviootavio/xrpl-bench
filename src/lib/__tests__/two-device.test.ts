@@ -264,6 +264,14 @@ describe('the round trip', () => {
     }
   })
 
+  it('refuses a signed code whose envelope names another Network, and submits nothing (story 4, OS-FR-9)', async () => {
+    const r = await built()
+    const text = (encodeSigned({ network: 'mainnet', txBlob: master.sign(r.tx as any).tx_blob }) as any).text
+    const out = await submitReturned(onlineMeta as any, r.tx, text, { queryClient: qc() })
+    expect(out).toEqual({ status: 'refused', reason: 'The app did not send the transaction. This transaction is for Mainnet. This wallet sends on Testnet.' })
+    expect(submitted).toEqual([])
+  })
+
   it('refuses a tampered blob (amount, destination, fee, LastLedgerSequence) and submits nothing', async () => {
     const r = await built()
     for (const change of [{ Amount: '9000000' }, { Destination: other.address }, { Fee: '13' }, { LastLedgerSequence: 99999 }]) {

@@ -7,7 +7,8 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { getLockoutState } from '@/lib/crypto/auth'
-import { endLockSession, getLockInfo, openLock as openWithCheck, type OpenMethod } from '@/lib/crypto/lock'
+import { getLockInfo, openLock as openWithCheck, startLockSession, type OpenMethod } from '@/lib/crypto/lock'
+import { resetFailures } from '@/lib/crypto/pin'
 import { describeCheckFailure, type WalletMeta } from '@/lib/crypto/keystore'
 import { proveTransmitterUnlock } from '@/lib/crypto/transmitter-unlock'
 import { queryKeys } from '@/lib/xrpl/query-keys'
@@ -74,13 +75,17 @@ export function Unlock({ wallet }: { wallet: WalletMeta }) {
     // A new attempt: what the last one said (a wrong PIN, a cancelled prompt) is not current.
     toast.resolve('unlock')
     try {
-      const result = await openWithCheck(lockId, method, { pin: method === 'pin' ? pin : undefined })
+      // A Transmitter's unlock is proven by decrypting its known ciphertext (OS-FR-3)
+      // BEFORE any session is written: a reload can never restore an unproven lock.
+      const transmitter = wallet.kind === 'transmitter'
+      const result = await openWithCheck(lockId, method, { pin: method === 'pin' ? pin : undefined, ...(transmitter ? { persist: false } : {}) })
       if (result.status === 'ok') {
         setPin('')
-        // A Transmitter's unlock is proven by decrypting its known ciphertext (OS-FR-3).
-        if (!(await proveTransmitterUnlock(lockId, result.value.key))) {
-          await endLockSession(lockId).catch(() => {})
-          throw new Error('Unlock failed.')
+        if (transmitter) {
+          if (!(await proveTransmitterUnlock(lockId, result.value.key).catch(() => false))) throw new Error('Unlock failed.')
+          await startLockSession(lockId, result.value.key, result.value.autoLockMinutes)
+          // What `openLock` does for a persisted passkey open: the owner is proven (AD-25).
+          if (method === 'passkey' && !(await getLockoutState()).hardLocked) await resetFailures()
         }
         openLock(lockId, result.value.key, result.value.autoLockMinutes)
         return
@@ -109,7 +114,7 @@ export function Unlock({ wallet }: { wallet: WalletMeta }) {
     autoOpened.current = true
     openWithCheck(lockId, 'none').then(
       async (result) => {
-        if (result.status === 'ok' && (await proveTransmitterUnlock(lockId, result.value.key))) {
+        if (result.status === 'ok' && (await proveTransmitterUnlock(lockId, result.value.key).catch(() => false))) {
           openLock(lockId, result.value.key, result.value.autoLockMinutes)
         } else setOpenError('This wallet could not be opened.')
       },

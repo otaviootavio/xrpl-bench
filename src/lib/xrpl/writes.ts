@@ -325,32 +325,54 @@ async function withWriteInFlight<T>(
  * other write. `expectedAccount` comes from `expectedAccountFor`; the caller
  * gets the user's confirm (P-27) before calling when that returns `null`.
  */
-export function transmitSignedTransaction(
+export async function transmitSignedTransaction(
   network: NetworkId,
   signed: SignedTransaction,
   expectedAccount: string,
   node?: string,
   review?: ReviewBeforeSending,
 ): Promise<SubmitOutcome> {
-  return withWriteInFlight(network, node, async (client) => {
-    // The Network first, as route-checks orders it, before the blob is read.
-    assertNetwork(signed.network, network)
-    let hash: string
-    try {
-      hash = hashes.hashSignedTx(signed.txBlob)
-    } catch {
-      throw refuse('signature', REFUSAL.signature)
+  let attempted = false
+  try {
+    return await withWriteInFlight(network, node, async (client) => {
+      // The Network first, as route-checks orders it, before the blob is read.
+      assertNetwork(signed.network, network)
+      let hash: string
+      try {
+        hash = hashes.hashSignedTx(signed.txBlob)
+      } catch {
+        throw refuse('signature', REFUSAL.signature)
+      }
+      // Never-resubmit, across scans (OS-FR-9, FR-24): a blob this session already
+      // handed to the ledger is not handed again, whatever its outcome was.
+      // Claimed at once, so a second call for the same blob (a re-scan while this one
+      // runs) is refused rather than racing it; released only when nothing was submitted.
+      if (sentThisSession.has(hash)) throw refuse('already-sent')
+      sentThisSession.add(hash)
+      try {
+        return await transmit(client, network, { tx_blob: signed.txBlob, hash }, { signedNetwork: signed.network, expectedAccount }, review, node, () => {
+          attempted = true
+        })
+      } catch (err) {
+        if (!attempted) sentThisSession.delete(hash)
+        throw err
+      }
+    })
+  } catch (err) {
+    // A failure before the submission (no client could be held, a check threw) sent
+    // nothing: it is a refusal in the approved unread-ledger words, never "may have
+    // been sent". After the submission, the caller gets the error as it is.
+    if (!attempted && !(err instanceof TransmitRefusedError) && !(err instanceof TransmitDeclinedError) && !(err instanceof FeeAboveCapError)) {
+      throw refuse('ledger-unread', LEDGER_UNREAD)
     }
-    // Never-resubmit, across scans (OS-FR-9, FR-24): a blob this session already
-    // handed to the ledger is not handed again, whatever its outcome was.
-    if (sentThisSession.has(hash)) throw refuse('already-sent')
-    return transmit(client, network, { tx_blob: signed.txBlob, hash }, { signedNetwork: signed.network, expectedAccount }, review, node, () => sentThisSession.add(hash))
-  })
+    throw err
+  }
 }
 
-/** The hashes of the scanned Signed Transactions this page has submitted. In
- * memory only: no blob, no secret, gone with the page. Added the moment a
- * submission is attempted, never on a refusal or a decline (nothing was sent). */
+/** The hashes of the scanned Signed Transactions this page has submitted, or is
+ * submitting. In memory only: no blob, no secret, gone with the page. Claimed when
+ * a call starts; released on a refusal, a decline or any failure before the
+ * submission (nothing was sent), never after it. */
 const sentThisSession = new Set<string>()
 
 /** Test seam: a fresh session. */

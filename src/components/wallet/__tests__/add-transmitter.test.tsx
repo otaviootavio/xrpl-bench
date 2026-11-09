@@ -118,6 +118,16 @@ describe('Add a Transmitter wallet (OS-FR-3)', () => {
     expect(within(screen.getByRole('region', { name: 'Your answers' })).getByText(P8)).toBeTruthy()
   })
 
+  it('a Network change clears a typed Sync address', async () => {
+    await open()
+    for (let i = 0; i < 3; i++) await click(button('Next'))
+    fireEvent.change(screen.getByRole('textbox', { name: 'Address' }), { target: { value: ADDR } })
+    for (let i = 0; i < 3; i++) await click(button('Back'))
+    await click(screen.getByRole('radio', { name: /Devnet/ }))
+    for (let i = 0; i < 3; i++) await click(button('Next'))
+    expect((screen.getByRole('textbox', { name: 'Address' }) as HTMLInputElement).value).toBe('')
+  })
+
   it('on Mainnet no Open Check is not offered, and the 30-second auto-lock is not either (FR-65)', async () => {
     await open()
     await click(screen.getByRole('radio', { name: /Mainnet/ }))

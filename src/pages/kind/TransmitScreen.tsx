@@ -67,6 +67,8 @@ export function TransmitScreen({ wallet }: { wallet: TransmitterMeta }) {
   }, [state.kind])
 
   function onPayload(text: string) {
+    // A scan while a send runs is ignored: the blob on screen is the one being sent.
+    if (state.kind === 'sending') return
     if (decodeUnsigned(text).ok) return setState({ kind: 'refused', text: UNSIGNED_ON_TRANSMIT })
     const decoded = decodeSigned(text)
     if (!decoded.ok) return setState({ kind: 'refused', text: decoded.reason })

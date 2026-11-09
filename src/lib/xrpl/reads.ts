@@ -121,10 +121,22 @@ export async function fetchAccountDelegates(network: NetworkId, address: string,
   try {
     const delegates: AccountDelegate[] = []
     let marker: unknown = undefined
+    // Every page reads the ledger the first page read: a later validated ledger could
+    // move entries between pages, so one is listed twice or not at all.
+    let ledger: number | 'validated' = 'validated'
     do {
-      const res = await client.request({ command: 'account_objects', account: address, type: 'delegate', ledger_index: 'validated', marker })
-      for (const o of res.result.account_objects as unknown[]) {
+      const res: { result: { account_objects: unknown[]; marker?: unknown; ledger_index?: number } } = await client.request({
+        command: 'account_objects',
+        account: address,
+        type: 'delegate',
+        ledger_index: ledger,
+        marker,
+      })
+      const pinned = res.result.ledger_index
+      if (ledger === 'validated' && typeof pinned === 'number') ledger = pinned
+      for (const o of res.result.account_objects) {
         if (!isRecord(o) || o.LedgerEntryType !== 'Delegate' || o.Account !== address || typeof o.Authorize !== 'string') continue
+        if (delegates.some((d) => d.authorize === o.Authorize)) continue
         const permissions = Array.isArray(o.Permissions)
           ? o.Permissions.flatMap((p: unknown) => {
               const value = isRecord(p) && isRecord(p.Permission) ? p.Permission.PermissionValue : undefined

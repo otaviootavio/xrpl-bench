@@ -334,13 +334,21 @@ function SyncPlate({ wallet }: { wallet: TransmitterMeta }) {
     if (busy || (next !== null && (next === '' || !isValidClassicAddress(next)))) return
     setBusy(true)
     const old = wallet.address
+    let meta: TransmitterMeta
     try {
-      await setTransmitterSync(wallet.id, next)
-      setWallets(await listWallets())
+      meta = await setTransmitterSync(wallet.id, next)
+    } catch {
+      // Nothing was written: the plate keeps showing what is stored (shipped words).
+      notify.error('Nothing was changed.')
+      setBusy(false)
+      return
+    }
+    try {
+      // From the write's own result: a failed re-list must not leave the old address on screen.
+      const { wallets: current } = useAppStore.getState()
+      setWallets(current.map((w) => (w.id === meta.id ? meta : w)))
       if (old !== next) forgetSyncedAddress(queryClient, wallet.id, wallet.network, old)
       setDraft('')
-    } catch (err: unknown) {
-      notify.error(err instanceof Error ? err.message : String(err))
     } finally {
       setBusy(false)
     }
@@ -359,8 +367,10 @@ function SyncPlate({ wallet }: { wallet: TransmitterMeta }) {
           spellCheck={false}
           className="font-data"
           disabled={busy}
+          autoCapitalize="off"
+          autoCorrect="off"
           aria-invalid={invalid ? true : undefined}
-          aria-describedby={invalid ? `${id}-error` : undefined}
+          aria-describedby={invalid ? `${id}-error` : sameAsOffline ? `${id}-p8` : undefined}
         />
         {invalid && (
           <p id={`${id}-error`} className="text-sm text-text-destructive">
@@ -368,7 +378,7 @@ function SyncPlate({ wallet }: { wallet: TransmitterMeta }) {
           </p>
         )}
       </div>
-      {sameAsOffline && <WarningSentence words={SAME_ADDRESS_OFFLINE_HERE} />}
+      {sameAsOffline && <WarningSentence id={`${id}-p8`} words={SAME_ADDRESS_OFFLINE_HERE} />}
       <div className="flex flex-wrap gap-2">
         <Button
           type="button"

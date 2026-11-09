@@ -448,3 +448,49 @@ describe('the Transmit screen preview needs no ledger read (story 4, OS-FR-9 P-2
     expect(() => previewSignedTransaction('testnet', { txBlob: master.sign(payment({ Fee: '5000000' })).tx_blob, network: 'testnet' }, master.address)).toThrow(FeeAboveCapError)
   })
 })
+
+describe('the already-sent claim is atomic (story 4 review, OS-FR-9)', () => {
+  it('two calls for one blob at once: one submission, the second refused', async () => {
+    const client = installFakeClient({ validated: [90] })
+    const blob = master.sign(payment()).tx_blob
+    const [a, b] = await Promise.allSettled([
+      transmitSignedTransaction('testnet', { txBlob: blob, network: 'testnet' }, master.address),
+      transmitSignedTransaction('testnet', { txBlob: blob, network: 'testnet' }, master.address),
+    ])
+    expect([a.status, b.status].sort()).toEqual(['fulfilled', 'rejected'])
+    expect(((a.status === 'rejected' ? a : b) as PromiseRejectedResult).reason).toMatchObject({ reason: 'already-sent' })
+    expect(client.submitted).toEqual([blob])
+  })
+
+  it('a failure before the submission releases the claim', async () => {
+    installFakeClient({ readFails: true })
+    const blob = master.sign(payment()).tx_blob
+    await expect(transmitSignedTransaction('testnet', { txBlob: blob, network: 'testnet' }, master.address)).rejects.toMatchObject({ reason: 'ledger-unread' })
+    resetXrplClients()
+    const client = installFakeClient({ validated: [90] })
+    expect((await transmitSignedTransaction('testnet', { txBlob: blob, network: 'testnet' }, master.address)).status).toBe('validated')
+    expect(client.submitted).toEqual([blob])
+  })
+})
+
+describe('a failure before the submission is "not sent" (story 4 review, OS-FR-9)', () => {
+  it('no client can be held: refused in the unread-ledger words, nothing submitted', async () => {
+    setXrplClientFactory(() => {
+      throw new Error('no socket')
+    })
+    const blob = master.sign(payment()).tx_blob
+    await expect(transmitSignedTransaction('testnet', { txBlob: blob, network: 'testnet' }, master.address)).rejects.toMatchObject({
+      reason: 'ledger-unread',
+      message: 'The app did not send the transaction. The app cannot read the ledger.',
+    })
+  })
+
+  it('a throw after the submission is passed on as it is (it may have been sent)', async () => {
+    const client = installFakeClient({ validated: [90] })
+    client.submitAndWait = async () => {
+      throw new Error('socket closed')
+    }
+    const blob = master.sign(payment()).tx_blob
+    await expect(transmitSignedTransaction('testnet', { txBlob: blob, network: 'testnet' }, master.address)).rejects.toThrow('socket closed')
+  })
+})

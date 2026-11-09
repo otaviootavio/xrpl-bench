@@ -50,8 +50,8 @@ describe('fetchAccountDelegates (OS-FR-22)', () => {
   it('asks for validated delegate objects and follows the marker to the end', async () => {
     const requests = install((req) =>
       req.marker === undefined
-        ? { account_objects: [delegate(D1, ['Payment'])], marker: 'm1' }
-        : { account_objects: [delegate(D2, ['TrustlineAuthorize', 'AccountDomainSet'])] },
+        ? { account_objects: [delegate(D1, ['Payment'])], marker: 'm1', ledger_index: 777 }
+        : { account_objects: [delegate(D1, ['Payment']), delegate(D2, ['TrustlineAuthorize', 'AccountDomainSet'])], ledger_index: 777 },
     )
     expect(await fetchAccountDelegates('testnet', ADDR)).toEqual([
       { authorize: D1, permissions: ['Payment'] },
@@ -60,6 +60,8 @@ describe('fetchAccountDelegates (OS-FR-22)', () => {
     expect(requests).toHaveLength(2)
     expect(requests[0]).toMatchObject({ command: 'account_objects', account: ADDR, type: 'delegate', ledger_index: 'validated' })
     expect(requests[1].marker).toBe('m1')
+    // Page 2 reads page 1's ledger, and a delegate seen twice is listed once.
+    expect(requests[1].ledger_index).toBe(777)
   })
 
   it('skips an object that is not a Delegate of this Account', async () => {

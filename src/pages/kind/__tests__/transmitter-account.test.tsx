@@ -110,6 +110,17 @@ describe('Account on a Synced Transmitter (OS-FR-4)', () => {
     expect(within(delegatesSection()).queryByText(NONE)).toBeNull()
   })
 
+  it('a retained account state is replaced by P-29 and "unavailable" once its refetch fails', async () => {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    client.setQueryData(queryKeys.accountState('testnet', ADDR), state({ regularKey: DELEGATE }))
+    h.account.mockRejectedValue(new Error('down'))
+    mount(client)
+    expect(await screen.findByText('Balance unavailable')).toBeTruthy()
+    expect(screen.getAllByText(VALUE_UNKNOWN)).toHaveLength(2)
+    expect(screen.queryByText('Master key on')).toBeNull()
+    expect(screen.queryByText('25')).toBeNull()
+  })
+
   it('a failed trust-line read says so, never "None."', async () => {
     h.lines.mockRejectedValue(new Error('down'))
     mount()

@@ -21,7 +21,7 @@ import { TooltipProvider } from '@/components/ui/tooltip'
 import { encodeSigned, encodeUnsigned } from '@/lib/qr-codec'
 import type { TransmitterMeta } from '@/lib/crypto/keystore'
 import { CONFIRM_ACCOUNT, TRANSMIT_SCANNER_LINE, UNSIGNED_ON_TRANSMIT } from '@/lib/transmitter-words'
-import { TransmitDeclinedError } from '@/lib/xrpl/writes'
+import { TransmitDeclinedError, TransmitRefusedError } from '@/lib/xrpl/writes'
 
 /**
  * Blobs really signed by xrpl.js (jsdom cannot run its signer, so they were signed
@@ -123,13 +123,13 @@ describe('Transmit on a Synced Transmitter (OS-FR-9)', () => {
     expect(screen.queryByRole('button', { name: 'Send' })).toBeNull()
   })
 
-  it('answers an Unsigned Transaction with P-36, and a signed code with no Network with the codec words', async () => {
+  it('answers an Unsigned Transaction with P-36, and a signed code with no Network (an older build) with the codec version words', async () => {
     mount(transmitter())
     paste((encodeUnsigned({ network: 'testnet', tx: { TransactionType: 'Payment', Account: master.address } }) as { text: string }).text)
     expect((await screen.findByRole('alert')).textContent).toBe(UNSIGNED_ON_TRANSMIT)
     const noNetwork = 'xrplbench:1:s:' + btoa(JSON.stringify({ v: 1, tx_blob: 'AB' })).replace(/=+$/, '')
     paste(noNetwork)
-    await waitFor(() => expect(screen.getByRole('alert').textContent).toBe('That code names a network this wallet does not know.'))
+    await waitFor(() => expect(screen.getByRole('alert').textContent).toBe('That code is from a version of XRPL Bench this one does not understand.'))
   })
 
   it('with the setting on, Send goes through the reviewer; a decline is a caution status, nothing sent', async () => {
@@ -160,6 +160,18 @@ describe('Transmit on a Synced Transmitter (OS-FR-9)', () => {
     })
     expect(await screen.findByText(/may have been sent/)).toBeTruthy()
     expect(screen.queryByRole('button', { name: 'Send' })).toBeNull()
+  })
+
+  it('a failure before any submission is a refusal, not "may have been sent"', async () => {
+    mount(transmitter())
+    paste(code(GOOD.tx_blob))
+    await screen.findByText('Signature: correct')
+    h.transmit.mockRejectedValue(new TransmitRefusedError('ledger-unread', 'The app did not send the transaction. The app cannot read the ledger.'))
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Send' }))
+    })
+    expect((await screen.findByRole('alert')).textContent).toBe('The app did not send the transaction. The app cannot read the ledger.')
+    expect(screen.queryByText(/may have been sent/)).toBeNull()
   })
 
   it('an expired outcome reads "Expired. Nothing was sent."', async () => {

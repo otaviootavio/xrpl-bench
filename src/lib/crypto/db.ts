@@ -181,12 +181,6 @@ export async function mutateTransmitterRecord(id: string, change: (current: Tran
   await done
 }
 
-/** Every lock id a Wallet of any kind is on. */
-export async function lockIdsInUse(): Promise<Set<string>> {
-  const [seeds, transmitters] = await Promise.all([listStoredWallets(), listTransmitterRecords()])
-  return new Set([...seeds.map((w) => w.lockId), ...transmitters.map((t) => t.lockId)])
-}
-
 /** `lock:<id>` in the `vault` store. Holds the derivation inputs a lock's keys
  * are made from (AD-21) and its auto-lock window. Holds no key and no Seed. */
 export interface LockRecord {

@@ -16,6 +16,8 @@ const h = vi.hoisted(() => ({
   restored: [] as Array<{ lockId: string; key: unknown; autoLockMinutes: number }>,
   setShowBeforeSending: vi.fn(),
   setTransmitterSync: vi.fn(),
+  proof: true,
+  endLockSession: vi.fn(),
 }))
 vi.mock('idb-keyval', () => ({ get: async () => undefined, set: async () => {}, del: async () => {} }))
 vi.mock('@/lib/xrpl/client', () => ({
@@ -31,8 +33,10 @@ vi.mock('@/hooks/useIncomingPaymentNotifications', () => ({ useIncomingPaymentNo
 vi.mock('@/hooks/useAccountLiveUpdates', () => ({ useAccountLiveUpdates: (...a: unknown[]) => h.hookArgs('live', ...a) }))
 vi.mock('@/hooks/useAppUpdate', () => ({ useAppUpdate: () => ({ updateReady: false, declined: false }) }))
 vi.mock('@/lib/build-info', () => ({ BUILD: { version: '0.0.0', commitSha: 'x', builtAt: '' }, shortSha: 'x', sourceUrl: 'https://example.invalid', formatBuiltAt: () => '' }))
+// The restore loop proves a Transmitter's lock (story 4); `h.proof` fails it.
+vi.mock('@/lib/crypto/transmitter-unlock', () => ({ proveTransmitterUnlock: async () => h.proof }))
 vi.mock('@/lib/crypto/lock', () => ({
-  endLockSession: async () => {},
+  endLockSession: async (...a: unknown[]) => h.endLockSession(...a),
   endAllLockSessions: async () => {},
   restoreOpenLocks: async () => h.restored,
   extendLockSession: async () => {},
@@ -104,6 +108,7 @@ async function openSettings() {
 }
 
 beforeEach(() => {
+  h.proof = true
   useAppStore.setState({ openLocks: {}, wallets: [], activeWalletId: null })
 })
 afterEach(() => {
@@ -185,6 +190,36 @@ describe('a Transmitter Wallet (OS-FR-1, OS-FR-4)', () => {
     await waitFor(() => expect(screen.getByRole('heading', { level: 1, name: 'New transaction' })).toBeTruthy())
   }, 30_000)
 
+  it('a restored session reopens a Transmitter lock only when its verifier decrypts (OS-FR-3)', async () => {
+    h.proof = false
+    h.wallets = [transmitterMeta(null)]
+    h.restored = [{ lockId: 'X', key: {}, autoLockMinutes: 5 }]
+    window.history.replaceState(null, '', '/wallets/w1')
+    render(<App />)
+    expect(await screen.findByText('locked:Alpha')).toBeTruthy()
+    expect(useAppStore.getState().openLocks).toEqual({})
+    expect(h.endLockSession).toHaveBeenCalledWith('X')
+  })
+
+  it('an unsynced Transmitter never asks the pool for a client', async () => {
+    await openApp('transmitter')
+    await openSettings()
+    expect(h.getXrplClient).not.toHaveBeenCalled()
+  })
+
+  it('History on a Synced Transmitter reads the Synced address on its Network', async () => {
+    const seen: unknown[] = []
+    h.getXrplClient.mockImplementation(async (network: unknown) => ({
+      request: async (req: { command: string; account?: string }) => {
+        seen.push([network, req.command, req.account])
+        throw new Error('down')
+      },
+    }))
+    await openSyncedTransmitter()
+    fireEvent.mouseDown(screen.getByRole('tab', { name: 'History' }))
+    await waitFor(() => expect(seen).toContainEqual(['testnet', 'account_tx', 'rSYNCEDaddressXXXXXXXXXXXXXX']))
+  })
+
   it('a screen that goes away with the Sync falls back to Transmit (OS-FR-4)', async () => {
     h.getXrplClient.mockRejectedValue(new Error('no socket'))
     await openSyncedTransmitter()
@@ -201,6 +236,7 @@ describe('a Transmitter Wallet (OS-FR-1, OS-FR-4)', () => {
   it('Synced Local settings: the address, and Remove the address goes back to two screens (OS-FR-4)', async () => {
     h.setTransmitterSync.mockImplementation(async () => {
       h.wallets = [transmitterMeta(null)]
+      return transmitterMeta(null)
     })
     await openSyncedTransmitter()
     await openSettings()

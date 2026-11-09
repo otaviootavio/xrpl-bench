@@ -161,6 +161,8 @@ function AddTransmitterQuiz({
     setNodeDraft('')
     setVerifiedNode(null)
     setNodeReason(null)
+    // An address typed for one Network is not carried to another.
+    setAddress('')
     setResetNote(NETWORK_RESET_NOTE)
     setReturnToReview(false)
   }
@@ -361,8 +363,10 @@ function AddTransmitterQuiz({
               spellCheck={false}
               className="font-data"
               disabled={busy}
+              autoCapitalize="off"
+              autoCorrect="off"
               aria-invalid={addressInvalid ? true : undefined}
-              aria-describedby={addressInvalid ? invalidId : undefined}
+              aria-describedby={addressInvalid ? invalidId : sameAsOffline ? `${group}-p8` : undefined}
             />
             {addressInvalid && (
               <p id={invalidId} className="text-sm text-text-destructive">
@@ -370,7 +374,7 @@ function AddTransmitterQuiz({
               </p>
             )}
           </div>
-          {sameAsOffline && <WarningSentence words={SAME_ADDRESS_OFFLINE_HERE} />}
+          {sameAsOffline && <WarningSentence id={`${group}-p8`} words={SAME_ADDRESS_OFFLINE_HERE} />}
         </div>
       )}
       {index === reviewIndex && !verdict.ok && (

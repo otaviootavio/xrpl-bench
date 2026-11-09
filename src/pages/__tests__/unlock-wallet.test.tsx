@@ -14,7 +14,8 @@ const h = vi.hoisted(() => ({
   toastError: vi.fn(),
   toastResolve: vi.fn(),
   getInfoFails: false,
-  proof: true,
+  proof: true as boolean | 'throw',
+  startLockSession: vi.fn(),
 }))
 vi.mock('idb-keyval', () => ({ get: async () => undefined, set: async () => {}, del: async () => {} }))
 vi.mock('@/lib/crypto/auth', () => ({ wipeVault: async () => {}, getLockoutState: async () => h.lockout }))
@@ -26,13 +27,19 @@ vi.mock('@/lib/crypto/lock', () => ({
     return h.info
   },
   openLock: (...a: unknown[]) => h.openLock(...a),
+  startLockSession: async (...a: unknown[]) => h.startLockSession(...a),
 }))
 vi.mock('@/lib/crypto/keystore', () => ({
   describeCheckFailure: (r: { status: string; triesRemaining?: number }) =>
     r.status === 'wrong-credential' ? `Incorrect PIN. ${r.triesRemaining} tries remaining. Nothing was signed.` : 'locked',
 }))
 // The Transmitter proof (story 4): a Seed lock has nothing to prove; `h.proof` lets a test fail it.
-vi.mock('@/lib/crypto/transmitter-unlock', () => ({ proveTransmitterUnlock: async () => h.proof }))
+vi.mock('@/lib/crypto/transmitter-unlock', () => ({
+  proveTransmitterUnlock: async () => {
+    if (h.proof === 'throw') throw new Error('no vault')
+    return h.proof
+  },
+}))
 vi.mock('@/lib/xrpl/client', () => ({ disconnectAllClients: async () => {} }))
 vi.mock('@/lib/notify', () => ({ toast: { error: (m: string) => h.toastError(m), success: vi.fn(), resolve: (a: string) => h.toastResolve(a) } }))
 vi.mock('@/lib/build-info', () => ({
@@ -48,11 +55,14 @@ import { navigate } from '@/lib/route'
 const WALLET = { id: 'w1', seedId: 'w1', lockId: 'L1', label: 'Savings', address: 'rA', createdAt: 1, network: 'testnet', algorithm: 'ed25519', openCheck: 'pin', signingCheck: 'standard' } as never
 const KEY = {} as CryptoKey
 
-function renderUnlock() {
+/** A Transmitter on the same lock (story 4): its own meta shape. */
+const TRANSMITTER = { id: 't1', seedId: 't1', lockId: 'L1', label: 'Send', createdAt: 1, network: 'testnet', openCheck: 'pin', kind: 'transmitter', address: null } as never
+
+function renderUnlock(wallet = WALLET) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   render(
     <QueryClientProvider client={qc}>
-      <Unlock wallet={WALLET} />
+      <Unlock wallet={wallet} />
     </QueryClientProvider>,
   )
 }
@@ -79,15 +89,31 @@ describe('the locked-Wallet view', () => {
     expect(h.openLock).toHaveBeenCalledWith('L1', 'pin', { pin: '123456' })
   })
 
-  it('a Transmitter whose verifier does not decrypt under the key stays closed (OS-FR-3)', async () => {
-    h.proof = false
+  it('a Transmitter opens without a persisted session, and starts one only after the proof passes (OS-FR-3)', async () => {
     h.openLock.mockResolvedValue({ status: 'ok', value: { key: KEY, autoLockMinutes: 7 } })
-    renderUnlock()
+    renderUnlock(TRANSMITTER)
     fireEvent.change(await screen.findByLabelText('PIN'), { target: { value: '123456' } })
     fireEvent.click(screen.getByRole('button', { name: /unlock with pin/i }))
-    await waitFor(() => expect(h.toastError).toHaveBeenCalledWith('Unlock failed.'))
-    expect(useAppStore.getState().openLocks).toEqual({})
-    h.proof = true
+    await waitFor(() => expect(useAppStore.getState().openLocks.L1).toEqual({ key: KEY, autoLockMinutes: 7 }))
+    expect(h.openLock).toHaveBeenCalledWith('L1', 'pin', { pin: '123456', persist: false })
+    expect(h.startLockSession).toHaveBeenCalledWith('L1', KEY, 7)
+  })
+
+  it('a Transmitter whose verifier does not decrypt (or whose proof throws) stays closed with no persisted session (OS-FR-3)', async () => {
+    for (const failing of [false, 'throw'] as const) {
+      h.proof = failing
+      h.startLockSession.mockReset()
+      h.toastError.mockReset()
+      h.openLock.mockResolvedValue({ status: 'ok', value: { key: KEY, autoLockMinutes: 7 } })
+      renderUnlock(TRANSMITTER)
+      fireEvent.change(await screen.findByLabelText('PIN'), { target: { value: '123456' } })
+      fireEvent.click(screen.getByRole('button', { name: /unlock with pin/i }))
+      await waitFor(() => expect(h.toastError).toHaveBeenCalledWith('Unlock failed.'))
+      expect(h.openLock).toHaveBeenLastCalledWith('L1', 'pin', { pin: '123456', persist: false })
+      expect(h.startLockSession).not.toHaveBeenCalled()
+      expect(useAppStore.getState().openLocks).toEqual({})
+      cleanup()
+    }
   })
 
   it('a no-Open-Check Transmitter whose verifier does not decrypt is not opened (OS-FR-3)', async () => {

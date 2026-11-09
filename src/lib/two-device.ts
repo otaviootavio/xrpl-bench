@@ -10,6 +10,7 @@ import { decodeSigned, decodeUnsigned, encodeSigned, encodeUnsigned } from '@/li
 import { fetchAccountStateFresh, fetchDestinationInfoOnce } from '@/lib/xrpl/query-reads'
 import { invalidateAccountScoped, queryKeys } from '@/lib/xrpl/query-keys'
 import { UNCONFIRMED_SUBMIT_WORDS } from '@/lib/xrpl/result-codes'
+import { NOT_SENT, REFUSAL, fill } from '@/lib/transmit-words'
 import { fetchServerReserves, type AccountState } from '@/lib/xrpl/reads'
 import { NETWORKS } from '@/lib/xrpl/networks'
 import { MAX_FEE_DROPS, amountPlusFeeFits, feeWithinCap, formatXrp, isCanonicalPositiveDrops, reserveRequirementDrops, spendableAfterReserve } from '@/lib/xrpl/money'
@@ -350,6 +351,10 @@ export async function verifySigned(
   const decoded = decodeSigned(signedText)
   if (!decoded.ok) return { status: 'refused', reason: `${decoded.reason} Nothing was submitted.` }
   const { tx_blob } = decoded.value
+  // The envelope names the Network the code was signed for (OS-FR-9): another one is never submitted here.
+  if (decoded.value.network !== wallet.network) {
+    return { status: 'refused', reason: `${NOT_SENT} ${fill(REFUSAL.network, NETWORKS[decoded.value.network].label, NETWORKS[wallet.network].label)}` }
+  }
   let returned: Record<string, unknown>
   try {
     returned = decode(tx_blob) as unknown as Record<string, unknown>

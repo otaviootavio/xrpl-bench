@@ -5,7 +5,7 @@ created: '2026-11-09'
 status: 'done'
 baseline_commit: 'b564a417e861e4c276651aee4de243eff36044da'
 route: 'dispatch'
-review_loop_iteration: 0
+review_loop_iteration: 1
 context:
   - '{project-root}/_bmad-output/specs/spec-offline-signing/SPEC.md'
   - '{project-root}/_bmad-output/specs/spec-offline-signing/route-checks.md'
@@ -102,6 +102,27 @@ context:
 - **Sync step key.** "Skip this step" (P-41) sits under its line in the step body, not in the footer: three stacked footer keys left no room at 320x568 with 200% text. Re-measured: the Address field and Next are reachable by scrolling; the footer still covers part of the step, the known frame issue.
 - **Onboarding.** A fresh daily phone has no chooser, so first-run Onboarding also offers P-2 (the chooser key's words, reused for the first-run chooser); the new Transmitter becomes the active Wallet. Found in the browser pass.
 
+## Review Triage Log
+
+Round one (coordinator review, 2026-11-09). Each fixed with the smallest change; tests run on the edited files only.
+
+| # | Finding | Verdict | Fix |
+|---|---|---|---|
+| 1 | A Transmitter's session was persisted before the proof ran, so a reload restored an unproven lock | real | Unlock opens a Transmitter lock with `persist: false`, proves, then `startLockSession` (and the passkey failure-count reset `openLock` would have done); App's restore loop proves each Transmitter lock and skips + ends the session on a failed or thrown proof. Tests: a false or throwing proof leaves no session; restore keeps the lock closed |
+| 2 | already-sent `has()`/`add()` not atomic; a re-scan during sending re-enabled Send | real | the hash is claimed right after the check and released only when nothing was submitted; Transmit ignores a scan while sending. Test: two concurrent calls, one submission |
+| 3 | two-device `verifySigned` ignored the envelope's Network | real | refused with the P-26 heading and network sentence. Test |
+| 4 | a pre-story-4 signed code (no `network_id`) read as an unknown network | real | refused as `unknown-version` with the codec's existing version words; no version bump |
+| 5 | a failure before any submit (no client held) showed "may have been sent" | real | `transmitSignedTransaction` turns any pre-submit failure into the `ledger-unread` refusal ("The app did not send the transaction. The app cannot read the ledger.", approved in story 2). Tests |
+| 6 | a typed Sync address survived a Network change in the quiz | real | cleared in `changeNetwork`. Test |
+| 7 | P-8 not linked to the address input | real | the warning has an id in the input's `aria-describedby` while it shows (quiz and plate). Test |
+| 8 | Sync plate: a failed re-list after a good write kept the old address; raw error text shown | real | the store takes the write's returned meta, then `forgetSyncedAddress`; a failed write shows the shipped "Nothing was changed." Tests with a real QueryClient |
+| 9 | later delegate pages read a newer validated ledger | real | pages 2+ pinned to page 1's `ledger_index`; duplicates by `Authorize` dropped. Test |
+| 10 | the delegates section's aria-label repeated the whole P-32 sentence | real | `aria-labelledby` on the warning (P-32 is one sentence, so the name is the same words, said once) |
+| 11 | address inputs lacked autoCapitalize/autoCorrect off | real | added (spellCheck was already off) |
+| 12 | missing tests: Sync A→B and remove drop the old cached reads; P-8 on the plate; stale state → P-29; unsynced Transmitter never reads; History reads the Synced address | real | added (`sync-plate.test.tsx`, `transmitter-account.test.tsx`, `wallet-kind-screens.test.tsx`) |
+| 13 | unused `db.lockIdsInUse`; stale `Main` comment | real | removed; comment states which kinds mount ledger hooks |
+| 14 | scanner label "a code" is not an approved filling of P-57's `{payload}` | open | left as is; listed under missing words, awaiting the owner |
+
 ## Design Notes
 
 **Words used:** P-2 (chooser key, screen title, final key), P-5, P-8 both forms, P-25, P-27, P-29, P-32, P-36 (Transmit line), P-41, P-42, P-46, P-48 first line, P-62 (Account, History, New transaction; "Regular Key", "Master key" as key-state terms), fixed "Sync to an address" (step title, plate title, plate key), "Expired. Nothing was sent.", P-24, P-26, P-52. Shipped words reused: "Name and network", "Node", the Open Check step, "Review", "Your answers", "Address" (Address Book's term), "That doesn't look like a valid XRPL address.", the Balances readout words ("XRP Balance", "Live", "Spendable", "Reserved", "Balance unavailable", "Reserve unavailable", "Account not activated yet"), "Tokens and trust lines", "Token balances unavailable", "Master key on" / "Master key off", the import warning dialog, "Wallet added.", "Unlock failed.". "None." (P-32) is reused for no Regular Key and no trust lines.
@@ -111,6 +132,8 @@ context:
 - A reason line for the already-sent refusal (only the P-26 heading shows).
 - A sentence for the Transmitter Remove dialog beyond its title.
 - A visible reason for the Sync plate's `aria-disabled` key while the field is empty.
+- A sentence for a failed Sync write (the shipped "Nothing was changed." is shown alone).
+- The scanner's `{payload}` filling "a code" (P-57), awaiting the owner.
 - Scanning an address with the camera on the Sync step (P-57 "Scan an address with the camera" exists, but `QrScanner` accepts only `xrplbench:` codes; left for a later story): the address is typed or pasted.
 
 **Layout.** Transmit: scanner and P-42, then (role=alert) refusals, then the check list, P-27 as a caution, the hash (h2, takes focus), the field list, and the one orange Send. With the setting on, Send opens story 2's show-before-sending screen. Account: address, readout, key-state rows, trust lines, then the Delegates caution and its list.

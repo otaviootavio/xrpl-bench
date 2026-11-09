@@ -137,6 +137,11 @@ export function decodeSigned(text: unknown): Decoded<SignedPayload> {
   if (typeof tx_blob !== 'string' || !/^[0-9A-Fa-f]+$/.test(tx_blob)) {
     return { ok: false, kind: 'malformed', reason: 'That code carries no signed transaction.' }
   }
+  // A signed code from a build before the envelope named its Network (story 4) has
+  // no `network_id`: it is from an older version, not from an unknown network.
+  if (network_id === undefined) {
+    return { ok: false, kind: 'unknown-version', reason: 'That code is from a version of XRPL Bench this one does not understand.' }
+  }
   const network = networkOfId(network_id)
   if (network === null) return { ok: false, kind: 'bad-network', reason: 'That code names a network this wallet does not know.' }
   return { ok: true, value: { v: QR_VERSION, network_id: network_id as number, network, tx_blob } }

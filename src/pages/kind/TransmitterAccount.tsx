@@ -124,8 +124,8 @@ export function TransmitterAccount({ wallet, address }: { wallet: TransmitterMet
 
       {/* Delegates (OS-FR-22, P-32): the warning, then each delegate and what the
           ledger lets it do, in the ledger's own permission names. */}
-      <section aria-label={DELEGATE_WARNING} className="flex flex-col gap-2">
-        <WarningSentence words={DELEGATE_WARNING} />
+      <section aria-labelledby={`${wallet.id}-delegates`} className="flex flex-col gap-2">
+        <WarningSentence id={`${wallet.id}-delegates`} words={DELEGATE_WARNING} />
         {delegates.isError ? (
           <p className="text-sm">{VALUE_UNKNOWN}</p>
         ) : delegates.isLoading || !delegates.data ? (

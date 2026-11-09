@@ -24,7 +24,12 @@ describe('qr-codec', () => {
   it('a signed envelope names its Network; a code without a known one is refused (OS-FR-9)', () => {
     const main = encodeSigned({ network: 'mainnet', txBlob: 'AB' })
     expect(decodeSigned(main.ok ? main.text : '')).toMatchObject({ ok: true, value: { network: 'mainnet', network_id: 0 } })
-    expect(decodeSigned(`xrplbench:1:s:${b64({ v: 1, tx_blob: 'AB' })}`)).toMatchObject({ ok: false, kind: 'bad-network' })
+    // A code from a build before story 4 has no network_id: an older version, said so.
+    expect(decodeSigned(`xrplbench:1:s:${b64({ v: 1, tx_blob: 'AB' })}`)).toEqual({
+      ok: false,
+      kind: 'unknown-version',
+      reason: 'That code is from a version of XRPL Bench this one does not understand.',
+    })
     for (const id of [3, 1.5, '1', null, 1024]) {
       expect(decodeSigned(`xrplbench:1:s:${b64({ v: 1, network_id: id, tx_blob: 'AB' })}`)).toMatchObject({ ok: false, kind: 'bad-network' })
     }

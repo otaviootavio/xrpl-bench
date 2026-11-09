@@ -159,12 +159,12 @@ import { decode } from 'xrpl'
 import { makePinLock, sealRecordUnderPin, storeSeedWallet } from './fixtures'
 import {
   importStoredWallet,
-  listWallets,
+  listKeyWallets as listWallets,
   openSigner,
   signingHandleFor,
   unavailablePrompts,
   type Prompts,
-  type WalletMeta,
+  type KeyWalletMeta,
 } from '../keystore'
 import { confirmControl, controlStatus, eligibleTargets, setRegularKey, setRegularKeyBlockedReason } from '../../control'
 
@@ -173,10 +173,10 @@ const pinPrompt = (pin: string | null): Prompts => ({ pin: async () => pin })
 const failedAttempts = () => h.state.stores.vault.get('vault')?.failedAttempts ?? 0
 
 let key: CryptoKey
-let controller: WalletMeta
+let controller: KeyWalletMeta
 let controllerSeed: string
 let lock: Awaited<ReturnType<typeof makePinLock>>
-let target: WalletMeta
+let target: KeyWalletMeta
 let targetSeed: string
 let queryClient: QueryClient
 
@@ -393,7 +393,7 @@ describe('setRegularKey', () => {
     const all = await listWallets()
     const base = all.find((m) => m.id === target.id)!
     const asKind = (kind: 'offline' | 'transmitter', id: string) => ({ ...base, id, seedId: id, keyAddress: `r${id}`, address: `r${id}`, kind })
-    const listed = [...all, asKind('offline', 'off'), asKind('transmitter', 'tx')]
+    const listed = [...all, asKind('offline', 'off'), asKind('transmitter', 'tx')] as unknown as KeyWalletMeta[]
     expect(eligibleTargets(controller, listed).map((m) => m.id)).toEqual([target.id])
   })
 

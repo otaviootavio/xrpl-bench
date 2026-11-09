@@ -16,6 +16,7 @@ export type Route =
   | { screen: 'chooser' }
   | { screen: 'settings' }
   | { screen: 'add-wallet' }
+  | { screen: 'add-transmitter' }
   | { screen: 'wallet'; walletId: string }
   | { screen: 'edit-checks'; walletId: string }
   | { screen: 'two-device'; walletId: string }
@@ -24,6 +25,8 @@ export type Route =
 export const CHOOSER_PATH = '/'
 export const SETTINGS_PATH = '/settings'
 export const ADD_WALLET_PATH = '/wallets/new'
+/** P-2: Add a Transmitter wallet (OS-FR-3), a chooser-side screen like Add wallet. */
+export const ADD_TRANSMITTER_PATH = '/wallets/new-transmitter'
 
 /** The path segment after `/wallets/:id` for each in-wallet screen ('' is the wallet itself). */
 const SEGMENTS = {
@@ -74,6 +77,7 @@ export function parseRoute(pathname: string): Route {
   if (parts.length === 1 && parts[0] === 'settings') return { screen: 'settings' }
   if (parts[0] !== 'wallets') return { screen: 'chooser' }
   if (parts.length === 2 && parts[1] === 'new') return { screen: 'add-wallet' }
+  if (parts.length === 2 && parts[1] === 'new-transmitter') return { screen: 'add-transmitter' }
   if (parts.length === 2 || parts.length === 3) {
     const segment = parts[2] ?? ''
     const screen = (Object.keys(SEGMENTS) as WalletScreen[]).find((s) => SEGMENTS[s] === segment)

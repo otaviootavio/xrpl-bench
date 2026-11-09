@@ -86,7 +86,7 @@ import {
   createStoredWallet,
   editChecks,
   addControlledView,
-  listWallets,
+  listKeyWallets as listWallets,
   openSigner,
   revealSeed,
   setLockAutoLock,

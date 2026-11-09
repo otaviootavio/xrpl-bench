@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest'
-import type { WalletMeta } from '@/lib/crypto/keystore'
+import type { KeyWalletMeta } from '@/lib/crypto/keystore'
 import { revealCheckSentence } from '@/components/wallet/reveal-copy'
 
-const w = (over: Partial<WalletMeta>) => ({ seedMethod: 'stored', signingCheck: 'standard', openCheck: 'pin', ...over }) as WalletMeta
+const w = (over: Partial<KeyWalletMeta>) => ({ seedMethod: 'stored', signingCheck: 'standard', openCheck: 'pin', ...over }) as KeyWalletMeta
 const PIN = 'After you confirm, your App PIN will be asked.'
 const PASSKEY = 'After you confirm, your passkey will be asked.'
 

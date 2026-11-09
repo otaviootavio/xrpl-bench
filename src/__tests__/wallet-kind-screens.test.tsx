@@ -15,6 +15,7 @@ const h = vi.hoisted(() => ({
   wallets: [] as unknown[],
   restored: [] as Array<{ lockId: string; key: unknown; autoLockMinutes: number }>,
   setShowBeforeSending: vi.fn(),
+  setTransmitterSync: vi.fn(),
 }))
 vi.mock('idb-keyval', () => ({ get: async () => undefined, set: async () => {}, del: async () => {} }))
 vi.mock('@/lib/xrpl/client', () => ({
@@ -39,14 +40,27 @@ vi.mock('@/lib/crypto/lock', () => ({
   hasAppPin: async () => true,
 }))
 vi.mock('@/lib/crypto/auth', () => ({ wipeVault: async () => {} }))
-vi.mock('@/lib/crypto/keystore', () => ({ listWallets: async () => h.wallets, setShowBeforeSending: h.setShowBeforeSending }))
+vi.mock('@/lib/crypto/keystore', () => ({ listWallets: async () => h.wallets, setShowBeforeSending: h.setShowBeforeSending, setTransmitterSync: h.setTransmitterSync }))
 
 import App from '../App'
 import { useAppStore } from '@/store/app-store'
 import { KIND_WORDS, NOT_SYNCED, OFFLINE_SCREENS, OFFLINE_SIGN_TITLE } from '@/lib/wallet-kind-words'
+import { NO_KEY, NONE, REMOVE_THE_ADDRESS, SYNC_TO_AN_ADDRESS, VALUE_UNKNOWN } from '@/lib/transmitter-words'
 
 type Kind = 'online' | 'offline' | 'transmitter'
-const meta = (kind: Kind) => ({
+/** A Transmitter has its own meta shape (story 4): no Seed fields, a Synced address or null. */
+const transmitterMeta = (address: string | null = null) => ({
+  id: 'w1',
+  seedId: 'w1',
+  lockId: 'X',
+  label: 'Alpha',
+  address,
+  createdAt: 1,
+  network: 'testnet',
+  openCheck: 'pin',
+  kind: 'transmitter',
+})
+const meta = (kind: Kind) => (kind === 'transmitter' ? transmitterMeta() : {
   id: 'w1',
   seedId: 'w1',
   lockId: 'X',
@@ -61,6 +75,15 @@ const meta = (kind: Kind) => ({
   signingCheck: 'standard',
   kind,
 })
+
+/** The app with one Synced Transmitter whose lock is open. */
+async function openSyncedTransmitter() {
+  h.wallets = [transmitterMeta('rSYNCEDaddressXXXXXXXXXXXXXX')]
+  h.restored = [{ lockId: 'X', key: {}, autoLockMinutes: 5 }]
+  window.history.replaceState(null, '', '/wallets/w1')
+  render(<App />)
+  await waitFor(() => expect(screen.getAllByRole('tab').length).toBeGreaterThan(0))
+}
 
 /** The app on `path`, with one Wallet of `kind` whose lock is already open. */
 async function openApp(kind: Kind, path = '/wallets/w1') {
@@ -135,15 +158,46 @@ describe('a Transmitter Wallet (OS-FR-1, OS-FR-4)', () => {
   it('Local settings: P-5 and no key rows, checks without the Signing Check or Edit checks, a Node, no Seed', async () => {
     await openApp('transmitter')
     await openSettings()
-    expect(plateTitles()).toEqual(['This wallet', 'Name', 'Address Book', 'Checks', 'Node', 'Before sending', 'Remove this wallet'])
+    expect(plateTitles()).toEqual(['This wallet', SYNC_TO_AN_ADDRESS, 'Name', 'Address Book', 'Checks', 'Node', 'Before sending', 'Remove this wallet'])
     const identity = screen.getByRole('region', { name: 'This wallet' })
-    expect(identity.textContent).toBe(`This wallet${NOT_SYNCED}`)
+    expect(identity.textContent).toBe(`This wallet${NOT_SYNCED}${NO_KEY}`)
     const checks = screen.getByRole('region', { name: 'Checks' })
     await waitFor(() => expect(within(checks).getByText('PIN', { exact: false })).toBeTruthy())
     expect(within(checks).queryByText(/sign/i)).toBeNull()
     expect(screen.queryByRole('button', { name: 'Edit checks' })).toBeNull()
-    // The record's address is not shown for a Transmitter until Sync exists.
-    expect(document.body.textContent).not.toContain('rALPHAaddress')
+    // Nothing in a Transmitter offers to sign (OS-FR-3).
+    expect(screen.queryByRole('button', { name: /sign/i })).toBeNull()
+    expect(screen.getByRole('button', { name: SYNC_TO_AN_ADDRESS })).toBeTruthy()
+    expect(screen.queryByRole('button', { name: REMOVE_THE_ADDRESS })).toBeNull()
+  })
+
+  it('Synced: five screens, the live hook on the Synced address, and Account says unknown on failed reads, never none (OS-FR-4, OS-FR-22)', async () => {
+    h.getXrplClient.mockRejectedValue(new Error('no socket'))
+    await openSyncedTransmitter()
+    expect(tabNames()).toEqual(['Transmit', 'Account', 'History', 'New transaction', 'Local settings'])
+    await waitFor(() => expect(h.hookArgs).toHaveBeenCalledWith('live', 'testnet', 'rSYNCEDaddressXXXXXXXXXXXXXX', undefined))
+    fireEvent.mouseDown(screen.getByRole('tab', { name: 'Account' }))
+    await waitFor(() => expect(screen.getByText('Balance unavailable')).toBeTruthy(), { timeout: 15_000 })
+    await waitFor(() => expect(screen.getAllByText(VALUE_UNKNOWN).length).toBe(3), { timeout: 15_000 })
+    expect(screen.queryByText(NONE)).toBeNull()
+    expect(screen.queryByRole('button', { name: /sign/i })).toBeNull()
+    fireEvent.mouseDown(screen.getByRole('tab', { name: 'New transaction' }))
+    await waitFor(() => expect(screen.getByRole('heading', { level: 1, name: 'New transaction' })).toBeTruthy())
+  }, 30_000)
+
+  it('Synced Local settings: the address, and Remove the address goes back to two screens (OS-FR-4)', async () => {
+    h.setTransmitterSync.mockImplementation(async () => {
+      h.wallets = [transmitterMeta(null)]
+    })
+    await openSyncedTransmitter()
+    await openSettings()
+    const identity = screen.getByRole('region', { name: 'This wallet' })
+    expect(identity.textContent).toContain('rSYN')
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: REMOVE_THE_ADDRESS }))
+    })
+    expect(h.setTransmitterSync).toHaveBeenCalledWith('w1', null)
+    await waitFor(() => expect(tabNames()).toEqual(['Transmit', 'Local settings']))
   })
 })
 

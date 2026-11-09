@@ -268,7 +268,7 @@ describe('the round trip', () => {
     const r = await built()
     for (const change of [{ Amount: '9000000' }, { Destination: other.address }, { Fee: '13' }, { LastLedgerSequence: 99999 }]) {
       const tampered = master.sign({ ...(r.tx as any), ...change })
-      const out = await submitReturned(onlineMeta as any, r.tx, encodeSigned(tampered.tx_blob).ok ? (encodeSigned(tampered.tx_blob) as any).text : '', { queryClient: qc() })
+      const out = await submitReturned(onlineMeta as any, r.tx, encodeSigned({ network: 'testnet', txBlob: tampered.tx_blob }).ok ? (encodeSigned({ network: 'testnet', txBlob: tampered.tx_blob }) as any).text : '', { queryClient: qc() })
       expect(out).toMatchObject({ status: 'refused', reason: expect.stringContaining('not the one that was sent') })
     }
     expect(submitted).toEqual([])
@@ -279,7 +279,7 @@ describe('the round trip', () => {
     h.accounts = { [master.address]: acct({ regularKey: DEST }) }
     h.signAs = other
     // `other` signs a transaction whose Account is the master's: the key is not authorised.
-    const s = encodeSigned(other.sign(r.tx as any).tx_blob)
+    const s = encodeSigned({ network: 'testnet', txBlob: other.sign(r.tx as any).tx_blob })
     const out = await submitReturned(onlineMeta as any, r.tx, (s as any).text, { queryClient: qc() })
     expect(out).toMatchObject({ status: 'refused', reason: expect.stringContaining('not this account’s master key or Regular Key') })
     expect(submitted).toEqual([])
@@ -288,11 +288,11 @@ describe('the round trip', () => {
   it('accepts the Regular Key, and refuses the master key once it is off', async () => {
     const r = await built()
     h.accounts = { [master.address]: acct({ regularKey: other.address }) }
-    const byRegular = (encodeSigned(other.sign(r.tx as any).tx_blob) as any).text
+    const byRegular = (encodeSigned({ network: 'testnet', txBlob: other.sign(r.tx as any).tx_blob }) as any).text
     expect((await submitReturned(onlineMeta as any, r.tx, byRegular, { queryClient: qc() })).status).toBe('validated')
     submitted = []
     h.accounts = { [master.address]: acct({ regularKey: other.address, disableMasterKey: true }) }
-    const byMaster = (encodeSigned(master.sign(r.tx as any).tx_blob) as any).text
+    const byMaster = (encodeSigned({ network: 'testnet', txBlob: master.sign(r.tx as any).tx_blob }) as any).text
     expect((await submitReturned(onlineMeta as any, r.tx, byMaster, { queryClient: qc() })).status).toBe('refused')
     expect(submitted).toEqual([])
   })
@@ -390,7 +390,7 @@ describe('the round trip', () => {
 
 describe('hardening', () => {
   async function signed(r: Awaited<ReturnType<typeof built>>, who: Wallet = master) {
-    return (encodeSigned(who.sign(r.tx as any).tx_blob) as any).text as string
+    return (encodeSigned({ network: 'testnet', txBlob: who.sign(r.tx as any).tx_blob }) as any).text as string
   }
 
   it('refuses a blob whose signature byte was flipped, though every field matches', async () => {
@@ -399,7 +399,7 @@ describe('hardening', () => {
     const d: any = decode(blob)
     const last = d.TxnSignature.slice(-1)
     d.TxnSignature = d.TxnSignature.slice(0, -1) + (last === '0' ? '1' : '0')
-    const text = (encodeSigned(encode(d)) as any).text
+    const text = (encodeSigned({ network: 'testnet', txBlob: encode(d) }) as any).text
     expect(await submitReturned(onlineMeta as any, r.tx, text, { queryClient: qc() })).toMatchObject({ status: 'refused', reason: expect.stringContaining('signature') })
     expect(submitted).toEqual([])
   })

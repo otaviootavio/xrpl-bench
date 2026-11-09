@@ -143,7 +143,7 @@ export interface SignedTransaction {
 }
 
 /** Why the Transmit step refused a Signed Transaction. Nothing was submitted. */
-export type TransmitRefusal = 'signature' | 'account' | 'network' | 'partial-payment' | 'expired' | 'no-window' | 'ledger-unread'
+export type TransmitRefusal = 'signature' | 'account' | 'network' | 'partial-payment' | 'expired' | 'no-window' | 'ledger-unread' | 'already-sent'
 
 /** Asks the user "Send it to the ledger?" (OS-FR-10). A rejection is a "no". */
 export type ReviewBeforeSending = (signed: SignedForReview) => Promise<boolean>
@@ -341,8 +341,21 @@ export function transmitSignedTransaction(
     } catch {
       throw refuse('signature', REFUSAL.signature)
     }
-    return transmit(client, network, { tx_blob: signed.txBlob, hash }, { signedNetwork: signed.network, expectedAccount }, review, node)
+    // Never-resubmit, across scans (OS-FR-9, FR-24): a blob this session already
+    // handed to the ledger is not handed again, whatever its outcome was.
+    if (sentThisSession.has(hash)) throw refuse('already-sent')
+    return transmit(client, network, { tx_blob: signed.txBlob, hash }, { signedNetwork: signed.network, expectedAccount }, review, node, () => sentThisSession.add(hash))
   })
+}
+
+/** The hashes of the scanned Signed Transactions this page has submitted. In
+ * memory only: no blob, no secret, gone with the page. Added the moment a
+ * submission is attempted, never on a refusal or a decline (nothing was sent). */
+const sentThisSession = new Set<string>()
+
+/** Test seam: a fresh session. */
+export function resetSentThisSession(): void {
+  sentThisSession.clear()
 }
 
 function refuse(reason: TransmitRefusal, detail?: string): TransmitRefusedError {
@@ -398,6 +411,46 @@ async function checkSignedTransaction(
   txBlob: string,
   check: { signedNetwork: NetworkId | string; expectedAccount: string; validatedIndex?: number },
 ): Promise<number> {
+  const { lastLedgerSequence } = checkSignedBlob(network, txBlob, check)
+  await assertWindowOpen(client, lastLedgerSequence, check.validatedIndex)
+  return lastLedgerSequence
+}
+
+/** What a Signed Transaction is, once its blob passed every check that needs no
+ * ledger read: the decoded fields, its hash, the Account and the window's end. */
+export interface CheckedSignedTransaction {
+  tx: Record<string, unknown>
+  hash: string
+  account: string
+  lastLedgerSequence: number
+}
+
+/**
+ * The Transmit step's checks that need no ledger read (OS-FR-9), in the order
+ * `transmit` runs them: Network, signature, Account (`null`: none is expected
+ * yet, so the caller shows P-27 and the user confirms the blob's own Account),
+ * partial payment, fee cap, a window present. Throws `TransmitRefusedError` or
+ * `FeeAboveCapError`; submits nothing. The Transmit screen shows its result
+ * (P-25) before Send, and Send runs every check again, with the window on a
+ * fresh read.
+ */
+export function previewSignedTransaction(network: NetworkId, signed: SignedTransaction, expectedAccount: string | null): CheckedSignedTransaction {
+  let hash: string
+  assertNetwork(signed.network, network)
+  try {
+    hash = hashes.hashSignedTx(signed.txBlob)
+  } catch {
+    throw refuse('signature', REFUSAL.signature)
+  }
+  const checked = checkSignedBlob(network, signed.txBlob, { signedNetwork: signed.network, expectedAccount })
+  return { ...checked, hash }
+}
+
+function checkSignedBlob(
+  network: NetworkId,
+  txBlob: string,
+  check: { signedNetwork: NetworkId | string; expectedAccount: string | null },
+): { tx: Record<string, unknown>; account: string; lastLedgerSequence: number } {
   assertNetwork(check.signedNetwork, network)
   let tx: Record<string, unknown>
   let verified = false
@@ -411,7 +464,8 @@ async function checkSignedTransaction(
   // The Account it is signed for, never the signing key's own address: a
   // Regular Key signs for another Account (OS-FR-20), and the ledger itself
   // refuses a key that is not the master (when on) or the current Regular Key.
-  if (tx.Account !== check.expectedAccount) {
+  if (typeof tx.Account !== 'string') throw refuse('signature', REFUSAL.signature)
+  if (check.expectedAccount !== null && tx.Account !== check.expectedAccount) {
     throw refuse('account', fill(REFUSAL.account, String(tx.Account), check.expectedAccount))
   }
   if (tx.TransactionType === 'Payment' && typeof tx.Flags === 'number' && (tx.Flags & PaymentFlags.tfPartialPayment) !== 0) {
@@ -422,8 +476,7 @@ async function checkSignedTransaction(
   // A blob with no window could stay valid for ever: never sent (P-26 heading).
   const lastLedgerSequence = tx.LastLedgerSequence
   if (typeof lastLedgerSequence !== 'number') throw refuse('no-window')
-  await assertWindowOpen(client, lastLedgerSequence, check.validatedIndex)
-  return lastLedgerSequence
+  return { tx, account: tx.Account, lastLedgerSequence }
 }
 
 /**
@@ -439,6 +492,7 @@ async function transmit(
   check: { signedNetwork: NetworkId | string; expectedAccount: string; validatedIndex?: number },
   review: ReviewBeforeSending | undefined,
   node: string | undefined,
+  onSubmitting?: () => void,
 ): Promise<SubmitOutcome> {
   const lastLedgerSequence = await checkSignedTransaction(client, network, signed.tx_blob, check)
   if (review) {
@@ -455,6 +509,7 @@ async function transmit(
     await assertWindowOpen(client, lastLedgerSequence, undefined)
   }
   try {
+    onSubmitting?.()
     const res = await client.submitAndWait(signed.tx_blob)
     const meta: unknown = res.result.meta
     // A meta that is missing, not an object (binary meta) or has no string

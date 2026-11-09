@@ -5,9 +5,11 @@ import { NETWORKS, NETWORK_IDS, type NetworkId } from '@/lib/xrpl/networks'
  * one is defined, and a `lib` leaf: it imports no crypto, store or UI.
  *
  *   unsigned  xrplbench:1:u:<base64url of {"v":1,"network_id":n,"tx":{...}}>
- *   signed    xrplbench:1:s:<base64url of {"v":1,"tx_blob":"..."}>
+ *   signed    xrplbench:1:s:<base64url of {"v":1,"network_id":n,"tx_blob":"..."}>
  *
- * `network_id` is an envelope field (the ledger's own `NetworkID` transaction
+ * Both envelopes name their Network (route-checks.md "What travels by QR": a
+ * Signed Transaction carries "an envelope naming the Network", OS-FR-9); a signed
+ * code without one is refused as `bad-network`. `network_id` is an envelope field (the ledger's own `NetworkID` transaction
  * field exists only above 1024): Mainnet 0, Testnet 1, Devnet 2, from `NETWORKS`.
  * `decode*` returns a typed result and never throws. One payload is one QR code:
  * there is no multi-frame form, so a payload over one code's capacity is refused.
@@ -37,6 +39,9 @@ export interface UnsignedPayload {
 
 export interface SignedPayload {
   v: typeof QR_VERSION
+  network_id: number
+  /** The Network `network_id` names: the one the Transmit step checks. */
+  network: NetworkId
   tx_blob: string
 }
 
@@ -80,8 +85,8 @@ export function encodeUnsigned(input: { network: NetworkId; tx: Record<string, u
   return finish(UNSIGNED, { v: QR_VERSION, network_id: networkIdOf(input.network), tx: input.tx })
 }
 
-export function encodeSigned(txBlob: string): Encoded {
-  return finish(SIGNED, { v: QR_VERSION, tx_blob: txBlob })
+export function encodeSigned(input: { network: NetworkId; txBlob: string }): Encoded {
+  return finish(SIGNED, { v: QR_VERSION, network_id: networkIdOf(input.network), tx_blob: input.txBlob })
 }
 
 function open(text: unknown, kind: 'u' | 's'): Decoded<Record<string, unknown>> {
@@ -128,9 +133,11 @@ export function decodeUnsigned(text: unknown): Decoded<UnsignedPayload> {
 export function decodeSigned(text: unknown): Decoded<SignedPayload> {
   const opened = open(text, 's')
   if (!opened.ok) return opened
-  const { tx_blob } = opened.value
+  const { tx_blob, network_id } = opened.value
   if (typeof tx_blob !== 'string' || !/^[0-9A-Fa-f]+$/.test(tx_blob)) {
     return { ok: false, kind: 'malformed', reason: 'That code carries no signed transaction.' }
   }
-  return { ok: true, value: { v: QR_VERSION, tx_blob } }
+  const network = networkOfId(network_id)
+  if (network === null) return { ok: false, kind: 'bad-network', reason: 'That code names a network this wallet does not know.' }
+  return { ok: true, value: { v: QR_VERSION, network_id: network_id as number, network, tx_blob } }
 }

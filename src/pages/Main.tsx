@@ -98,7 +98,7 @@ export function Main() {
     case 'transmitter':
       return <TransmitterWallet key={wallet.id} wallet={wallet} />
     default: {
-      const unknown: never = wallet.kind
+      const unknown: never = wallet
       void unknown
       return null
     }

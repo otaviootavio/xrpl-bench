@@ -30,7 +30,14 @@ export const OFFLINE_SCREENS = {
   signed: { label: 'Signed', title: 'Signed by this wallet' },
 } as const
 
-/** P-62, Transmitter, unsynced. Account, History and New transaction come with Sync (story 4). */
+/** P-62, Transmitter. Unsynced: Transmit only (with Local settings). Synced: all four. */
 export const TRANSMITTER_SCREENS = {
   transmit: { label: 'Transmit', title: 'Transmit' },
+  account: { label: 'Account', title: 'Account' },
+  history: { label: 'History', title: 'History' },
+  newTransaction: { label: 'New transaction', title: 'New transaction' },
 } as const
+
+/** P-62 type words, used as the key-state row terms on the Transmitter's Account. */
+export const REGULAR_KEY = 'Regular Key'
+export const MASTER_KEY = 'Master key'

@@ -96,6 +96,18 @@ const settings = async () => Object.fromEntries((await listWallets()).map((m) =>
 const noPin: Prompts = { pin: async () => null }
 const SIGNED = { txBlob: 'AB', hash: 'H', network: 'testnet' as const, lastLedgerSequence: 100 }
 
+const transmitter = (id: string, extra: Record<string, unknown> = {}) => ({
+  recordKind: 'transmitter',
+  id,
+  label: `Transmitter ${id}`,
+  createdAt: 2,
+  lockId: `L${id}`,
+  openCheck: 'none',
+  network: 'testnet',
+  verifier: { ivB64: 'iv', ciphertextB64: 'ct' },
+  ...extra,
+})
+
 beforeEach(() => {
   h.state.stores = { wallets: new Map(), vault: new Map(), session: new Map() }
   h.state.failNextPutOn = null
@@ -112,9 +124,18 @@ describe('"Show the signed transaction before sending" on the record (OS-FR-10)'
   it('is on only for a stored `true`, and never for an Offline Wallet', async () => {
     put(rec('on', { showBeforeSending: true }))
     put(rec('str', { showBeforeSending: 'yes' }))
-    put(rec('tx', { kind: 'transmitter', showBeforeSending: true }))
+    // A Transmitter has a record of its own (story 4); the setting reads the same way there.
+    h.state.stores.wallets.set('tx', transmitter('tx', { showBeforeSending: true }))
     put(rec('off', { kind: 'offline', showBeforeSending: true }))
     expect(await settings()).toEqual({ on: true, str: false, tx: true, off: false })
+  })
+
+  it('turns on and off on a Transmitter record, storing `true` or nothing (story 4)', async () => {
+    h.state.stores.wallets.set('tx', transmitter('tx'))
+    expect((await setShowBeforeSending('tx', true)).showBeforeSending).toBe(true)
+    expect(h.state.stores.wallets.get('tx').showBeforeSending).toBe(true)
+    expect((await setShowBeforeSending('tx', false)).showBeforeSending).toBeUndefined()
+    expect('showBeforeSending' in h.state.stores.wallets.get('tx')).toBe(false)
   })
 
   it('turns on and off for one Wallet only, storing `true` or nothing', async () => {

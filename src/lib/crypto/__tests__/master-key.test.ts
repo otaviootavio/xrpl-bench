@@ -153,7 +153,7 @@ import {
   removeWallet,
   unavailablePrompts,
   type Prompts,
-  type WalletMeta,
+  type KeyWalletMeta,
 } from '../keystore'
 const pinPrompt = (pin: string | null): Prompts => ({ pin: async () => pin })
 const failedAttempts = () => h.state.stores.vault.get('vault')?.failedAttempts ?? 0
@@ -161,9 +161,9 @@ import { NO_REGULAR_KEY_WALLET_REASON, masterKeyAction, masterKeyStatus, setMast
 
 const PIN = '123456'
 let key: CryptoKey
-let master: WalletMeta
+let master: KeyWalletMeta
 let masterSeed: string
-let regular: WalletMeta
+let regular: KeyWalletMeta
 let queryClient: QueryClient
 
 beforeEach(async () => {

@@ -1,7 +1,7 @@
 import { StatusLegend } from '@/components/ui/lamp'
 import { useAccountState } from '@/hooks/useAccountState'
 import { controlStatus, operatesAnotherAccount, type ControlStatus } from '@/lib/control'
-import type { WalletMeta } from '@/lib/crypto/keystore'
+import type { KeyWalletMeta } from '@/lib/crypto/keystore'
 
 const WORDS: Record<ControlStatus, { tone: 'live' | 'caution' | 'neutral'; text: string; sentence: string }> = {
   controlled: { tone: 'live', text: 'Controlled', sentence: 'The ledger shows this wallet’s key as the Regular Key.' },
@@ -14,12 +14,12 @@ const WORDS: Record<ControlStatus, { tone: 'live' | 'caution' | 'neutral'; text:
  * Key, with the live status from the ledger as text (AD-29): never remembered,
  * never colour alone. Mount only for a Wallet whose lock is open (AD-26).
  */
-export function ControlledNote({ wallet }: { wallet: WalletMeta }) {
+export function ControlledNote({ wallet }: { wallet: KeyWalletMeta }) {
   // The read lives in the inner component, so a Wallet on its own Account asks nothing.
   return operatesAnotherAccount(wallet) ? <ControlledNoteBody wallet={wallet} /> : null
 }
 
-function ControlledNoteBody({ wallet }: { wallet: WalletMeta }) {
+function ControlledNoteBody({ wallet }: { wallet: KeyWalletMeta }) {
   const account = useAccountState(wallet.network, wallet.address, wallet.node)
   const status = controlStatus(account.isError ? null : account.data, wallet.keyAddress)
   const words = WORDS[status]

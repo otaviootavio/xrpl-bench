@@ -2,10 +2,14 @@ import type { QueryClient } from '@tanstack/react-query'
 import { AccountSetAsfFlags, decode, deriveAddress, isValidClassicAddress, verifySignature, type SubmittableTransaction } from 'xrpl'
 import { describeFailure, holdsMasterKey, setRegularKeyBlockedReason } from '@/lib/control'
 import { NO_REGULAR_KEY_WALLET_REASON, holdsRegularKeyHere } from '@/lib/master-key'
-import { listWallets, SigningCheckError, signingHandleFor, type Prompts, type WalletMeta } from '@/lib/crypto/keystore'
+import { listWallets, SigningCheckError, signingHandleFor, type Prompts, type KeyWalletMeta, type WalletMeta } from '@/lib/crypto/keystore'
+
+/** Only a Wallet that holds a key: a Transmitter never signs and is never a target (OS-FR-3). */
+const holdsKey = (w: WalletMeta): w is KeyWalletMeta => w.kind !== 'transmitter'
 import { decodeSigned, decodeUnsigned, encodeSigned, encodeUnsigned } from '@/lib/qr-codec'
 import { fetchAccountStateFresh, fetchDestinationInfoOnce } from '@/lib/xrpl/query-reads'
 import { invalidateAccountScoped, queryKeys } from '@/lib/xrpl/query-keys'
+import { UNCONFIRMED_SUBMIT_WORDS } from '@/lib/xrpl/result-codes'
 import { fetchServerReserves, type AccountState } from '@/lib/xrpl/reads'
 import { NETWORKS } from '@/lib/xrpl/networks'
 import { MAX_FEE_DROPS, amountPlusFeeFits, feeWithinCap, formatXrp, isCanonicalPositiveDrops, reserveRequirementDrops, spendableAfterReserve } from '@/lib/xrpl/money'
@@ -53,7 +57,7 @@ export function twoDeviceBlockedReason(
   readFailed: boolean,
   masterKeyEnable: boolean | undefined,
   /** The Account's Wallet and every Wallet on this device: turning the master key off needs one that signs as the Regular Key. */
-  here: { wallet: Pick<WalletMeta, 'address' | 'network'>; wallets: readonly Pick<WalletMeta, 'address' | 'keyAddress' | 'network'>[] },
+  here: { wallet: Pick<KeyWalletMeta, 'address' | 'network'>; wallets: readonly Pick<KeyWalletMeta, 'address' | 'keyAddress' | 'network'>[] },
 ): string | null {
   if (kind === 'regular-key') return setRegularKeyBlockedReason(accountState, readFailed)
   if (readFailed) return 'The ledger could not be read, so nothing can be built. Try again.'
@@ -82,7 +86,7 @@ const readFail = (what: string) => ({ status: 'refused', reason: `The ledger cou
  * `prepareUnsigned` builds, and the codec carries it.
  */
 export async function buildUnsigned(walletId: string, request: TwoDeviceRequest, ctx: { queryClient: QueryClient }): Promise<BuildResult> {
-  const all = await listWallets()
+  const all = (await listWallets()).filter(holdsKey)
   const wallet = all.find((w) => w.id === walletId)
   if (!wallet) return { status: 'refused', reason: 'That wallet is no longer on this device.' }
   const { network, node, address } = wallet
@@ -181,7 +185,7 @@ export interface UnsignedReview {
   regularKey?: string
   feeXrp: string
   lastLedgerSequence: number
-  network: WalletMeta['network']
+  network: KeyWalletMeta['network']
   networkLabel: string
   mainnet: boolean
   tx: SubmittableTransaction
@@ -206,7 +210,7 @@ const isUint32 = (v: unknown): v is number => typeof v === 'number' && Number.is
  * LastLedgerSequence, a Fee over the cap or non-canonical, a field this wallet
  * does not sign, or any signature already present.
  */
-export function reviewUnsigned(text: string, wallet: Pick<WalletMeta, 'address' | 'keyAddress' | 'network'>): ReviewResult {
+export function reviewUnsigned(text: string, wallet: Pick<KeyWalletMeta, 'address' | 'keyAddress' | 'network'>): ReviewResult {
   const decoded = decodeUnsigned(text)
   if (!decoded.ok) return refuse(decoded.reason)
   const { network, tx } = decoded.value
@@ -293,14 +297,14 @@ export interface SignContext {
  * and signs once. The caller shows `reviewUnsigned` and asks for the confirm
  * (FR-20) before calling this. */
 export async function signUnsigned(walletId: string, text: string, ctx: SignContext): Promise<SignResult> {
-  const wallet = (await listWallets()).find((w) => w.id === walletId)
+  const wallet = ((await listWallets()).filter(holdsKey)).find((w) => w.id === walletId)
   if (!wallet) return { status: 'refused', reason: 'That wallet is no longer on this device.' }
   const reviewed = reviewUnsigned(text, wallet)
   if (reviewed.status === 'refused') return reviewed
   try {
     const signing = await signingHandleFor(walletId, { openKey: ctx.openKey ?? null, prompts: ctx.prompts })
     const signed = await signPrepared(signing, reviewed.review.tx)
-    const encoded = encodeSigned(signed.tx_blob)
+    const encoded = encodeSigned({ network: wallet.network, txBlob: signed.tx_blob })
     return encoded.ok ? { status: 'signed', text: encoded.text } : { status: 'refused', reason: `${encoded.reason} Nothing was sent.` }
   } catch (err) {
     if (err instanceof SigningCheckError) {
@@ -338,7 +342,7 @@ export type VerifyResult = { status: 'ok'; txBlob: string } | { status: 'refused
  * Regular Key, from a fresh read. An errored read blocks. Nothing is submitted here.
  */
 export async function verifySigned(
-  wallet: Pick<WalletMeta, 'network' | 'node' | 'address'>,
+  wallet: Pick<KeyWalletMeta, 'network' | 'node' | 'address'>,
   sent: SubmittableTransaction,
   signedText: string,
   ctx: { queryClient: QueryClient },
@@ -408,7 +412,7 @@ export type ReturnedResult =
 export const EXPIRED_WORDS =
   'This transaction expired before it validated. It was not applied, and the signed copy cannot be used again. Build a new one.'
 
-async function refresh(wallet: Pick<WalletMeta, 'network' | 'address'>, queryClient: QueryClient): Promise<void> {
+async function refresh(wallet: Pick<KeyWalletMeta, 'network' | 'address'>, queryClient: QueryClient): Promise<void> {
   try {
     await invalidateAccountScoped(queryClient, wallet.network, wallet.address)
   } catch {
@@ -418,7 +422,7 @@ async function refresh(wallet: Pick<WalletMeta, 'network' | 'address'>, queryCli
 
 /** Verifies, then submits through `submitSignedBlob` and the choke point. Only `validated` is success. */
 export async function submitReturned(
-  wallet: Pick<WalletMeta, 'network' | 'node' | 'address' | 'showBeforeSending'>,
+  wallet: Pick<KeyWalletMeta, 'network' | 'node' | 'address' | 'showBeforeSending'>,
   sent: SubmittableTransaction,
   signedText: string,
   ctx: { queryClient: QueryClient; prompts?: Prompts },
@@ -455,7 +459,7 @@ export async function submitReturned(
     await refresh(wallet, ctx.queryClient)
     return {
       status: 'unconfirmed',
-      reason: 'The transaction may have been sent, but the wallet could not confirm what happened. Check the account’s history before building another, and do not send this one again.',
+      reason: UNCONFIRMED_SUBMIT_WORDS,
     }
   }
   await refresh(wallet, ctx.queryClient)

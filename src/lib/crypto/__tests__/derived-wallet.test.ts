@@ -87,7 +87,7 @@ import { seedSalt } from '../derive'
 import {
   createDerivedWallet,
   createStoredWallet,
-  listWallets,
+  listKeyWallets as listWallets,
   openSigner,
   restorePasskeyWallet,
   revealSeed,

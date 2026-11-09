@@ -110,10 +110,10 @@ describe('the kind of a Wallet (OS-FR-1)', () => {
     expect('kind' in row('old').views[0]).toBe(false)
   })
 
-  it('reads the two stored kinds as themselves', async () => {
+  it('reads an Offline view as itself; a Seed view that says Transmitter is not listed (story 4: a Transmitter holds no Seed)', async () => {
     put(rec('off', { kind: 'offline' }))
     put(rec('tx', { kind: 'transmitter' }))
-    expect(await kinds()).toEqual({ off: 'offline', tx: 'transmitter' })
+    expect(await kinds()).toEqual({ off: 'offline' })
   })
 
   it('does not list a view with an unknown kind, and never reads it as Online (fail closed)', async () => {
@@ -133,13 +133,12 @@ describe('the kind of a Wallet (OS-FR-1)', () => {
 
   it('keeps the kind through a rename and a Node change', async () => {
     put(rec('off', { kind: 'offline' }))
-    put(rec('tx', { kind: 'transmitter' }))
     const renamed = await renameWallet('off', 'Savings')
     expect(renamed.ok && renamed.metas.map((m) => m.kind)).toEqual(['offline'])
     expect(row('off').views[0].kind).toBe('offline')
-    const meta = await setWalletNode('tx', 'wss://node.example')
-    expect(meta.kind).toBe('transmitter')
-    expect(row('tx').views[0]).toMatchObject({ kind: 'transmitter', node: 'wss://node.example' })
-    expect(await kinds()).toEqual({ off: 'offline', tx: 'transmitter' })
+    const meta = await setWalletNode('off', 'wss://node.example')
+    expect(meta.kind).toBe('offline')
+    expect(row('off').views[0]).toMatchObject({ kind: 'offline', node: 'wss://node.example' })
+    expect(await kinds()).toEqual({ off: 'offline' })
   })
 })

@@ -11,7 +11,7 @@ import { useLeaveBlocker } from '@/hooks/useRoute'
 import { useAccountState } from '@/hooks/useAccountState'
 import { usePrompts } from '@/hooks/usePrompts'
 import { confirmControl, controlStatus, eligibleTargets, setRegularKey, setRegularKeyBlockedReason, type ControlResult } from '@/lib/control'
-import type { WalletMeta } from '@/lib/crypto/keystore'
+import type { KeyWalletMeta } from '@/lib/crypto/keystore'
 import { NETWORKS } from '@/lib/xrpl/networks'
 import { useWalletOpenKey } from '@/store/app-store'
 
@@ -21,7 +21,7 @@ const STATUS_WORDS = {
   unknown: { word: 'Unknown', sentence: 'Choose a wallet, or the ledger could not be read.' },
 } as const
 
-function usesPasskey(w: WalletMeta): boolean {
+function usesPasskey(w: KeyWalletMeta): boolean {
   return w.seedMethod === 'passkey-derived' || w.signingCheck === 'passkey'
 }
 
@@ -40,10 +40,10 @@ export function ControlWalletScreen({
   backLabel,
 }: {
   backLabel?: string
-  controller: WalletMeta
-  wallets: readonly WalletMeta[]
+  controller: KeyWalletMeta
+  wallets: readonly KeyWalletMeta[]
   onClose: () => void
-  onControlled: (meta: WalletMeta) => void | Promise<void>
+  onControlled: (meta: KeyWalletMeta) => void | Promise<void>
 }) {
   // True while a key-changing transaction is in flight or the replace confirm is
   // open: leaving then would hide the outcome or strand the flow.
@@ -75,10 +75,10 @@ function ControlWalletBody({
   onControlled,
   onLockedChange,
 }: {
-  controller: WalletMeta
-  wallets: readonly WalletMeta[]
+  controller: KeyWalletMeta
+  wallets: readonly KeyWalletMeta[]
   onClose: () => void
-  onControlled: (meta: WalletMeta) => void | Promise<void>
+  onControlled: (meta: KeyWalletMeta) => void | Promise<void>
   onLockedChange: (locked: boolean) => void
 }) {
   const queryClient = useQueryClient()

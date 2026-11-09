@@ -1,5 +1,8 @@
 import type { QueryClient } from '@tanstack/react-query'
-import { addControlledView, listWallets, SigningCheckError, signingHandleFor, type Prompts, type WalletMeta } from '@/lib/crypto/keystore'
+import { addControlledView, listWallets, SigningCheckError, signingHandleFor, type Prompts, type KeyWalletMeta, type WalletMeta } from '@/lib/crypto/keystore'
+
+/** Only a Wallet that holds a key: a Transmitter never signs and is never a target (OS-FR-3). */
+const holdsKey = (w: WalletMeta): w is KeyWalletMeta => w.kind !== 'transmitter'
 import { fetchAccountStateFresh } from '@/lib/xrpl/query-reads'
 import { invalidateAccountScoped } from '@/lib/xrpl/query-keys'
 import type { AccountState } from '@/lib/xrpl/reads'
@@ -26,12 +29,12 @@ export function controlStatus(accountState: AccountState | null | undefined, key
 
 /** Whether a Wallet holds the master key of its own Account: the only kind that
  * can set a Regular Key (AD-29). */
-export function holdsMasterKey(wallet: Pick<WalletMeta, 'address' | 'keyAddress'>): boolean {
+export function holdsMasterKey(wallet: Pick<KeyWalletMeta, 'address' | 'keyAddress'>): boolean {
   return wallet.address === wallet.keyAddress
 }
 
 /** True when this Wallet operates an Account its own key does not derive (AD-18). */
-export function operatesAnotherAccount(wallet: Pick<WalletMeta, 'address' | 'keyAddress'>): boolean {
+export function operatesAnotherAccount(wallet: Pick<KeyWalletMeta, 'address' | 'keyAddress'>): boolean {
   return wallet.address !== wallet.keyAddress
 }
 
@@ -52,7 +55,7 @@ export function setRegularKeyBlockedReason(
  * network, a different key. A Seed that already has a view of this Account stays
  * on the list: whether its key is the Regular Key NOW is the ledger's to say, and
  * a view left over from a replaced key must not hide that Seed for good. */
-export function eligibleTargets(controller: WalletMeta, wallets: readonly WalletMeta[]): WalletMeta[] {
+export function eligibleTargets(controller: KeyWalletMeta, wallets: readonly KeyWalletMeta[]): KeyWalletMeta[] {
   const seen = new Set<string>()
   return wallets.filter(
     (w) =>
@@ -78,7 +81,7 @@ export interface SetRegularKeyContext {
 }
 
 export type ControlResult =
-  | { status: 'controlled'; meta: WalletMeta; sent: boolean }
+  | { status: 'controlled'; meta: KeyWalletMeta; sent: boolean }
   | { status: 'refused'; reason: string }
   /** The replacement confirm or a Signing Check was cancelled. Nothing was sent. */
   | { status: 'cancelled'; reason: string }
@@ -104,7 +107,7 @@ export function describeFailure(outcome: Exclude<SubmitOutcome, { status: 'valid
   }
 }
 
-function find(metas: WalletMeta[], id: string): WalletMeta | undefined {
+function find(metas: KeyWalletMeta[], id: string): KeyWalletMeta | undefined {
   return metas.find((w) => w.id === id)
 }
 
@@ -112,7 +115,7 @@ function find(metas: WalletMeta[], id: string): WalletMeta | undefined {
  * key as the Regular Key, adds the target's view. The only claim path; "check
  * again" runs just this. */
 export async function confirmControl(controllerId: string, targetId: string, ctx: Pick<SetRegularKeyContext, 'queryClient'>): Promise<ControlResult> {
-  const metas = await listWallets()
+  const metas = (await listWallets()).filter(holdsKey)
   const controller = find(metas, controllerId)
   const target = find(metas, targetId)
   if (!controller || !target) return { status: 'refused', reason: 'That wallet is no longer on this device.' }
@@ -149,7 +152,7 @@ export async function confirmControl(controllerId: string, targetId: string, ctx
  * read gives the target a view of the Account.
  */
 export async function setRegularKey(controllerId: string, targetId: string, ctx: SetRegularKeyContext): Promise<ControlResult> {
-  const metas = await listWallets()
+  const metas = (await listWallets()).filter(holdsKey)
   const controller = find(metas, controllerId)
   const target = find(metas, targetId)
   if (!controller || !target) return { status: 'refused', reason: 'That wallet is no longer on this device.' }

@@ -33,7 +33,9 @@ import { useState } from 'react'
 export function BalancesTab() {
   const network = useActiveNetwork()
   const node = useActiveNode()
-  const wallet = useActiveWallet()
+  const active = useActiveWallet()
+  // Mounted only for an Online Wallet; a Transmitter is never shown here.
+  const wallet = active && active.kind !== 'transmitter' ? active : null
   const address = wallet?.address ?? null
   const accountState = useAccountState(network, address, node)
   const spendable = useSpendableBalance(network, address, node)

@@ -21,6 +21,7 @@ vi.mock('idb-keyval', () => ({
 vi.mock('@/lib/crypto/lock', () => ({ endLockSession: async () => {}, endAllLockSessions: async () => {}, getLockInfo: async () => ({ id: 'lock-w1', openCheck: 'pin', autoLockMinutes: 5, pin: true, passkey: false }) }))
 
 import { APP_STATE_STORAGE_KEY, useAppStore } from '../app-store'
+import type { KeyWalletMeta } from '@/lib/crypto/keystore'
 import { suppressesFirstSendWarning } from '../address-book'
 import { selectAddressBook } from '../app-store'
 
@@ -247,7 +248,7 @@ describe('app store — a Passkey-Derived Wallet keeps its Seed Method across a 
       JSON.stringify({ state: { network: 'testnet', wallets: [derived, stored], activeWalletId: 'd1', addressBook: {}, declinedUpdateVersions: [] }, version: 0 }),
     )
     await useAppStore.persist.rehydrate()
-    const bySeed = Object.fromEntries(useAppStore.getState().wallets.map((w) => [w.id, w.seedMethod]))
+    const bySeed = Object.fromEntries(useAppStore.getState().wallets.map((w) => [w.id, (w as KeyWalletMeta).seedMethod]))
     expect(bySeed).toEqual({ d1: 'passkey-derived', o1: 'stored' })
   })
 })

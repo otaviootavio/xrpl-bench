@@ -153,6 +153,18 @@ export function leaveWallet(queryClient: QueryClient, walletId: string): void {
 }
 
 /**
+ * Sync scope (OS-FR-4): a Transmitter's Synced address changed or was removed.
+ * Removes the old address's account-scoped query data unless another Wallet on an
+ * OPEN lock still holds the same `(network, address)`. Never closes a lock.
+ */
+export function forgetSyncedAddress(queryClient: QueryClient, walletId: string, network: WalletMeta['network'], oldAddress: string | null): void {
+  if (oldAddress === null) return
+  const { wallets, openLocks } = useAppStore.getState()
+  const shared = wallets.some((w) => w.id !== walletId && w.lockId in openLocks && w.network === network && w.address === oldAddress)
+  if (!shared) removeAccountScoped(queryClient, network, oldAddress)
+}
+
+/**
  * Remove scope (AD-46): one Wallet was removed from the vault. In memory only; the
  * vault was written by the keystore, and this never writes vault meta.
  *

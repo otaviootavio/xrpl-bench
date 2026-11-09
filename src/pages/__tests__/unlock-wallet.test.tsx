@@ -14,6 +14,7 @@ const h = vi.hoisted(() => ({
   toastError: vi.fn(),
   toastResolve: vi.fn(),
   getInfoFails: false,
+  proof: true,
 }))
 vi.mock('idb-keyval', () => ({ get: async () => undefined, set: async () => {}, del: async () => {} }))
 vi.mock('@/lib/crypto/auth', () => ({ wipeVault: async () => {}, getLockoutState: async () => h.lockout }))
@@ -30,6 +31,8 @@ vi.mock('@/lib/crypto/keystore', () => ({
   describeCheckFailure: (r: { status: string; triesRemaining?: number }) =>
     r.status === 'wrong-credential' ? `Incorrect PIN. ${r.triesRemaining} tries remaining. Nothing was signed.` : 'locked',
 }))
+// The Transmitter proof (story 4): a Seed lock has nothing to prove; `h.proof` lets a test fail it.
+vi.mock('@/lib/crypto/transmitter-unlock', () => ({ proveTransmitterUnlock: async () => h.proof }))
 vi.mock('@/lib/xrpl/client', () => ({ disconnectAllClients: async () => {} }))
 vi.mock('@/lib/notify', () => ({ toast: { error: (m: string) => h.toastError(m), success: vi.fn(), resolve: (a: string) => h.toastResolve(a) } }))
 vi.mock('@/lib/build-info', () => ({
@@ -56,6 +59,7 @@ function renderUnlock() {
 
 beforeEach(() => {
   h.info = { id: 'L1', openCheck: 'pin', autoLockMinutes: 7, pin: true, passkey: false }
+  h.proof = true
   h.openLock.mockReset()
   h.toastError.mockReset()
   h.toastResolve.mockReset()
@@ -73,6 +77,17 @@ describe('the locked-Wallet view', () => {
     fireEvent.click(screen.getByRole('button', { name: /unlock with pin/i }))
     await waitFor(() => expect(useAppStore.getState().openLocks.L1).toEqual({ key: KEY, autoLockMinutes: 7 }))
     expect(h.openLock).toHaveBeenCalledWith('L1', 'pin', { pin: '123456' })
+  })
+
+  it('a Transmitter whose verifier does not decrypt under the key stays closed (OS-FR-3)', async () => {
+    h.proof = false
+    h.openLock.mockResolvedValue({ status: 'ok', value: { key: KEY, autoLockMinutes: 7 } })
+    renderUnlock()
+    fireEvent.change(await screen.findByLabelText('PIN'), { target: { value: '123456' } })
+    fireEvent.click(screen.getByRole('button', { name: /unlock with pin/i }))
+    await waitFor(() => expect(h.toastError).toHaveBeenCalledWith('Unlock failed.'))
+    expect(useAppStore.getState().openLocks).toEqual({})
+    h.proof = true
   })
 
   it('says how many tries remain on a wrong PIN and stays closed', async () => {

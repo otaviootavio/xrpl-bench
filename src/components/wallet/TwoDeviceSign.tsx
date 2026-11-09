@@ -11,7 +11,8 @@ import { walletScreenPath } from '@/lib/route'
 import { QrScanner } from '@/components/wallet/QrScanner'
 import { useAccountState } from '@/hooks/useAccountState'
 import { usePrompts } from '@/hooks/usePrompts'
-import type { WalletMeta } from '@/lib/crypto/keystore'
+import type { KeyWalletMeta } from '@/lib/crypto/keystore'
+import { isKeyWallet } from '@/lib/wallet-meta'
 import {
   buildUnsigned,
   expiryWords,
@@ -39,7 +40,7 @@ const KINDS: { kind: TwoDeviceKind; label: string }[] = [
 
 /** The entry to the two-device screen, mounted by the Local settings tab, which passes `configureKey`:
  * the screen opens through `launchFromConfigure` (label `Back to Wallet`, focus returns to this key). */
-export function TwoDeviceSign({ wallet, configureKey }: { wallet: WalletMeta; configureKey: string }) {
+export function TwoDeviceSign({ wallet, configureKey }: { wallet: KeyWalletMeta; configureKey: string }) {
   const path = walletScreenPath('two-device', wallet.id)
   return (
     <div className="mt-1 text-xs text-muted-foreground" data-testid="two-device-sign">
@@ -65,7 +66,7 @@ const ROLE_BUTTON = 'h-auto min-h-9 w-full whitespace-normal py-2 text-center'
  * `lib/two-device.ts`, and nothing here outlives the screen. Mount only for a
  * Wallet whose lock is open (AD-26).
  */
-export function TwoDeviceScreen({ wallet, onClose, backLabel }: { wallet: WalletMeta; onClose: () => void; backLabel?: string }) {
+export function TwoDeviceScreen({ wallet, onClose, backLabel }: { wallet: KeyWalletMeta; onClose: () => void; backLabel?: string }) {
   const [role, setRole] = useState<Role | null>(null)
   // True while a build, a Signing Check or a submission is running: leaving then would hide the outcome.
   const [busy, setBusy] = useState(false)
@@ -149,7 +150,7 @@ function CopyText({ text, label }: { text: string; label: string }) {
   )
 }
 
-function OnlinePanel({ wallet, onBusy }: { wallet: WalletMeta; onBusy: (busy: boolean) => void }) {
+function OnlinePanel({ wallet, onBusy }: { wallet: KeyWalletMeta; onBusy: (busy: boolean) => void }) {
   const queryClient = useQueryClient()
   const prompts = usePrompts()
   const account = useAccountState(wallet.network, wallet.address, wallet.node)
@@ -166,7 +167,7 @@ function OnlinePanel({ wallet, onBusy }: { wallet: WalletMeta; onBusy: (busy: bo
   const [result, setResult] = useState<ReturnedResult | null>(null)
 
   const wallets = useAppStore((s) => s.wallets)
-  const blocked = twoDeviceBlockedReason(kind, account.isError ? null : account.data, account.isError, enable, { wallet, wallets })
+  const blocked = twoDeviceBlockedReason(kind, account.isError ? null : account.data, account.isError, enable, { wallet, wallets: wallets.filter(isKeyWallet) })
   const mainnet = wallet.network === 'mainnet'
 
   function request(): TwoDeviceRequest | string {
@@ -305,7 +306,7 @@ function OnlinePanel({ wallet, onBusy }: { wallet: WalletMeta; onBusy: (busy: bo
   )
 }
 
-function OfflinePanel({ wallet, onBusy }: { wallet: WalletMeta; onBusy: (busy: boolean) => void }) {
+function OfflinePanel({ wallet, onBusy }: { wallet: KeyWalletMeta; onBusy: (busy: boolean) => void }) {
   const prompts = usePrompts()
   const openKey = useWalletOpenKey(wallet.id)
   const [pending, setPending] = useState<{ text: string; review: UnsignedReview } | null>(null)

@@ -74,8 +74,8 @@ export function WalletCard({
           {card.network === 'devnet' && <Badge variant="warning">Not stable</Badge>}
         </div>
         <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
-          {/* A Transmitter Wallet has no address until Sync exists (P-5); the record's address is never shown for it. */}
-          {card.kind === 'transmitter' ? (
+          {/* A Transmitter shows its Synced address, or "Not synced" (P-5, OS-FR-4). */}
+          {card.address === null ? (
             <span className="min-w-0 text-sm text-muted-foreground">{NOT_SYNCED}</span>
           ) : (
             <AddressLink address={card.address} network={card.network} className="min-w-0" />

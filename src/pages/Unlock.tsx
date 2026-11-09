@@ -7,8 +7,9 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { getLockoutState } from '@/lib/crypto/auth'
-import { getLockInfo, openLock as openWithCheck, type OpenMethod } from '@/lib/crypto/lock'
+import { endLockSession, getLockInfo, openLock as openWithCheck, type OpenMethod } from '@/lib/crypto/lock'
 import { describeCheckFailure, type WalletMeta } from '@/lib/crypto/keystore'
+import { proveTransmitterUnlock } from '@/lib/crypto/transmitter-unlock'
 import { queryKeys } from '@/lib/xrpl/query-keys'
 import { RESET_INCOMPLETE_MESSAGE, tearDownAllLocalState } from '@/lib/teardown'
 import { useAppStore } from '@/store/app-store'
@@ -76,6 +77,11 @@ export function Unlock({ wallet }: { wallet: WalletMeta }) {
       const result = await openWithCheck(lockId, method, { pin: method === 'pin' ? pin : undefined })
       if (result.status === 'ok') {
         setPin('')
+        // A Transmitter's unlock is proven by decrypting its known ciphertext (OS-FR-3).
+        if (!(await proveTransmitterUnlock(lockId, result.value.key))) {
+          await endLockSession(lockId).catch(() => {})
+          throw new Error('Unlock failed.')
+        }
         openLock(lockId, result.value.key, result.value.autoLockMinutes)
         return
       }
@@ -102,8 +108,8 @@ export function Unlock({ wallet }: { wallet: WalletMeta }) {
     if (info?.openCheck !== 'none' || autoOpened.current) return
     autoOpened.current = true
     openWithCheck(lockId, 'none').then(
-      (result) => {
-        if (result.status === 'ok') {
+      async (result) => {
+        if (result.status === 'ok' && (await proveTransmitterUnlock(lockId, result.value.key))) {
           openLock(lockId, result.value.key, result.value.autoLockMinutes)
         } else setOpenError('This wallet could not be opened.')
       },

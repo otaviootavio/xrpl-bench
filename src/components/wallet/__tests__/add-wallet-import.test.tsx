@@ -879,6 +879,43 @@ describe('Import into an Offline Wallet (offline signing story 3, OS-FR-2, OS-FR
     expect(screen.queryByText('Master key not checked')).toBeNull()
   })
 
+  // P-8, second form (offline signing story 4, OS-FR-3): warned, never refused.
+  const P8 = 'WARNING: A Transmitter wallet on this device has this address.'
+  const synced = { id: 'tx', seedId: 'tx', lockId: 'LT', label: 'Send', createdAt: 1, network: 'mainnet', openCheck: 'pin', kind: 'transmitter', address: ADDRESS }
+
+  it('a Transmitter here synced to the address: the warning shows, Import anyway imports', async () => {
+    useAppStore.setState({ wallets: [synced as never] })
+    await openOfflineImport()
+    await click(tick(B))
+    await click(tick(E))
+    await submit()
+    expect(await screen.findByText(P8)).toBeTruthy()
+    expect(screen.getByText('Thus the offline key is on a device that connects to the internet.')).toBeTruthy()
+    expect(h.importStoredWallet).not.toHaveBeenCalled()
+    await click(button('Import anyway'))
+    await waitFor(() => expect(h.importStoredWallet).toHaveBeenCalledTimes(1))
+  })
+
+  it('Cancel import on that warning writes nothing', async () => {
+    useAppStore.setState({ wallets: [synced as never] })
+    await openOfflineImport()
+    await click(tick(B))
+    await click(tick(E))
+    await submit()
+    await click(await screen.findByRole('button', { name: 'Cancel import' }))
+    expect(h.importStoredWallet).not.toHaveBeenCalled()
+  })
+
+  it('no warning without a Transmitter synced to that address', async () => {
+    useAppStore.setState({ wallets: [{ ...synced, address: null } as never] })
+    await openOfflineImport()
+    await click(tick(B))
+    await click(tick(E))
+    await submit()
+    await waitFor(() => expect(h.importStoredWallet).toHaveBeenCalledTimes(1))
+    expect(screen.queryByText(P8)).toBeNull()
+  })
+
   it('a duplicate is still refused for an Offline import', async () => {
     h.importDuplicateReason.mockResolvedValue(DUPLICATE)
     await openOfflineImport()

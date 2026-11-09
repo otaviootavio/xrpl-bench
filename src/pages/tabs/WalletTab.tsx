@@ -28,7 +28,13 @@ import {
 import { launchFromConfigure, peekConfigureFocusReturn, clearConfigureFocusReturn } from '@/lib/configure-launch'
 import { useLockMinutesChanged } from '@/hooks/useLockMinutesChanged'
 import { usePrompts } from '@/hooks/usePrompts'
-import { listWallets, renameWallet, setLockAutoLock, setShowBeforeSending, type WalletMeta } from '@/lib/crypto/keystore'
+import { listWallets, renameWallet, setLockAutoLock, setShowBeforeSending, setTransmitterSync, type KeyWalletMeta, type TransmitterMeta, type WalletMeta } from '@/lib/crypto/keystore'
+import { isValidClassicAddress } from 'xrpl'
+import { Input } from '@/components/ui/input'
+import { WarningSentence } from '@/components/wallet/WarningSentence'
+import { forgetSyncedAddress } from '@/lib/teardown'
+import { INVALID_ADDRESS, offlineWalletHas } from '@/lib/same-address'
+import { NO_KEY, REMOVE_THE_ADDRESS, SAME_ADDRESS_OFFLINE_HERE, SYNC_TO_AN_ADDRESS } from '@/lib/transmitter-words'
 import { BEFORE_SENDING_DESCRIPTION, BEFORE_SENDING_PLATE, SHOW_BEFORE_SENDING } from '@/lib/transmit-words'
 import { notify } from '@/lib/notify'
 import { AUTO_LOCK_CHOICES } from '@/lib/crypto/policy'
@@ -175,7 +181,7 @@ function ChecksPlate({ wallet }: { wallet: WalletMeta }) {
   const signs = wallet.kind !== 'transmitter'
   // The same read Edit checks makes, from the same key: one cache entry per lock.
   const lock = useQuery({ queryKey: queryKeys.lockInfo(wallet.lockId), queryFn: () => getLockInfo(wallet.lockId) })
-  const signing = wallet.seedMethod === 'passkey-derived' ? 'passkey' : wallet.signingCheck
+  const signing = wallet.kind === 'transmitter' ? 'standard' : wallet.seedMethod === 'passkey-derived' ? 'passkey' : wallet.signingCheck
 
   return (
     <ConfigPlate title="Checks">
@@ -225,7 +231,7 @@ function ChecksPlate({ wallet }: { wallet: WalletMeta }) {
   )
 }
 
-function SeedPlate({ wallet }: { wallet: WalletMeta }) {
+function SeedPlate({ wallet }: { wallet: KeyWalletMeta }) {
   return (
     <ConfigPlate title="Seed">
       <p className="text-sm text-muted-foreground">Show this wallet's Seed so you can write it down. Anyone who sees it controls the funds.</p>
@@ -237,7 +243,7 @@ function SeedPlate({ wallet }: { wallet: WalletMeta }) {
 const CONTROL_KEY = 'let-another-wallet-sign'
 const TWO_DEVICE_KEY = 'two-device'
 
-function ControlPlate({ wallet }: { wallet: WalletMeta }) {
+function ControlPlate({ wallet }: { wallet: KeyWalletMeta }) {
   return (
     <ConfigPlate title="Operating another account">
       <ControlledNote wallet={wallet} />
@@ -306,6 +312,86 @@ function RemovePlate({ wallet }: { wallet: WalletMeta }) {
   )
 }
 
+/**
+ * Sync to an address (OS-FR-4, EXPERIENCE "Synced address" plate): the Synced
+ * address can be changed or removed without re-creating the Wallet. A key press
+ * writes through the keystore, then the store; the old address's cached reads go
+ * unless another open Wallet holds it. The same address as an Offline Wallet here
+ * is warned (P-8), never refused.
+ */
+function SyncPlate({ wallet }: { wallet: TransmitterMeta }) {
+  const queryClient = useQueryClient()
+  const wallets = useAppStore((s) => s.wallets)
+  const setWallets = useAppStore((s) => s.setWallets)
+  const [draft, setDraft] = useState('')
+  const [busy, setBusy] = useState(false)
+  const id = useId()
+  const typed = draft.trim()
+  const invalid = typed !== '' && !isValidClassicAddress(typed)
+  const sameAsOffline = typed !== '' && !invalid && offlineWalletHas(wallets, typed)
+
+  async function apply(next: string | null) {
+    if (busy || (next !== null && (next === '' || !isValidClassicAddress(next)))) return
+    setBusy(true)
+    const old = wallet.address
+    try {
+      await setTransmitterSync(wallet.id, next)
+      setWallets(await listWallets())
+      if (old !== next) forgetSyncedAddress(queryClient, wallet.id, wallet.network, old)
+      setDraft('')
+    } catch (err: unknown) {
+      notify.error(err instanceof Error ? err.message : String(err))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <ConfigPlate title={SYNC_TO_AN_ADDRESS}>
+      {wallet.address ? <AddressDisplay address={wallet.address} /> : <p className="text-sm">{NOT_SYNCED}</p>}
+      <div className="grid gap-1.5">
+        <Label htmlFor={`${id}-address`}>Address</Label>
+        <Input
+          id={`${id}-address`}
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          autoComplete="off"
+          spellCheck={false}
+          className="font-data"
+          disabled={busy}
+          aria-invalid={invalid ? true : undefined}
+          aria-describedby={invalid ? `${id}-error` : undefined}
+        />
+        {invalid && (
+          <p id={`${id}-error`} className="text-sm text-text-destructive">
+            {INVALID_ADDRESS}
+          </p>
+        )}
+      </div>
+      {sameAsOffline && <WarningSentence words={SAME_ADDRESS_OFFLINE_HERE} />}
+      <div className="flex flex-wrap gap-2">
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          className={KEY}
+          aria-disabled={typed === '' || invalid ? true : undefined}
+          aria-describedby={invalid ? `${id}-error` : undefined}
+          disabled={busy}
+          onClick={() => void apply(typed)}
+        >
+          {SYNC_TO_AN_ADDRESS}
+        </Button>
+        {wallet.address && (
+          <Button type="button" variant="outline" size="sm" className={KEY} disabled={busy} onClick={() => void apply(null)}>
+            {REMOVE_THE_ADDRESS}
+          </Button>
+        )}
+      </div>
+    </ConfigPlate>
+  )
+}
+
 /** One read-only line of what was chosen at creation and cannot change: its legend and its words. */
 function SetupLine({ term, value }: { term: string; value: string }) {
   return (
@@ -326,11 +412,12 @@ function SetupLine({ term, value }: { term: string; value: string }) {
  * below show them. The words are the quiz's (`walk-questions`).
  */
 function IdentityPlate({ wallet }: { wallet: WalletMeta }) {
-  // A Transmitter Wallet holds no key, so it has no key rows; until Sync exists it has no address either (P-5).
+  // A Transmitter Wallet holds no key, so it has no key rows (P-48): its Synced address, or P-5.
   if (wallet.kind === 'transmitter') {
     return (
       <ConfigPlate title="This wallet">
-        <p className="text-sm">{NOT_SYNCED}</p>
+        {wallet.address ? <AddressDisplay address={wallet.address} /> : <p className="text-sm">{NOT_SYNCED}</p>}
+        <p className="text-sm text-muted-foreground">{NO_KEY}</p>
       </ConfigPlate>
     )
   }
@@ -427,7 +514,7 @@ function KindPlates({ wallet }: { wallet: WalletMeta }) {
         </>
       )
     default: {
-      const unknown: never = wallet.kind
+      const unknown: never = wallet
       void unknown
       return null
     }
@@ -466,6 +553,7 @@ export function WalletTab({ wallet }: { wallet: WalletMeta }) {
         </div>
       </div>
       <IdentityPlate wallet={wallet} />
+      {wallet.kind === 'transmitter' && <SyncPlate wallet={wallet} />}
       <NamePlate wallet={wallet} />
       <AddressBookPlate walletId={wallet.id} />
       <KindPlates wallet={wallet} />

@@ -13,10 +13,11 @@ import type { WalletCardData } from '@/store/wallet-groups'
  */
 const ADDRESS = 'rKINDCARDaddressXXXXXXXXXXXX'
 type Kind = WalletCardData['kind']
-const card = (kind: Kind, state: 'locked' | 'open', network: 'testnet' | 'mainnet' = 'testnet'): WalletCardData =>
+// A Transmitter's card address is its Synced address or null (story 4); the other kinds carry their Account.
+const card = (kind: Kind, state: 'locked' | 'open', network: 'testnet' | 'mainnet' = 'testnet', address: string | null = kind === 'transmitter' ? null : ADDRESS): WalletCardData =>
   state === 'locked'
-    ? { state, walletId: 'w', lockId: 'L', label: 'Savings', address: ADDRESS, network, kind }
-    : { state, walletId: 'w', lockId: 'L', label: 'Savings', address: ADDRESS, network, kind, allowsLock: true, hasNode: false }
+    ? { state, walletId: 'w', lockId: 'L', label: 'Savings', address, network, kind }
+    : { state, walletId: 'w', lockId: 'L', label: 'Savings', address, network, kind, allowsLock: true, hasNode: false }
 
 function mount(data: WalletCardData) {
   render(
@@ -58,6 +59,13 @@ describe('chooser card, per kind (OS-FR-1)', () => {
       expect(within(li).getByText(NOT_SYNCED)).toBeTruthy()
       expect(li.textContent).not.toContain(ADDRESS)
       expect(li.querySelector('a')).toBeNull()
+    })
+
+    it(`${state}: a Synced Transmitter shows its Synced address link (OS-FR-4)`, () => {
+      const li = mount(card('transmitter', state, 'testnet', ADDRESS))
+      expect(networkRow(li)).toEqual(['Transmitter', 'Testnet'])
+      expect(li.querySelector(`a[href*="${ADDRESS}"]`)).not.toBeNull()
+      expect(li.textContent).not.toContain(NOT_SYNCED)
     })
   }
 

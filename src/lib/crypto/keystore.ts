@@ -1,11 +1,13 @@
-import { decodeSeed, ECDSA, Wallet } from 'xrpl'
+import { decodeSeed, ECDSA, isValidClassicAddress, Wallet } from 'xrpl'
 import { canonicalNodeUrl, NETWORKS, type NetworkId } from '@/lib/xrpl/networks'
 import type { SignedForReview, Signer, SigningHandle } from '@/lib/xrpl/writes'
 import { aesDecrypt, aesEncrypt } from './aes'
 import { deriveAesKeyFromBits, generateOrdinal, isOrdinal, seedSalt, walletFromSeedPrf } from './derive'
 import { buildLock, createLock, deleteLock, discardAllLocks, discardAppPin, discardUnusedAppPin, getLockInfo, hasAppPin, openLock, setAutoLockMinutes, withAppPin, type CheckResult } from './lock'
-import { checkAutoLock, checkEditAllowed, checkWalletRequest, requiresWrittenSeed, resolveEdit, type CheckEditRequest, type NewOpenCheck, type PasskeyCapability, type PasskeyChoice, type PolicyVerdict, type SigningKind } from './policy'
+import { checkAutoLock, checkLockRequest, checkEditAllowed, checkWalletRequest, requiresWrittenSeed, resolveEdit, type CheckEditRequest, type NewOpenCheck, type PasskeyCapability, type PasskeyChoice, type PolicyVerdict, type SigningKind } from './policy'
 import { b64ToBuf, bufToB64 } from './encoding'
+import { isKeyWallet } from '@/lib/wallet-meta'
+import { INVALID_ADDRESS } from '@/lib/same-address'
 import { uniqueDefaultName, validateWalletName, type WalletNameReason } from '@/lib/wallet-name'
 import { attemptPin, getLockoutState, recordFailure, triesRemaining } from './pin'
 import {
@@ -35,18 +37,38 @@ import {
   type SigningCheck,
   type SigningSeal,
   type StoredWallet,
-  type WalletKind,
   type WalletView,
+  listTransmitterRecords,
+  mutateTransmitterRecord,
+  putTransmitterRecord,
+  transmitterVerifierText,
+  type TransmitterRecord,
 } from './db'
 
-/** A Wallet as the rest of the app sees it: one view over a Seed record.
- * `id` is the walletId — selection state is never an address (AD-18). */
-export interface WalletMeta {
+/** What every Wallet has, whatever its kind. `id` is the walletId — selection
+ * state is never an address (AD-18). */
+interface WalletMetaBase {
   id: string
+  /** The record id: the Seed record for a key Wallet, the Transmitter record itself. */
   seedId: string
-  /** The lock whose Open Key opens this Wallet's Seed (AD-21). */
+  /** The lock whose Open Key opens this Wallet (AD-21). */
   lockId: string
   label: string
+  createdAt: number
+  network: NetworkId
+  /** A custom Node's `wss://` URL, proven for `network` when it was saved.
+   * Absent: the network's built-in Nodes. */
+  node?: string
+  openCheck: OpenCheck
+  /** "Show the signed transaction before sending" is on (OS-FR-10). Absent: off.
+   * Never set on an Offline Wallet, which never transmits. */
+  showBeforeSending?: true
+}
+
+/** An Online or Offline Wallet: one view over a Seed record. */
+export interface KeyWalletMeta extends WalletMetaBase {
+  /** Online or Offline (OS-FR-1). Each kind opens its own screens. */
+  kind: 'online' | 'offline'
   /** The Account this Wallet reads and signs for: the ONLY ledger identity every
    * read, query key, send, receive and teardown uses (AD-18). It is `keyAddress`
    * unless the Wallet operates another Account as its Regular Key. */
@@ -54,48 +76,51 @@ export interface WalletMeta {
   /** The address the Seed itself derives: used only to detect a wrong credential
    * and to choose how to sign (AD-18). */
   keyAddress: string
-  createdAt: number
-  network: NetworkId
-  /** A custom Node's `wss://` URL, proven for `network` when it was saved.
-   * Absent: the network's built-in Nodes. */
-  node?: string
   algorithm: SeedAlgorithm
   /** How the Seed exists: stored under a key, or computed from a passkey (FR-62). */
   seedMethod: SeedMethod
-  openCheck: OpenCheck
   signingCheck: SigningCheck
   /** When the Seed was written down and confirmed (FR-72). Absent: never. */
   writtenSeedConfirmedAt?: number
-  /** Online, Offline or Transmitter (OS-FR-1). Each kind opens its own screens. */
-  kind: WalletKind
-  /** "Show the signed transaction before sending" is on (OS-FR-10). Absent: off.
-   * Never set on an Offline Wallet, which never transmits. */
-  showBeforeSending?: true
 }
+
+/** A Transmitter Wallet (OS-FR-3): no Seed, no key, never signs. */
+export interface TransmitterMeta extends WalletMetaBase {
+  kind: 'transmitter'
+  /** The Synced address (OS-FR-4), or `null` when not synced: then there is no
+   * Account to read, and nothing account-scoped mounts. */
+  address: string | null
+}
+
+/** A Wallet as the rest of the app sees it. */
+export type WalletMeta = KeyWalletMeta | TransmitterMeta
+
 
 /** The kind a stored view names: absent is Online, a stored non-Online kind is
  * itself, and anything else (a typo, a kind from a later build, even a literal
  * `'online'`, which is never written) is `null`, so that view is not shown
  * (OS-FR-1: fail closed, never read as Online). */
-function kindOfView(v: WalletView): WalletKind | null {
+function kindOfView(v: WalletView): 'online' | 'offline' | null {
   const raw: unknown = (v as { kind?: unknown }).kind
   if (raw === undefined) return 'online'
-  return raw === 'offline' || raw === 'transmitter' ? raw : null
+  // A Seed view that says `transmitter` is a contradiction (a Transmitter holds no
+  // Seed): not shown, never read as Online or as a Transmitter (OS-FR-3).
+  return raw === 'offline' ? raw : null
 }
 
 function viewsOf(w: StoredWallet): WalletView[] {
   return w.views
 }
 
-function toMetas(w: StoredWallet): WalletMeta[] {
-  return viewsOf(w).flatMap((v): WalletMeta[] => {
+function toMetas(w: StoredWallet): KeyWalletMeta[] {
+  return viewsOf(w).flatMap((v): KeyWalletMeta[] => {
     const kind = kindOfView(v)
     if (kind === null) return []
     return [toMeta(w, v, kind)]
   })
 }
 
-function toMeta(w: StoredWallet, v: WalletView, kind: WalletKind): WalletMeta {
+function toMeta(w: StoredWallet, v: WalletView, kind: 'online' | 'offline'): KeyWalletMeta {
   return {
     id: v.walletId,
     seedId: w.id,
@@ -118,7 +143,7 @@ function toMeta(w: StoredWallet, v: WalletView, kind: WalletKind): WalletMeta {
 
 /** The setting is on only when exactly `true` is stored, and never for an
  * Offline Wallet (OS-FR-10: Online and Transmitter only). */
-function showsBeforeSending(v: WalletView, kind: WalletKind): boolean {
+function showsBeforeSending(v: WalletView, kind: 'online' | 'offline'): boolean {
   return kind !== 'offline' && (v as { showBeforeSending?: unknown }).showBeforeSending === true
 }
 
@@ -132,9 +157,38 @@ function hasView(all: StoredWallet[], network: NetworkId, account: string, keyAd
   return all.some((w) => w.address === keyAddress && viewsOf(w).some((v) => v.network === network && (v.accountAddress ?? w.address) === account))
 }
 
+/** A Transmitter record as the app sees it. */
+function transmitterMeta(t: TransmitterRecord): TransmitterMeta {
+  return {
+    id: t.id,
+    seedId: t.id,
+    lockId: t.lockId,
+    label: t.label,
+    createdAt: t.createdAt,
+    network: t.network,
+    ...(t.node ? { node: t.node } : {}),
+    openCheck: t.openCheck,
+    kind: 'transmitter',
+    address: t.syncedAddress ?? null,
+    ...(t.showBeforeSending === true ? { showBeforeSending: true as const } : {}),
+  }
+}
+
 export async function listWallets(): Promise<WalletMeta[]> {
-  const wallets = await listStoredWallets()
-  return wallets.flatMap((w) => toMetas(w))
+  const [wallets, transmitters] = await Promise.all([listStoredWallets(), listTransmitterRecords()])
+  return [...wallets.flatMap((w) => toMetas(w)), ...transmitters.map(transmitterMeta)]
+}
+
+/** The Wallets that hold a key (Online and Offline): every caller that signs or
+ * reasons about keys reads these and never sees a Transmitter. */
+export async function listKeyWallets(): Promise<KeyWalletMeta[]> {
+  return (await listWallets()).filter(isKeyWallet)
+}
+
+/** Every Wallet name on the device, one per record (AD-42), Transmitters included. */
+async function allRecordLabels(exceptId?: string): Promise<string[]> {
+  const [wallets, transmitters] = await Promise.all([listStoredWallets(), listTransmitterRecords()])
+  return [...wallets, ...transmitters].filter((w) => w.id !== exceptId).map((w) => w.label)
 }
 
 /** The algorithm a Seed's own encoding names. */
@@ -474,6 +528,13 @@ export class SettingNotForOfflineError extends Error {
  * view only (OS-FR-10). Stores `true` or removes the field, and touches nothing
  * else. Returns the Wallet's refreshed meta. */
 export async function setShowBeforeSending(walletId: string, on: boolean): Promise<WalletMeta> {
+  if (await isTransmitterId(walletId)) {
+    await mutateTransmitterRecord(walletId, (current) => {
+      const { showBeforeSending: _previous, ...rest } = current
+      return on ? { ...rest, showBeforeSending: true as const } : rest
+    })
+    return metaOf(walletId)
+  }
   const record = findSeedRecord(await listStoredWallets(), walletId)
   if (!record) throw new Error('Wallet not found in local vault.')
   const view = viewsOf(record).find((v) => v.walletId === walletId)
@@ -614,12 +675,18 @@ export type RenameWalletResult =
 export async function renameWallet(seedId: string, rawName: string): Promise<RenameWalletResult> {
   try {
     const all = await listStoredWallets()
-    if (!all.some((w) => w.id === seedId)) return { ok: false, reason: 'write-failed' }
-    const verdict = validateWalletName(
-      rawName,
-      all.filter((w) => w.id !== seedId).map((w) => w.label),
-    )
+    const transmitter = (await listTransmitterRecords()).find((t) => t.id === seedId)
+    if (!all.some((w) => w.id === seedId) && !transmitter) return { ok: false, reason: 'write-failed' }
+    const verdict = validateWalletName(rawName, await allRecordLabels(seedId))
     if (!verdict.ok) return verdict
+    if (transmitter) {
+      let renamed: TransmitterRecord | undefined
+      await mutateTransmitterRecord(seedId, (current) => {
+        renamed = { ...current, label: verdict.name }
+        return renamed
+      })
+      return renamed ? { ok: true, metas: [transmitterMeta(renamed)] } : { ok: false, reason: 'write-failed' }
+    }
     let written: StoredWallet | undefined
     await mutateStoredWallet(seedId, (current) => {
       written = { ...current, label: verdict.name }
@@ -638,7 +705,7 @@ export async function renameWallet(seedId: string, rawName: string): Promise<Ren
  * `Wallet`, `Wallet 2`, ... A best-effort guard across tabs, not a security boundary.
  */
 async function nameForNewWallet(raw: string): Promise<string> {
-  const others = (await listStoredWallets()).map((w) => w.label)
+  const others = await allRecordLabels()
   const verdict = validateWalletName(raw, others)
   return verdict.ok ? verdict.name : uniqueDefaultName('Wallet', others)
 }
@@ -673,8 +740,20 @@ export function removeWallet(walletId: string): Promise<RemoveWalletResult> {
   return exclusiveVaultWrite(() => removeWalletUnguarded(walletId))
 }
 
+/** Nothing of any kind is stored: Seed records and Transmitter records alike. A
+ * Transmitter left on the device keeps its lock and the App PIN it may use. */
+async function deviceHoldsWallets(): Promise<boolean> {
+  const [wallets, transmitters] = await Promise.all([listStoredWallets(), listTransmitterRecords()])
+  return wallets.length + transmitters.length > 0
+}
+
 async function removeWalletUnguarded(walletId: string): Promise<RemoveWalletResult> {
-  const record = findSeedRecord(await listStoredWallets(), walletId)
+  const transmitter = (await listTransmitterRecords()).find((t) => t.id === walletId)
+  if (transmitter) {
+    await mutateTransmitterRecord(walletId, () => null)
+    if (!(await lockIdsInUseNow()).has(transmitter.lockId)) await deleteLock(transmitter.lockId)
+  }
+  const record = transmitter ? undefined : findSeedRecord(await listStoredWallets(), walletId)
   if (record) {
     await mutateStoredWallet(record.id, (current) => {
       const remaining = viewsOf(current).filter((v) => v.walletId !== walletId)
@@ -682,11 +761,11 @@ async function removeWalletUnguarded(walletId: string): Promise<RemoveWalletResu
     })
     // A lock made for Wallets that are all gone goes with the last of them.
     const lockId = record.lockId
-    if (!(await listStoredWallets()).some((w) => w.lockId === lockId)) {
+    if (!(await lockIdsInUseNow()).has(lockId)) {
       await deleteLock(lockId)
     }
   }
-  if ((await listStoredWallets()).length > 0) return { emptied: false, appPin: 'kept' }
+  if (await deviceHoldsWallets()) return { emptied: false, appPin: 'kept' }
   // Nothing is stored: every lock record left is an orphan.
   // The PIN discard never depends on the lock-record cleanup: a failed cleanup there leaves only
   // lock records no wallet points at, while a skipped discard would leave a PIN on an empty device.
@@ -701,6 +780,107 @@ async function removeWalletUnguarded(walletId: string): Promise<RemoveWalletResu
   } catch {
     return { emptied: true, appPin: 'failed' }
   }
+}
+
+async function lockIdsInUseNow(): Promise<Set<string>> {
+  const [wallets, transmitters] = await Promise.all([listStoredWallets(), listTransmitterRecords()])
+  return new Set([...wallets.map((w) => w.lockId), ...transmitters.map((t) => t.lockId)])
+}
+
+async function isTransmitterId(walletId: string): Promise<boolean> {
+  return (await listTransmitterRecords()).some((t) => t.id === walletId)
+}
+
+async function metaOf(walletId: string): Promise<WalletMeta> {
+  const meta = (await listWallets()).find((w) => w.id === walletId)
+  if (!meta) throw new Error('Wallet not found in local vault.')
+  return meta
+}
+
+// ---------------------------------------------------------------------------
+// Transmitter Wallets (OS-FR-3, OS-FR-4): no Seed, a lock of their own
+// ---------------------------------------------------------------------------
+
+export interface CreateTransmitterInput {
+  label: string
+  network: NetworkId
+  /** A custom Node the caller already proved for `network` (`verifyNode`). */
+  node?: string
+  openCheck: NewOpenCheck
+  autoLockMinutes: number
+  /** "Sync to an address" at creation (OS-FR-4). Absent: not synced. */
+  syncedAddress?: string
+}
+
+export type CreateTransmitterResult = CheckResult<{ meta: TransmitterMeta; openKey: CryptoKey }> | { status: 'refused'; reason: string }
+
+/**
+ * Adds a Transmitter Wallet on a NEW lock of its own (OS-FR-3). The policy is the
+ * lock's alone (`checkLockRequest`: FR-65, an Open Check and the auto-lock floor on
+ * Mainnet); there is no Seed, so no written-Seed or passkey-origin rule. Order, so a
+ * failure leaves the vault as it was: name, policy, address, the lock (its
+ * credential), then one write of the record with its verifier. A failure after the
+ * lock is written removes it and any App PIN made for it.
+ */
+export function createTransmitterWallet(input: CreateTransmitterInput, ctx: { pin?: string; appPinExpected?: boolean } = {}): Promise<CreateTransmitterResult> {
+  return exclusiveVaultWrite(() => createTransmitterUnguarded(input, ctx))
+}
+
+
+async function createTransmitterUnguarded(requested: CreateTransmitterInput, ctx: { pin?: string; appPinExpected?: boolean }): Promise<CreateTransmitterResult> {
+  const label = await nameForNewWallet(requested.label)
+  const verdict = checkLockRequest({ network: requested.network, openCheck: requested.openCheck, autoLockMinutes: requested.autoLockMinutes })
+  if (!verdict.ok) return { status: 'refused', reason: verdict.reason }
+  if (requested.syncedAddress !== undefined && !isValidClassicAddress(requested.syncedAddress)) return { status: 'refused', reason: INVALID_ADDRESS }
+  const node = requested.node === undefined ? undefined : (canonicalNodeUrl(requested.node) ?? undefined)
+  if (requested.node !== undefined && !node) {
+    return { status: 'refused', reason: 'A custom Node must be a wss:// address with no username, password, query or fragment.' }
+  }
+  if (requested.openCheck === 'pin' && !ctx.pin) return { status: 'cancelled' }
+  const hadAppPin = await hasAppPin()
+  if (ctx.appPinExpected && !hadAppPin && requested.openCheck === 'pin') return { status: 'refused', reason: APP_PIN_GONE }
+  const id = crypto.randomUUID()
+  let lockId: string | null = null
+  try {
+    const lock = await createLock(
+      { network: requested.network, openCheck: requested.openCheck, autoLockMinutes: requested.autoLockMinutes, label: `${label} – open` },
+      { pin: ctx.pin },
+    )
+    if (lock.status !== 'ok') return await abandon(hadAppPin, lock)
+    lockId = lock.value.id
+    const record: TransmitterRecord = {
+      recordKind: 'transmitter',
+      id,
+      label,
+      createdAt: Date.now(),
+      lockId,
+      openCheck: requested.openCheck,
+      network: requested.network,
+      ...(node ? { node } : {}),
+      ...(requested.syncedAddress ? { syncedAddress: requested.syncedAddress } : {}),
+      verifier: await aesEncrypt(lock.value.key, transmitterVerifierText(id)),
+    }
+    await putTransmitterRecord(record)
+    return { status: 'ok', value: { meta: transmitterMeta(record), openKey: lock.value.key } }
+  } catch (err) {
+    if (lockId) await deleteLock(lockId).catch(() => {})
+    if (!hadAppPin) await discardUnusedAppPin().catch(() => {})
+    throw err
+  }
+}
+
+/** "Sync to an address" (OS-FR-4): sets the address, or removes it (`null`),
+ * without re-creating the Wallet. Only a Transmitter can be synced. */
+export async function setTransmitterSync(walletId: string, address: string | null): Promise<TransmitterMeta> {
+  if (address !== null && !isValidClassicAddress(address)) throw new Error(INVALID_ADDRESS)
+  if (!(await isTransmitterId(walletId))) throw new Error('Wallet not found in local vault.')
+  await mutateTransmitterRecord(walletId, (current) => {
+    const { syncedAddress: _previous, ...rest } = current
+    return address === null ? rest : { ...rest, syncedAddress: address }
+  })
+  const meta = await metaOf(walletId)
+  if (meta.kind !== 'transmitter') throw new Error('Wallet not found in local vault.')
+  return meta
 }
 
 // ---------------------------------------------------------------------------
@@ -726,7 +906,7 @@ export interface CreateStoredWalletInput {
 
 export type CreateStoredWalletResult =
   | CheckResult<{
-      meta: WalletMeta
+      meta: KeyWalletMeta
       /** The new lock's Open Key (non-extractable), for the caller to open the lock with. */
       openKey: CryptoKey
       /** The generated Seed, for the backup screen only. The caller holds it in a
@@ -797,7 +977,7 @@ export interface ImportStoredWalletInput {
 export type ImportWalletContext = CreateWalletContext
 
 /** The result carries `meta` and the new lock's `openKey`, NEVER the Seed. */
-export type ImportStoredWalletResult = CheckResult<{ meta: WalletMeta; openKey: CryptoKey }> | { status: 'refused'; reason: string }
+export type ImportStoredWalletResult = CheckResult<{ meta: KeyWalletMeta; openKey: CryptoKey }> | { status: 'refused'; reason: string }
 
 const IMPORT_MALFORMED_REASON = 'That is not a valid Seed.'
 function importDuplicateReasonText(network: NetworkId): string {
@@ -881,7 +1061,7 @@ async function writeNewStoredWallet(
   spec: NewWalletSpec,
   ctx: CreateWalletContext,
   obtainSeed: () => { seed: string; address: string; algorithm: 'ed25519' | 'secp256k1' } | { refused: string },
-): Promise<CheckResult<{ meta: WalletMeta; openKey: CryptoKey }> | { status: 'refused'; reason: string }> {
+): Promise<CheckResult<{ meta: KeyWalletMeta; openKey: CryptoKey }> | { status: 'refused'; reason: string }> {
   // Inside the guard, so the name is checked against the records this write will sit beside (AD-42).
   const input = { ...spec, label: await nameForNewWallet(spec.label) }
   const verdict = checkWalletRequest({
@@ -1025,7 +1205,7 @@ export interface CreateDerivedWalletInput {
 
 export type CreateDerivedWalletResult =
   | CheckResult<{
-      meta: WalletMeta
+      meta: KeyWalletMeta
       /** The new lock's Open Key (non-extractable), for the caller to open the lock with. */
       openKey: CryptoKey
       /** Public. Shown once so the person can write it down; rebuilds the Wallet on a new device. */
@@ -1227,7 +1407,7 @@ export async function restorePasskeyWallet(
 export async function addControlledView(
   seedWalletId: string,
   view: { network: NetworkId; node?: string; accountAddress: string },
-): Promise<WalletMeta> {
+): Promise<KeyWalletMeta> {
   const all = await listStoredWallets()
   const record = findSeedRecord(all, seedWalletId)
   if (!record) throw new Error('Wallet not found in local vault.')
@@ -1247,7 +1427,7 @@ export async function addControlledView(
     }
   })
   if (!added) throw new Error('This wallet already operates that account.')
-  const meta = (await listWallets()).find((w) => w.id === newWalletId)
+  const meta = (await listKeyWallets()).find((w) => w.id === newWalletId)
   if (!meta) throw new Error('Wallet not found in local vault.')
   return meta
 }
@@ -1260,6 +1440,13 @@ export async function setWalletNode(walletId: string, node: string | undefined):
   const canonical = node === undefined ? undefined : canonicalNodeUrl(node)
   if (node !== undefined && !canonical) {
     throw new Error('A custom Node must be a wss:// address with no username, password, query or fragment.')
+  }
+  if (await isTransmitterId(walletId)) {
+    await mutateTransmitterRecord(walletId, (current) => {
+      const { node: _previous, ...rest } = current
+      return canonical ? { ...rest, node: canonical } : rest
+    })
+    return metaOf(walletId)
   }
   const record = findSeedRecord(await listStoredWallets(), walletId)
   if (!record) throw new Error('Wallet not found in local vault.')
@@ -1295,7 +1482,7 @@ export interface EditChecksContext {
 
 export type EditChecksResult =
   | CheckResult<{
-      meta: WalletMeta
+      meta: KeyWalletMeta
       /** False: nothing changed, nothing was asked and nothing was written. */
       changed: boolean
       /** The lock the Wallet was on before. */
@@ -1365,7 +1552,7 @@ async function editChecksUnguarded(walletId: string, request: CheckEditRequest, 
     autoLockMinutes: info.autoLockMinutes,
   }
   const resolved = resolveEdit(current, request)
-  const meta = (await listWallets()).find((m) => m.id === walletId)
+  const meta = (await listKeyWallets()).find((m) => m.id === walletId)
   if (!meta) throw new Error('Wallet not found in local vault.')
   const previousLockId = fromLockId
   if (!resolved.changed) {
@@ -1546,6 +1733,15 @@ async function editChecksUnguarded(walletId: string, request: CheckEditRequest, 
 export async function setLockAutoLock(lockId: string, minutes: number, ctx: { prompts: Prompts } = { prompts: unavailablePrompts }): Promise<PolicyVerdict> {
   const onLock = (await listStoredWallets()).filter((w) => w.lockId === lockId)
   const first = onLock[0]
+  const transmitters = (await listTransmitterRecords()).filter((t) => t.lockId === lockId)
+  if (!first && transmitters.length > 0) {
+    // A Transmitter's lock (OS-FR-3, FR-65): its Open Check is passed again first,
+    // then the floor is judged against its Network. No Seed to prove.
+    const proved = await reproveOpenKey(lockId, ctx.prompts)
+    if (proved.status === 'cancelled') return { ok: false, reason: 'Cancelled. The auto-lock was not changed.' }
+    if (proved.status !== 'ok') return { ok: false, reason: `${describeCheckFailure(proved)} The auto-lock was not changed.` }
+    return setAutoLockMinutes(lockId, minutes, transmitters.map((t) => t.network))
+  }
   if (!first) {
     // A lock with no Wallet left on it has nothing to protect and no Seed to prove.
     return setAutoLockMinutes(lockId, minutes, [])

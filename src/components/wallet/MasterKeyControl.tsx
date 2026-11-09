@@ -8,7 +8,8 @@ import { Label } from '@/components/ui/label'
 import { StatusLegend } from '@/components/ui/lamp'
 import { useAccountState } from '@/hooks/useAccountState'
 import { useYieldingPrompts } from '@/hooks/usePrompts'
-import type { WalletMeta } from '@/lib/crypto/keystore'
+import type { KeyWalletMeta } from '@/lib/crypto/keystore'
+import { isKeyWallet } from '@/lib/wallet-meta'
 import { masterKeyAction, masterKeyStatus, setMasterKey, type MasterKeyResult, type MasterKeyStatus } from '@/lib/master-key'
 import { NETWORKS } from '@/lib/xrpl/networks'
 import { useAppStore, useWalletOpenKey } from '@/store/app-store'
@@ -29,7 +30,7 @@ const WORDS: Record<MasterKeyStatus, { tone: 'live' | 'caution' | 'neutral'; tex
  * `lib/master-key.ts`, the flow is `setMasterKey`, and nothing is remembered.
  * Mount only for a Wallet whose lock is open (AD-26).
  */
-export function MasterKeyControl({ wallet }: { wallet: WalletMeta }) {
+export function MasterKeyControl({ wallet }: { wallet: KeyWalletMeta }) {
   const queryClient = useQueryClient()
   const { prompts, promptOpen } = useYieldingPrompts()
   const openKey = useWalletOpenKey(wallet.id)
@@ -45,7 +46,7 @@ export function MasterKeyControl({ wallet }: { wallet: WalletMeta }) {
   // A submission whose re-read failed leaves the status unknown, whatever is cached.
   const unconfirmed = result?.status === 'unconfirmed'
   const status = unconfirmed ? 'unknown' : masterKeyStatus(state)
-  const { action, reason } = masterKeyAction(wallet, unconfirmed ? null : state, readFailed || unconfirmed, wallets)
+  const { action, reason } = masterKeyAction(wallet, unconfirmed ? null : state, readFailed || unconfirmed, wallets.filter(isKeyWallet))
   const turningOff = action === 'off'
   const words = WORDS[status]
   const regularKey = state?.exists ? state.regularKey : undefined

@@ -3,6 +3,8 @@ import { decode, encode, PaymentFlags, Wallet } from 'xrpl'
 import { resetXrplClientFactory, resetXrplClients, setXrplClientFactory } from '../client'
 import {
   expectedAccountFor,
+  previewSignedTransaction,
+  resetSentThisSession,
   FeeAboveCapError,
   resetTxInFlightReporter,
   setTxInFlightReporter,
@@ -67,6 +69,8 @@ function payment(over: Record<string, unknown> = {}): any {
 }
 
 beforeEach(() => {
+  // Each test is a fresh page session: the already-sent guard starts empty (story 4).
+  resetSentThisSession()
   log = []
   resetXrplClients()
   setTxInFlightReporter((on) => log.push(`in-flight:${on}`))
@@ -382,5 +386,65 @@ describe('the expected Account at the Transmit step (OS-FR-9)', () => {
     expect(expectedAccountFor({ requestAccount: 'rR', confirmedAccount: 'rC' })).toBe('rR')
     expect(expectedAccountFor({ confirmedAccount: 'rC' })).toBe('rC')
     expect(expectedAccountFor({})).toBeNull()
+  })
+})
+
+describe('one scanned Signed Transaction is sent at most once a session (story 4, OS-FR-9)', () => {
+  it('refuses the same blob again after a send, sending nothing the second time', async () => {
+    const client = installFakeClient({ validated: [90] })
+    const blob = master.sign(payment()).tx_blob
+    await transmitSignedTransaction('testnet', { txBlob: blob, network: 'testnet' }, master.address)
+    log = []
+    const err = await transmitSignedTransaction('testnet', { txBlob: blob, network: 'testnet' }, master.address).catch((e) => e)
+    expect(err).toMatchObject({ reason: 'already-sent', message: 'The app did not send the transaction.' })
+    expect(client.submitted).toEqual([blob])
+    expectDepthReleased()
+  })
+
+  it('a submit that threw still counts as sent: it may have reached the ledger', async () => {
+    const client = installFakeClient({ validated: [90] })
+    client.submitAndWait = async () => {
+      throw new Error('socket closed')
+    }
+    const blob = master.sign(payment()).tx_blob
+    await expect(transmitSignedTransaction('testnet', { txBlob: blob, network: 'testnet' }, master.address)).rejects.toThrow('socket closed')
+    await expect(transmitSignedTransaction('testnet', { txBlob: blob, network: 'testnet' }, master.address)).rejects.toMatchObject({ reason: 'already-sent' })
+  })
+
+  it('a refusal or a decline sends nothing, so the same blob may come again', async () => {
+    const client = installFakeClient({ validated: [90] })
+    const blob = master.sign(payment()).tx_blob
+    await expect(transmitSignedTransaction('testnet', { txBlob: blob, network: 'testnet' }, master.address, undefined, async () => false)).rejects.toBeInstanceOf(Error)
+    await expect(transmitSignedTransaction('testnet', { txBlob: blob, network: 'mainnet' }, master.address)).rejects.toMatchObject({ reason: 'network' })
+    const outcome = await transmitSignedTransaction('testnet', { txBlob: blob, network: 'testnet' }, master.address)
+    expect(outcome.status).toBe('validated')
+    expect(client.submitted).toEqual([blob])
+  })
+})
+
+describe('the Transmit screen preview needs no ledger read (story 4, OS-FR-9 P-25)', () => {
+  it('returns the Account, hash and window of a good blob, read off the real signed blob', () => {
+    const signed = master.sign(payment({ LastLedgerSequence: 123 }))
+    const checked = previewSignedTransaction('testnet', { txBlob: signed.tx_blob, network: 'testnet' }, master.address)
+    expect(checked).toMatchObject({ account: master.address, hash: signed.hash, lastLedgerSequence: 123 })
+    expect(decode(signed.tx_blob).LastLedgerSequence).toBe(123)
+    expect(log).toEqual([])
+  })
+
+  it('with no expected Account it checks the signature and returns the blob\'s own Account for P-27', () => {
+    const signed = other.sign(payment({ Account: other.address }))
+    expect(previewSignedTransaction('testnet', { txBlob: signed.tx_blob, network: 'testnet' }, null).account).toBe(other.address)
+  })
+
+  it('refuses with the same words as the Transmit step', () => {
+    const blob = master.sign(payment()).tx_blob
+    expect(() => previewSignedTransaction('testnet', { txBlob: blob, network: 'mainnet' }, master.address)).toThrow('This transaction is for Mainnet. This wallet sends on Testnet.')
+    expect(() => previewSignedTransaction('testnet', { txBlob: blob, network: 'testnet' }, other.address)).toThrow(`The account ${master.address} signed this transaction. The correct account is ${other.address}.`)
+    const partial = master.sign(payment({ Flags: PaymentFlags.tfPartialPayment, SendMax: '2000000' })).tx_blob
+    expect(() => previewSignedTransaction('testnet', { txBlob: partial, network: 'testnet' }, master.address)).toThrow('This is a partial payment.')
+    const tx = decode(blob) as any
+    tx.TxnSignature = (tx.TxnSignature[0] === 'A' ? 'B' : 'A') + tx.TxnSignature.slice(1)
+    expect(() => previewSignedTransaction('testnet', { txBlob: encode(tx), network: 'testnet' }, master.address)).toThrow('The signature is not correct.')
+    expect(() => previewSignedTransaction('testnet', { txBlob: master.sign(payment({ Fee: '5000000' })).tx_blob, network: 'testnet' }, master.address)).toThrow(FeeAboveCapError)
   })
 })

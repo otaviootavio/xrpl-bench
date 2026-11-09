@@ -5,6 +5,7 @@ import { EditChecksScreen, type EditedChecks } from '@/components/wallet/EditChe
 import { TwoDeviceScreen } from '@/components/wallet/TwoDeviceSign'
 import { leaveScreen, resetToHome, resetToWalletShell, type TaskRoute } from '@/lib/route'
 import { listWallets } from '@/lib/crypto/keystore'
+import { isKeyWallet } from '@/lib/wallet-meta'
 import { startLockSession } from '@/lib/crypto/lock'
 import { useLockMinutesChanged } from '@/hooks/useLockMinutesChanged'
 import { toast } from '@/lib/notify'
@@ -77,7 +78,7 @@ export function WalletScreens({ route }: { route: TaskRoute }) {
     }
   }
 
-  if (!reachable || !target || !kindHasScreen) return null
+  if (!reachable || !target || !kindHasScreen || !isKeyWallet(target)) return null
   switch (route.screen) {
     case 'edit-checks':
       return <EditChecksScreen wallet={target} onClose={leaveScreen} onEdited={handleEdited} backLabel={backLabel} />
@@ -87,7 +88,7 @@ export function WalletScreens({ route }: { route: TaskRoute }) {
       return (
         <ControlWalletScreen
           controller={target}
-          wallets={wallets}
+          wallets={wallets.filter(isKeyWallet)}
           onClose={leaveScreen}
           backLabel={backLabel}
           onControlled={async () => {

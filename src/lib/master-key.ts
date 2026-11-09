@@ -1,6 +1,9 @@
 import type { QueryClient } from '@tanstack/react-query'
 import { controlStatus, describeFailure, holdsMasterKey } from '@/lib/control'
-import { listWallets, SigningCheckError, signingHandleFor, type Prompts, type WalletMeta } from '@/lib/crypto/keystore'
+import { listWallets, SigningCheckError, signingHandleFor, type Prompts, type KeyWalletMeta, type WalletMeta } from '@/lib/crypto/keystore'
+
+/** Only a Wallet that holds a key: a Transmitter never signs and is never a target (OS-FR-3). */
+const holdsKey = (w: WalletMeta): w is KeyWalletMeta => w.kind !== 'transmitter'
 import { fetchAccountStateFresh } from '@/lib/xrpl/query-reads'
 import { invalidateAccountScoped } from '@/lib/xrpl/query-keys'
 import type { AccountState } from '@/lib/xrpl/reads'
@@ -30,8 +33,8 @@ export function masterKeyStatus(accountState: AccountState | null | undefined): 
  * such a Wallet can turn the master key back on, so turning it off needs one
  * (a Regular Key nothing here can sign as would lock the Account for good). */
 export function holdsRegularKeyHere(
-  wallets: readonly Pick<WalletMeta, 'address' | 'keyAddress' | 'network'>[],
-  account: { address: string; network: WalletMeta['network'] },
+  wallets: readonly Pick<KeyWalletMeta, 'address' | 'keyAddress' | 'network'>[],
+  account: { address: string; network: KeyWalletMeta['network'] },
   regularKey: string,
 ): boolean {
   return wallets.some((w) => w.network === account.network && w.address === account.address && w.keyAddress === regularKey && !holdsMasterKey(w))
@@ -49,11 +52,11 @@ export interface MasterKeyAction {
 
 /** The one place that judges the offer. An errored or loading read blocks it. */
 export function masterKeyAction(
-  wallet: Pick<WalletMeta, 'address' | 'keyAddress' | 'network'>,
+  wallet: Pick<KeyWalletMeta, 'address' | 'keyAddress' | 'network'>,
   accountState: AccountState | null | undefined,
   readFailed: boolean,
   /** Every Wallet on this device: turning the master key off needs one that signs as the Regular Key. */
-  wallets: readonly Pick<WalletMeta, 'address' | 'keyAddress' | 'network'>[],
+  wallets: readonly Pick<KeyWalletMeta, 'address' | 'keyAddress' | 'network'>[],
 ): MasterKeyAction {
   const action = holdsMasterKey(wallet) ? 'off' : 'on'
   if (readFailed) return { action, reason: 'The ledger could not be read, so the wallet cannot tell whether the master key is on. Try again.' }
@@ -101,7 +104,7 @@ export type MasterKeyResult =
 
 export const MASTER_KEY_UNCONFIRMED = 'The change was submitted, but the wallet could not confirm it from the ledger, so the master key state is unknown. Check again.'
 
-async function reread(ctx: SetMasterKeyContext, wallet: WalletMeta): Promise<AccountState | null> {
+async function reread(ctx: SetMasterKeyContext, wallet: KeyWalletMeta): Promise<AccountState | null> {
   try {
     await invalidateAccountScoped(ctx.queryClient, wallet.network, wallet.address)
     return await fetchAccountStateFresh(ctx.queryClient, wallet.network, wallet.address, wallet.node)
@@ -114,7 +117,7 @@ async function reread(ctx: SetMasterKeyContext, wallet: WalletMeta): Promise<Acc
  * that Wallet's Signing Check. The guard is judged again on a fresh read. */
 export async function setMasterKey(walletId: string, enable: boolean, ctx: SetMasterKeyContext): Promise<MasterKeyResult> {
   if (ctx.confirmed !== true) return { status: 'refused', reason: 'The change was not confirmed. Nothing was signed.' }
-  const all = await listWallets()
+  const all = (await listWallets()).filter(holdsKey)
   const wallet = all.find((w) => w.id === walletId)
   if (!wallet) return { status: 'refused', reason: 'That wallet is no longer on this device.' }
   // Turn off needs the master key; turn on needs a view that does not hold it.

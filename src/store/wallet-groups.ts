@@ -12,7 +12,8 @@ export interface LockedCard {
   walletId: string
   lockId: string
   label: string
-  address: string
+  /** The Account, or `null` for a Transmitter that is not synced (P-5). */
+  address: string | null
   network: NetworkId
   kind: WalletKind
 }

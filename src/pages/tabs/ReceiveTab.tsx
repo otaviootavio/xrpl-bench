@@ -9,7 +9,9 @@ import { useAccountState } from '@/hooks/useAccountState'
 export function ReceiveTab() {
   const network = useActiveNetwork()
   const node = useActiveNode()
-  const wallet = useActiveWallet()
+  const active = useActiveWallet()
+  // Mounted only for an Online Wallet; a Transmitter is never shown here.
+  const wallet = active && active.kind !== 'transmitter' ? active : null
   const accountState = useAccountState(network, wallet?.address ?? null, node)
 
   if (!wallet) return <p className="text-muted-foreground">No active wallet.</p>

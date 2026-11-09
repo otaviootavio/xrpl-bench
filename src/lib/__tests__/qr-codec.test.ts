@@ -16,9 +16,18 @@ describe('qr-codec', () => {
   })
 
   it('round-trips a signed payload', () => {
-    const enc = encodeSigned('12AB')
+    const enc = encodeSigned({ network: 'testnet', txBlob: '12AB' })
     expect(enc.ok && enc.text.startsWith('xrplbench:1:s:')).toBe(true)
-    expect(decodeSigned(enc.ok ? enc.text : '')).toEqual({ ok: true, value: { v: 1, tx_blob: '12AB' } })
+    expect(decodeSigned(enc.ok ? enc.text : '')).toEqual({ ok: true, value: { v: 1, network_id: 1, network: 'testnet', tx_blob: '12AB' } })
+  })
+
+  it('a signed envelope names its Network; a code without a known one is refused (OS-FR-9)', () => {
+    const main = encodeSigned({ network: 'mainnet', txBlob: 'AB' })
+    expect(decodeSigned(main.ok ? main.text : '')).toMatchObject({ ok: true, value: { network: 'mainnet', network_id: 0 } })
+    expect(decodeSigned(`xrplbench:1:s:${b64({ v: 1, tx_blob: 'AB' })}`)).toMatchObject({ ok: false, kind: 'bad-network' })
+    for (const id of [3, 1.5, '1', null, 1024]) {
+      expect(decodeSigned(`xrplbench:1:s:${b64({ v: 1, network_id: id, tx_blob: 'AB' })}`)).toMatchObject({ ok: false, kind: 'bad-network' })
+    }
   })
 
   it('carries non-ASCII text intact', () => {
@@ -34,7 +43,7 @@ describe('qr-codec', () => {
 
   it('rejects the wrong kind in both directions', () => {
     const u = encodeUnsigned({ network: 'testnet', tx })
-    const s = encodeSigned('AB')
+    const s = encodeSigned({ network: 'testnet', txBlob: 'AB' })
     expect(decodeSigned(u.ok ? u.text : '')).toMatchObject({ ok: false, kind: 'wrong-kind' })
     expect(decodeUnsigned(s.ok ? s.text : '')).toMatchObject({ ok: false, kind: 'wrong-kind' })
   })
@@ -45,8 +54,8 @@ describe('qr-codec', () => {
       expect(decodeSigned(bad)).toMatchObject({ ok: false })
     }
     expect(decodeUnsigned(`xrplbench:1:u:${b64({ v: 1, network_id: 0 })}`)).toMatchObject({ ok: false, kind: 'malformed' })
-    expect(decodeSigned(`xrplbench:1:s:${b64({ v: 1, tx_blob: 'not hex' })}`)).toMatchObject({ ok: false, kind: 'malformed' })
-    expect(decodeSigned(`xrplbench:1:s:${b64({ v: 1, tx_blob: '' })}`)).toMatchObject({ ok: false, kind: 'malformed' })
+    expect(decodeSigned(`xrplbench:1:s:${b64({ v: 1, network_id: 1, tx_blob: 'not hex' })}`)).toMatchObject({ ok: false, kind: 'malformed' })
+    expect(decodeSigned(`xrplbench:1:s:${b64({ v: 1, network_id: 1, tx_blob: '' })}`)).toMatchObject({ ok: false, kind: 'malformed' })
   })
 
   it('rejects a non-integer or unknown network_id', () => {
@@ -58,7 +67,7 @@ describe('qr-codec', () => {
   it('refuses to encode, and to decode, a payload over one QR', () => {
     const big = encodeUnsigned({ network: 'testnet', tx: { ...tx, Memo: 'x'.repeat(QR_MAX_BYTES) } })
     expect(big).toEqual({ ok: false, reason: expect.stringContaining('too large for one QR') })
-    expect(encodeSigned('AB'.repeat(QR_MAX_BYTES)).ok).toBe(false)
+    expect(encodeSigned({ network: 'testnet', txBlob: 'AB'.repeat(QR_MAX_BYTES) }).ok).toBe(false)
     expect(decodeUnsigned('xrplbench:1:u:' + 'A'.repeat(QR_MAX_BYTES))).toMatchObject({ ok: false, kind: 'too-large' })
   })
 

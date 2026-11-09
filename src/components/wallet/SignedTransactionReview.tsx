@@ -41,6 +41,24 @@ function decodedFields(txBlob: string): Array<[string, string]> {
   }
 }
 
+/** The decoded fields of a Signed Transaction, one row each, in the ledger's own
+ * names (P-52). Shared by the show-before-sending screen and Transmit. */
+export function SignedFieldList({ txBlob }: { txBlob: string }) {
+  const fields = decodedFields(txBlob)
+  return (
+    // Every cell may break anywhere: a ledger field name (LastLedgerSequence)
+    // in the tracked legend face is wider than a 320px sheet at 200% text.
+    <dl className="grid min-w-0 gap-2">
+      {fields.map(([name, value]) => (
+        <div key={name} className="grid min-w-0 gap-0.5">
+          <dt className="panel-legend [overflow-wrap:anywhere]">{name}</dt>
+          <dd className="font-data text-[0.8125rem] leading-relaxed tracking-tight [overflow-wrap:anywhere]">{value}</dd>
+        </div>
+      ))}
+    </dl>
+  )
+}
+
 /**
  * "Show the signed transaction before sending" (OS-FR-10, EXPERIENCE "Transmit
  * step"): the hash, the decoded fields and Copy, then "Send it to the ledger?"
@@ -51,7 +69,6 @@ function decodedFields(txBlob: string): Array<[string, string]> {
 export function SignedTransactionReview({ signed, onAnswer }: { signed: SignedForReview; onAnswer: (send: boolean) => void }) {
   const [copied, setCopied] = useState(false)
   const questionRef = useRef<HTMLHeadingElement | null>(null)
-  const fields = decodedFields(signed.txBlob)
   const warning = fill(STILL_VALID_WARNING, signed.lastLedgerSequence)
 
   async function copy() {
@@ -78,16 +95,7 @@ export function SignedTransactionReview({ signed, onAnswer }: { signed: SignedFo
           <h3 className="panel-legend [overflow-wrap:anywhere]">{TRANSACTION_HASH}</h3>
           <p className="font-data text-[0.8125rem] leading-relaxed tracking-tight [overflow-wrap:anywhere]">{signed.hash}</p>
         </div>
-        {/* Every cell may break anywhere: a ledger field name (LastLedgerSequence)
-            in the tracked legend face is wider than a 320px sheet at 200% text. */}
-        <dl className="grid min-w-0 gap-2">
-          {fields.map(([name, value]) => (
-            <div key={name} className="grid min-w-0 gap-0.5">
-              <dt className="panel-legend [overflow-wrap:anywhere]">{name}</dt>
-              <dd className="font-data text-[0.8125rem] leading-relaxed tracking-tight [overflow-wrap:anywhere]">{value}</dd>
-            </div>
-          ))}
-        </dl>
+        <SignedFieldList txBlob={signed.txBlob} />
         <div className="grid gap-3">
           <div>
             <Button type="button" variant="outline" onClick={copy}>

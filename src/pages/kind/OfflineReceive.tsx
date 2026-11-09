@@ -1,7 +1,7 @@
 import { AddressDisplay } from '@/components/wallet/AddressDisplay'
 import { QrCode } from '@/components/wallet/QrCode'
 import { OFFLINE_SCREENS } from '@/lib/wallet-kind-words'
-import type { WalletMeta } from '@/lib/crypto/keystore'
+import type { KeyWalletMeta } from '@/lib/crypto/keystore'
 import { KindScreenPlate } from './KindScreenPlate'
 
 /**
@@ -10,7 +10,7 @@ import { KindScreenPlate } from './KindScreenPlate'
  * and it cannot know whether the account exists or needs a tag, so it says nothing
  * about either. Not `ReceiveTab`: that one reads the account's settings.
  */
-export function OfflineReceive({ wallet }: { wallet: WalletMeta }) {
+export function OfflineReceive({ wallet }: { wallet: KeyWalletMeta }) {
   return (
     <KindScreenPlate title={OFFLINE_SCREENS.receive.title}>
       <AddressDisplay address={wallet.address} />

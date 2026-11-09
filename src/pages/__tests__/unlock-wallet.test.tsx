@@ -90,6 +90,15 @@ describe('the locked-Wallet view', () => {
     h.proof = true
   })
 
+  it('a no-Open-Check Transmitter whose verifier does not decrypt is not opened (OS-FR-3)', async () => {
+    h.proof = false
+    h.info = { id: 'L1', openCheck: 'none', autoLockMinutes: 7, pin: false, passkey: false }
+    h.openLock.mockResolvedValue({ status: 'ok', value: { key: KEY, autoLockMinutes: 7 } })
+    renderUnlock()
+    expect(await screen.findByText('This wallet could not be opened.')).toBeTruthy()
+    expect(useAppStore.getState().openLocks).toEqual({})
+  })
+
   it('says how many tries remain on a wrong PIN and stays closed', async () => {
     h.openLock.mockResolvedValue({ status: 'wrong-credential', kind: 'pin', triesRemaining: 6 })
     renderUnlock()

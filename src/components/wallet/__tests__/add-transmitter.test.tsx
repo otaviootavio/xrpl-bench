@@ -22,11 +22,15 @@ vi.mock('@/lib/crypto/keystore', () => ({
   createTransmitterWallet: (...a: unknown[]) => h.create(...a),
   listWallets: async () => [],
   describeCheckFailure: () => 'Locked out.',
+  appPinResidue: async () => false,
 }))
+vi.mock('@/lib/build-info', () => ({ BUILD: { version: '0.0.0' }, shortSha: 'abc', sourceUrl: '#', formatBuiltAt: () => 'now' }))
 
 import { AddTransmitterScreen } from '../AddTransmitterScreen'
 import { useAppStore } from '@/store/app-store'
 import { consumeAdded } from '@/lib/chooser-signals'
+import { Onboarding } from '@/pages/Onboarding'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 
 const ADDR = 'rPT1Sjq2YGrBMTttX4GZHjKu9dyfzbpAYe'
 const P8 = 'WARNING: An offline wallet on this device has this address.'
@@ -135,5 +139,28 @@ describe('Add a Transmitter wallet (OS-FR-3)', () => {
     expect(await screen.findByText('No.')).toBeTruthy()
     expect(h.startLockSession).not.toHaveBeenCalled()
     expect(onClose).not.toHaveBeenCalled()
+  })
+})
+
+describe('first run offers it too (story 4: a daily phone may hold only a Transmitter)', () => {
+  it('Onboarding shows P-2; it opens the quiz, Back to start returns, and a new Transmitter becomes the active Wallet', async () => {
+    h.create.mockResolvedValue({ status: 'ok', value: { meta: { id: 'T1', lockId: 'LT1' }, openKey: {} } })
+    render(
+      <QueryClientProvider client={new QueryClient()}>
+        <Onboarding />
+      </QueryClientProvider>,
+    )
+    await click(button('Add a Transmitter wallet'))
+    expect(screen.getByRole('heading', { level: 1 }).textContent).toBe('Add a Transmitter wallet')
+    await click(await screen.findByRole('button', { name: /Back to start/ }))
+    await click(button('Add a Transmitter wallet'))
+    await screen.findByLabelText('Label')
+    await click(button('Next'))
+    await click(button('Next'))
+    await click(screen.getByRole('radio', { name: 'No authentication required to open the wallet' }))
+    await click(button('Next'))
+    await click(button('Skip this step'))
+    await click(button('Add a Transmitter wallet'))
+    await waitFor(() => expect(useAppStore.getState().activeWalletId).toBe('T1'))
   })
 })

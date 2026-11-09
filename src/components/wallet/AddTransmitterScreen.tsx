@@ -229,19 +229,6 @@ function AddTransmitterQuiz({
       title: SYNC_TO_AN_ADDRESS,
       blocked: addressInvalid,
       ...(addressInvalid ? { blockedReasonId: invalidId } : {}),
-      secondary: (
-        <Button
-          type="button"
-          variant="outline"
-          disabled={busy}
-          onClick={() => {
-            setAddress('')
-            go(index + 1)
-          }}
-        >
-          {SKIP_THIS_STEP}
-        </Button>
-      ),
     },
     { id: 'review', title: 'Review' },
   ]
@@ -349,7 +336,21 @@ function AddTransmitterQuiz({
       {index === 2 && <OpenCheckQuestion {...questionProps} />}
       {index === 3 && (
         <div className="grid gap-3">
+          {/* P-41's key sits with its line, not in the footer: three stacked footer keys
+              leave no room at 320px with 200% text. */}
           <p className="text-sm text-muted-foreground">{SYNC_LATER}</p>
+          <Button
+            type="button"
+            variant="outline"
+            className="h-auto min-h-8 w-fit max-w-full whitespace-normal py-1 pointer-coarse:min-h-11"
+            disabled={busy}
+            onClick={() => {
+              setAddress('')
+              go(index + 1)
+            }}
+          >
+            {SKIP_THIS_STEP}
+          </Button>
           <div className="grid gap-1.5">
             <Label htmlFor={`${group}-address`}>Address</Label>
             <Input

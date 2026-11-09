@@ -185,6 +185,19 @@ describe('a Transmitter Wallet (OS-FR-1, OS-FR-4)', () => {
     await waitFor(() => expect(screen.getByRole('heading', { level: 1, name: 'New transaction' })).toBeTruthy())
   }, 30_000)
 
+  it('a screen that goes away with the Sync falls back to Transmit (OS-FR-4)', async () => {
+    h.getXrplClient.mockRejectedValue(new Error('no socket'))
+    await openSyncedTransmitter()
+    fireEvent.mouseDown(screen.getByRole('tab', { name: 'Account' }))
+    await waitFor(() => expect(screen.getByRole('tab', { name: 'Account' }).getAttribute('aria-selected')).toBe('true'))
+    await act(async () => {
+      useAppStore.setState({ wallets: [transmitterMeta(null) as never] })
+    })
+    await waitFor(() => expect(tabNames()).toEqual(['Transmit', 'Local settings']))
+    expect(screen.getByRole('tab', { name: 'Transmit' }).getAttribute('aria-selected')).toBe('true')
+    expect(screen.getByRole('heading', { level: 1, name: 'Transmit' })).toBeTruthy()
+  })
+
   it('Synced Local settings: the address, and Remove the address goes back to two screens (OS-FR-4)', async () => {
     h.setTransmitterSync.mockImplementation(async () => {
       h.wallets = [transmitterMeta(null)]

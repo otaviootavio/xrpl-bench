@@ -205,6 +205,19 @@ describe('removing and auto-lock with a Transmitter on the device', () => {
     expect(vault().has(`lock:${meta.lockId}`)).toBe(false)
   })
 
+  it('an auto-lock change re-passes the Open Check first: a dismissed PIN changes nothing', async () => {
+    const r = await createTransmitterWallet({ label: 'P', network: 'testnet', openCheck: 'pin', autoLockMinutes: 5 }, { pin: '123456' })
+    if (r.status !== 'ok') throw new Error('not created')
+    const lockId = r.value.meta.lockId
+    expect(await setLockAutoLock(lockId, 15, noPrompts)).toEqual({ ok: false, reason: 'Cancelled. The auto-lock was not changed.' })
+    expect(vault().get(`lock:${lockId}`).autoLockMinutes).toBe(5)
+    const asked: number[] = []
+    const right = { prompts: { pin: async (info: { triesRemaining: number }) => (asked.push(info.triesRemaining), '123456') } }
+    expect(await setLockAutoLock(lockId, 15, right)).toEqual({ ok: true })
+    expect(asked).toHaveLength(1)
+    expect(vault().get(`lock:${lockId}`).autoLockMinutes).toBe(15)
+  }, 60_000)
+
   it('a Mainnet Transmitter lock keeps the floor: 30 seconds is refused, 5 minutes is set', async () => {
     const { meta } = await addTestnet()
     // Forced: the record and its lock moved to Mainnet (a `none` lock lets the re-proof run without a prompt).

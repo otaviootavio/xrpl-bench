@@ -611,3 +611,20 @@ Item 8 shipped as a refactor that preserves behaviour (`spec-sendtab-split.md`).
 - source_spec: `_bmad-output/specs/spec-offline-signing/stories/3-create-and-import-ask-for-the-kind-the-offline-wallet.md`
   summary: On the create and import Review, every Change key runs past the right edge of the answers plate at 320px with 200% text.
   evidence: Found in the story 3 browser pass, with an Online import as well (each Change button right edge 263px, plate 224px). The Label row's Change key overflows too, and story 3 did not change that row, its button or `ReviewStep`, so this is very likely pre-existing (not measured on `420a70a`). The page itself does not scroll sideways.
+
+- source_spec: `_bmad-output/specs/spec-offline-signing/stories/4-transmitter-wallet-sync-to-an-address-delegates-shown.md`
+  summary: The Synced Transmitter's Account shows the Regular Key and the master key but not the signer list, which EXPERIENCE "Screens by type" puts in the key state. An unmet spine element.
+  evidence: No approved words exist for the signer list row (its term and its values: none, a list, quorum). The read itself is one `account_objects` of type `signer_list`. Needs an approved P-n, then a row beside Regular Key and Master key (P-29 on a failed read).
+
+- source_spec: `_bmad-output/specs/spec-offline-signing/stories/4-transmitter-wallet-sync-to-an-address-delegates-shown.md`
+  summary: The Sync step and the Synced address plate take the address typed or pasted only; Flow 2 says the address is scanned from the offline phone.
+  evidence: P-57 "Scan an address with the camera" is approved, but `QrScanner` hands up only `xrplbench:` codes. Needs an `accept` predicate for a plain classic address (and `ripple:` URIs), then the scanner on both places.
+
+- source_spec: `_bmad-output/specs/spec-offline-signing/stories/4-transmitter-wallet-sync-to-an-address-delegates-shown.md`
+  summary: First-run Onboarding offers "Add a Transmitter wallet" (P-2), whose approved place is the chooser key.
+  evidence: A fresh daily phone has no chooser, so without it a device holding only a Transmitter cannot be set up. The words are P-2 unchanged; the placement is the build's choice and wants the owner's confirmation. Pinned in `add-transmitter.test.tsx`.
+
+- source_spec: `_bmad-output/specs/spec-offline-signing/stories/4-transmitter-wallet-sync-to-an-address-delegates-shown.md`
+  summary: Missing words in story 4: a reason line for the already-sent refusal (only the P-26 heading shows), a sentence for the Transmitter Remove dialog beyond its title, and a visible reason for the Sync plate's aria-disabled key while the field is empty.
+  evidence: Each is in neither approved list; the build shows what approved words allow and nothing more.
+

@@ -591,6 +591,7 @@ Item 8 shipped as a refactor that preserves behaviour (`spec-sendtab-split.md`).
 - source_spec: `_bmad-output/specs/spec-offline-signing/stories/1-wallet-kind-on-the-record-and-the-chooser-card.md`
   summary: The Remove dialog of a Transmitter Wallet uses the Seed sentences from `removeBodyFor` ("the encrypted seed"), but a Transmitter holds no key.
   evidence: Found in the story 1 review on 2026-11-08. `src/lib/remove-copy.ts` has no kind branch. Story 4 makes the Transmitter record without a Seed; its remove words need an approved string.
+  resolution: (2026-11-09, `_bmad-output/specs/spec-offline-signing/stories/4-transmitter-wallet-sync-to-an-address-delegates-shown.md`) resolved without new words. `removeBodyFor` returns `transmitter` (no sentence beyond the title and the plate's line) or `transmitter-last` (the last-wallet sentence only); no Seed or backup sentence. A fuller sentence would need an approved string.
 
 - source_spec: `_bmad-output/specs/spec-offline-signing/stories/1-wallet-kind-on-the-record-and-the-chooser-card.md`
   summary: The kind is stored per Wallet view, but the Seed, Seed Method and Signing Check belong to the Seed record, so one Seed could hold an Online and an Offline Wallet.
@@ -600,10 +601,12 @@ Item 8 shipped as a refactor that preserves behaviour (`spec-sendtab-split.md`).
 - source_spec: `_bmad-output/specs/spec-offline-signing/stories/2-one-transmit-step-and-show-the-signed-transaction-before-sending.md`
   summary: No session-wide guard refuses a second transmit of a Signed Transaction already sent.
   evidence: Story 2 keeps never-resubmit structural (one submission per entry, no blob kept). Re-scanning the same signed QR on a Transmitter is story 4's; a guard there needs approved refusal words.
+  resolution: (2026-11-09, `_bmad-output/specs/spec-offline-signing/stories/4-transmitter-wallet-sync-to-an-address-delegates-shown.md`) resolved. `transmitSignedTransaction` keeps an in-memory set of submitted hashes (added when a submission is attempted, never on a refusal or decline); a repeat is refused with the P-26 heading alone. A reason line needs an approved string.
 
 - source_spec: `_bmad-output/specs/spec-offline-signing/stories/3-create-and-import-ask-for-the-kind-the-offline-wallet.md`
   summary: P-8's second form ("A Transmitter wallet on this device has this address…") belongs on the create and import of an Offline Wallet, but story 3 does not show it.
   evidence: No Transmitter Wallet on this device can carry an address until story 4 (Sync), so the condition can never be true in story 3. Story 4 adds both forms of P-8, including this one on Offline create and import.
+  resolution: (2026-11-09, `_bmad-output/specs/spec-offline-signing/stories/4-transmitter-wallet-sync-to-an-address-delegates-shown.md`) resolved. The second form shows on an Offline import in the existing import warning dialog; an Offline create makes a fresh random key, so no check is needed there. "Change to an offline wallet" (story 5) still owes it.
 
 - source_spec: `_bmad-output/specs/spec-offline-signing/stories/3-create-and-import-ask-for-the-kind-the-offline-wallet.md`
   summary: On the create and import Review, every Change key runs past the right edge of the answers plate at 320px with 200% text.

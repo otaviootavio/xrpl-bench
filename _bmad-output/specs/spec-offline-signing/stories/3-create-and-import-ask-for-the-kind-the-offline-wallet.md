@@ -3,7 +3,7 @@ title: 'Create and import ask for the kind; the Offline Wallet'
 type: 'feature'
 created: '2026-11-08'
 status: 'done'
-baseline_commit: '420a70a'
+baseline_commit: '420a70ae4cd970b91a76072745f16edc0c38ef4e'
 route: 'dispatch'
 review_loop_iteration: 0
 context:
@@ -86,6 +86,7 @@ context:
 - Offline import: `acquire({ …, offline: true })` skips `checkBeforeImport`, so no account read and no master-key dialog. The local duplicate probe still runs. The master-key state of an imported Offline Seed is therefore not checked here. The Transmitter shows key state in later stories.
 - Deferred entries settled: "Let another wallet sign" offers Online Wallets only (`eligibleTargets` filters on kind). Mixed-kind Seeds cannot arise after story 3 (one view per new record, Online-only controlled views); a change of kind inside a record is story 5's. Recorded in `deferred-work.md`, with two new entries: P-8 for story 4, and the pre-existing Review Change-button overflow at 320px with 200% text.
 - Test setup changes (no assertion relaxed): the shared mount helpers in `create-wallet-flow`, `add-wallet-import` and `seed-import-screens` now pick Online, because the question has no default. The control screen fixture gained `kind: 'online'`. Assertions changed only where the screen changed: step 1's legends and radio count, the Review rows (kind row) and the plate's last line (OS-FR-23), and a status query scoped to the Network line now that step 1 holds two status regions.
+- Switching Create/Import remounts the flow (as before), which clears the kind and its ticks without P-60. No stale text is left, so this was accepted.
 - Browser fix: at 320px with 200% text, the warning legends ran out of their Alert (a tracked uppercase word is wider than the plate). They now wrap inside it (`max-w-full`, `overflow-wrap: break-word`). At that size a word like "WARNING:" still breaks mid-word, but nothing overflows.
 
 ## Spec Change Log
@@ -98,7 +99,7 @@ context:
 
 **Commands (2026-11-08):** `bun run lint` · `bun run build` · `bun run test` (138 files, 2078 tests; baseline 2051 before the new tests) · `bun run check:contrast`. All four are green.
 
-**Browser pass (2026-11-08, working tree over `420a70a`, before the commit).** Ran `bun run dev -- --port 5191 --strictPort` and drove Playwright Chromium in fresh browser contexts (`browser.newContext()`), with a CDP virtual authenticator (ctap2, internal, UV, PRF) in the flow context. All wallets were throwaway Testnet wallets and the import Seed was generated locally. Nothing was funded: no screen in this story reads the ledger. WebSockets were counted with `page.on('websocket')`. Screenshots are in the session scratchpad `s3/`.
+**Browser pass (2026-11-08).** The flow pass ran on the working tree over `420a70a`. The width/theme matrix was re-run on commit `b423b77` (the committed CSS), with the same results recorded below. Ran `bun run dev -- --port 5191 --strictPort` and drove Playwright Chromium in fresh browser contexts (`browser.newContext()`), with a CDP virtual authenticator (ctap2, internal, UV, PRF) in the flow context. All wallets were throwaway Testnet wallets and the import Seed was generated locally. Nothing was funded: no screen in this story reads the ledger. WebSockets were counted with `page.on('websocket')`. Screenshots are in the session scratchpad `s3/`.
 
 | Criterion | Result |
 |---|---|
@@ -109,8 +110,8 @@ context:
 | No ledger connection during an Offline create and import | Met. The only WebSocket in the whole flow was Vite's HMR socket (`ws://localhost:5191/?token=…`). In 8 more Mainnet Offline import rounds, 0 non-local sockets opened. |
 | Mainnet safeguards on an Offline Wallet | Met. "No authentication required to open the wallet" has `aria-disabled` in every round. Review shows Real funds, the Mainnet fact and OS-FR-23 (`review-import-offline-mainnet-1280-dark`). Create was not pressed on Mainnet. |
 | 320 / 390 / 1280, light and dark, step 1 and Review | Met. No page side-scroll, and no kind block, Alert, list item or legend wider than its box (measured each round; `step1-import-offline-320-dark` opened). |
-| 320px with 200% text | Met after the fix. The warning legends had run out of their Alert (fixed, re-measured: nothing overflows; `zoom200-textB-warning-320-light`). Not met, and pre-existing: every Review Change key runs past the answers plate, on an Online import too (`ReviewStep`, unchanged; deferred). |
+| 320px with 200% text | Met after the fix. The warning legends and the OS-FR-23 legend had run out of their Alert; fixed and re-measured on `b423b77`, nothing in step 1 or the Alerts overflows (`zoom200-textB-warning-320-light`). Not met: every Review Change key runs past the answers plate, on an Online import too, including the Label row, whose row and button story 3 did not change (`ReviewStep` untouched). Very likely pre-existing, but not measured on `420a70a`. Deferred. |
 
-Screenshots opened: `onb-step1-offline-unticked-390-light`, `import-offline-step1-390-light`, `onb-review-offline-390-light`, `chooser-two-offline-390-light`, `step1-import-offline-320-dark`, `review-import-offline-mainnet-1280-dark`, `zoom200-textB-warning-320-light` (twice: before and after the fix), `step1-import-offline-320-light-zoom200`. The dev server was stopped after the pass.
+Screenshots opened: `onb-step1-arrival-390-light`, `onb-step1-offline-unticked-390-light`, `import-offline-step1-390-light`, `onb-review-offline-390-light`, `chooser-two-offline-390-light`, `step1-import-offline-320-dark`, `review-import-offline-mainnet-1280-dark`, `zoom200-textB-warning-320-light` (twice: before and after the fix), `step1-import-offline-320-light-zoom200`. The dev server was stopped after the pass.
 
 Not checked in the browser: the P-60 status after a kind switch, and the kind change after a Review Change. Both are covered by `create-wallet-flow.test.tsx`.

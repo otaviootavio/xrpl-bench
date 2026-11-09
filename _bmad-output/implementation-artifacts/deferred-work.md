@@ -607,4 +607,4 @@ Item 8 shipped as a refactor that preserves behaviour (`spec-sendtab-split.md`).
 
 - source_spec: `_bmad-output/specs/spec-offline-signing/stories/3-create-and-import-ask-for-the-kind-the-offline-wallet.md`
   summary: On the create and import Review, every Change key runs past the right edge of the answers plate at 320px with 200% text.
-  evidence: Found in the story 3 browser pass, with an Online import as well (each Change button right edge 263px, plate 224px). `ReviewStep` was not changed by story 3; it is pre-existing. The page itself does not scroll sideways.
+  evidence: Found in the story 3 browser pass, with an Online import as well (each Change button right edge 263px, plate 224px). The Label row's Change key overflows too, and story 3 did not change that row, its button or `ReviewStep`, so this is very likely pre-existing (not measured on `420a70a`). The page itself does not scroll sideways.

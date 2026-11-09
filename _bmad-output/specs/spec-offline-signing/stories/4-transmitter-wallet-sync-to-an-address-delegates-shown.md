@@ -121,7 +121,7 @@ Round one (coordinator review, 2026-11-09). Each fixed with the smallest change;
 | 11 | address inputs lacked autoCapitalize/autoCorrect off | real | added (spellCheck was already off) |
 | 12 | missing tests: Sync A→B and remove drop the old cached reads; P-8 on the plate; stale state → P-29; unsynced Transmitter never reads; History reads the Synced address | real | added (`sync-plate.test.tsx`, `transmitter-account.test.tsx`, `wallet-kind-screens.test.tsx`) |
 | 13 | unused `db.lockIdsInUse`; stale `Main` comment | real | removed; comment states which kinds mount ledger hooks |
-| 14 | scanner label "a code" is not an approved filling of P-57's `{payload}` | open | left as is; listed under missing words, awaiting the owner |
+| 14 | scanner label "a code" is not an approved filling of P-57's `{payload}` | resolved | owner approved "a code" as the filling on 2026-11-09 |
 
 ## Design Notes
 
@@ -133,7 +133,7 @@ Round one (coordinator review, 2026-11-09). Each fixed with the smallest change;
 - A sentence for the Transmitter Remove dialog beyond its title.
 - A visible reason for the Sync plate's `aria-disabled` key while the field is empty.
 - A sentence for a failed Sync write (the shipped "Nothing was changed." is shown alone).
-- The scanner's `{payload}` filling "a code" (P-57), awaiting the owner.
+- The scanner's `{payload}` filling "a code" (P-57): approved by the owner on 2026-11-09.
 - Scanning an address with the camera on the Sync step (P-57 "Scan an address with the camera" exists, but `QrScanner` accepts only `xrplbench:` codes; left for a later story): the address is typed or pasted.
 
 **Layout.** Transmit: scanner and P-42, then (role=alert) refusals, then the check list, P-27 as a caution, the hash (h2, takes focus), the field list, and the one orange Send. With the setting on, Send opens story 2's show-before-sending screen. Account: address, readout, key-state rows, trust lines, then the Delegates caution and its list.

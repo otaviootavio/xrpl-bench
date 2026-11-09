@@ -3,7 +3,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { QrCode } from '@/components/wallet/QrCode'
+import { PayloadQr } from '@/components/wallet/PayloadQr'
 import { TaskScreen } from '@/components/wallet/TaskScreen'
 import { useLeaveBlocker } from '@/hooks/useRoute'
 import { launchFromConfigure } from '@/lib/configure-launch'
@@ -104,13 +104,6 @@ export function TwoDeviceScreen({ wallet, onClose, backLabel }: { wallet: KeyWal
       {role === 'offline' && <OfflinePanel wallet={wallet} onBusy={setBusy} />}
     </TaskScreen>
   )
-}
-
-/** About four pixels per module, estimated from the payload's length (a QR's side is
- * roughly sqrt(bytes x 14) + 17 modules), so a long payload stays scannable. */
-function qrDrawSize(text: string): number {
-  const modules = Math.min(177, Math.max(21, Math.ceil(Math.sqrt(text.length * 14)) + 17))
-  return Math.min(720, Math.max(220, (modules + 2) * 4))
 }
 
 function Field({ label, value, mono = true }: { label: string; value: string; mono?: boolean }) {
@@ -238,7 +231,7 @@ function OnlinePanel({ wallet, onBusy }: { wallet: KeyWalletMeta; onBusy: (busy:
         {!settled && (
           <>
             <p>Step 1. Show this to the offline device, which has this account’s wallet on {NETWORKS[wallet.network].label}.</p>
-            <QrCode text={built.text} size={qrDrawSize(built.text)} />
+            <PayloadQr text={built.text} />
             <CopyText text={built.text} label="the transaction to sign" />
             <p>Step 2. When the offline device shows its signed result, bring it back here.</p>
             <QrScanner label="the signed transaction" onPayload={(t) => void returned(t)} />
@@ -349,7 +342,7 @@ function OfflinePanel({ wallet, onBusy }: { wallet: KeyWalletMeta; onBusy: (busy
     return (
       <div className="flex flex-col gap-3 text-sm" data-testid="two-device-offline-signed">
         <p>Signed. Show this to the online device, which checks it and sends it. Close this window when it has it: nothing is kept.</p>
-        <QrCode text={signed} size={qrDrawSize(signed)} />
+        <PayloadQr text={signed} />
         <CopyText text={signed} label="the signed transaction" />
       </div>
     )

@@ -170,9 +170,8 @@ export async function buildUnsigned(walletId: string, request: TwoDeviceRequest,
   const lastLedgerSequence = prepared.LastLedgerSequence
   if (typeof lastLedgerSequence !== 'number') return { status: 'refused', reason: 'The transaction window could not be set. Nothing was built.' }
 
-  const encoded = encodeUnsigned({ network, tx: prepared as unknown as Record<string, unknown> })
-  if (!encoded.ok) return { status: 'refused', reason: encoded.reason }
-  return { status: 'built', text: encoded.text, tx: prepared, lastLedgerSequence }
+  const { text } = encodeUnsigned({ network, tx: prepared as unknown as Record<string, unknown> })
+  return { status: 'built', text, tx: prepared, lastLedgerSequence }
 }
 
 export interface UnsignedReview {
@@ -305,8 +304,7 @@ export async function signUnsigned(walletId: string, text: string, ctx: SignCont
   try {
     const signing = await signingHandleFor(walletId, { openKey: ctx.openKey ?? null, prompts: ctx.prompts })
     const signed = await signPrepared(signing, reviewed.review.tx)
-    const encoded = encodeSigned({ network: wallet.network, txBlob: signed.tx_blob })
-    return encoded.ok ? { status: 'signed', text: encoded.text } : { status: 'refused', reason: `${encoded.reason} Nothing was sent.` }
+    return { status: 'signed', text: encodeSigned({ network: wallet.network, txBlob: signed.tx_blob }).text }
   } catch (err) {
     if (err instanceof SigningCheckError) {
       return err.result.status === 'cancelled'

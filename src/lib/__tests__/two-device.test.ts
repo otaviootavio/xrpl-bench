@@ -1,7 +1,7 @@
 import { QueryClient } from '@tanstack/react-query'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { Wallet, decode, encode } from 'xrpl'
-import { encodeSigned, encodeUnsigned } from '../qr-codec'
+import { decodeUnsigned, encodeSigned, encodeUnsigned } from '../qr-codec'
 import { resetXrplClientFactory, resetXrplClients, setXrplClientFactory } from '../xrpl/client'
 import { resetTxInFlightReporter } from '../xrpl/writes'
 
@@ -15,18 +15,8 @@ const h = vi.hoisted(() => ({
   failAccountRead: false,
   signAs: null as any,
   checkResult: null as any,
-  tooLarge: false,
   ledgerFails: false,
 }))
-
-vi.mock('../qr-codec', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('../qr-codec')>()
-  return {
-    ...actual,
-    encodeUnsigned: (...a: Parameters<typeof actual.encodeUnsigned>) =>
-      h.tooLarge ? { ok: false as const, reason: 'This transaction is too large for one QR code, so it cannot be carried between the two devices.' } : actual.encodeUnsigned(...a),
-  }
-})
 
 vi.mock('@/lib/xrpl/reads', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/lib/xrpl/reads')>()
@@ -114,7 +104,6 @@ beforeEach(() => {
   h.failAccountRead = false
   h.signAs = master
   h.checkResult = null
-  h.tooLarge = false
   h.ledgerFails = false
   validated = 1000
   submitted = []
@@ -167,10 +156,10 @@ describe('buildUnsigned', () => {
     expect(await buildUnsigned('on', paymentReq, { queryClient: qc() })).toMatchObject({ status: 'refused', reason: expect.stringContaining('destination tag') })
   })
 
-  it('refuses a payload too large for one QR', async () => {
-    h.accounts = { [master.address]: acct({ regularKey: other.address }) }
-    // A regular-key build is small; prove the refusal path through the codec directly.
-    expect(encodeUnsigned({ network: 'testnet', tx: { M: 'x'.repeat(5000) } })).toMatchObject({ ok: false })
+  it('refuses nothing for its size: a payload over one QR is carried whole (OS-FR-24)', () => {
+    const big = encodeUnsigned({ network: 'testnet', tx: { M: 'x'.repeat(5000) } })
+    expect(big.ok).toBe(true)
+    expect(decodeUnsigned(big.text)).toMatchObject({ ok: true, value: { tx: { M: 'x'.repeat(5000) } } })
   })
 
   it('exposes the same guard to the UI: an errored read blocks with a reason', () => {
@@ -487,11 +476,6 @@ describe('hardening', () => {
     h.ledgerFails = true
     expect(await submitReturned(onlineMeta as any, r.tx, text, { queryClient: qc() })).toMatchObject({ status: 'refused', reason: expect.stringContaining('could not be read') })
     expect(submitted).toEqual([])
-  })
-
-  it('a build over one QR is refused with the plain reason', async () => {
-    h.tooLarge = true
-    expect(await buildUnsigned('on', paymentReq, { queryClient: qc() })).toMatchObject({ status: 'refused', reason: expect.stringContaining('too large for one QR') })
   })
 
   it('round-trips turning the master key on (ClearFlag) signed by the Regular Key', async () => {

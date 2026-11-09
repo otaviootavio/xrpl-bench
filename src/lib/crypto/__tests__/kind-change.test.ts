@@ -160,7 +160,7 @@ describe('Change to an offline wallet (OS-FR-5, OS-FR-7)', () => {
     expect(snapshot()).toBe(before)
   })
 
-  it('refuses a record with a second view: the same key would stay on an Online Wallet here', async () => {
+  it('refuses a record with a second view: one record holds one kind', async () => {
     const { meta } = await storeSeedWallet('Shared', lock)
     h.state.stores.wallets.set(meta.id, {
       ...recordOf(meta.id),

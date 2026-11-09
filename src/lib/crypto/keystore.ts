@@ -1514,8 +1514,10 @@ async function seedViewFor(walletId: string): Promise<{ all: StoredWallet[]; rec
  *
  * Refused (typed, nothing written): a Transmitter (it never changes kind), a view
  * that is not Online, a Passkey-Derived Seed (its key can be made again from a
- * passkey that syncs to the cloud, OS-FR-8), and a record with more than one view
- * (the same key would stay on an Online Wallet on this device).
+ * passkey that syncs to the cloud, OS-FR-8), and a record with more than one view:
+ * a record holds one kind, so its key is never both an Online and an Offline view.
+ * The same Seed as a second record on another Network stays allowed (story 3; the
+ * OS-FR-23 warning covers it).
  */
 export async function changeToOfflineWallet(walletId: string): Promise<KeyWalletMeta> {
   const { record, view } = await seedViewFor(walletId)

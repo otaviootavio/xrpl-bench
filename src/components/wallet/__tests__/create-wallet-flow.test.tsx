@@ -75,10 +75,13 @@ const META = {
 const KEY = { type: 'secret' } as unknown as CryptoKey
 const created = () => ({ status: 'ok', value: { meta: META, openKey: KEY, seed: SEED } })
 
-/** Mounts on step 1 (Label and Network). */
+/** Mounts on step 1 (Label and Network) and answers the kind question with Online
+ * (offline signing story 3: the question has no default), so these tests drive
+ * today's Online walk unchanged. */
 async function mountCollapsed(props: Parameters<typeof CreateWalletFlow>[0] = {}) {
   render(<CreateWalletFlow {...props} />)
   await screen.findByLabelText('Label')
+  await click(screen.getByRole('radio', { name: 'Online' }))
 }
 
 /** Mounts and walks to step 2 (Node), where most policy tests start driving their radios. */
@@ -112,6 +115,8 @@ async function switchNetwork(name: RegExp) {
 }
 
 const nextButton = () => screen.getByRole('button', { name: 'Next' })
+/** The Network reset line's status region (step 1 also holds the kind question's own, P-60). */
+const resetStatus = () => screen.getAllByRole('status').find((el) => !el.closest('[data-slot="kind-choice"]'))!
 /** The radio with this name. Each question has its own step, so this visits the walk steps until one shows it. */
 const radioNamed = (name: RegExp | string): HTMLInputElement => {
   const found = () => screen.queryByRole('radio', { name }) as HTMLInputElement | null
@@ -231,9 +236,10 @@ describe('the questions and their pre-selected answers', () => {
 describe('Label and Network, then the walk', () => {
   it('step 1 shows only Label and Network', async () => {
     await mountCollapsed()
-    expect(legends()).toEqual(['Network'])
+    // Offline signing story 3 adds the kind question before Label (OS-FR-2).
+    expect(legends()).toEqual(['Online wallet or offline wallet?', 'Network'])
     expect(screen.getByLabelText('Label')).toBeTruthy()
-    expect(screen.getAllByRole('radio').length).toBe(3)
+    expect(screen.getAllByRole('radio').length).toBe(5)
     expect(screen.queryByRole('button', { name: 'Customise' })).toBeNull()
     expect(screen.queryByText('Recommended')).toBeNull()
   })
@@ -422,7 +428,7 @@ describe('unavailable answers', () => {
     expect(radioNamed(/^Passkey-Derived Seed/).checked).toBe(true)
     goToStep('Name and network')
     await click(radioNamed(/^Mainnet/))
-    expect(screen.getByRole('status').textContent).toBe('The later questions start again.')
+    expect(resetStatus().textContent).toBe('The later questions start again.')
     await click(nextButton())
     await click(nextButton())
     const derived = radioNamed(/^Passkey-Derived Seed/)
@@ -481,7 +487,7 @@ describe('unavailable answers', () => {
     expect(createButton().getAttribute('aria-disabled')).toBeNull()
     goToStep('Name and network')
     await click(radioNamed(/^Mainnet/))
-    expect(screen.getByRole('status').textContent).toBe('The later questions start again.')
+    expect(resetStatus().textContent).toBe('The later questions start again.')
     await click(nextButton())
     expect(radioNamed('App PIN').checked).toBe(true)
     const none = radioNamed(/^No authentication required to open the wallet/)
@@ -1092,6 +1098,7 @@ describe('Written-Seed confirmation (story 7)', () => {
     })
     const { unmount } = render(<CreateWalletFlow />)
     await screen.findByLabelText('Label')
+    await click(screen.getByRole('radio', { name: 'Online' }))
     await click(radioNamed(/^Mainnet/))
     await click(nextButton())
     await click(createButton())
@@ -1235,6 +1242,7 @@ describe('the Review (story 20.7)', () => {
     await mount()
     goToStep('Review')
     expect(rows().map((dt) => dt.textContent)).toEqual([
+      'Online wallet or offline wallet?',
       'Label',
       'Network',
       'Node',
@@ -1245,7 +1253,7 @@ describe('the Review (story 20.7)', () => {
       'Authentication required to sign a transaction',
     ])
     const values = rows().map((dt) => dt.nextElementSibling?.textContent)
-    expect(values).toEqual(['My Wallet', 'Testnet', 'Built-in Nodes', 'Stored Seed', 'Ed25519', 'App PIN', '5 minutes', 'Nothing is asked for signing'])
+    expect(values).toEqual(['Online', 'My Wallet', 'Testnet', 'Built-in Nodes', 'Stored Seed', 'Ed25519', 'App PIN', '5 minutes', 'Nothing is asked for signing'])
     for (const dt of rows()) {
       const button = screen.queryByRole('button', { name: `Change ${dt.textContent}` })
       if (dt.textContent === 'Network') expect(button).toBeNull()
@@ -1336,7 +1344,7 @@ describe('the Review (story 20.7)', () => {
 })
 
 describe('the Network lock and reset (story 20.7)', () => {
-  const line = () => screen.getByRole('status')
+  const line = () => resetStatus()
 
   it('is a polite status region that is mounted, and empty, before anything changes', async () => {
     await mountCollapsed()
@@ -1485,7 +1493,9 @@ describe('an App PIN refused at Create wallet (story 20.7)', () => {
     const answers = document.querySelector('section[aria-label="Your answers"]')!
     expect(answers.compareDocumentPosition(pin()) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     expect(document.querySelector('section[aria-label="Before you create"]')).toBeNull()
-    expect(answers.lastElementChild?.textContent).toContain('This wallet holds test funds only.')
+    // The OS-FR-23 caution is the plate's last line, directly after the consequence line (offline signing story 3).
+    expect(answers.lastElementChild?.textContent).toBe('Do not use one seed on more than one network.A transaction signed for one network can be sent on another.')
+    expect(answers.lastElementChild?.previousElementSibling?.textContent).toContain('This wallet holds test funds only.')
     expect(pin().closest('section')?.textContent).not.toMatch(/below/i)
   })
 
@@ -1550,5 +1560,148 @@ describe('an App PIN refused at Create wallet (story 20.7)', () => {
     expect(h.createStoredWallet).toHaveBeenCalledTimes(1)
     expect(h.createStoredWallet.mock.calls[0][0]).toMatchObject({ label: 'My Wallet', network: 'testnet', algorithm: 'ed25519', openCheck: 'pin', autoLockMinutes: 5, signing: 'standard', passkey: 'no' })
     expect(h.createStoredWallet.mock.calls[0][1]).toMatchObject({ pin: '123456', appPinExpected: false })
+  })
+})
+
+describe('step 1 asks for the kind (offline signing story 3, OS-FR-2, OS-FR-7, OS-FR-8, OS-FR-23)', () => {
+  const kindRadio = (name: 'Online' | 'Offline') => screen.getByRole('radio', { name }) as HTMLInputElement
+  const describedText = (el: HTMLElement) =>
+    (el.getAttribute('aria-describedby') ?? '')
+      .split(' ')
+      .map((id) => document.getElementById(id)?.textContent ?? '')
+      .join(' ')
+  const fill = async () => {
+    for (let guard = 0; guard < 8 && screen.queryByRole('button', { name: 'Next' }); guard++) await click(nextButton())
+    type(screen.getByLabelText(/Choose an App PIN \(/), '123456')
+    type(screen.getByLabelText('Confirm the App PIN'), '123456')
+  }
+  const tickB = () => screen.getByRole('checkbox', { name: 'I read this warning. WARNING: The app cannot make your device offline.' })
+
+  async function arrive() {
+    render(<CreateWalletFlow />)
+    await screen.findByLabelText('Label')
+  }
+
+  it('has no default: Next is aria-disabled, does nothing, and points at the question', async () => {
+    await arrive()
+    expect(kindRadio('Online').checked).toBe(false)
+    expect(kindRadio('Offline').checked).toBe(false)
+    expect(nextButton().getAttribute('aria-disabled')).toBe('true')
+    expect(describedText(nextButton())).toBe('Online wallet or offline wallet?')
+    await click(nextButton())
+    expect(screen.getByText('Step 1 of 7')).toBeTruthy()
+  })
+
+  it('Online shows Text A in place, with nothing to tick, and Next goes on', async () => {
+    await arrive()
+    await click(kindRadio('Online'))
+    expect(screen.getByText('This device keeps the key and connects to the XRP Ledger.')).toBeTruthy()
+    expect(screen.getByText('Use an online wallet for small amounts and for daily payments.')).toBeTruthy()
+    expect(screen.queryByRole('checkbox')).toBeNull()
+    expect(nextButton().getAttribute('aria-disabled')).toBeNull()
+  })
+
+  it('Offline shows Text B and its WARNING; Next waits on the P-6 box with P-7 as its reason', async () => {
+    await arrive()
+    await click(kindRadio('Offline'))
+    expect(screen.getByText('Step 1 of 5')).toBeTruthy()
+    expect(screen.getByText('Use an offline wallet for large amounts.')).toBeTruthy()
+    expect(screen.getByText('WARNING: The app cannot make your device offline.')).toBeTruthy()
+    expect(screen.queryByText('This device keeps the key and connects to the XRP Ledger.')).toBeNull()
+    expect(nextButton().getAttribute('aria-disabled')).toBe('true')
+    expect(describedText(nextButton())).toBe('Read each warning. Then select the box below it.')
+    expect(describedText(tickB())).toContain('Turn off Wi-Fi, mobile data and Bluetooth.')
+    await click(nextButton())
+    expect(screen.getByText('Step 1 of 5')).toBeTruthy()
+    await click(tickB())
+    expect(nextButton().getAttribute('aria-disabled')).toBeNull()
+    expect(screen.queryByText('Read each warning. Then select the box below it.')).toBeNull()
+  })
+
+  it('a kind change clears the tick and says so (P-60)', async () => {
+    await arrive()
+    const status = () => document.querySelector('[data-slot="kind-choice"] [role="status"]')!
+    expect(status().textContent).toBe('')
+    await click(kindRadio('Offline'))
+    await click(tickB())
+    await click(kindRadio('Online'))
+    expect(status().textContent).toBe('The text below changed. Select the box below each warning again.')
+    await click(kindRadio('Offline'))
+    expect((tickB() as HTMLElement).getAttribute('data-state')).toBe('unchecked')
+    expect(nextButton().getAttribute('aria-disabled')).toBe('true')
+  })
+
+  it('the Offline walk asks no Node and no Seed Method, and writes an Offline Stored Seed with no Node', async () => {
+    await arrive()
+    await click(kindRadio('Offline'))
+    await click(tickB())
+    const titles: string[] = []
+    for (let guard = 0; guard < 8 && screen.queryByRole('button', { name: 'Next' }); guard++) {
+      await click(nextButton())
+      titles.push(screen.getByRole('heading', { level: 2 }).textContent ?? '')
+    }
+    expect(titles).toEqual(['Signature type', 'Authentication to open the wallet, and auto-lock', 'Authentication to sign a transaction', 'Review'])
+    expect(screen.getByText('Do not use one seed on more than one network.')).toBeTruthy()
+    await fill()
+    await click(createButton())
+    expect(h.verifyNode).not.toHaveBeenCalled()
+    expect(h.createDerivedWallet).not.toHaveBeenCalled()
+    expect(h.createStoredWallet).toHaveBeenCalledTimes(1)
+    const input = h.createStoredWallet.mock.calls[0][0]
+    expect(input.kind).toBe('offline')
+    expect(input).not.toHaveProperty('node')
+  })
+
+  it('Online answers an Offline Wallet cannot have (Passkey-Derived, a tested Node) go when Offline is chosen', async () => {
+    h.capability = 'yes'
+    await arrive()
+    await click(kindRadio('Online'))
+    await click(nextButton())
+    await click(screen.getByRole('radio', { name: /^A Node you choose/ }))
+    type(screen.getByLabelText(/Node address/), 'wss://mine.example.com')
+    await click(screen.getByRole('button', { name: 'Test this Node' }))
+    await click(nextButton())
+    await click(screen.getByRole('radio', { name: /^Passkey-Derived Seed/ }))
+    await click(screen.getByRole('button', { name: 'Back' }))
+    await click(screen.getByRole('button', { name: 'Back' }))
+    await click(kindRadio('Offline'))
+    await click(tickB())
+    for (let guard = 0; guard < 8 && screen.queryByRole('button', { name: 'Next' }); guard++) await click(nextButton())
+    expect(screen.getByText('Stored Seed')).toBeTruthy()
+    expect(screen.queryByText(/Passkey-Derived/)).toBeNull()
+    await click(createButton())
+    await waitFor(() => expect(h.createStoredWallet).toHaveBeenCalled())
+    expect(h.createDerivedWallet).not.toHaveBeenCalled()
+    expect(h.createStoredWallet.mock.calls[0][0]).not.toHaveProperty('node')
+    expect(h.createStoredWallet.mock.calls[0][0].kind).toBe('offline')
+  })
+
+  it('a kind change after a Change on the Review walks the new steps instead of jumping back', async () => {
+    await arrive()
+    await click(kindRadio('Offline'))
+    await click(tickB())
+    for (let guard = 0; guard < 8 && screen.queryByRole('button', { name: 'Next' }); guard++) await click(nextButton())
+    await click(screen.getByRole('button', { name: 'Change Online wallet or offline wallet?' }))
+    await click(kindRadio('Online'))
+    await click(nextButton())
+    expect(screen.getByRole('heading', { level: 2 }).textContent).toBe('Node')
+  })
+
+  it('Offline on Mainnet keeps the Mainnet safeguards: no Open Check of none', async () => {
+    await arrive()
+    await click(kindRadio('Offline'))
+    await click(tickB())
+    await click(screen.getByRole('radio', { name: /^Mainnet/ }))
+    await click(nextButton())
+    await click(nextButton())
+    const none = screen.getByRole('radio', { name: /^No authentication required to open the wallet/ })
+    expect(none.getAttribute('aria-disabled')).toBe('true')
+  })
+
+  it('the Review shows the OS-FR-23 warning for an Online Wallet too', async () => {
+    await mount()
+    goToStep('Review')
+    expect(screen.getByText('Do not use one seed on more than one network.')).toBeTruthy()
+    expect(screen.getByText('A transaction signed for one network can be sent on another.')).toBeTruthy()
   })
 })

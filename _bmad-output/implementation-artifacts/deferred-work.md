@@ -586,6 +586,7 @@ Item 8 shipped as a refactor that preserves behaviour (`spec-sendtab-split.md`).
 - source_spec: `_bmad-output/specs/spec-offline-signing/stories/1-wallet-kind-on-the-record-and-the-chooser-card.md`
   summary: "Let another wallet sign" (operate another account) offers Offline and Transmitter Wallets as target accounts, because `eligibleTargets` in `src/lib/control.ts` does not look at the kind.
   evidence: Found in the story 1 review on 2026-11-08. It cannot be reached until story 3 creates Offline Wallets, and story 12 removes the screen (OS-FR-19); OS-FR-21 lets any address be a Regular Key. Settle in story 3: either filter by kind or accept it until story 12.
+  resolution: (2026-11-08, `_bmad-output/specs/spec-offline-signing/stories/3-create-and-import-ask-for-the-kind-the-offline-wallet.md`) resolved. `eligibleTargets` offers Online Wallets only: the target gains an Online view that signs here, so an Offline key would sign on a connected device, and a Transmitter has no key. Pinned in `control.test.ts`.
 
 - source_spec: `_bmad-output/specs/spec-offline-signing/stories/1-wallet-kind-on-the-record-and-the-chooser-card.md`
   summary: The Remove dialog of a Transmitter Wallet uses the Seed sentences from `removeBodyFor` ("the encrypted seed"), but a Transmitter holds no key.
@@ -594,7 +595,16 @@ Item 8 shipped as a refactor that preserves behaviour (`spec-sendtab-split.md`).
 - source_spec: `_bmad-output/specs/spec-offline-signing/stories/1-wallet-kind-on-the-record-and-the-chooser-card.md`
   summary: The kind is stored per Wallet view, but the Seed, Seed Method and Signing Check belong to the Seed record, so one Seed could hold an Online and an Offline Wallet.
   evidence: Unverified (medium if a problem). Found in the story 1 review on 2026-11-08. A kind per Wallet matches the glossary. Stories 3 and 5 (create Offline, change kind) decide whether one Seed may hold Wallets of two kinds, and whether to refuse it.
+  resolution: (2026-11-08, offline signing story 3) partly settled. Every create and import writes a new record with one view, and `addControlledView` (the only path that adds a view) now has Online targets only, so after story 3 no record holds two kinds. One Seed as an Online and an Offline Wallet on two Networks is two records (allowed; the OS-FR-23 warning covers it); the same address on the same Network is refused whatever the kind (FR-93). A change of kind inside a record is story 5's to decide.
 
 - source_spec: `_bmad-output/specs/spec-offline-signing/stories/2-one-transmit-step-and-show-the-signed-transaction-before-sending.md`
   summary: No session-wide guard refuses a second transmit of a Signed Transaction already sent.
   evidence: Story 2 keeps never-resubmit structural (one submission per entry, no blob kept). Re-scanning the same signed QR on a Transmitter is story 4's; a guard there needs approved refusal words.
+
+- source_spec: `_bmad-output/specs/spec-offline-signing/stories/3-create-and-import-ask-for-the-kind-the-offline-wallet.md`
+  summary: P-8's second form ("A Transmitter wallet on this device has this address…") belongs on the create and import of an Offline Wallet, but story 3 does not show it.
+  evidence: No Transmitter Wallet on this device can carry an address until story 4 (Sync), so the condition can never be true in story 3. Story 4 adds both forms of P-8, including this one on Offline create and import.
+
+- source_spec: `_bmad-output/specs/spec-offline-signing/stories/3-create-and-import-ask-for-the-kind-the-offline-wallet.md`
+  summary: On the create and import Review, every Change key runs past the right edge of the answers plate at 320px with 200% text.
+  evidence: Found in the story 3 browser pass, with an Online import as well (each Change button right edge 263px, plate 224px). `ReviewStep` was not changed by story 3; it is pre-existing. The page itself does not scroll sideways.

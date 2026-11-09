@@ -389,6 +389,14 @@ describe('setRegularKey', () => {
     expect(eligibleTargets(controller, await listWallets()).map((m) => m.id)).toEqual([target.id])
   })
 
+  it('offers Online Wallets only: an Offline key must not sign here, and a Transmitter has none (offline signing story 3)', async () => {
+    const all = await listWallets()
+    const base = all.find((m) => m.id === target.id)!
+    const asKind = (kind: 'offline' | 'transmitter', id: string) => ({ ...base, id, seedId: id, keyAddress: `r${id}`, address: `r${id}`, kind })
+    const listed = [...all, asKind('offline', 'off'), asKind('transmitter', 'tx')]
+    expect(eligibleTargets(controller, listed).map((m) => m.id)).toEqual([target.id])
+  })
+
   it('a key that was replaced and is set again is claimed through its old view, with no second view', async () => {
     const third = (await storeSeedWallet('Third', lock, 'testnet')).meta
     await setRegularKey(controller.id, target.id, ctx())

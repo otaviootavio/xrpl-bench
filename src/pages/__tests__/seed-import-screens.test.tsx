@@ -99,6 +99,7 @@ const seedInput = () => document.getElementById('wseed') as HTMLInputElement | n
 async function onboardingImport(value: string, { network }: { network?: RegExp } = {}) {
   render(<Onboarding />)
   await click('Import an existing wallet')
+  await act(async () => void fireEvent.click(await screen.findByRole('radio', { name: 'Online' })))
   if (network) fireEvent.click(screen.getByRole('radio', { name: network }))
   fireEvent.change(seedInput()!, { target: { value } })
   await click('Next')
@@ -148,6 +149,7 @@ describe('Onboarding: first-run Import is the quiz in import mode', () => {
     ledger.masterKeyDisabled()
     const view = render(<Onboarding />)
     await click('Import an existing wallet')
+    await act(async () => void fireEvent.click(await screen.findByRole('radio', { name: 'Online' })))
     const field = seedInput()!
     fireEvent.change(field, { target: { value: SEED } })
     await click('Next')
@@ -217,6 +219,7 @@ describe('Onboarding: first-run Import is the quiz in import mode', () => {
   it('refuses a whitespace-only Seed: Next never gets past step 1 and nothing is written', async () => {
     render(<Onboarding />)
     await click('Import an existing wallet')
+    await act(async () => void fireEvent.click(await screen.findByRole('radio', { name: 'Online' })))
     fireEvent.change(seedInput()!, { target: { value: ' \n\t ' } })
     expect(screen.getByRole('button', { name: 'Next' }).getAttribute('aria-disabled')).toBe('true')
     await click('Next')
@@ -235,6 +238,7 @@ describe('Onboarding: first-run Import is the quiz in import mode', () => {
   it('empties the Seed field when the step is left with "Back to start"', async () => {
     render(<Onboarding />)
     await click('Import an existing wallet')
+    await act(async () => void fireEvent.click(await screen.findByRole('radio', { name: 'Online' })))
     const field = seedInput()!
     fireEvent.change(field, { target: { value: SEED } })
     await click('Back to start')

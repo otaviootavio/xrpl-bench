@@ -56,6 +56,10 @@ export function eligibleTargets(controller: WalletMeta, wallets: readonly Wallet
   const seen = new Set<string>()
   return wallets.filter(
     (w) =>
+      // Online only: the target adds an Online view that signs here, so an Offline
+      // key would sign on a connected device, and a Transmitter holds no key
+      // (offline signing story 3 settles the story 1 deferred entry).
+      w.kind === 'online' &&
       w.seedId !== controller.seedId &&
       w.network === controller.network &&
       w.keyAddress !== controller.address &&

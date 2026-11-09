@@ -14,7 +14,8 @@ import { checkBeforeImport, IMPORT_WARNING_COPY, INVALID_SEED_MESSAGE, type Impo
  * Onboarding. It supplies `CreateWalletFlow` with a Seed source. Order, with
  * nothing written until the last step: parse the typed Seed; the duplicate probe
  * (before any prompt and before any ledger read); the master-key pre-check and
- * its warning (lib/seed-import.ts); then the flow's `importStoredWallet` under its
+ * its warning (lib/seed-import.ts), skipped for an Offline Wallet, which reads
+ * nothing; then the flow's `importStoredWallet` under its
  * own new lock.
  *
  * Guardrail #3: the typed Seed is in an uncontrolled input; the parsed one waits
@@ -117,7 +118,7 @@ export function useSeedImport(): { importSource: ImportSource; clearSeed: () => 
       </div>
     ),
     clear: clearSeed,
-    async acquire({ network, node }) {
+    async acquire({ network, node, offline }) {
       const seed = parseSeedInput(seedInputRef.current?.value ?? '')
       if (!seed) return { status: 'refused', reason: INVALID_SEED_MESSAGE, at: 'seed' }
       pendingSeedRef.current = seed
@@ -126,9 +127,13 @@ export function useSeedImport(): { importSource: ImportSource; clearSeed: () => 
         const duplicate = await importDuplicateReason(seed, network)
         if (duplicate) return { status: 'refused', reason: duplicate, at: 'seed' }
         if (!mountedRef.current) return { status: 'cancelled' } // left meanwhile: no ledger read for an abandoned address
-        const warning = await checkBeforeImport(queryClient, network, addressFromSeed(seed), node)
-        if (!mountedRef.current) return { status: 'cancelled' }
-        if (warning && !(await askWarning(warning))) return { status: 'cancelled' }
+        // An Offline Wallet never reads the ledger (OS-FR-2): no master-key check, and so
+        // no warning about it. Its Text E was acknowledged on step 1 instead.
+        if (!offline) {
+          const warning = await checkBeforeImport(queryClient, network, addressFromSeed(seed), node)
+          if (!mountedRef.current) return { status: 'cancelled' }
+          if (warning && !(await askWarning(warning))) return { status: 'cancelled' }
+        }
       } catch {
         return { status: 'refused', reason: 'Could not check this key against the wallets on this device. Nothing was imported.' }
       }

@@ -114,3 +114,47 @@ describe('the Review lists every answer once', () => {
     expect(text).not.toMatch(/PIN:|\d{6}/)
   })
 })
+
+describe('an Offline Wallet walk (offline signing story 3, OS-FR-2, OS-FR-8)', () => {
+  it('has no Node and no Seed Method step, on create and import', () => {
+    expect(walkQuestions(false, 'offline').map((q) => q.id)).toEqual(['signature-type', 'open-check', 'signing-check'])
+    expect(walkQuestions(true, 'offline').map((q) => q.id)).toEqual(['open-check', 'signing-check'])
+  })
+
+  it('before a kind is chosen the walk is the Online one', () => {
+    expect(walkQuestions(false, null)).toEqual(walkQuestions(false, 'online'))
+    expect(walkQuestions(true, null)).toEqual(walkQuestions(true))
+  })
+
+  it('the Review names the kind with the step 1 question, and Change goes to step 1', () => {
+    expect(answerRows(PROPS, 'create', 'online')[1]).toEqual({ step: 'name-network', term: 'Online wallet or offline wallet?', value: 'Online' })
+    expect(answerRows(PROPS, 'create', 'offline')[1]).toEqual({ step: 'name-network', term: 'Online wallet or offline wallet?', value: 'Offline' })
+  })
+
+  it('an Offline create states its one Seed Method with no Change, and lists no Node, no Passkey', () => {
+    const rows = answerRows(PROPS, 'create', 'offline')
+    expect(rows.map((r) => [r.step, r.term, r.value])).toEqual([
+      ['name-network', 'Create or import', 'Create a new wallet'],
+      ['name-network', 'Online wallet or offline wallet?', 'Offline'],
+      ['name-network', 'Label', 'Savings'],
+      [undefined, 'Network', 'Testnet'],
+      [undefined, 'Seed Method', 'Stored Seed'],
+      ['signature-type', 'Signature type', 'Ed25519'],
+      ['open-check', 'Authentication required to open the wallet', 'App PIN'],
+      ['open-check', 'Auto-lock', '5 minutes'],
+      ['signing-check', 'Authentication required to sign a transaction', 'Passkey only'],
+    ])
+  })
+
+  it('an Offline import lists no Seed Method and no Node', () => {
+    expect(answerRows({ ...PROPS, imported: true }, 'import', 'offline').map((r) => r.term)).toEqual([
+      'Create or import',
+      'Online wallet or offline wallet?',
+      'Label',
+      'Network',
+      'Authentication required to open the wallet',
+      'Auto-lock',
+      'Authentication required to sign a transaction',
+    ])
+  })
+})

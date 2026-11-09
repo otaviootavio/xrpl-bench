@@ -719,6 +719,9 @@ export interface CreateStoredWalletInput {
   /** What the device said about PRF. `unknown` is allowed: creation then fails
    * closed if the passkey gives no PRF output. */
   passkey?: PasskeyCapability
+  /** `offline`: an Offline Wallet (OS-FR-2). Absent: an Online Wallet. An Offline
+   * Wallet has no Node, so `node` with it is refused before anything is written. */
+  kind?: 'offline'
 }
 
 export type CreateStoredWalletResult =
@@ -787,6 +790,8 @@ export interface ImportStoredWalletInput {
   /** The parsed Seed. A parameter only: the caller holds it in a ref and clears it in `finally`. */
   seed: string
   passkey?: PasskeyCapability
+  /** `offline`: an Offline Wallet (OS-FR-2, OS-FR-7). Absent: an Online Wallet. */
+  kind?: 'offline'
 }
 
 export type ImportWalletContext = CreateWalletContext
@@ -856,6 +861,16 @@ interface NewWalletSpec {
   signing: SigningKind
   passkey: PasskeyCapability
   origin: 'generated' | 'imported'
+  kind?: 'offline'
+}
+
+/** A programming error, never shown: an Offline Wallet has no Node (OS-FR-2), so a
+ * request that names one is a caller bug. Thrown before any credential, lock or write. */
+export class OfflineWalletNodeError extends Error {
+  constructor() {
+    super('An Offline Wallet has no Node.')
+    this.name = 'OfflineWalletNodeError'
+  }
 }
 
 /** The one writer behind Generate and Import (AD-39). Order, so a failure leaves the
@@ -880,6 +895,7 @@ async function writeNewStoredWallet(
     ...(input.origin === 'imported' ? { imported: true } : {}),
   })
   if (!verdict.ok) return { status: 'refused', reason: verdict.reason }
+  if (input.kind === 'offline' && input.node !== undefined) throw new OfflineWalletNodeError()
   const node = input.node === undefined ? undefined : (canonicalNodeUrl(input.node) ?? undefined)
   if (input.node !== undefined && !node) {
     return { status: 'refused', reason: 'A custom Node must be a wss:// address with no username, password, query or fragment.' }
@@ -944,7 +960,7 @@ async function writeNewStoredWallet(
       lockId,
       openCheck: input.openCheck,
       signingCheck: input.signing,
-      views: [{ walletId, network: input.network, ...(node ? { node } : {}) }],
+      views: [{ walletId, network: input.network, ...(node ? { node } : {}), ...(input.kind === 'offline' ? { kind: 'offline' as const } : {}) }],
       ...(confirmedAt ? { writtenSeedConfirmedAt: confirmedAt } : {}),
       ...(sealed
         ? { sealedSeed: sealed.sealedSeed, signing: sealed.signing }

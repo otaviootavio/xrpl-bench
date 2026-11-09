@@ -20,6 +20,8 @@ const h = vi.hoisted(() => ({
   createDerivedWallet: vi.fn(),
   rpId: 'localhost' as string | null,
   verifyNode: vi.fn(),
+  getXrplClient: vi.fn(),
+  holdXrplClient: vi.fn(),
   startLockSession: vi.fn(async () => {}),
   policyOverride: null as null | ((described: any) => any),
 }))
@@ -38,7 +40,11 @@ vi.mock('@/lib/crypto/lock', () => ({
   startLockSession: (...a: unknown[]) => h.startLockSession(...(a as [])),
 }))
 vi.mock('@/lib/crypto/pin', () => ({ triesRemaining: async () => 8 }))
-vi.mock('@/lib/xrpl/client', () => ({ verifyNode: (...a: unknown[]) => h.verifyNode(...a) }))
+vi.mock('@/lib/xrpl/client', () => ({
+  verifyNode: (...a: unknown[]) => h.verifyNode(...a),
+  getXrplClient: (...a: unknown[]) => h.getXrplClient(...a),
+  holdXrplClient: (...a: unknown[]) => h.holdXrplClient(...a),
+}))
 vi.mock('@/lib/crypto/keystore', () => ({
   createStoredWallet: (...a: unknown[]) => h.createStoredWallet(...a),
   createDerivedWallet: (...a: unknown[]) => h.createDerivedWallet(...a),
@@ -150,6 +156,8 @@ beforeEach(() => {
   h.createDerivedWallet.mockReset().mockResolvedValue({ status: 'ok', value: { meta: { ...META, seedMethod: 'passkey-derived' }, openKey: KEY, ordinal: '048213', backupEligible: true } })
   h.rpId = 'localhost'
   h.verifyNode.mockReset().mockResolvedValue(undefined)
+  h.getXrplClient.mockReset()
+  h.holdXrplClient.mockReset()
   h.startLockSession.mockClear()
   useAppStore.setState({ wallets: [], activeWalletId: null, openLocks: {} } as never)
 })
@@ -678,7 +686,10 @@ describe('results', () => {
     h.createStoredWallet.mockRejectedValue(new Error('put failed'))
     await mount()
     await submit()
-    expect((await screen.findByRole('alert')).textContent).toContain('put failed')
+    // A thrown message is developer text, never shown (offline signing story 3 review).
+    const alert = (await screen.findByRole('alert')).textContent
+    expect(alert).toContain('Could not create the wallet. Nothing was created.')
+    expect(alert).not.toContain('put failed')
     expect(useAppStore.getState().wallets).toEqual([])
   })
 })
@@ -1064,7 +1075,8 @@ describe('Written-Seed confirmation (story 7)', () => {
     for (const g of groups()) type(g.el, SEED.slice(g.from - 1, g.to))
     await click(screen.getByRole('button', { name: 'Check what I wrote' }))
 
-    expect(await screen.findByText('vault write failed')).toBeTruthy()
+    expect(await screen.findByText('Could not create the wallet. Nothing was created.')).toBeTruthy()
+    expect(screen.queryByText('vault write failed')).toBeNull()
     expect(screen.getByText('Step 7 of 7')).toBeTruthy()
   })
 
@@ -1625,10 +1637,15 @@ describe('step 1 asks for the kind (offline signing story 3, OS-FR-2, OS-FR-7, O
     await click(kindRadio('Offline'))
     await click(tickB())
     await click(kindRadio('Online'))
-    expect(status().textContent).toBe('The text below changed. Select the box below each warning again.')
+    // Online has no box to tick again: no P-60 there.
+    expect(status().textContent).toBe('')
     await click(kindRadio('Offline'))
+    expect(status().textContent).toBe('The text below changed. Select the box below each warning again.')
     expect((tickB() as HTMLElement).getAttribute('data-state')).toBe('unchecked')
     expect(nextButton().getAttribute('aria-disabled')).toBe('true')
+    // Ticking every box the step needs clears it.
+    await click(tickB())
+    expect(status().textContent).toBe('')
   })
 
   it('the Offline walk asks no Node and no Seed Method, and writes an Offline Stored Seed with no Node', async () => {
@@ -1644,7 +1661,9 @@ describe('step 1 asks for the kind (offline signing story 3, OS-FR-2, OS-FR-7, O
     expect(screen.getByText('Do not use one seed on more than one network.')).toBeTruthy()
     await fill()
     await click(createButton())
-    expect(h.verifyNode).not.toHaveBeenCalled()
+    // An Offline Wallet never asks the pool for a ledger client (OS-FR-2).
+    expect(h.getXrplClient).not.toHaveBeenCalled()
+    expect(h.holdXrplClient).not.toHaveBeenCalled()
     expect(h.createDerivedWallet).not.toHaveBeenCalled()
     expect(h.createStoredWallet).toHaveBeenCalledTimes(1)
     const input = h.createStoredWallet.mock.calls[0][0]

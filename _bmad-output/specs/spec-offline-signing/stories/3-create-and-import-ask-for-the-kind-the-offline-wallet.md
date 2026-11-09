@@ -93,6 +93,16 @@ context:
 
 ## Review Triage Log
 
+Pass 1 (coordinator review, 2026-11-08).
+
+| # | Finding | Verdict | Fix |
+|---|---|---|---|
+| 1 | `handleCreate` guards `kind === null` but not unread warnings; the acknowledgement rests on step 1's Next only | real (defence in depth: the Review is reachable only through step 1's Next, so no UI path reaches Create unticked) | `|| warningsUnread` in the guard; the create key is `aria-disabled` for no kind or unread warnings |
+| 2 | P-60 shows after switching to Online, where no box exists, and stays | real | P-60 is remembered when ticks are cleared and shown only while the kind is Offline; test |
+| 3 | Import + Offline: P-60 clears after the first tick while Text E is still unticked | real | cleared only when every box the step needs is ticked; test in `add-wallet-import` |
+| 4 | The create catch shows `err.message`, so `OfflineWalletNodeError`'s developer text could reach the user | real | every throw on create shows the existing "Could not create the wallet. Nothing was created.", as import already did; two throw tests now assert the generic words and not the thrown text |
+| 5 | No test drives Onboarding Import + Offline; the Offline create test's `verifyNode` assertion is vacuous | real | `seed-import-screens` test: both boxes, no `checkBeforeImport` (real function, watched), no `fetchQuery`, `kind: 'offline'`; the create test asserts `getXrplClient` and `holdXrplClient` are never called |
+
 ## Design Notes
 
 ## Verification

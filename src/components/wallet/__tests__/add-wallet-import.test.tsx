@@ -843,6 +843,22 @@ describe('Import into an Offline Wallet (offline signing story 3, OS-FR-2, OS-FR
     expect(button('Next').getAttribute('aria-disabled')).toBeNull()
   })
 
+  it('P-60 after a kind change stays until both boxes are ticked again', async () => {
+    await openOfflineImport()
+    const status = () => document.querySelector('[data-slot="kind-choice"] [role="status"]')!
+    await click(tick(B))
+    await click(tick(E))
+    await click(screen.getByRole('radio', { name: 'Online' }))
+    expect(status().textContent).toBe('')
+    await click(screen.getByRole('radio', { name: 'Offline' }))
+    const P60 = 'The text below changed. Select the box below each warning again.'
+    expect(status().textContent).toBe(P60)
+    await click(tick(B))
+    expect(status().textContent).toBe(P60)
+    await click(tick(E))
+    expect(status().textContent).toBe('')
+  })
+
   it('Text E is not shown for an Online import', async () => {
     await openImport()
     expect(screen.queryByText(E)).toBeNull()

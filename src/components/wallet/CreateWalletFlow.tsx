@@ -182,6 +182,8 @@ function CreateWalletForm({ capability, onDone, onInProgressChange, defaultLabel
   const [textERead, setTextERead] = useState(false)
   const [ticksReset, setTicksReset] = useState(false)
   const offline = kind === 'offline'
+  // Every WARNING on step 1 needs its own tick: Text B for Offline, and Text E as well on an Import.
+  const warningsUnread = offline && (!textBRead || (!!importSource && !textERead))
   const [derivedBackup, setDerivedBackup] = useState<DerivedBackup | null>(null)
   // The host the build's rpId is bound to: the one the domain warning names and
   // the Mainnet rule reads. Never read from the page's location here. When it
@@ -326,6 +328,7 @@ function CreateWalletForm({ capability, onDone, onInProgressChange, defaultLabel
    * that gained Node and Seed Method must ask them. */
   function changeKind(next: NewWalletKind) {
     if (next === kind) return
+    // Remembered until the boxes are ticked again; shown only where there are boxes (Offline).
     if (textBRead || textERead) setTicksReset(true)
     setTextBRead(false)
     setTextERead(false)
@@ -344,10 +347,13 @@ function CreateWalletForm({ capability, onDone, onInProgressChange, defaultLabel
     }
   }
 
-  function readWarning(set: (read: boolean) => void) {
+  /** P-60 stays until every box the current step needs is ticked again. */
+  function readWarning(which: 'b' | 'e') {
     return (read: boolean) => {
-      set(read)
-      if (read) setTicksReset(false)
+      ;(which === 'b' ? setTextBRead : setTextERead)(read)
+      const b = which === 'b' ? read : textBRead
+      const e = which === 'e' ? read : textERead
+      if (b && (!importSource || e)) setTicksReset(false)
     }
   }
 
@@ -385,7 +391,7 @@ function CreateWalletForm({ capability, onDone, onInProgressChange, defaultLabel
   }
 
   async function handleCreate() {
-    if (busy || !options.combination.ok || labelError || kind === null) return
+    if (busy || !options.combination.ok || labelError || kind === null || warningsUnread) return
     setError(null)
     setSeedError(null)
     setPinError(null)
@@ -514,9 +520,10 @@ function CreateWalletForm({ capability, onDone, onInProgressChange, defaultLabel
           setError(`${describeCheckFailure(result)} ${nothingDone}`)
           break
       }
-    } catch (err: unknown) {
+    } catch {
       // An import never shows a library message: it is not ours to promise it holds no Seed.
-      setError(importSource ? 'Could not import the wallet. Nothing was imported.' : err instanceof Error ? err.message : 'Could not create the wallet. Nothing was created.')
+      // Never a thrown message: it is developer text (OfflineWalletNodeError, a storage error), not approved words.
+      setError(importSource ? 'Could not import the wallet. Nothing was imported.' : 'Could not create the wallet. Nothing was created.')
     } finally {
       importSource?.clear()
       clearPinFields()
@@ -642,7 +649,7 @@ function CreateWalletForm({ capability, onDone, onInProgressChange, defaultLabel
   const verdict = options.combination
 
   const createButton = (
-    <Button type="button" aria-disabled={!verdict.ok || labelError || (needsPin && pinReadFailed) ? true : undefined} aria-describedby={!verdict.ok ? `${group}-blocked` : labelError ? `${group}-label-error` : network === 'mainnet' ? `${group}-consequence` : undefined} disabled={busy} onClick={() => void handleCreate()}>
+    <Button type="button" aria-disabled={!verdict.ok || labelError || (needsPin && pinReadFailed) || kind === null || warningsUnread ? true : undefined} aria-describedby={!verdict.ok ? `${group}-blocked` : labelError ? `${group}-label-error` : network === 'mainnet' ? `${group}-consequence` : undefined} disabled={busy} onClick={() => void handleCreate()}>
       {busy ? (importSource ? 'Importing…' : 'Creating…') : importSource ? 'Import wallet' : 'Create wallet'}
     </Button>
   )
@@ -694,8 +701,6 @@ function CreateWalletForm({ capability, onDone, onInProgressChange, defaultLabel
   }
 
   const walk = walkQuestions(!!importSource, kind)
-  // Every WARNING on step 1 needs its own tick: Text B for Offline, and Text E as well on an Import.
-  const warningsUnread = offline && (!textBRead || (!!importSource && !textERead))
   const kindLegendId = `${group}-kind-legend`
   const unreadId = `${group}-unread`
   const quizSteps: QuizStep[] = [
@@ -770,13 +775,13 @@ function CreateWalletForm({ capability, onDone, onInProgressChange, defaultLabel
           onKind={changeKind}
           legendId={kindLegendId}
           warningRead={textBRead}
-          onWarningRead={readWarning(setTextBRead)}
-          ticksReset={ticksReset}
+          onWarningRead={readWarning('b')}
+          ticksReset={ticksReset && offline}
           disabled={busy}
         />
       )}
       {/* Text E sits directly above the Seed field (OS-FR-7). */}
-      {importSource && offline && quizIndex === 0 && <AcknowledgedWarning warning={TEXT_E.warning} read={textERead} onRead={readWarning(setTextERead)} disabled={busy} />}
+      {importSource && offline && quizIndex === 0 && <AcknowledgedWarning warning={TEXT_E.warning} read={textERead} onRead={readWarning('e')} disabled={busy} />}
       {/* Mounted once and only hidden elsewhere: unmounting would clear a typed Seed. */}
       {importSource && <div hidden={quizIndex !== 0} onChange={() => setSeedError(null)}>{importSource.field(busy, seedError)}</div>}
       {quizIndex === 0 && <NameAndNetworkStep {...questionProps} resetNote={resetNote} />}

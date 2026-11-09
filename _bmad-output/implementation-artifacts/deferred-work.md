@@ -597,6 +597,7 @@ Item 8 shipped as a refactor that preserves behaviour (`spec-sendtab-split.md`).
   summary: The kind is stored per Wallet view, but the Seed, Seed Method and Signing Check belong to the Seed record, so one Seed could hold an Online and an Offline Wallet.
   evidence: Unverified (medium if a problem). Found in the story 1 review on 2026-11-08. A kind per Wallet matches the glossary. Stories 3 and 5 (create Offline, change kind) decide whether one Seed may hold Wallets of two kinds, and whether to refuse it.
   resolution: (2026-11-08, offline signing story 3) partly settled. Every create and import writes a new record with one view, and `addControlledView` (the only path that adds a view) now has Online targets only, so after story 3 no record holds two kinds. One Seed as an Online and an Offline Wallet on two Networks is two records (allowed; the OS-FR-23 warning covers it); the same address on the same Network is refused whatever the kind (FR-93). A change of kind inside a record is story 5's to decide.
+  resolution: (2026-11-09, `_bmad-output/specs/spec-offline-signing/stories/5-change-a-wallets-kind-and-the-was-online-mark.md`) resolved. Change to offline is refused by the keystore for a record with more than one view (`shared-record`), so no record holds two kinds and no Offline key stays on an Online Wallet here. The refusal has no approved reason words yet (only "Nothing was changed.").
 
 - source_spec: `_bmad-output/specs/spec-offline-signing/stories/2-one-transmit-step-and-show-the-signed-transaction-before-sending.md`
   summary: No session-wide guard refuses a second transmit of a Signed Transaction already sent.
@@ -607,6 +608,7 @@ Item 8 shipped as a refactor that preserves behaviour (`spec-sendtab-split.md`).
   summary: P-8's second form ("A Transmitter wallet on this device has this address…") belongs on the create and import of an Offline Wallet, but story 3 does not show it.
   evidence: No Transmitter Wallet on this device can carry an address until story 4 (Sync), so the condition can never be true in story 3. Story 4 adds both forms of P-8, including this one on Offline create and import.
   resolution: (2026-11-09, `_bmad-output/specs/spec-offline-signing/stories/4-transmitter-wallet-sync-to-an-address-delegates-shown.md`) resolved. The second form shows on an Offline import in the existing import warning dialog; an Offline create makes a fresh random key, so no check is needed there. "Change to an offline wallet" (story 5) still owes it.
+  resolution: (2026-11-09, `_bmad-output/specs/spec-offline-signing/stories/5-change-a-wallets-kind-and-the-was-online-mark.md`) resolved. The second form shows on the Change to an offline wallet screen when a Transmitter here is synced to the Wallet's address; a warning, never a refusal.
 
 - source_spec: `_bmad-output/specs/spec-offline-signing/stories/3-create-and-import-ask-for-the-kind-the-offline-wallet.md`
   summary: On the create and import Review, every Change key runs past the right edge of the answers plate at 320px with 200% text.
@@ -628,3 +630,6 @@ Item 8 shipped as a refactor that preserves behaviour (`spec-sendtab-split.md`).
   summary: Missing words in story 4: a reason line for the already-sent refusal (only the P-26 heading shows), a sentence for the Transmitter Remove dialog beyond its title, and a visible reason for the Sync plate's aria-disabled key while the field is empty.
   evidence: Each is in neither approved list; the build shows what approved words allow and nothing more.
 
+- source_spec: `_bmad-output/specs/spec-offline-signing/stories/5-change-a-wallets-kind-and-the-was-online-mark.md`
+  summary: Missing words in story 5: the "Wallet kind" plate title (the plate's heading is its stamps meanwhile), a reason for refusing Change to offline on a Seed record with a second view, and a success sentence after Change to an online wallet.
+  evidence: Each is in neither approved list. The plate title is the spine's plate name; story 2 needed an owner approval for its "Before sending" title. The build shows approved and shipped words only.

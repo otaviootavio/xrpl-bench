@@ -12,6 +12,7 @@ import { OfflineWallet, TransmitterWallet } from './kind/KindWallets'
 import { useRoute } from '@/hooks/useRoute'
 import { isTaskRoute } from '@/lib/route'
 import { clearConfigureFocusReturn } from '@/lib/configure-launch'
+import { peekKindChanged } from '@/lib/kind-change-result'
 import { useActiveWallet, useActiveNetwork, useActiveNode, useWalletIsOpen } from '@/store/app-store'
 import { useIncomingPaymentNotifications } from '@/hooks/useIncomingPaymentNotifications'
 import { useAccountLiveUpdates } from '@/hooks/useAccountLiveUpdates'
@@ -57,7 +58,8 @@ function OnlineWallet() {
   const route = useRoute()
   // Held here, not in `Tabs`, so the tab the user left (Local settings) is the one a
   // screen returns to; the live hooks above stay mounted behind the screen.
-  const [tab, setTab] = useState<string>(isTaskRoute(route) ? 'wallet' : 'balances')
+  // A change of kind that just made this Wallet Online lands on Local settings too (OS-FR-6).
+  const [tab, setTab] = useState<string>(isTaskRoute(route) || (wallet !== null && peekKindChanged(wallet.id) !== null) ? 'wallet' : 'balances')
   // A task screen left by the Wallets key, Lock or auto-lock must not leave its focus-return key behind.
   useEffect(() => clearConfigureFocusReturn, [])
   // A task screen takes the whole content area (mobile dialogs S2).

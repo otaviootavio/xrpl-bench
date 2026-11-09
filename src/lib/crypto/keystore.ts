@@ -8,6 +8,7 @@ import { checkAutoLock, checkLockRequest, checkEditAllowed, checkWalletRequest, 
 import { b64ToBuf, bufToB64 } from './encoding'
 import { isKeyWallet } from '@/lib/wallet-meta'
 import { INVALID_ADDRESS } from '@/lib/same-address'
+import { SAME_ADDRESS_ON_NETWORK } from '@/lib/kind-change-words'
 import { uniqueDefaultName, validateWalletName, type WalletNameReason } from '@/lib/wallet-name'
 import { attemptPin, getLockoutState, recordFailure, triesRemaining } from './pin'
 import {
@@ -82,6 +83,8 @@ export interface KeyWalletMeta extends WalletMetaBase {
   signingCheck: SigningCheck
   /** When the Seed was written down and confirmed (FR-72). Absent: never. */
   writtenSeedConfirmedAt?: number
+  /** The Was-online mark (OS-FR-7), on an Offline Wallet only. Absent: no mark. */
+  wasOnline?: true
 }
 
 /** A Transmitter Wallet (OS-FR-3): no Seed, no key, never signs. */
@@ -138,6 +141,8 @@ function toMeta(w: StoredWallet, v: WalletView, kind: 'online' | 'offline'): Key
     ...(w.writtenSeedConfirmedAt !== undefined ? { writtenSeedConfirmedAt: w.writtenSeedConfirmedAt } : {}),
     kind,
     ...(showsBeforeSending(v, kind) ? { showBeforeSending: true as const } : {}),
+    // Kept on the view while it is Online (so a change back keeps it), shown only on an Offline one.
+    ...(kind === 'offline' && (v as { wasOnline?: unknown }).wasOnline === true ? { wasOnline: true as const } : {}),
   }
 }
 
@@ -1461,6 +1466,136 @@ export async function setWalletNode(walletId: string, node: string | undefined):
   const meta = (await listWallets()).find((w) => w.id === walletId)
   if (!meta) throw new Error('Wallet not found in local vault.')
   return meta
+}
+
+// ---------------------------------------------------------------------------
+// Changing a Wallet's kind (OS-FR-5, OS-FR-6, OS-FR-7)
+// ---------------------------------------------------------------------------
+
+/** Why a change of kind was refused before anything was written. The message is
+ * developer text, never shown: each screen offers the change only where it is
+ * allowed, with an approved reason where it is not (P-63). */
+export type KindChangeRefusal = 'transmitter' | 'not-online' | 'not-offline' | 'passkey-derived' | 'shared-record'
+
+export class KindChangeRefusedError extends Error {
+  readonly reason: KindChangeRefusal
+  constructor(reason: KindChangeRefusal) {
+    super(`This change of kind is not allowed (${reason}). Nothing was changed.`)
+    this.name = 'KindChangeRefusedError'
+    this.reason = reason
+  }
+}
+
+/** FR-93's duplicate rule, `hasView`, with the Wallet itself left out: another
+ * view on any Seed record with the same `(network, Account, key)`. A Transmitter
+ * is not counted (FR-93 never counted one; OS-FR-3 warns, never refuses). */
+function hasOtherView(all: StoredWallet[], walletId: string, network: NetworkId, account: string, keyAddress: string): boolean {
+  return all.some(
+    (w) => w.address === keyAddress && viewsOf(w).some((v) => v.walletId !== walletId && v.network === network && (v.accountAddress ?? w.address) === account),
+  )
+}
+
+/** The Seed record and the view of one key Wallet, or a typed refusal for a Transmitter. */
+async function seedViewFor(walletId: string): Promise<{ all: StoredWallet[]; record: StoredWallet; view: WalletView }> {
+  if (await isTransmitterId(walletId)) throw new KindChangeRefusedError('transmitter')
+  const all = await listStoredWallets()
+  const record = findSeedRecord(all, walletId)
+  const view = record && viewsOf(record).find((v) => v.walletId === walletId)
+  if (!record || !view) throw new Error('Wallet not found in local vault.')
+  return { all, record, view }
+}
+
+/**
+ * "Change to an offline wallet" (OS-FR-5). The one view becomes Offline: its Node
+ * and its "Show the signed transaction before sending" flag go (an Offline Wallet
+ * has neither, OS-FR-10), and it gains the Was-online mark for good (OS-FR-7).
+ * The record's address, Seed ciphertext, lock and checks are not touched, and the
+ * Network stays.
+ *
+ * Refused (typed, nothing written): a Transmitter (it never changes kind), a view
+ * that is not Online, a Passkey-Derived Seed (its key can be made again from a
+ * passkey that syncs to the cloud, OS-FR-8), and a record with more than one view
+ * (the same key would stay on an Online Wallet on this device).
+ */
+export async function changeToOfflineWallet(walletId: string): Promise<KeyWalletMeta> {
+  const { record, view } = await seedViewFor(walletId)
+  const refusal = (current: StoredWallet, v: WalletView | undefined): KindChangeRefusal | null =>
+    !v || kindOfView(v) !== 'online' ? 'not-online' : current.seedMethod === 'passkey-derived' ? 'passkey-derived' : viewsOf(current).length !== 1 ? 'shared-record' : null
+  const before = refusal(record, view)
+  if (before) throw new KindChangeRefusedError(before)
+  let during: KindChangeRefusal | null = 'not-online'
+  await mutateStoredWallet(record.id, (current) => {
+    // Checked again in the transaction: the record read above may be stale.
+    during = refusal(current, viewsOf(current).find((v) => v.walletId === walletId))
+    if (during) return current
+    return {
+      ...current,
+      views: viewsOf(current).map((v) => {
+        if (v.walletId !== walletId) return v
+        const { node: _node, showBeforeSending: _show, ...rest } = v
+        return { ...rest, kind: 'offline' as const, wasOnline: true as const }
+      }),
+    }
+  })
+  if (during) throw new KindChangeRefusedError(during)
+  const meta = (await listKeyWallets()).find((w) => w.id === walletId)
+  if (!meta) throw new Error('Wallet not found in local vault.')
+  return meta
+}
+
+export type ChangeToOnlineResult = CheckResult<KeyWalletMeta> | { status: 'refused'; reason: string }
+
+/** P-35, filled with the Network: the same address on the same Network as another Wallet. */
+const sameAddressReason = (network: NetworkId) => SAME_ADDRESS_ON_NETWORK.replace('{Network}', NETWORKS[network].label)
+
+/**
+ * "Change to an online wallet" (OS-FR-6), irreversible-class. The screen takes the
+ * typed confirm; this runs the Wallet's Signing Check exactly as signing does (a
+ * one-use Signer opened and disposed, as for turning the master key off) and only
+ * then writes. The view keeps its Network and its Was-online mark, loses its kind
+ * (absent is Online) and takes the Node chosen (`undefined`: the built-in Nodes,
+ * which the caller has already proven for a custom one with `verifyNode`).
+ *
+ * The same address on the same Network as another Wallet is refused (P-35), before
+ * any prompt and again after it. Refused (typed): a Transmitter, a view that is not
+ * Offline. A check that does not pass returns its result and writes nothing.
+ */
+export async function changeToOnlineWallet(walletId: string, input: { node?: string }, ctx: SigningContext): Promise<ChangeToOnlineResult> {
+  const canonical = input.node === undefined ? undefined : canonicalNodeUrl(input.node)
+  if (input.node !== undefined && !canonical) {
+    throw new Error('A custom Node must be a wss:// address with no username, password, query or fragment.')
+  }
+  const { all, record, view } = await seedViewFor(walletId)
+  if (kindOfView(view) !== 'offline') throw new KindChangeRefusedError('not-offline')
+  const account = view.accountAddress ?? record.address
+  if (hasOtherView(all, walletId, view.network, account, record.address)) return { status: 'refused', reason: sameAddressReason(view.network) }
+
+  const opened = await openSigner(walletId, ctx)
+  if (opened.status !== 'ok') return opened
+  opened.value.dispose()
+
+  // The prompt took time: the device may hold another Wallet for this address now.
+  if (hasOtherView(await listStoredWallets(), walletId, view.network, account, record.address)) {
+    return { status: 'refused', reason: sameAddressReason(view.network) }
+  }
+  let changed = false
+  await mutateStoredWallet(record.id, (current) => {
+    const v = viewsOf(current).find((x) => x.walletId === walletId)
+    if (!v || kindOfView(v) !== 'offline') return current
+    changed = true
+    return {
+      ...current,
+      views: viewsOf(current).map((x) => {
+        if (x.walletId !== walletId) return x
+        const { kind: _kind, node: _node, ...rest } = x
+        return canonical ? { ...rest, node: canonical } : rest
+      }),
+    }
+  })
+  if (!changed) throw new KindChangeRefusedError('not-offline')
+  const meta = (await listKeyWallets()).find((w) => w.id === walletId)
+  if (!meta) throw new Error('Wallet not found in local vault.')
+  return { status: 'ok', value: meta }
 }
 
 // ---------------------------------------------------------------------------

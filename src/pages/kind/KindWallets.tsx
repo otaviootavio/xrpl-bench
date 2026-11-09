@@ -5,6 +5,7 @@ import { WalletScreens } from '@/pages/WalletScreens'
 import { useRoute } from '@/hooks/useRoute'
 import { isTaskRoute } from '@/lib/route'
 import { clearConfigureFocusReturn } from '@/lib/configure-launch'
+import { peekKindChanged } from '@/lib/kind-change-result'
 import type { KeyWalletMeta, TransmitterMeta, WalletMeta } from '@/lib/crypto/keystore'
 import { HistoryTab } from '@/pages/tabs/HistoryTab'
 import { useAccountLiveUpdates } from '@/hooks/useAccountLiveUpdates'
@@ -38,7 +39,8 @@ function KindShell({
 }) {
   const route = useRoute()
   // A task screen returns to the tab that opened it: Local settings.
-  const [tab, setTab] = useState<string>(isTaskRoute(route) ? SETTINGS.value : first)
+  // A change of kind that just made this Wallet Offline lands on Local settings, with its result (OS-FR-5).
+  const [tab, setTab] = useState<string>(isTaskRoute(route) || peekKindChanged(wallet.id) !== null ? SETTINGS.value : first)
   useEffect(() => clearConfigureFocusReturn, [])
   if (isTaskRoute(route)) return <WalletScreens route={route} />
   // A screen that went away (a Transmitter's Sync removed) falls back to the first one.

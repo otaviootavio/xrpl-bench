@@ -3,9 +3,11 @@ import type { WalletMeta } from '@/lib/crypto/keystore'
 type NetworkId = WalletMeta['network']
 type WalletKind = WalletMeta['kind']
 
-/** A closed lock: the six things a card may show and nothing else (AD-43, AD-26, FR-93).
+/** A closed lock: the seven things a card may show and nothing else (AD-43, AD-26, FR-93).
  * The kind joined the Network as a record field, not an Account read (UX owner ruling,
- * 2026-11-08: a locked card still shows its name, kind and Network; OS-FR-1).
+ * 2026-11-08: a locked card still shows its name, kind and Network; OS-FR-1). The
+ * Was-online mark (OS-FR-7) is a record field of the same sort, shown in that same
+ * Network row (EXPERIENCE "Chooser card, per kind"), so a locked card shows it too.
  * Do not add another field (no Node, check kind or balance): the chooser cannot render what this type does not hold. */
 export interface LockedCard {
   state: 'locked'
@@ -16,6 +18,8 @@ export interface LockedCard {
   address: string | null
   network: NetworkId
   kind: WalletKind
+  /** An Offline Wallet whose key was held by an Online Wallet (OS-FR-7). */
+  wasOnline: boolean
 }
 
 export interface OpenCard extends Omit<LockedCard, 'state'> {
@@ -68,6 +72,8 @@ export function nextActiveWalletId(
   return left[0] ?? null
 }
 
+const wasOnline = (w: WalletMeta) => w.kind === 'offline' && w.wasOnline === true
+
 /** One card per Wallet, in chooser order (AD-43, FR-93). Pure; a lock is open when the Wallet's own `lockId` is. */
 export function listWalletCards(wallets: readonly WalletMeta[], openLocks: Readonly<Record<string, unknown>>): WalletCardData[] {
   return inChooserOrder(wallets).map((w): WalletCardData =>
@@ -80,10 +86,11 @@ export function listWalletCards(wallets: readonly WalletMeta[], openLocks: Reado
           address: w.address,
           network: w.network,
           kind: w.kind,
+          wasOnline: wasOnline(w),
           allowsLock: w.openCheck !== 'none',
           hasNode: w.node !== undefined && w.node !== '',
         }
       : // Explicit fields, not a spread: a field added for the open variant must not reach a locked card.
-        { state: 'locked', walletId: w.id, lockId: w.lockId, label: w.label, address: w.address, network: w.network, kind: w.kind },
+        { state: 'locked', walletId: w.id, lockId: w.lockId, label: w.label, address: w.address, network: w.network, kind: w.kind, wasOnline: wasOnline(w) },
   )
 }

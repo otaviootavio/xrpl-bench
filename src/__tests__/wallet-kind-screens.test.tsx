@@ -146,7 +146,7 @@ describe('an Offline Wallet (OS-FR-1)', () => {
     const h1 = screen.getByRole('heading', { level: 1, name: /Local settings/ })
     const row = h1.parentElement as HTMLElement
     expect(within(row).getByText(KIND_WORDS.offline)).toBeTruthy()
-    expect(plateTitles()).toEqual(['This wallet', 'Name', 'Address Book', 'Checks', 'Seed', 'Remove this wallet'])
+    expect(plateTitles()).toEqual(['This wallet', KIND_WORDS.offline, 'Name', 'Address Book', 'Checks', 'Seed', 'Remove this wallet'])
     expect(screen.getByRole('button', { name: 'Edit checks' })).toBeTruthy()
     expect(h.getXrplClient).not.toHaveBeenCalled()
   })
@@ -163,7 +163,7 @@ describe('a Transmitter Wallet (OS-FR-1, OS-FR-4)', () => {
   it('Local settings: P-5 and no key rows, checks without the Signing Check or Edit checks, a Node, no Seed', async () => {
     await openApp('transmitter')
     await openSettings()
-    expect(plateTitles()).toEqual(['This wallet', SYNC_TO_AN_ADDRESS, 'Name', 'Address Book', 'Checks', 'Node', 'Before sending', 'Remove this wallet'])
+    expect(plateTitles()).toEqual(['This wallet', KIND_WORDS.transmitter, SYNC_TO_AN_ADDRESS, 'Name', 'Address Book', 'Checks', 'Node', 'Before sending', 'Remove this wallet'])
     const identity = screen.getByRole('region', { name: 'This wallet' })
     expect(identity.textContent).toBe(`This wallet${NOT_SYNCED}${NO_KEY}`)
     const checks = screen.getByRole('region', { name: 'Checks' })
@@ -260,6 +260,7 @@ describe('an Online Wallet keeps today\'s screens', () => {
     expect(within(row).getByText(KIND_WORDS.online)).toBeTruthy()
     expect(plateTitles()).toEqual([
       'This wallet',
+      KIND_WORDS.online,
       'Name',
       'Address Book',
       'Checks',

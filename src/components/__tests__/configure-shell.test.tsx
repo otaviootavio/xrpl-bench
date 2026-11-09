@@ -21,7 +21,8 @@ import { clearConfigureFocusReturn } from '@/lib/configure-launch'
 import { useAppStore } from '@/store/app-store'
 
 /** The fixed plate order of the Wallet tab. `Account` is the h2 inside the identity plate's address plate. */
-const PLATE_ORDER = ['This wallet', 'Account', 'Name', 'Address Book', 'Checks', 'Seed', 'Operating another account', 'Node', 'Before sending', 'Two-device signing', 'Remove this wallet']
+// The Wallet kind plate's heading is its kind stamp (offline signing story 5).
+const PLATE_ORDER = ['This wallet', 'Account', 'Online', 'Name', 'Address Book', 'Checks', 'Seed', 'Operating another account', 'Node', 'Before sending', 'Two-device signing', 'Remove this wallet']
 
 const W = (id: string, lockId: string, extra = {}) =>
   ({ id, seedId: id, lockId, label: id, address: `r${id}`, createdAt: 1, network: 'testnet', algorithm: 'ed25519', seedMethod: 'stored', openCheck: 'pin', signingCheck: 'standard', kind: 'online', ...extra }) as never

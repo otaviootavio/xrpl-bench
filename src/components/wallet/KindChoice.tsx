@@ -60,7 +60,8 @@ export function KindChoice({
   )
 }
 
-function ConsequenceLines({ lines }: { lines: readonly string[] }) {
+/** Plain consequence lines as a list (EXPERIENCE "Consequence block"). */
+export function ConsequenceLines({ lines }: { lines: readonly string[] }) {
   return (
     <ul className="flex list-disc flex-col gap-1 pl-5 text-sm">
       {lines.map((line) => (

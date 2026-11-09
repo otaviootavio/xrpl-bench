@@ -3,6 +3,8 @@ import { useQueryClient } from '@tanstack/react-query'
 import { ControlWalletScreen } from '@/components/wallet/ControlWalletScreen'
 import { EditChecksScreen, type EditedChecks } from '@/components/wallet/EditChecksScreen'
 import { TwoDeviceScreen } from '@/components/wallet/TwoDeviceSign'
+import { ChangeToOfflineScreen, ChangeToOnlineScreen } from '@/components/wallet/ChangeKindScreens'
+import { peekKindChanged } from '@/lib/kind-change-result'
 import { leaveScreen, resetToHome, resetToWalletShell, type TaskRoute } from '@/lib/route'
 import { listWallets } from '@/lib/crypto/keystore'
 import { isKeyWallet } from '@/lib/wallet-meta'
@@ -38,12 +40,21 @@ export function WalletScreens({ route }: { route: TaskRoute }) {
   // Two-device signing and operating another account are Online Wallet screens only, and
   // Edit checks needs a key, so a Transmitter has none of the three (OS-FR-1, OS-FR-3): the
   // location goes back to that Wallet's shell, and nothing of the screen renders meanwhile.
+  // A change of kind goes from one kind only: to offline from Online, to online from Offline; a
+  // Transmitter never changes kind (OS-FR-5, OS-FR-6, owner 2026-11-08).
   const kindHasScreen =
-    target === null || target.kind === 'online' || (route.screen === 'edit-checks' && target.kind === 'offline')
+    target === null ||
+    (route.screen === 'change-to-offline'
+      ? target.kind === 'online'
+      : route.screen === 'change-to-online'
+        ? target.kind === 'offline'
+        : target.kind === 'online' || (route.screen === 'edit-checks' && target.kind === 'offline'))
+  // A change just written swapped the shell while its screen is still leaving: show nothing, reset nothing.
+  const leavingAfterChange = (route.screen === 'change-to-offline' || route.screen === 'change-to-online') && peekKindChanged(route.walletId) !== null
   useEffect(() => {
     if (!reachable) resetToHome()
-    else if (!kindHasScreen) resetToWalletShell(route.walletId)
-  }, [reachable, kindHasScreen, route.walletId])
+    else if (!kindHasScreen && !leavingAfterChange) resetToWalletShell(route.walletId)
+  }, [reachable, kindHasScreen, leavingAfterChange, route.walletId])
 
   async function refreshWallets() {
     const fresh = await listWallets()
@@ -97,5 +108,9 @@ export function WalletScreens({ route }: { route: TaskRoute }) {
           }}
         />
       )
+    case 'change-to-offline':
+      return <ChangeToOfflineScreen wallet={target} onClose={leaveScreen} backLabel={backLabel} />
+    case 'change-to-online':
+      return <ChangeToOnlineScreen wallet={target} onClose={leaveScreen} backLabel={backLabel} />
   }
 }

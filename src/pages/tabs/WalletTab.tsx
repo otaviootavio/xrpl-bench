@@ -47,6 +47,12 @@ import { leaveToChooser, walletScreenPath } from '@/lib/route'
 import { NETWORKS } from '@/lib/xrpl/networks'
 import { queryKeys } from '@/lib/xrpl/query-keys'
 import { NOT_SYNCED } from '@/lib/wallet-kind-words'
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
+import { WasOnlineStamp } from '@/components/wallet/WasOnlineStamp'
+import { NeverOnlineSteps } from '@/components/wallet/ChangeKindScreens'
+import { CHANGE_TO_OFFLINE, CHANGE_TO_ONLINE, NOW_OFFLINE, PASSKEY_SEED_NOT_OFFLINE, WAS_ONLINE_WHY } from '@/lib/kind-change-words'
+import { clearKindChanged, peekKindChanged } from '@/lib/kind-change-result'
+import { fill } from '@/lib/transmit-words'
 
 /** A key that wraps its legend rather than push a plate past 320px or 200% text. */
 const KEY = 'h-auto min-h-8 w-fit max-w-full whitespace-normal py-1 pointer-coarse:min-h-11'
@@ -484,6 +490,94 @@ function BeforeSendingPlate({ wallet }: { wallet: WalletMeta }) {
   )
 }
 
+/** The data-attribute of the change key, where focus lands when a change screen returns. */
+const KIND_KEY = 'change-kind'
+
+/**
+ * The Wallet kind plate (OS-FR-1, OS-FR-5 to OS-FR-7, EXPERIENCE "Local settings
+ * plates, per kind"): the kind stamp, the Was-online stamp with P-4, and the change
+ * key. Its heading is the stamps themselves: the spine's plate name "Wallet kind"
+ * is in no approved list, so no title words are shown (story 5 Design Notes). A
+ * Passkey-Derived Seed Wallet keeps the key, `aria-disabled`, with P-63 (OS-FR-8).
+ * A Transmitter has no key: it never changes kind.
+ */
+function KindPlate({ wallet }: { wallet: WalletMeta }) {
+  const id = useId()
+  const marked = wallet.kind === 'offline' && wallet.wasOnline === true
+  const derived = wallet.kind === 'online' && wallet.seedMethod === 'passkey-derived'
+  const reasonId = `${id}-reason`
+  return (
+    <ConfigPlate
+      title={
+        <span className="flex flex-wrap items-center gap-2">
+          <KindStamp kind={wallet.kind} />
+          {marked && <WasOnlineStamp />}
+        </span>
+      }
+    >
+      {marked && <p className="text-xs text-muted-foreground">{WAS_ONLINE_WHY}</p>}
+      {wallet.kind === 'online' && (
+        <>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className={KEY}
+            data-configure-key={KIND_KEY}
+            aria-disabled={derived ? true : undefined}
+            aria-describedby={derived ? reasonId : undefined}
+            onClick={() => {
+              if (!derived) launchFromConfigure(walletScreenPath('change-to-offline', wallet.id), KIND_KEY)
+            }}
+          >
+            {CHANGE_TO_OFFLINE}
+          </Button>
+          {derived && (
+            <p id={reasonId} className="text-sm text-muted-foreground">
+              {PASSKEY_SEED_NOT_OFFLINE}
+            </p>
+          )}
+        </>
+      )}
+      {wallet.kind === 'offline' && (
+        <Button
+          type="button"
+          variant="danger"
+          size="sm"
+          className={KEY}
+          data-configure-key={KIND_KEY}
+          onClick={() => launchFromConfigure(walletScreenPath('change-to-online', wallet.id), KIND_KEY)}
+        >
+          {CHANGE_TO_ONLINE}
+        </Button>
+      )}
+    </ConfigPlate>
+  )
+}
+
+/**
+ * The result of "Change to an offline wallet" (Flow 6, OS-FR-5): P-43 with the
+ * Network, then Text C's never-online steps again. Shown once, on the Local
+ * settings the change landed on, and focused, since the screen that confirmed it is
+ * gone. The lit legend is the shipped success word.
+ */
+function NowOfflinePlate({ wallet }: { wallet: WalletMeta }) {
+  const id = useId()
+  const ref = useRef<HTMLElement | null>(null)
+  useEffect(() => ref.current?.focus(), [])
+  return (
+    <section ref={ref} tabIndex={-1} aria-labelledby={`${id}-now`} className="panel-plate flex min-w-0 flex-col gap-3 rounded-md px-4 pb-4 pt-3">
+      <Alert variant="success" role="none">
+        <AlertTitle>Confirmed</AlertTitle>
+        <AlertDescription id={`${id}-now`} className="break-words">
+          {fill(NOW_OFFLINE, NETWORKS[wallet.network].label)}
+        </AlertDescription>
+      </Alert>
+      <NeverOnlineSteps />
+    </section>
+  )
+}
+
 /** The plates after Name and Address Book, per kind, in the spine's fixed order (EXPERIENCE
  * "Local settings plates, per kind"). The Online list is today's, unchanged. */
 function KindPlates({ wallet }: { wallet: WalletMeta }) {
@@ -538,15 +632,22 @@ function KindPlates({ wallet }: { wallet: WalletMeta }) {
  * depend on the kind (OS-FR-1). App-level plates (Remove all, Version) are not here: they belong to `/settings`.
  */
 export function WalletTab({ wallet }: { wallet: WalletMeta }) {
+  // A change of kind just landed here (OS-FR-5, OS-FR-6): Change to offline shows its result plate,
+  // which takes focus; Change to online has no result words, so focus goes to the change key.
+  const [changed] = useState(() => peekKindChanged(wallet.id))
+  const nowOffline = changed?.to === 'offline' && wallet.kind === 'offline'
   // Landing: only when a task screen opened from this tab has just returned, put focus on the key
   // that opened it. A plain tab selection never moves focus off the tab list. The pending return
   // is cleared on the next tick, so a dev double mount still sees it and a later visit does not.
   useEffect(() => {
-    const returnKey = peekConfigureFocusReturn()
+    const returnKey = changed?.to === 'online' ? KIND_KEY : nowOffline ? null : peekConfigureFocusReturn()
     if (returnKey) document.querySelector<HTMLElement>(`[data-configure-key="${CSS.escape(returnKey)}"]`)?.focus()
-    const timer = setTimeout(clearConfigureFocusReturn, 0)
+    const timer = setTimeout(() => {
+      clearConfigureFocusReturn()
+      clearKindChanged()
+    }, 0)
     return () => clearTimeout(timer)
-  }, [])
+  }, [changed, nowOffline])
 
   return (
     <div className="mx-auto flex w-full min-w-0 max-w-lg flex-col gap-4">
@@ -562,7 +663,9 @@ export function WalletTab({ wallet }: { wallet: WalletMeta }) {
           <NetworkPlate />
         </div>
       </div>
+      {nowOffline && <NowOfflinePlate wallet={wallet} />}
       <IdentityPlate wallet={wallet} />
+      <KindPlate wallet={wallet} />
       {wallet.kind === 'transmitter' && <SyncPlate wallet={wallet} />}
       <NamePlate wallet={wallet} />
       <AddressBookPlate walletId={wallet.id} />

@@ -298,6 +298,18 @@ export function retireNode(network: NetworkId, node: string): void {
 }
 
 /**
+ * Closes and drops the pooled socket a Wallet read through: its custom Node's, or
+ * the network's built-in one. Called when a Wallet stops touching the ledger
+ * ("Change to an offline wallet", OS-FR-5), and only when no other open Wallet
+ * reads through the same socket. A write still holding it closes it on release.
+ */
+export function retireNetworkClient(network: NetworkId, node?: string): void {
+  if (node) return retireNode(network, node)
+  inflight.delete(slotOf(network))
+  retire(slotOf(network))
+}
+
+/**
  * Connects a user-declared Node. No failover (a custom Node has none), and the
  * Node is trusted only once `server_info` reports the chosen network's id —
  * checked on EVERY connect, not just when it was saved, because a Node can be

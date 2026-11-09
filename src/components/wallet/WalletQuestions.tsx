@@ -206,7 +206,13 @@ function Lead({ children }: { children: ReactNode }) {
   return <p className="text-sm text-muted-foreground">{children}</p>
 }
 
-export function NodeQuestion(p: WalletQuestionsProps) {
+/** The props the Node question reads: the quiz passes all of them, Change to an online wallet only these (OS-FR-6). */
+export type NodeQuestionProps = Pick<
+  WalletQuestionsProps,
+  'group' | 'busy' | 'network' | 'nodeMode' | 'onNodeMode' | 'nodeDraft' | 'onNodeDraft' | 'verifiedNode' | 'nodeReason' | 'nodeBusy' | 'onTestNode'
+>
+
+export function NodeQuestion(p: NodeQuestionProps) {
   const { group, busy } = p
   const nodes = builtInNodes(p.network)
   return (

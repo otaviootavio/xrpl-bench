@@ -29,10 +29,13 @@ describe('parseRoute', () => {
     expect(parseRoute('/wallets/a/checks')).toEqual({ screen: 'edit-checks', walletId: 'a' })
     expect(parseRoute('/wallets/a/two-device')).toEqual({ screen: 'two-device', walletId: 'a' })
     expect(parseRoute('/wallets/a/control')).toEqual({ screen: 'control', walletId: 'a' })
+    // Offline signing story 5 (OS-FR-5, OS-FR-6): the two change-of-kind screens.
+    expect(parseRoute('/wallets/a/to-offline')).toEqual({ screen: 'change-to-offline', walletId: 'a' })
+    expect(parseRoute('/wallets/a/to-online')).toEqual({ screen: 'change-to-online', walletId: 'a' })
   })
 
   it('round-trips a Wallet id through its path', () => {
-    for (const screen of ['wallet', 'edit-checks', 'two-device', 'control'] as const) {
+    for (const screen of ['wallet', 'edit-checks', 'two-device', 'control', 'change-to-offline', 'change-to-online'] as const) {
       expect(parseRoute(walletScreenPath(screen, 'a b/c'))).toEqual({ screen, walletId: 'a b/c' })
     }
   })
@@ -47,7 +50,7 @@ describe('parseRoute', () => {
 
 describe('isWalletScreen', () => {
   it('splits in-wallet from chooser-side screens', () => {
-    const inWallet = ['wallet', 'edit-checks', 'two-device', 'control'] as const
+    const inWallet = ['wallet', 'edit-checks', 'two-device', 'control', 'change-to-offline', 'change-to-online'] as const
     for (const screen of inWallet) expect(isWalletScreen({ screen, walletId: 'a' })).toBe(true)
     const outside: Route[] = [{ screen: 'chooser' }, { screen: 'settings' }, { screen: 'add-wallet' }]
     for (const route of outside) expect(isWalletScreen(route)).toBe(false)
@@ -55,11 +58,13 @@ describe('isWalletScreen', () => {
 })
 
 describe('isTaskRoute', () => {
-  it('names the three routed task screens and nothing else (Add wallet is rendered by the app shell)', () => {
+  it('names the five routed task screens and nothing else (Add wallet is rendered by the app shell)', () => {
     const tasks: Route[] = [
       { screen: 'edit-checks', walletId: 'a' },
       { screen: 'two-device', walletId: 'a' },
       { screen: 'control', walletId: 'a' },
+      { screen: 'change-to-offline', walletId: 'a' },
+      { screen: 'change-to-online', walletId: 'a' },
     ]
     for (const route of tasks) expect(isTaskRoute(route)).toBe(true)
     const others: Route[] = [

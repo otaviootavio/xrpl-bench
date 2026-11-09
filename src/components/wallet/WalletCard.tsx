@@ -5,6 +5,8 @@ import { AddressLink } from '@/components/wallet/AddressLink'
 import { DEVNET_NOTICE } from '@/components/wallet/DevnetNotice'
 import { NO_OPEN_CHECK_ANSWER } from '@/components/wallet/check-words'
 import { KindStamp } from '@/components/wallet/KindStamp'
+import { WasOnlineStamp } from '@/components/wallet/WasOnlineStamp'
+import { WAS_ONLINE_WHY } from '@/lib/kind-change-words'
 import { NOT_SYNCED } from '@/lib/wallet-kind-words'
 import { NETWORKS } from '@/lib/xrpl/networks'
 import { enterWallet } from '@/store/app-store'
@@ -69,10 +71,13 @@ export function WalletCard({
         {/* The kind first, then the Network: record fields, so a locked card shows them too (OS-FR-1, AD-26). */}
         <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
           <KindStamp kind={card.kind} />
+          {card.wasOnline && <WasOnlineStamp />}
           <span className="font-legend text-[0.6875rem] font-semibold uppercase tracking-[0.1em] text-foreground">{label}</span>
           {card.network === 'mainnet' && <Badge variant="warning">Real funds</Badge>}
           {card.network === 'devnet' && <Badge variant="warning">Not stable</Badge>}
         </div>
+        {/* The stamp never stands alone: P-4 under the row (OS-FR-7). */}
+        {card.wasOnline && <p className="text-xs text-muted-foreground">{WAS_ONLINE_WHY}</p>}
         <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
           {/* A Transmitter shows its Synced address, or "Not synced" (P-5, OS-FR-4). */}
           {card.address === null ? (

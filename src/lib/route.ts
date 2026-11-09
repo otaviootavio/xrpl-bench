@@ -21,6 +21,8 @@ export type Route =
   | { screen: 'edit-checks'; walletId: string }
   | { screen: 'two-device'; walletId: string }
   | { screen: 'control'; walletId: string }
+  | { screen: 'change-to-offline'; walletId: string }
+  | { screen: 'change-to-online'; walletId: string }
 
 export const CHOOSER_PATH = '/'
 export const SETTINGS_PATH = '/settings'
@@ -34,6 +36,9 @@ const SEGMENTS = {
   'edit-checks': 'checks',
   'two-device': 'two-device',
   control: 'control',
+  // OS-FR-5, OS-FR-6: the two change-of-kind task screens, opened from the Wallet kind plate.
+  'change-to-offline': 'to-offline',
+  'change-to-online': 'to-online',
 } as const
 type WalletScreen = keyof typeof SEGMENTS
 
@@ -48,7 +53,9 @@ export function isWalletScreen(route: Route): route is Extract<Route, { walletId
     route.screen === 'wallet' ||
     route.screen === 'edit-checks' ||
     route.screen === 'two-device' ||
-    route.screen === 'control'
+    route.screen === 'control' ||
+    route.screen === 'change-to-offline' ||
+    route.screen === 'change-to-online'
   )
 }
 
@@ -61,13 +68,15 @@ export function enteredWalletId(route: Route, activeWalletId: string | null): st
 }
 
 /** The routed task screens `WalletScreens` renders in place of the shell. Add wallet is not one: the app shell renders it (AD-32). */
-export type TaskRoute = Extract<Route, { screen: 'edit-checks' | 'two-device' | 'control' }>
+export type TaskRoute = Extract<Route, { screen: 'edit-checks' | 'two-device' | 'control' | 'change-to-offline' | 'change-to-online' }>
 
 export function isTaskRoute(route: Route): route is TaskRoute {
   return (
     route.screen === 'edit-checks' ||
     route.screen === 'two-device' ||
-    route.screen === 'control'
+    route.screen === 'control' ||
+    route.screen === 'change-to-offline' ||
+    route.screen === 'change-to-online'
   )
 }
 

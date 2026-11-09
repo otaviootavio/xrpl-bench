@@ -61,6 +61,12 @@ export interface WalletView {
    * rewritten. Only `true` is ever stored. It has no effect on an Offline
    * Wallet, which never transmits (OS-FR-11). */
   showBeforeSending?: true
+  /** The Was-online mark (OS-FR-7): this view's key was held by an Online Wallet,
+   * set by "Change to an offline wallet" and never removed while the Wallet
+   * exists, so a change to online and back keeps it. Never set by a create or an
+   * import: the app cannot know an imported Seed's past. Only `true` is stored;
+   * it is shown on an Offline Wallet only. */
+  wasOnline?: true
 }
 
 /** Every Wallet is one of three kinds (OS-FR-1). `online` is the absent

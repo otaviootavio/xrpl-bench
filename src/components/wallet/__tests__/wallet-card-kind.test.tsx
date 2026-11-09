@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { WalletCard } from '../WalletCard'
 import { NOT_SYNCED } from '@/lib/wallet-kind-words'
+import { WAS_ONLINE, WAS_ONLINE_WHY } from '@/lib/kind-change-words'
 import type { WalletCardData } from '@/store/wallet-groups'
 
 /**
@@ -14,10 +15,10 @@ import type { WalletCardData } from '@/store/wallet-groups'
 const ADDRESS = 'rKINDCARDaddressXXXXXXXXXXXX'
 type Kind = WalletCardData['kind']
 // A Transmitter's card address is its Synced address or null (story 4); the other kinds carry their Account.
-const card = (kind: Kind, state: 'locked' | 'open', network: 'testnet' | 'mainnet' = 'testnet', address: string | null = kind === 'transmitter' ? null : ADDRESS): WalletCardData =>
+const card = (kind: Kind, state: 'locked' | 'open', network: 'testnet' | 'mainnet' = 'testnet', address: string | null = kind === 'transmitter' ? null : ADDRESS, wasOnline = false): WalletCardData =>
   state === 'locked'
-    ? { state, walletId: 'w', lockId: 'L', label: 'Savings', address, network, kind }
-    : { state, walletId: 'w', lockId: 'L', label: 'Savings', address, network, kind, allowsLock: true, hasNode: false }
+    ? { state, walletId: 'w', lockId: 'L', label: 'Savings', address, network, kind, wasOnline }
+    : { state, walletId: 'w', lockId: 'L', label: 'Savings', address, network, kind, wasOnline, allowsLock: true, hasNode: false }
 
 function mount(data: WalletCardData) {
   render(
@@ -51,6 +52,23 @@ describe('chooser card, per kind (OS-FR-1)', () => {
       const li = mount(card('offline', state))
       expect(networkRow(li)).toEqual(['Offline', 'Testnet'])
       expect(li.querySelector(`a[href*="${ADDRESS}"]`)).not.toBeNull()
+    })
+
+    it(`${state}: a marked Offline Wallet, [Offline] [Was online] TESTNET, then P-4 under the row (OS-FR-7)`, () => {
+      const li = mount(card('offline', state, 'testnet', ADDRESS, true))
+      expect(networkRow(li)).toEqual(['Offline', WAS_ONLINE, 'Testnet'])
+      const why = within(li).getByText(WAS_ONLINE_WHY)
+      // The sentence follows the row it explains.
+      const row = within(li).getByText(WAS_ONLINE).parentElement as HTMLElement
+      expect(row.nextElementSibling).toBe(why)
+      // A caution stamp: the warning pair, never a colour alone.
+      expect(within(li).getByText(WAS_ONLINE).className).toContain('bg-warning')
+    })
+
+    it(`${state}: an unmarked Offline Wallet shows no Was-online stamp and no P-4`, () => {
+      const li = mount(card('offline', state))
+      expect(li.textContent).not.toContain(WAS_ONLINE)
+      expect(li.textContent).not.toContain(WAS_ONLINE_WHY)
     })
 
     it(`${state}: Transmitter, [Transmitter] TESTNET and "Not synced", never the address`, () => {

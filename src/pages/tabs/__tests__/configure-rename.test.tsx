@@ -61,10 +61,10 @@ beforeEach(() => {
 afterEach(cleanup)
 
 describe('Configure Name plate', () => {
-  it('sits after This wallet and Account, above Checks, and shows the name', () => {
+  it('sits after This wallet, Account and the Wallet kind plate, above Checks, and shows the name', () => {
     mount()
     const titles = screen.getAllByRole('heading', { level: 2 }).map((n) => n.textContent)
-    expect(titles[2]).toBe('Name')
+    expect(titles[3]).toBe('Name')
     expect(titles.indexOf('Name')).toBeLessThan(titles.indexOf('Checks'))
     expect(within(namePlate()).getByText('Savings')).toBeTruthy()
   })

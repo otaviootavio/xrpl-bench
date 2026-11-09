@@ -40,7 +40,16 @@ const step = (id: string) => WALK_QUESTIONS.find((q) => q.id === id)!
  * the lock's alone (`checkLockRequest`, FR-65): no written-Seed or passkey-origin
  * safeguard. The keystore decides again before it writes.
  */
-export function AddTransmitterScreen({ onClose }: { onClose: () => void }) {
+export function AddTransmitterScreen({
+  onClose,
+  onAdded,
+  backLabel = 'Wallets',
+}: {
+  onClose: () => void
+  /** First run: the new Wallet becomes the active one. */
+  onAdded?: (walletId: string) => void
+  backLabel?: string
+}) {
   const [capability, setCapability] = useState<PasskeyCapability | null>(null)
   const [busy, setBusy] = useState(false)
   useLeaveBlocker(busy)
@@ -55,14 +64,23 @@ export function AddTransmitterScreen({ onClose }: { onClose: () => void }) {
   }, [])
   const [footerHost, setFooterHost] = useState<HTMLElement | null>(null)
   return (
-    <TaskScreen title={ADD_TRANSMITTER} backLabel="Wallets" onBack={onClose} locked={busy}>
+    <TaskScreen title={ADD_TRANSMITTER} backLabel={backLabel} onBack={onClose} locked={busy}>
       <div className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-3">
         {capability === null ? (
           <p role="status" className="text-sm text-muted-foreground">
             Checking what this device supports…
           </p>
         ) : (
-          <AddTransmitterQuiz capability={capability} footerHost={footerHost} busy={busy} setBusy={setBusy} onDone={onClose} />
+          <AddTransmitterQuiz
+            capability={capability}
+            footerHost={footerHost}
+            busy={busy}
+            setBusy={setBusy}
+            onDone={(id) => {
+              onAdded?.(id)
+              onClose()
+            }}
+          />
         )}
       </div>
       <div ref={setFooterHost} className="contents" />
@@ -81,7 +99,7 @@ function AddTransmitterQuiz({
   footerHost: HTMLElement | null
   busy: boolean
   setBusy: (busy: boolean) => void
-  onDone: () => void
+  onDone: (walletId: string) => void
 }) {
   const group = useId()
   const [index, setIndex] = useState(0)
@@ -296,7 +314,7 @@ function AddTransmitterQuiz({
         setWallets(await listWallets())
         announceAdded(result.value.meta.id)
         toast.success('Wallet added.')
-        onDone()
+        onDone(result.value.meta.id)
         return
       }
       if (result.status === 'refused') setError(result.reason)

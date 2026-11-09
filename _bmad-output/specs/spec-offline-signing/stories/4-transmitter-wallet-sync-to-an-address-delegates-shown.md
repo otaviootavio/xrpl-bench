@@ -2,7 +2,7 @@
 title: 'Transmitter Wallet, Sync to an address, delegates shown'
 type: 'feature'
 created: '2026-11-09'
-status: 'in-progress'
+status: 'done'
 baseline_commit: 'b564a41'
 route: 'dispatch'
 review_loop_iteration: 0
@@ -67,12 +67,12 @@ context:
 ## Tasks & Acceptance
 
 **Execution:**
-- [ ] record, keystore, lock, hydration -- keyless Transmitter, no lost lock or PIN
-- [ ] codec, writes -- envelope Network, preview, guard
-- [ ] delegates read
-- [ ] words module
-- [ ] quiz, chooser, card, shell, Transmit, Account, Local settings, remove, P-8
-- [ ] tests for every matrix row
+- [x] record, keystore, lock, hydration -- keyless Transmitter, no lost lock or PIN
+- [x] codec, writes -- envelope Network, preview, guard
+- [x] delegates read
+- [x] words module
+- [x] quiz, chooser, card, shell, Transmit, Account, Local settings, remove, P-8
+- [x] tests for every matrix row
 
 **Acceptance Criteria:**
 - Given a Transmitter, when it is used, then no screen of it offers to sign, and no Seed sentence shows.
@@ -80,6 +80,52 @@ context:
 
 ## Implementation Notes
 
+- Commits: `648f056` (record, keystore, codec, writes, UI, tests), then this story record with the Onboarding key.
+- **Record.** `TransmitterRecord` (`recordKind: 'transmitter'`) lives in the `wallets` store; `listStoredWallets` still returns Seed records only, so no Seed path can see it. Every "what is stored" question reads both: `removeWallet` (removing the last Seed Wallet keeps a Transmitter's lock and the App PIN: tested), lock-in-use checks, names (`nameForNewWallet`, `renameWallet`), `setLockAutoLock` (a Transmitter lock re-passes its Open Check, then `checkAutoLock` on its Network: a Mainnet one keeps the 1-minute floor), `setWalletNode`, `setShowBeforeSending`. `commitWalletEdit`'s lock release and `discardUnusedAppPin` already counted it (raw `getAll`, lock records).
+- **Unlock proof.** The record holds `verifier` = AES-GCM of `xrpl-bench:transmitter:<id>:v1` under its lock's Open Key. `Unlock.tsx` runs `proveTransmitterUnlock` (`lib/crypto/transmitter-unlock.ts`) after the lock opens, on the PIN/passkey path and the `none` auto-open; a key that does not decrypt it leaves the lock closed ("Unlock failed." / "This wallet could not be opened.", shipped words) and ends the session.
+- **Meta.** `WalletMeta = KeyWalletMeta | TransmitterMeta`; a Transmitter's `address` is its Synced address or `null`. Key-only modules (control, master key, two-device, Edit checks, reveal) take `KeyWalletMeta` and filter `kind !== 'transmitter'` at entry, so a Transmitter is never a signing target. A Seed view that says `kind: 'transmitter'` is now not listed (fail closed); story 1's fixtures that forced that were changed to Transmitter records, assertions kept. Hydration (`isCompleteSavedWallet`) accepts a Transmitter meta.
+- **Policy.** The quiz renders `describeOptions` for the Open Check and auto-lock rows only and judges with `checkLockRequest`; the keystore judges again. No written-Seed or passkey-origin rule.
+- **Signed envelope.** `encodeSigned({ network, txBlob })` writes `network_id`; `decodeSigned` refuses a code without a known one (`bad-network`, existing codec words). Two-device's signer writes it. Transmit passes the envelope's Network, never its own.
+- **Transmit.** `previewSignedTransaction` (writes.ts, no ledger read) is the P-25 list's source: the same checks and words as `transmit`, minus the window read; Send re-runs everything. Expected Account: `expectedAccountFor({ syncedAddress })`; unsynced, P-27 shows and Send passes `confirmedAccount` = the blob's Account. Setting on: the provider's reviewer; declined is a caution status (P-24 + decline line). Outcomes use today's words (`TxStatusBadge`, `describeResultCode`, `UNKNOWN_OUTCOME_WORDS`); expiry is the fixed string; a thrown submit is two-device's shipped "may have been sent" sentence (moved to `result-codes.ts`, `UNCONFIRMED_SUBMIT_WORDS`).
+- **Already sent (story 2 deferred, settled).** `transmitSignedTransaction` keeps an in-memory set of hashes, added the moment a submission is attempted (never on a refusal or a decline). The same blob again is refused with the P-26 heading alone, `reason: 'already-sent'`.
+- **Remove words (story 1 deferred, settled).** `removeBodyFor` returns `transmitter` (no sentence: the title and the plate's own line) or `transmitter-last` (`REMOVE_LAST` only). No Seed or backup sentence.
+- **P-8.** Compared on the address alone, any Network (the PRD does not name a Network; a Transmitter makes the device online whatever Network): first form on the quiz Sync step, its Review and the Sync plate; second form on an Offline import, in the existing import warning dialog ("Heads up", "Cancel import" / "Import anyway"). An Offline create makes a fresh random key, so no Transmitter can be synced to it: no check there. "Change to an offline wallet" is story 5's.
+- **Account.** `delegates` joined the `accountScoped` table (removal and invalidation pick it up). `fetchAccountDelegates` follows `marker`; `actNotFound` is none, any other error is thrown (P-29). Testnet answered the `delegate` type in the browser ("None."). `isError` is tested before `data` everywhere.
+- **Sync change.** `forgetSyncedAddress` (teardown) removes the old address's account-scoped data unless another open Wallet holds it; `KindShell` falls back to Transmit when the selected screen goes away. Live account updates mount only when Synced.
+- **Onboarding.** A fresh daily phone has no chooser, so first-run Onboarding also offers P-2 (the chooser key's words, reused for the first-run chooser); the new Transmitter becomes the active Wallet. Found in the browser pass.
+
 ## Design Notes
 
+**Words used:** P-2 (chooser key, screen title, final key), P-5, P-8 both forms, P-25, P-27, P-29, P-32, P-36 (Transmit line), P-41, P-42, P-46, P-48 first line, P-62 (Account, History, New transaction; "Regular Key", "Master key" as key-state terms), fixed "Sync to an address" (step title, plate title, plate key), "Expired. Nothing was sent.", P-24, P-26, P-52. Shipped words reused: "Name and network", "Node", the Open Check step, "Review", "Your answers", "Address" (Address Book's term), "That doesn't look like a valid XRPL address.", the Balances readout words ("XRP Balance", "Live", "Spendable", "Reserved", "Balance unavailable", "Reserve unavailable", "Account not activated yet"), "Tokens and trust lines", "Token balances unavailable", "Master key on" / "Master key off", the import warning dialog, "Wallet added.", "Unlock failed.". "None." (P-32) is reused for no Regular Key and no trust lines.
+
+**Not shown, words missing (needs owner approval):**
+- The signer list row of the key state (a term and its values).
+- A reason line for the already-sent refusal (only the P-26 heading shows).
+- A sentence for the Transmitter Remove dialog beyond its title.
+- A visible reason for the Sync plate's `aria-disabled` key while the field is empty.
+- Scanning an address with the camera on the Sync step (P-57 "Scan an address with the camera" exists, but `QrScanner` accepts only `xrplbench:` codes; left for a later story): the address is typed or pasted.
+
+**Layout.** Transmit: scanner and P-42, then (role=alert) refusals, then the check list, P-27 as a caution, the hash (h2, takes focus), the field list, and the one orange Send. With the setting on, Send opens story 2's show-before-sending screen. Account: address, readout, key-state rows, trust lines, then the Delegates caution and its list.
+
 ## Verification
+
+**Gates (2026-11-09, on the final tree):** `bun run lint` · `bun run build` · `bun run test` (145 files, 2158 tests; baseline 138 / 2078) · `bun run check:contrast` — all green.
+
+**Browser pass (2026-11-09, commit `648f056` plus the Onboarding key, hot-reloaded).** `bun run dev -- --port 5194 --strictPort`, Playwright Chromium, a fresh browser context (`browser.newContext()`), no existing wallets. Two throwaway Testnet accounts funded with the Testnet faucet from a Node script; **forced state:** the signed codes were made by that script (xrpl.js autofill + sign, LastLedgerSequence = validated + 75, the new envelope with `network_id: 1`) and pasted into Transmit, because no screen of this build makes a signed code for another device yet (story 6). Submit frames counted on the page's WebSocket. Screenshots in the session scratchpad `s4/`.
+
+| Criterion | Result |
+|---|---|
+| First run offers P-2; quiz steps, no Seed or Signing Check question | Met. Name and network → Node → Open Check (none, Testnet) → Sync to an address → Review → "Add a Transmitter wallet". |
+| Card | Met. `[TRANSMITTER] TESTNET`, the Synced address link, Open; "No authentication…" line as for any `none` lock. |
+| Synced screens | Met. Transmit · Account · History · New transaction · Local settings. |
+| Account, real reads | Met. 100 XRP, Spendable 99, Reserved 1, Regular Key "None.", "Master key on", trust lines "None.", Delegates warning then "None." (Testnet answered `account_objects` type `delegate`). |
+| Transmit, synced | Met. P-25 four lines, hash, fields; focus on "Transaction hash"; 0 submit frames before Send; Send → VALIDATED, 1 submit frame. |
+| Same code again | Met. Refused "The app did not send the transaction.", still 1 submit frame. |
+| Remove the address | Met. Two screens again; This wallet shows P-5 and P-48. |
+| Unsynced Transmit, P-27 | Met. No "Account: …, correct" line, P-27 with the blob's Account; Send → VALIDATED. |
+| Remove dialog | Met. Title and the last-wallet sentence only; no Seed or backup sentence. |
+| Sync again from Local settings | Met. Five screens back. |
+| 320 / 390 / 1280, light and dark: Account, Transmit (code shown), Local settings | Met. No page side scroll, no element past the viewport (measured each). |
+| 320 at 200% text: Account, Transmit, Local settings, quiz step 1, Sync with an invalid address, Review | Met for overflow (none measured). At 320x568 the quiz's sticky footer covers most of the screen: the known frame issue already in deferred-work (spec-no-legacy-lock story 4), not new. |
+
+Not driven in the browser: P-8 (needs an Offline Wallet and a Transmitter for one address; pinned in `add-transmitter.test.tsx` and `add-wallet-import.test.tsx`), the show-before-sending path on a Transmitter (pinned in `transmit-screen.test.tsx`; the screen itself was verified in story 2), a Mainnet Transmitter, and the delegate list with entries (pinned in `transmitter-account.test.tsx`). Screenshots opened: `account-390-light`, `transmit-ready-390-light`, `account-320-dark`, `settings-1280-dark`, `quiz-sync-invalid-320-zoom200`. The dev server was stopped after the pass.

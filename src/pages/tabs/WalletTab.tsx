@@ -50,7 +50,7 @@ import { NOT_SYNCED } from '@/lib/wallet-kind-words'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { WasOnlineStamp } from '@/components/wallet/WasOnlineStamp'
 import { NeverOnlineSteps } from '@/components/wallet/ChangeKindScreens'
-import { CHANGE_TO_OFFLINE, CHANGE_TO_ONLINE, NOW_OFFLINE, PASSKEY_SEED_NOT_OFFLINE, WAS_ONLINE_WHY } from '@/lib/kind-change-words'
+import { CHANGE_TO_OFFLINE, CHANGE_TO_ONLINE, NOW_OFFLINE, NOW_ONLINE, PASSKEY_SEED_NOT_OFFLINE, SHARED_SEED_NO_CHANGE, WALLET_KIND, WAS_ONLINE_WHY } from '@/lib/kind-change-words'
 import { clearKindChanged, peekKindChanged } from '@/lib/kind-change-result'
 import { fill } from '@/lib/transmit-words'
 
@@ -496,84 +496,80 @@ const KIND_KEY = 'change-kind'
 /**
  * The Wallet kind plate (OS-FR-1, OS-FR-5 to OS-FR-7, EXPERIENCE "Local settings
  * plates, per kind"): the kind stamp, the Was-online stamp with P-4, and the change
- * key. Its heading is the stamps themselves: the spine's plate name "Wallet kind"
- * is in no approved list, so no title words are shown (story 5 Design Notes). A
- * Passkey-Derived Seed Wallet keeps the key, `aria-disabled`, with P-63 (OS-FR-8).
- * A Transmitter has no key: it never changes kind.
+ * key. A key that is not available stays, `aria-disabled`, with its reason in visible
+ * text: P-63 for a Passkey-Derived Seed (OS-FR-8), and the owner's sentence of
+ * 2026-11-09 for a Seed with more than one Wallet (one record holds one kind). A
+ * Transmitter has no key: it never changes kind.
  */
 function KindPlate({ wallet }: { wallet: WalletMeta }) {
   const id = useId()
+  const wallets = useAppStore((s) => s.wallets)
   const marked = wallet.kind === 'offline' && wallet.wasOnline === true
-  const derived = wallet.kind === 'online' && wallet.seedMethod === 'passkey-derived'
   const reasonId = `${id}-reason`
+  const reason =
+    wallet.kind === 'transmitter'
+      ? null
+      : wallet.kind === 'online' && wallet.seedMethod === 'passkey-derived'
+        ? PASSKEY_SEED_NOT_OFFLINE
+        : wallets.filter((w) => w.seedId === wallet.seedId).length > 1
+          ? SHARED_SEED_NO_CHANGE
+          : null
+  const to = wallet.kind === 'online' ? 'change-to-offline' : 'change-to-online'
   return (
-    <ConfigPlate
-      title={
-        <span className="flex flex-wrap items-center gap-2">
-          <KindStamp kind={wallet.kind} />
-          {marked && <WasOnlineStamp />}
-        </span>
-      }
-    >
+    <ConfigPlate title={WALLET_KIND}>
+      <div className="flex flex-wrap items-center gap-2">
+        <KindStamp kind={wallet.kind} />
+        {marked && <WasOnlineStamp />}
+      </div>
       {marked && <p className="text-xs text-muted-foreground">{WAS_ONLINE_WHY}</p>}
-      {wallet.kind === 'online' && (
+      {wallet.kind !== 'transmitter' && (
         <>
           <Button
             type="button"
-            variant="outline"
+            variant={wallet.kind === 'online' ? 'outline' : 'danger'}
             size="sm"
             className={KEY}
             data-configure-key={KIND_KEY}
-            aria-disabled={derived ? true : undefined}
-            aria-describedby={derived ? reasonId : undefined}
+            aria-disabled={reason ? true : undefined}
+            aria-describedby={reason ? reasonId : undefined}
             onClick={() => {
-              if (!derived) launchFromConfigure(walletScreenPath('change-to-offline', wallet.id), KIND_KEY)
+              if (!reason) launchFromConfigure(walletScreenPath(to, wallet.id), KIND_KEY)
             }}
           >
-            {CHANGE_TO_OFFLINE}
+            {wallet.kind === 'online' ? CHANGE_TO_OFFLINE : CHANGE_TO_ONLINE}
           </Button>
-          {derived && (
+          {reason && (
             <p id={reasonId} className="text-sm text-muted-foreground">
-              {PASSKEY_SEED_NOT_OFFLINE}
+              {reason}
             </p>
           )}
         </>
-      )}
-      {wallet.kind === 'offline' && (
-        <Button
-          type="button"
-          variant="danger"
-          size="sm"
-          className={KEY}
-          data-configure-key={KIND_KEY}
-          onClick={() => launchFromConfigure(walletScreenPath('change-to-online', wallet.id), KIND_KEY)}
-        >
-          {CHANGE_TO_ONLINE}
-        </Button>
       )}
     </ConfigPlate>
   )
 }
 
 /**
- * The result of "Change to an offline wallet" (Flow 6, OS-FR-5): P-43 with the
- * Network, then Text C's never-online steps again. Shown once, on the Local
- * settings the change landed on, and focused, since the screen that confirmed it is
- * gone. The lit legend is the shipped success word.
+ * The result of a change of kind (Flow 6, OS-FR-5, OS-FR-6), shown once on the
+ * Local settings the change landed on, and focused, since the screen that confirmed
+ * it is gone. To offline: P-43 with the Network, then Text C's never-online steps
+ * again. To online: the owner's sentence of 2026-11-09. The lit legend is the
+ * shipped success word.
  */
-function NowOfflinePlate({ wallet }: { wallet: WalletMeta }) {
+function KindChangedPlate({ wallet, to }: { wallet: WalletMeta; to: 'offline' | 'online' }) {
   const id = useId()
   const ref = useRef<HTMLElement | null>(null)
   useEffect(() => ref.current?.focus(), [])
+  const network = NETWORKS[wallet.network].label
   return (
     <section ref={ref} tabIndex={-1} aria-labelledby={`${id}-now`} className="panel-plate flex min-w-0 flex-col gap-3 rounded-md px-4 pb-4 pt-3">
       <Alert variant="success" role="none">
         <AlertTitle>Confirmed</AlertTitle>
         <AlertDescription id={`${id}-now`} className="break-words">
-          {fill(NOW_OFFLINE, NETWORKS[wallet.network].label)}
+          {fill(to === 'offline' ? NOW_OFFLINE : NOW_ONLINE, network)}
         </AlertDescription>
       </Alert>
-      <NeverOnlineSteps />
+      {to === 'offline' && <NeverOnlineSteps />}
     </section>
   )
 }
@@ -632,22 +628,24 @@ function KindPlates({ wallet }: { wallet: WalletMeta }) {
  * depend on the kind (OS-FR-1). App-level plates (Remove all, Version) are not here: they belong to `/settings`.
  */
 export function WalletTab({ wallet }: { wallet: WalletMeta }) {
-  // A change of kind just landed here (OS-FR-5, OS-FR-6): Change to offline shows its result plate,
-  // which takes focus; Change to online has no result words, so focus goes to the change key.
+  // A change of kind just landed here (OS-FR-5, OS-FR-6): its result plate shows and takes focus.
+  // The heading row keeps the kind stamp only: the Was-online stamp must always be followed by P-4,
+  // which does not fit that row; the Wallet kind plate just below shows both.
   const [changed] = useState(() => peekKindChanged(wallet.id))
-  const nowOffline = changed?.to === 'offline' && wallet.kind === 'offline'
+  // The result shows only on the kind it names (a stale marker on the other kind shows nothing).
+  const landed = changed !== null && changed.to === wallet.kind ? changed.to : null
   // Landing: only when a task screen opened from this tab has just returned, put focus on the key
   // that opened it. A plain tab selection never moves focus off the tab list. The pending return
   // is cleared on the next tick, so a dev double mount still sees it and a later visit does not.
   useEffect(() => {
-    const returnKey = changed?.to === 'online' ? KIND_KEY : nowOffline ? null : peekConfigureFocusReturn()
+    const returnKey = landed ? null : peekConfigureFocusReturn()
     if (returnKey) document.querySelector<HTMLElement>(`[data-configure-key="${CSS.escape(returnKey)}"]`)?.focus()
     const timer = setTimeout(() => {
       clearConfigureFocusReturn()
       clearKindChanged()
     }, 0)
     return () => clearTimeout(timer)
-  }, [changed, nowOffline])
+  }, [landed])
 
   return (
     <div className="mx-auto flex w-full min-w-0 max-w-lg flex-col gap-4">
@@ -663,7 +661,7 @@ export function WalletTab({ wallet }: { wallet: WalletMeta }) {
           <NetworkPlate />
         </div>
       </div>
-      {nowOffline && <NowOfflinePlate wallet={wallet} />}
+      {landed && <KindChangedPlate wallet={wallet} to={landed} />}
       <IdentityPlate wallet={wallet} />
       <KindPlate wallet={wallet} />
       {wallet.kind === 'transmitter' && <SyncPlate wallet={wallet} />}

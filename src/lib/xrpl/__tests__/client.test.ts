@@ -552,4 +552,24 @@ describe('retireNetworkClient (offline signing story 5, OS-FR-5)', () => {
     held.release()
     await vi.waitFor(() => expect((held.client as FakeClient).disconnectCalls).toBe(1))
   })
+
+  it('a connect still running when the slot is retired closes its own client and caches nothing (review round two)', async () => {
+    let finish!: () => void
+    const built: FakeClient[] = []
+    setXrplClientFactory((url) => {
+      const c = fakeClient(url, () => new Promise<void>((r) => (finish = r)))
+      built.push(c)
+      return c
+    })
+    const pending = getXrplClient('testnet')
+    await vi.waitFor(() => expect(built).toHaveLength(1))
+    retireNetworkClient('testnet')
+    finish()
+    await expect(pending).rejects.toThrow('reset')
+    await vi.waitFor(() => expect(built[0].disconnectCalls).toBe(1))
+    // Only the primary was tried: the failover stops once the slot is retired.
+    expect(built).toHaveLength(1)
+    setXrplClientFactory((url) => fakeClient(url, async () => {}))
+    expect(await getXrplClient('testnet')).not.toBe(built[0])
+  })
 })

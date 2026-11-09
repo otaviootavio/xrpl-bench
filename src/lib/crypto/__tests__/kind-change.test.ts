@@ -80,7 +80,12 @@ vi.mock('idb', () => ({
 import { makePinLock, sealRecordUnderPin, storeSeedWallet, type FixtureLock } from './fixtures'
 import type { StoredWallet } from '../db'
 import {
+  addControlledView,
   changeToOfflineWallet,
+  NotAnOnlineWalletError,
+  SettingNotForOfflineError,
+  setWalletNode,
+  signingHandleFor,
   changeToOnlineWallet,
   editChecks,
   KindChangeRefusedError,
@@ -272,3 +277,71 @@ describe('the Was-online mark lasts (OS-FR-7)', () => {
     expect(await metaOf(meta.id)).not.toHaveProperty('wasOnline')
   })
 })
+
+describe('review round two: nothing below the screens treats an Offline view as Online', () => {
+  it('signingHandleFor refuses an Offline view (a stale Online tab cannot sign)', async () => {
+    const { meta } = await onlineWallet()
+    await changeToOfflineWallet(meta.id)
+    await expect(signingHandleFor(meta.id, { openKey: lock.key, prompts: pinPrompt(null) })).rejects.toBeInstanceOf(NotAnOnlineWalletError)
+  })
+
+  it('setWalletNode and setShowBeforeSending refuse an Offline view and write nothing; clearing is still allowed', async () => {
+    const { meta } = await onlineWallet()
+    await changeToOfflineWallet(meta.id)
+    const before = snapshot()
+    await expect(setWalletNode(meta.id, 'wss://node.example')).rejects.toThrow('An Offline Wallet has no Node.')
+    await expect(setShowBeforeSending(meta.id, true)).rejects.toBeInstanceOf(SettingNotForOfflineError)
+    expect(snapshot()).toBe(before)
+    expect((await setWalletNode(meta.id, undefined)).kind).toBe('offline')
+  })
+
+  it('an Offline meta never carries a Node, even one left on the record', async () => {
+    const { meta } = await storeSeedWallet('Stray', lock)
+    h.state.stores.wallets.set(meta.id, { ...recordOf(meta.id), views: [{ walletId: meta.id, network: 'testnet', kind: 'offline', node: 'wss://node.example' }] })
+    expect(await metaOf(meta.id)).not.toHaveProperty('node')
+  })
+
+  it('addControlledView refuses a record whose view is Offline (one record holds one kind)', async () => {
+    const { meta } = await onlineWallet()
+    await changeToOfflineWallet(meta.id)
+    const before = snapshot()
+    expect(await refusal(addControlledView(meta.id, { network: 'testnet', accountAddress: 'rOtherAccountXXXXXXXXXXXXXXX' }))).toBe('not-online')
+    expect(snapshot()).toBe(before)
+  })
+
+  it('changeToOnlineWallet refuses a record with a second view', async () => {
+    const { meta } = await storeSeedWallet('Shared', lock)
+    h.state.stores.wallets.set(meta.id, {
+      ...recordOf(meta.id),
+      views: [{ walletId: meta.id, network: 'testnet', kind: 'offline' }, { walletId: 'ctl', network: 'testnet', kind: 'offline', accountAddress: 'rOther' }],
+    })
+    const before = snapshot()
+    expect(await refusal(changeToOnlineWallet(meta.id, {}, { openKey: lock.key, prompts: pinPrompt(null) }))).toBe('shared-record')
+    expect(snapshot()).toBe(before)
+  })
+
+  it('a duplicate that appears during the Signing Check prompt is refused after it (P-35), and nothing is written', async () => {
+    const { meta, seed } = await storeSeedWallet('Sealed', lock)
+    await sealRecordUnderPin(meta.id, seed, PIN)
+    await changeToOfflineWallet(meta.id)
+    const before = snapshot()
+    const prompts: Prompts = {
+      pin: async () => {
+        h.state.stores.wallets.set('twin', { ...recordOf(meta.id), id: 'twin', views: [{ walletId: 'twin', network: 'testnet' }] })
+        return PIN
+      },
+    }
+    expect(await changeToOnlineWallet(meta.id, {}, { openKey: lock.key, prompts })).toEqual({ status: 'refused', reason: fill(SAME_ADDRESS_ON_NETWORK, 'Testnet') })
+    h.state.stores.wallets.delete('twin')
+    expect(snapshot()).toBe(before)
+  })
+
+  it('a lock that closed during the prompt writes nothing', async () => {
+    const { meta } = await onlineWallet()
+    await changeToOfflineWallet(meta.id)
+    const before = snapshot()
+    expect(await changeToOnlineWallet(meta.id, { stillOpen: () => false }, { openKey: lock.key, prompts: pinPrompt(null) })).toEqual({ status: 'cancelled' })
+    expect(snapshot()).toBe(before)
+  })
+})
+

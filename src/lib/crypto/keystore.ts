@@ -133,7 +133,8 @@ function toMeta(w: StoredWallet, v: WalletView, kind: 'online' | 'offline'): Key
     keyAddress: w.address,
     createdAt: w.createdAt,
     network: v.network,
-    ...(v.node ? { node: v.node } : {}),
+    // An Offline Wallet has no Node (OS-FR-5): a stray stored one is never exposed.
+    ...(v.node && kind !== 'offline' ? { node: v.node } : {}),
     algorithm: w.algorithm,
     seedMethod: w.seedMethod,
     openCheck: w.openCheck,
@@ -499,7 +500,10 @@ export async function signingHandleFor(walletId: string, ctx: SigningContext): P
   const address = accountOf(stored, walletId)
   const view = viewsOf(stored).find((v) => v.walletId === walletId)
   const kind = view ? kindOfView(view) : null
-  const review = view && kind !== null && showsBeforeSending(view, kind)
+  // Only an Online Wallet signs to send (OS-FR-11): a stale Online screen in another tab
+  // must not sign with a key the vault now calls Offline.
+  if (kind !== 'online') throw new NotAnOnlineWalletError()
+  const review = view && showsBeforeSending(view, kind)
   return {
     address,
     // The key is the Account's own (master) key unless this is a controlled view.
@@ -519,6 +523,14 @@ export async function signingHandleFor(walletId: string, ctx: SigningContext): P
  * reviewer in the prompts the answer is "no" (fail closed). */
 function reviewerOf(prompts: Prompts): (signed: SignedForReview) => Promise<boolean> {
   return (signed) => prompts.reviewSignedTransaction?.(signed) ?? Promise.resolve(false)
+}
+
+/** Refused: only an Online Wallet's view signs a transaction to send (OS-FR-11). Developer text, never shown. */
+export class NotAnOnlineWalletError extends Error {
+  constructor() {
+    super('This wallet is not an online wallet. Nothing was signed.')
+    this.name = 'NotAnOnlineWalletError'
+  }
 }
 
 /** Refused: an Offline Wallet never sends, so it has no such setting (OS-FR-10, OS-FR-11). */
@@ -546,14 +558,21 @@ export async function setShowBeforeSending(walletId: string, on: boolean): Promi
   // Not reachable from the UI (the plate is not on an Offline Wallet); refused
   // so no caller can store it there.
   if (on && view && kindOfView(view) === 'offline') throw new SettingNotForOfflineError()
-  await mutateStoredWallet(record.id, (current) => ({
-    ...current,
-    views: viewsOf(current).map((v) => {
-      if (v.walletId !== walletId) return v
-      const { showBeforeSending: _previous, ...rest } = v
-      return on ? { ...rest, showBeforeSending: true as const } : rest
-    }),
-  }))
+  let offline = false
+  await mutateStoredWallet(record.id, (current) => {
+    // Checked again in the transaction: the view may have become Offline meanwhile.
+    offline = on && viewsOf(current).some((v) => v.walletId === walletId && kindOfView(v) === 'offline')
+    if (offline) return current
+    return {
+      ...current,
+      views: viewsOf(current).map((v) => {
+        if (v.walletId !== walletId) return v
+        const { showBeforeSending: _previous, ...rest } = v
+        return on ? { ...rest, showBeforeSending: true as const } : rest
+      }),
+    }
+  })
+  if (offline) throw new SettingNotForOfflineError()
   const meta = (await listWallets()).find((w) => w.id === walletId)
   if (!meta) throw new Error('Wallet not found in local vault.')
   return meta
@@ -1422,8 +1441,12 @@ export async function addControlledView(
   const node = view.node ? canonicalNodeUrl(view.node) : null
   const newWalletId = crypto.randomUUID()
   let added = false
+  let notOnline = false
   await mutateStoredWallet(record.id, (current) => {
     const views = viewsOf(current)
+    // One record holds one kind (story 5): no Online view is added to a record that became Offline.
+    notOnline = views.some((v) => kindOfView(v) !== 'online')
+    if (notOnline) return current
     if (views.some((v) => v.network === view.network && (v.accountAddress ?? current.address) === view.accountAddress)) return current
     added = true
     return {
@@ -1431,6 +1454,7 @@ export async function addControlledView(
       views: [...views, { walletId: newWalletId, network: view.network, ...(node ? { node } : {}), accountAddress: view.accountAddress }],
     }
   })
+  if (notOnline) throw new KindChangeRefusedError('not-online')
   if (!added) throw new Error('This wallet already operates that account.')
   const meta = (await listKeyWallets()).find((w) => w.id === newWalletId)
   if (!meta) throw new Error('Wallet not found in local vault.')
@@ -1455,14 +1479,21 @@ export async function setWalletNode(walletId: string, node: string | undefined):
   }
   const record = findSeedRecord(await listStoredWallets(), walletId)
   if (!record) throw new Error('Wallet not found in local vault.')
-  await mutateStoredWallet(record.id, (current) => ({
-    ...current,
-    views: viewsOf(current).map((v) => {
-      if (v.walletId !== walletId) return v
-      const { node: _previous, ...rest } = v
-      return canonical ? { ...rest, node: canonical } : rest
-    }),
-  }))
+  let offline = false
+  await mutateStoredWallet(record.id, (current) => {
+    // An Offline Wallet has no Node (OS-FR-5), checked in the transaction.
+    offline = canonical !== undefined && viewsOf(current).some((v) => v.walletId === walletId && kindOfView(v) === 'offline')
+    if (offline) return current
+    return {
+      ...current,
+      views: viewsOf(current).map((v) => {
+        if (v.walletId !== walletId) return v
+        const { node: _previous, ...rest } = v
+        return canonical ? { ...rest, node: canonical } : rest
+      }),
+    }
+  })
+  if (offline) throw new OfflineWalletNodeError()
   const meta = (await listWallets()).find((w) => w.id === walletId)
   if (!meta) throw new Error('Wallet not found in local vault.')
   return meta
@@ -1526,21 +1557,28 @@ export async function changeToOfflineWallet(walletId: string): Promise<KeyWallet
   const before = refusal(record, view)
   if (before) throw new KindChangeRefusedError(before)
   let during: KindChangeRefusal | null = 'not-online'
+  let written: StoredWallet | null = null
   await mutateStoredWallet(record.id, (current) => {
     // Checked again in the transaction: the record read above may be stale.
     during = refusal(current, viewsOf(current).find((v) => v.walletId === walletId))
     if (during) return current
-    return {
+    return (written = {
       ...current,
       views: viewsOf(current).map((v) => {
         if (v.walletId !== walletId) return v
         const { node: _node, showBeforeSending: _show, ...rest } = v
         return { ...rest, kind: 'offline' as const, wasOnline: true as const }
       }),
-    }
+    })
   })
   if (during) throw new KindChangeRefusedError(during)
-  const meta = (await listKeyWallets()).find((w) => w.id === walletId)
+  // From the record the transaction wrote: no second read that could fail after the write.
+  return metaFromWritten(written, walletId)
+}
+
+/** The meta of `walletId` in a record a transaction has just written. */
+function metaFromWritten(written: StoredWallet | null, walletId: string): KeyWalletMeta {
+  const meta = written ? toMetas(written).find((m) => m.id === walletId) : undefined
   if (!meta) throw new Error('Wallet not found in local vault.')
   return meta
 }
@@ -1562,42 +1600,48 @@ const sameAddressReason = (network: NetworkId) => SAME_ADDRESS_ON_NETWORK.replac
  * any prompt and again after it. Refused (typed): a Transmitter, a view that is not
  * Offline. A check that does not pass returns its result and writes nothing.
  */
-export async function changeToOnlineWallet(walletId: string, input: { node?: string }, ctx: SigningContext): Promise<ChangeToOnlineResult> {
+export async function changeToOnlineWallet(
+  walletId: string,
+  input: { node?: string; stillOpen?: () => boolean },
+  ctx: SigningContext,
+): Promise<ChangeToOnlineResult> {
   const canonical = input.node === undefined ? undefined : canonicalNodeUrl(input.node)
   if (input.node !== undefined && !canonical) {
     throw new Error('A custom Node must be a wss:// address with no username, password, query or fragment.')
   }
   const { all, record, view } = await seedViewFor(walletId)
   if (kindOfView(view) !== 'offline') throw new KindChangeRefusedError('not-offline')
+  if (viewsOf(record).length !== 1) throw new KindChangeRefusedError('shared-record')
   const account = view.accountAddress ?? record.address
   if (hasOtherView(all, walletId, view.network, account, record.address)) return { status: 'refused', reason: sameAddressReason(view.network) }
 
   const opened = await openSigner(walletId, ctx)
   if (opened.status !== 'ok') return opened
   opened.value.dispose()
+  // The Wallet's lock may have closed during the prompt: then nothing is written.
+  if (input.stillOpen && !input.stillOpen()) return { status: 'cancelled' }
 
   // The prompt took time: the device may hold another Wallet for this address now.
   if (hasOtherView(await listStoredWallets(), walletId, view.network, account, record.address)) {
     return { status: 'refused', reason: sameAddressReason(view.network) }
   }
-  let changed = false
+  let during: KindChangeRefusal | null = 'not-offline'
+  let written: StoredWallet | null = null
   await mutateStoredWallet(record.id, (current) => {
     const v = viewsOf(current).find((x) => x.walletId === walletId)
-    if (!v || kindOfView(v) !== 'offline') return current
-    changed = true
-    return {
+    during = !v || kindOfView(v) !== 'offline' ? 'not-offline' : viewsOf(current).length !== 1 ? 'shared-record' : null
+    if (during) return current
+    return (written = {
       ...current,
       views: viewsOf(current).map((x) => {
         if (x.walletId !== walletId) return x
         const { kind: _kind, node: _node, ...rest } = x
         return canonical ? { ...rest, node: canonical } : rest
       }),
-    }
+    })
   })
-  if (!changed) throw new KindChangeRefusedError('not-offline')
-  const meta = (await listKeyWallets()).find((w) => w.id === walletId)
-  if (!meta) throw new Error('Wallet not found in local vault.')
-  return { status: 'ok', value: meta }
+  if (during) throw new KindChangeRefusedError(during)
+  return { status: 'ok', value: metaFromWritten(written, walletId) }
 }
 
 // ---------------------------------------------------------------------------

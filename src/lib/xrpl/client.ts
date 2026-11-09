@@ -49,6 +49,17 @@ const abandonOnRelease = new Set<Client>()
 /** Bumped by `resetXrplClients`, so an attempt it forgot cannot write the cache. */
 let generation = 0
 
+/** Bumped per slot by `retireNode` / `retireNetworkClient`: a connect that was in
+ * progress when its slot was retired closes its own client instead of caching it
+ * (a Wallet changed to offline must not get a socket back from a late connect). */
+const slotEpochs = new Map<PoolSlot, number>()
+const epochOf = (slot: PoolSlot) => slotEpochs.get(slot) ?? 0
+function forgetSlotAttempt(slot: PoolSlot): void {
+  slotEpochs.set(slot, epochOf(slot) + 1)
+  inflight.delete(slot)
+}
+const RESET_MESSAGE = 'The connection attempt was reset before it finished. Try again.'
+
 const defaultClientFactory: XrplClientFactory = (url) => new Client(url)
 
 let clientFactory: XrplClientFactory = defaultClientFactory
@@ -207,6 +218,7 @@ function retire(slot: PoolSlot): void {
  */
 async function connectNetwork(network: NetworkId): Promise<Client> {
   const startedIn = generation
+  const startedEpoch = epochOf(network)
 
   // A cached client that is no longer connected is about to be replaced.
   // Close it first: xrpl.js schedules its own reconnect after an unexpected
@@ -219,9 +231,15 @@ async function connectNetwork(network: NetworkId): Promise<Client> {
     try {
       const client = clientFactory(url)
       await connectWithTimeout(client)
+      if (epochOf(network) !== startedEpoch) {
+        // The slot was retired while this connect ran: close what it opened.
+        abandon(client)
+        throw new Error(RESET_MESSAGE)
+      }
       if (generation === startedIn) clients.set(network, client)
       return client
     } catch (err) {
+      if (epochOf(network) !== startedEpoch) throw err instanceof Error && err.message === RESET_MESSAGE ? err : new Error(RESET_MESSAGE, { cause: err })
       lastError = err
     }
   }
@@ -293,7 +311,7 @@ export function retireNode(network: NetworkId, node: string): void {
   const canonical = canonicalNodeUrl(node)
   if (!canonical) return
   const slot = slotOf(network, canonical)
-  inflight.delete(slot)
+  forgetSlotAttempt(slot)
   retire(slot)
 }
 
@@ -305,7 +323,7 @@ export function retireNode(network: NetworkId, node: string): void {
  */
 export function retireNetworkClient(network: NetworkId, node?: string): void {
   if (node) return retireNode(network, node)
-  inflight.delete(slotOf(network))
+  forgetSlotAttempt(slotOf(network))
   retire(slotOf(network))
 }
 
@@ -319,6 +337,7 @@ export function retireNetworkClient(network: NetworkId, node?: string): void {
 async function connectCustomNode(network: NetworkId, node: string): Promise<Client> {
   const startedIn = generation
   const slot = slotOf(network, node)
+  const startedEpoch = epochOf(slot)
   retire(slot)
   const client = clientFactory(node)
   try {
@@ -333,11 +352,11 @@ async function connectCustomNode(network: NetworkId, node: string): Promise<Clie
     abandon(client)
     throw err
   }
-  if (generation !== startedIn) {
-    // `resetXrplClients` ran mid-connect: this client belongs to no pool and no
+  if (generation !== startedIn || epochOf(slot) !== startedEpoch) {
+    // `resetXrplClients` or a retire ran mid-connect: this client belongs to no pool and no
     // holder, so it is closed rather than left open, and the caller retries.
     abandon(client)
-    throw new Error('The connection attempt was reset before it finished. Try again.')
+    throw new Error(RESET_MESSAGE)
   }
   clients.set(slot, client)
   return client

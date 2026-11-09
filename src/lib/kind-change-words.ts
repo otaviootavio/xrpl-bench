@@ -89,3 +89,15 @@ export const NOW_OFFLINE = 'This wallet is now an offline wallet. The app remove
 /** P-63: why "Change to an offline wallet" is not available for a Passkey-Derived Seed Wallet. */
 export const PASSKEY_SEED_NOT_OFFLINE =
   'This wallet uses a Passkey-Derived Seed. The passkey syncs to the cloud. Thus this wallet cannot be an offline wallet.'
+
+/**
+ * Approved by the owner on 2026-11-09 (story 5, review round two), exactly as
+ * written here; in no source file, so `kind-change-words.test.ts` pins them as
+ * literals.
+ */
+/** The Wallet kind plate's title. */
+export const WALLET_KIND = 'Wallet kind'
+/** Why "Change to an offline wallet" is not available on a Seed record with more than one view. */
+export const SHARED_SEED_NO_CHANGE = 'This seed has more than one wallet. The app cannot change the kind of this wallet.'
+/** The result of Change to an online wallet. */
+export const NOW_ONLINE = 'This wallet is now an online wallet. The network is {Network}.'

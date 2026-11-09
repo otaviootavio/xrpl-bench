@@ -10,7 +10,7 @@ import { ScreenFooter, TaskScreen } from '@/components/wallet/TaskScreen'
 import { WarningAlert, WarningSentence } from '@/components/wallet/WarningSentence'
 import { useLeaveBlocker } from '@/hooks/useRoute'
 import { usePrompts } from '@/hooks/usePrompts'
-import { changeToOfflineWallet, changeToOnlineWallet, describeCheckFailure, type KeyWalletMeta } from '@/lib/crypto/keystore'
+import { changeToOfflineWallet, changeToOnlineWallet, describeCheckFailure, KindChangeRefusedError, listWallets, type KeyWalletMeta } from '@/lib/crypto/keystore'
 import { markKindChanged } from '@/lib/kind-change-result'
 import {
   CHANGE_TO_OFFLINE,
@@ -21,7 +21,7 @@ import {
   TEXT_C,
   TEXT_D,
 } from '@/lib/kind-change-words'
-import { leaveScreen } from '@/lib/route'
+import { resetToWalletShell } from '@/lib/route'
 import { transmitterSyncedTo } from '@/lib/same-address'
 import { forgetLedgerOf } from '@/lib/teardown'
 import { SAME_ADDRESS_TRANSMITTER_HERE } from '@/lib/transmitter-words'
@@ -51,10 +51,31 @@ export function NeverOnlineSteps() {
   )
 }
 
-/** Puts the new meta in the store: the tree swaps to the new kind's shell here. */
+/** Puts the new meta in the store (the tree swaps to the new kind's shell here), then
+ * replaces the screen's location with that Wallet's shell, so a screen entered by its
+ * URL lands there too. */
 function publish(meta: KeyWalletMeta) {
   const { wallets, setWallets } = useAppStore.getState()
   flushSync(() => setWallets(wallets.map((w) => (w.id === meta.id ? meta : w))))
+  resetToWalletShell(meta.id)
+}
+
+/** The Wallet's lock is still open: a change is never written for a closed one. */
+const lockOpen = (wallet: KeyWalletMeta) => wallet.lockId in useAppStore.getState().openLocks
+
+/**
+ * A write threw. A typed refusal (before any write) changed nothing. Anything else may
+ * have been thrown after the write, so the vault is read again and what it stores is
+ * shown: the stored meta when the change is there, else `null`.
+ */
+async function landedAnyway(err: unknown, walletId: string, kind: 'online' | 'offline'): Promise<KeyWalletMeta | null> {
+  if (err instanceof KindChangeRefusedError) return null
+  try {
+    const stored = (await listWallets()).find((w) => w.id === walletId)
+    return stored && stored.kind === kind ? stored : null
+  } catch {
+    return null
+  }
 }
 
 /**
@@ -81,16 +102,18 @@ export function ChangeToOfflineScreen({ wallet, onClose, backLabel }: { wallet: 
     if (busy || derived) return
     setProblem(null)
     setBusy(true)
-    let meta: KeyWalletMeta
+    let meta: KeyWalletMeta | null
     try {
-      meta = await changeToOfflineWallet(wallet.id)
-    } catch {
+      meta = lockOpen(wallet) ? await changeToOfflineWallet(wallet.id) : null
+    } catch (err) {
+      meta = await landedAnyway(err, wallet.id, 'offline')
+    }
+    if (!meta) {
       setProblem(NOTHING_CHANGED)
       setBusy(false)
       return
     }
     markKindChanged({ walletId: wallet.id, to: 'offline' })
-    leaveScreen()
     publish(meta)
     forgetLedgerOf(queryClient, wallet)
   }
@@ -180,7 +203,8 @@ export function ChangeToOnlineScreen({ wallet, onClose, backLabel }: { wallet: K
     }
     setBusy(true)
     try {
-      const result = await changeToOnlineWallet(wallet.id, nodeMode === 'custom' && verifiedNode ? { node: verifiedNode } : {}, { openKey, prompts })
+      const node = nodeMode === 'custom' && verifiedNode ? { node: verifiedNode } : {}
+      const result = await changeToOnlineWallet(wallet.id, { ...node, stillOpen: () => lockOpen(wallet) }, { openKey, prompts })
       if (result.status === 'refused') {
         setProblem(result.reason)
         setBusy(false)
@@ -192,9 +216,14 @@ export function ChangeToOnlineScreen({ wallet, onClose, backLabel }: { wallet: K
         return
       }
       markKindChanged({ walletId: wallet.id, to: 'online' })
-      leaveScreen()
       publish(result.value)
-    } catch {
+    } catch (err) {
+      const stored = await landedAnyway(err, wallet.id, 'online')
+      if (stored) {
+        markKindChanged({ walletId: wallet.id, to: 'online' })
+        publish(stored)
+        return
+      }
       setProblem(NOTHING_CHANGED)
       setBusy(false)
     }

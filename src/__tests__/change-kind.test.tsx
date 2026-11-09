@@ -51,6 +51,7 @@ vi.mock('@/lib/crypto/keystore', async () => {
     changeToOfflineWallet: h.toOffline,
     changeToOnlineWallet: h.toOnline,
     describeCheckFailure: actual.describeCheckFailure,
+    KindChangeRefusedError: actual.KindChangeRefusedError,
   }
 })
 
@@ -61,7 +62,10 @@ import {
   CHANGE_TO_OFFLINE,
   CHANGE_TO_ONLINE,
   NOW_OFFLINE,
+  NOW_ONLINE,
   ONLINE_PHRASE_LABEL,
+  SHARED_SEED_NO_CHANGE,
+  WALLET_KIND,
   PASSKEY_SEED_NOT_OFFLINE,
   SAME_ADDRESS_ON_NETWORK,
   TEXT_C,
@@ -108,14 +112,14 @@ async function openSettings() {
   await waitFor(() => expect(screen.getByRole('heading', { level: 1, name: /Local settings/ })).toBeTruthy())
 }
 
-/** The Wallet kind plate: the config plate whose heading holds the kind stamp. */
+/** The Wallet kind plate (title approved 2026-11-09). */
 function kindPlate(): HTMLElement {
-  const plate = [...document.querySelectorAll<HTMLElement>('[data-slot="config-plate"]')].find((p) =>
-    Object.values(KIND_WORDS).some((w) => p.querySelector('h2')?.textContent?.startsWith(w)),
-  )
+  const plate = [...document.querySelectorAll<HTMLElement>('[data-slot="config-plate"]')].find((p) => p.querySelector('h2')?.textContent === WALLET_KIND)
   if (!plate) throw new Error('no Wallet kind plate')
   return plate
 }
+/** The stamps at the top of the plate, in order. */
+const stamps = () => [...(kindPlate().querySelector('h2')?.nextElementSibling?.children ?? [])].map((e) => e.textContent)
 
 const tabNames = () => screen.getAllByRole('tab').map((t) => t.textContent)
 
@@ -132,7 +136,7 @@ describe('the Wallet kind plate (OS-FR-1, OS-FR-5 to OS-FR-7)', () => {
     await openApp([keyMeta()])
     await openSettings()
     const plate = kindPlate()
-    expect(plate.querySelector('h2')?.textContent).toBe(KIND_WORDS.online)
+    expect(stamps()).toEqual([KIND_WORDS.online])
     expect(within(plate).getByRole('button', { name: CHANGE_TO_OFFLINE }).getAttribute('aria-disabled')).toBeNull()
     expect(plate.previousElementSibling?.querySelector('h2')?.textContent).toBe('This wallet')
     expect(plate.textContent).not.toContain(WAS_ONLINE)
@@ -153,9 +157,19 @@ describe('the Wallet kind plate (OS-FR-1, OS-FR-5 to OS-FR-7)', () => {
     await openApp([keyMeta({ kind: 'offline', wasOnline: true })])
     await openSettings()
     const plate = kindPlate()
-    expect(plate.querySelector('h2')?.textContent).toBe(`${KIND_WORDS.offline}${WAS_ONLINE}`)
+    expect(stamps()).toEqual([KIND_WORDS.offline, WAS_ONLINE])
     expect(within(plate).getByText(WAS_ONLINE_WHY)).toBeTruthy()
     expect(within(plate).getByRole('button', { name: CHANGE_TO_ONLINE }).className).toContain('destructive')
+  })
+
+  it('a Seed with more than one Wallet: the key is aria-disabled with the approved reason (2026-11-09)', async () => {
+    await openApp([keyMeta(), keyMeta({ id: 'w2', address: 'rOTHERaccount', createdAt: 2 })])
+    await openSettings()
+    const key = within(kindPlate()).getByRole('button', { name: CHANGE_TO_OFFLINE })
+    expect(key.getAttribute('aria-disabled')).toBe('true')
+    expect(key.getAttribute('aria-describedby')).toBe(within(kindPlate()).getByText(SHARED_SEED_NO_CHANGE).id)
+    fireEvent.click(key)
+    expect(window.location.pathname).toBe('/wallets/w1')
   })
 
   it('an unmarked Offline Wallet shows no Was-online stamp', async () => {
@@ -168,7 +182,7 @@ describe('the Wallet kind plate (OS-FR-1, OS-FR-5 to OS-FR-7)', () => {
     await openApp([transmitter(null)], '/wallets/t1')
     await openSettings()
     const plate = kindPlate()
-    expect(plate.querySelector('h2')?.textContent).toBe(KIND_WORDS.transmitter)
+    expect(stamps()).toEqual([KIND_WORDS.transmitter])
     expect(within(plate).queryByRole('button')).toBeNull()
   })
 
@@ -217,7 +231,7 @@ describe('Change to an offline wallet (OS-FR-5)', () => {
     const result = screen.getByText(fill(NOW_OFFLINE, 'Testnet')).closest('section') as HTMLElement
     expect(document.activeElement).toBe(result)
     expect([...result.querySelectorAll('ol > li')].map((li) => li.textContent)).toEqual([...TEXT_C.steps])
-    expect(kindPlate().querySelector('h2')?.textContent).toBe(`${KIND_WORDS.offline}${WAS_ONLINE}`)
+    expect(stamps()).toEqual([KIND_WORDS.offline, WAS_ONLINE])
     // The Wallet stopped touching the ledger: its custom Node's socket is retired and no live hook remounted.
     expect(h.retire).toHaveBeenCalledWith('testnet', 'wss://node.example')
     expect(h.hookArgs).not.toHaveBeenCalled()
@@ -229,6 +243,17 @@ describe('Change to an offline wallet (OS-FR-5)', () => {
     await waitFor(() => expect(screen.getByRole('heading', { level: 1, name: CHANGE_TO_OFFLINE })).toBeTruthy())
     expect(screen.getByText(SAME_ADDRESS_TRANSMITTER_HERE.split('. ')[0] + '.')).toBeTruthy()
     expect(screen.getByRole('button', { name: CHANGE_TO_OFFLINE }).getAttribute('aria-disabled')).toBeNull()
+  })
+
+  it('entered by its URL, the change lands on the new shell; a throw after the write shows what the vault stores', async () => {
+    await openApp([keyMeta()], '/wallets/w1/to-offline')
+    // The write landed, then something after it threw: the vault is read again.
+    h.toOffline.mockRejectedValue(new Error('read failed after the write'))
+    h.wallets = [keyMeta({ kind: 'offline', wasOnline: true })]
+    fireEvent.click(screen.getByRole('button', { name: CHANGE_TO_OFFLINE }))
+    await waitFor(() => expect(screen.getByText(fill(NOW_OFFLINE, 'Testnet'))).toBeTruthy())
+    expect(window.location.pathname).toBe('/wallets/w1')
+    expect(tabNames()).toEqual(['New transaction', 'Sign', 'Receive', 'Signed', 'Local settings'])
   })
 
   it('a keystore refusal changes nothing and says so (shipped words)', async () => {
@@ -262,9 +287,12 @@ describe('Change to an online wallet (OS-FR-6)', () => {
     h.toOnline.mockResolvedValue({ status: 'ok', value: keyMeta() })
     fireEvent.click(screen.getByRole('button', { name: CHANGE_TO_ONLINE }))
     await waitFor(() => expect(tabNames()).toEqual(['Balances', 'Send', 'Receive', 'History', 'Tokens', 'Local settings']))
-    expect(h.toOnline).toHaveBeenCalledWith('w1', {}, expect.objectContaining({ prompts: expect.any(Object) }))
+    expect(h.toOnline).toHaveBeenCalledWith('w1', { stillOpen: expect.any(Function) }, expect.objectContaining({ prompts: expect.any(Object) }))
+    expect(h.toOnline.mock.calls[0][1].stillOpen()).toBe(true)
     expect(screen.getByRole('heading', { level: 1, name: /Local settings/ })).toBeTruthy()
-    await waitFor(() => expect(document.activeElement).toBe(within(kindPlate()).getByRole('button', { name: CHANGE_TO_OFFLINE })))
+    // The result (approved 2026-11-09) takes focus.
+    const result = screen.getByText(fill(NOW_ONLINE, 'Testnet')).closest('section') as HTMLElement
+    await waitFor(() => expect(document.activeElement).toBe(result))
   })
 
   it('Mainnet: the confirm is held until P-39 is typed', async () => {
@@ -309,6 +337,6 @@ describe('Change to an online wallet (OS-FR-6)', () => {
     await waitFor(() => expect(screen.getByText('This Node answers for this network and will be used.')).toBeTruthy())
     h.toOnline.mockResolvedValue({ status: 'refused', reason: 'x' })
     fireEvent.click(screen.getByRole('button', { name: CHANGE_TO_ONLINE }))
-    await waitFor(() => expect(h.toOnline).toHaveBeenCalledWith('w1', { node: 'wss://mine.example' }, expect.anything()))
+    await waitFor(() => expect(h.toOnline).toHaveBeenCalledWith('w1', { node: 'wss://mine.example', stillOpen: expect.any(Function) }, expect.anything()))
   })
 })

@@ -5,7 +5,7 @@ created: '2026-11-09'
 status: 'done'
 baseline_commit: 'd0cbc35f07d998f10cbb8886f3c4b3809183fa2f'
 route: 'dispatch'
-review_loop_iteration: 0
+review_loop_iteration: 1
 context:
   - '{project-root}/_bmad-output/specs/spec-offline-signing/SPEC.md'
   - '{project-root}/_bmad-output/specs/spec-offline-signing/consequence-texts.md'
@@ -96,11 +96,29 @@ context:
 
 ## Spec Change Log
 
+- 2026-11-09, review round two (owner approval, relayed by the coordinator): approved exactly — the plate title "Wallet kind"; "This seed has more than one wallet. The app cannot change the kind of this wallet." as the visible reason of an `aria-disabled` change key on a Seed record with more than one view (in place of a refusal after the press); "This wallet is now an online wallet. The network is {Network}." as the focused result after Change to an online wallet. In `kind-change-words.ts`, pinned as literals. The three "words missing" items in Design Notes are settled by this. The I/O rows "Plate", "To offline, multi-view record" and "To online" now read with these words.
+
 ## Review Triage Log
+
+Round two (coordinator review, 2026-11-09). Each fixed with the smallest change; tests run on the edited files only.
+
+| # | Finding | Verdict | Fix |
+|---|---|---|---|
+| 1 | A throwing `listKeyWallets()` after the committed write made the screen say "Nothing was changed." | real | Both changes return the meta built from the record the transaction wrote (no second read). The screens show "Nothing was changed." only for a typed refusal; any other throw re-reads with `listWallets()` and publishes what is stored. Test: a throw after the write lands on the result (`change-kind.test.tsx`). |
+| 2 | `signingHandleFor`, `setWalletNode`, `setShowBeforeSending` did not refuse an Offline view; `toMeta` exposed a stray Node | real | `signingHandleFor` throws `NotAnOnlineWalletError` unless the view is Online; the two setters re-check inside the transaction (`OfflineWalletNodeError`, `SettingNotForOfflineError`); clearing stays allowed; no Node on an Offline meta. Tests in `kind-change.test.ts`; story 1's Node-on-Offline test now expects the refusal. |
+| 3 | `retireNetworkClient` / `retireNode` dropped an in-progress connect without forgetting it | real | Per-slot epoch: a connect still running when its slot is retired closes its own client, caches nothing and stops the failover. Test in `client.test.ts`. |
+| 4 | `addControlledView` could add an Online view to a record changed to Offline; `changeToOnlineWallet` lacked the one-view refusal | real | Refused inside the transaction when any view is not Online; `shared-record` refusal added to Change to online (before and in the transaction). Tests. |
+| 5 | Shared-record refusal came after the press | real | The key is `aria-disabled` with the approved reason (both directions). Test. |
+| 6 | Was-online stamp in the Local settings heading | rejected | The stamp must always be followed by P-4, which does not fit the heading row; the Wallet kind plate just below shows both. Recorded in `WalletTab`. |
+| 7 | The write could land after the lock closed during the Signing Check prompt | real | `changeToOnlineWallet({ stillOpen })` checks after the prompt and writes nothing (`cancelled`); Change to offline checks the lock before the write. Test. |
+| 8 | `leaveScreen()` after a change; a URL entry would not land on the new shell | real | `resetToWalletShell(walletId)` after the store takes the new meta. Test entering by URL. |
+| 9 | Missing tests: duplicate appearing during the prompt; a change against the real keystore | real | `kind-change.test.ts` (twin inserted inside the PIN prompt: refused, nothing written); `change-kind-real-keystore.test.tsx` (fake IDB, real keystore, write → result). |
 
 ## Design Notes
 
-**Not shown, words missing (needs owner approval):**
+**Words approved in review round two (2026-11-09)** settle the first three items below; they stay listed as the record of round one.
+
+**Not shown, words missing (needs owner approval) — round one:**
 - The plate title "Wallet kind". It is the spine's plate name, in neither approved list (story 2 needed an approval for "Before sending"). The plate's heading is its stamps ("Online", or "Offline" + "Was online"), which are approved. One line in `KindPlate` when approved.
 - A reason for refusing Change to offline on a Seed record with a second view (keystore `shared-record`). The key is not disabled ahead of time, because a disabled key must show its reason; the refusal says only "Nothing was changed."
 - A success sentence after Change to an online wallet. Focus lands on the change key of the Online Local settings; the `[Online]` stamp is the only sign.
@@ -130,5 +148,7 @@ context:
 | Mark survives | Met. Changed offline again: plate heading `OFFLINE WAS ONLINE`, result shown again (`offline-again-390-light`). |
 | 320 / 390 / 1280, light and dark | Met for the Online plate, Text C, the result, the chooser and Text D: no page side scroll and no element of `main` past the viewport (measured each). |
 | 320 at 200% text | Met for overflow inside `main` on Text C, the result and Text D. At 320x568 the sticky footer covers most of the screen (`text-c-320-zoom200`, `r2-phrase-320-zoom200`): the known frame issue already in deferred-work. On the Mainnet Text D screen the page scrolls sideways: the header row "MAINNET · REAL FUNDS" is wider than 320px at 200% (outside `main`, not changed by this story; not checked on the baseline). |
+
+**Review round two browser check (2026-11-09).** Same setup, one fresh context; forced state: a second view added to Daily's record in IndexedDB (a controlled view, as "Let another wallet sign" makes). Met at 320 and 1280, light and dark, no overflow: the plate titled "Wallet kind" (`r4-plate-online-1280-dark`), the result "This wallet is now an online wallet. The network is Testnet." with focus on it (`r4-result-online-1280-light`), and the shared record's "Change to an offline wallet" `aria-disabled` with the approved reason (`r4-plate-shared-320-dark`). Screenshots opened as named. The dev server was stopped.
 
 Not driven in the browser: an untested custom Node and a failed Signing Check (pinned in `change-kind.test.tsx`). Screenshots opened: `text-c-390-light`, `r2-text-c-bottom-390-light`, `result-offline-320-dark`, `r2-plate-offline-marked-dark`, `r2-plate-derived-light`, `chooser-390-light`, `text-d-1280-dark`, `r2-phrase-typed-390-light`, `r2-phrase-320-zoom200`, `text-c-320-zoom200`, `offline-again-390-light`. The dev server was stopped after the pass.

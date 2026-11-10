@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogFooter, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { Radio } from '@/components/ui/radio'
 import { AmountInput, validateAmountString } from '@/components/wallet/AmountInput'
 import { HandoffPlate } from '@/components/wallet/HandoffPlate'
 import { QrScanner } from '@/components/wallet/QrScanner'
@@ -128,7 +129,7 @@ function BuildForm({
         </legend>
         {/* This build has the Payment type only (story 6); trust lines and key actions are story 8's. */}
         <label className="flex items-center gap-2 text-sm">
-          <input type="radio" name="off-type" value="payment" checked readOnly />
+          <Radio name="off-type" value="payment" checked readOnly />
           {W.PAYMENT}
         </label>
       </fieldset>

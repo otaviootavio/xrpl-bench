@@ -5,7 +5,7 @@ created: '2026-11-10'
 status: 'done'
 baseline_commit: '420bc5d'
 route: 'dispatch'
-review_loop_iteration: 0
+review_loop_iteration: 1
 context:
   - '{project-root}/_bmad-output/specs/spec-offline-signing/SPEC.md'
   - '{project-root}/_bmad-output/specs/spec-offline-signing/route-checks.md'
@@ -81,6 +81,36 @@ context:
 - Given a funded Testnet account whose Seed is the Offline Wallet's, when the round runs between two contexts, then three scans (request, Data to Sign, signed) end in a validated payment and no field is typed twice (OS-SM-1).
 - Given an Offline Wallet at any point of the round, then no ledger client is requested.
 
+## Spec Change Log
+
+- 2026-11-10, review round two (owner approval, relayed by the coordinator): approved exactly — "Scan 1 of 3" / "Scan 2 of 3" / "Scan 3 of 3" on the hand-off and scan plates; the plate titles "Data to sign" and "Signed transaction"; "Checking {address} on {Network}" while the Transmitter reads, in a status region; "Type of transaction" over the type list; "Signing key" as the signing review's row name; the QR alt text "QR code: {payload} for {Network}". In `offline-round-words.ts`, pinned as literals. The I/O rows "Review → request", "Transmitter answers" and "Sign" now show them; the Design Notes items they settle are marked so. The "Transmitter refuses" row adds the base-reserve refusal; "Destination not activated" now reads: below the base reserve refused (two-device's words), at or above it answered with no warning.
+
+## Review Triage Log
+
+Round two (coordinator review, 2026-11-10). Each fixed with the smallest change; tests run on the edited files only.
+
+| # | Finding | Verdict | Fix |
+|---|---|---|---|
+| 1 | A `ledger_index` near 2^32 made LastLedgerSequence overflow; encode/sign threw in render (blank app) and the index was stored | real | `decodeDataToSign` refuses `ledger_index > 4294967295 - 150` as malformed; `assembleTransaction` bounds it again (RangeError). Tests (codec, judgement, screen) |
+| 2 | The highest seen was saved before the user decided, so a declined bogus answer poisoned it | real | saved only after `signRound` succeeds. Test: Do not sign leaves it unchanged; Sign saves it |
+| 3 | The first round had no bound: a Transmitter could make a blob valid for years with no warning | real | `LEDGER_FLOORS` (per Network, read 2026-11-10, refresh steps in `offline-window.ts`) is the P-14 reference before anything was seen, with the same 3 s a ledger + 30 rule. Tests |
+| 4 | Mainnet/Testnet blobs carry no NetworkID | known limit | recorded in Design Notes |
+| 5 | Below the base reserve to an unactivated destination was answered (fee burned, `tecNO_DST_INSUF_XRP`) | real | refused in two-device's shipped words; the not-activated warning is gone (it never applies once that is refused). Test |
+| 6 | Tag-required refusal used two-device's "…Nothing was built." | real | online Send's words, "Destination tag (required by recipient)" (its tag label; the only online sentence for the fact). Test against SendTab |
+| 7 | An unsynced Transmitter's read of the request Account outlived the lock | real | on Transmit unmount (a lock unmounts it) each answered Account's account-scoped data is removed unless an open Wallet holds it (`forgetSyncedAddress`). Test |
+| 8 | Check list and warning before the focused heading, never announced; h3 before h2 | real | they now sit inside the plate after its h2 title; heading order h2 then h3 |
+| 9 | Only the last answered Account was remembered | real | a set for this mount; unsynced, a blob whose Account is in it is expected. Tests: every answered Account counts, a refused answer adds none, the set goes with an unmount |
+| 10 | Wake lock always on in Transmit | real | only while answering or after an answer until an outcome (the plate holds its own while shown) |
+| 11 | Overlapping wake-lock requests could leak a sentinel | real | one at a time: skip while pending or held; re-take only after the browser released it. Tests: unmount before resolve releases it; hidden then visible takes it again, once |
+| 12 | Focus on refusal and on answering from P-28 | real | the scanner takes focus; "Checking {address} on {Network}" in an always-mounted status. Tests |
+| 13 | HandoffPlate repeated its heading in `aria-label` | real | `aria-labelledby` on the h2's id. Test |
+| 14 | The larger code was sized from a render-time snapshot | real | CSS `min(100vw - 4rem, 100dvh - 17rem)` (reserve: dialog padding, close control, animated keys and caption, Back), drawn at 720 px. Test; browser |
+| 15 | Kept plate showed P-1 for Fee after signing | real | the signed Fee and Sequence. Test |
+| 16 | A request or signed code where Data to Sign is expected said "malformed" | real | P-36 via `payloadKindOf` first. `{kind}` filled with the approved titles in lower case ("data to sign", "signed transaction") and the glossary names ("data-to-sign request", "unsigned transaction"). Tests |
+| 17 | Codec Account/Destination checked by pattern only | real | `isValidClassicAddress` (checksum). Test |
+| 18 | Stale comments in Main.tsx and KindWallets.tsx | real | rewritten |
+| 19 | Tests: a real failed read through Transmit with the real `answerRequest`; the reserve case | real | `transmit-answer-real.test.tsx`; `answer-request.test.ts` |
+
 ## Implementation Notes
 
 - Commits: `4572b34` (code and tests), `852b12f` (round keys wrap at 320px with 200% text, found in the browser pass), then this record (the larger code clears the dialog's close control, P-58 tests).
@@ -99,13 +129,17 @@ context:
 
 ## Design Notes
 
-**Left out: words not approved (needs owner approval).**
-- The scan count caption "Scan 1 of 3" / "Scan 2 of 3" / "Scan 3 of 3" (EXPERIENCE component row, not a P-n).
-- Titles for the Data to Sign plate and the signed plate. Their headings are their first approved lines instead: P-57 "Scan this code with the offline wallet." and P-12's first line.
-- The Transmitter's "Checking {address} on {Network}" reading status. The screen shows nothing while the reads run.
-- A legend for the type list on New transaction (Payment is the only type; "Payment", P-62, is the form's heading), and a term for the signing-key row of the signing review (the field list shows `SigningPubKey` only after signing, as the Transmit step does).
-- QR alternative text naming payload and Network ("QR code: data to sign needed, Mainnet"): the shipped "QR code carrying a signing payload" stays.
-- A refusal reason for a Transmitter request it cannot read beyond its shape (codec's shipped "That code could not be read.").
+**Network is agreed, not signed (protocol fact, review round two).** On Mainnet, Testnet and Devnet a signed blob carries no `NetworkID` (it exists only above 1024), so the same Seed signs the same bytes for every Network. A Data to Sign labelled Testnet but carrying the Sequence the Account has on Mainnet (and a ledger index Mainnet accepts) yields a blob that is valid on Mainnet. The envelope's Network check and the Offline Wallet's Network refusal stop a mistake, not a Transmitter that lies; they cannot prevent this. The guard is the OS-FR-23 warning (one Seed on one Network) shown at create and import (`fact-check.md` case 1, route-checks "Known limit"). The ledger floor (round two) narrows the window such a blob can have, not the replay itself.
+
+**Ledger floors (round two).** `src/lib/offline-window.ts` `LEDGER_FLOORS`, read 2026-11-10 from each Network's built-in Node: Mainnet 108237339 (10:26:41Z), Testnet 22214144 (10:26:50Z), Devnet 6831893 (10:26:51Z). Refresh: read `ledger` with `ledger_index: 'validated'` on each built-in Node and copy `ledger_index` and `ledger.close_time_iso`. A stale floor only widens the "too high" allowance; after a Testnet or Devnet reset the "lower" warning shows until the file is refreshed.
+
+**Left out in round one: words not approved (settled 2026-11-10 except where marked).**
+- The scan count caption "Scan 1 of 3" / "Scan 2 of 3" / "Scan 3 of 3" (EXPERIENCE component row, not a P-n). Approved and built.
+- Titles for the Data to Sign plate and the signed plate. Approved ("Data to sign", "Signed transaction") and built; P-57's line and P-12's first line are now plate lines.
+- The Transmitter's "Checking {address} on {Network}" reading status. Approved and built (status region).
+- A legend for the type list and a term for the signing-key row. Approved ("Type of transaction", "Signing key") and built: a one-option type list (Payment) and the key's address on the signing review.
+- QR alternative text naming payload and Network. Approved ("QR code: {payload} for {Network}") and built; `{payload}` is the plate's title in lower case.
+- A refusal reason for a Transmitter request it cannot read beyond its shape (codec's shipped "That code could not be read."). Still open.
 
 **Left out by design.** "Start the request again" (P-18's third key) is story 7's: re-requesting a signed Build would hand out a new Sequence and could pay twice without story 7's Sequence comparison. The Build is kept so story 7 can add it. Token payments offline are not built (the online asset list is a read).
 
@@ -131,3 +165,16 @@ context:
 | 320 / 390 / 1280, light and dark; 320 at 200% text | Met on `852b12f`: form, review, request, answer, signing review, signed and outcome: no page side scroll and no element past the viewport (measured each). On `4572b34` the "Review payment", "Make the code larger" and "Change the transaction" keys ran past the edge at 200%; fixed by letting round keys wrap. |
 
 Not driven in the browser: a refused Data to Sign, P-14, P-58, a lock mid-round and a failed Transmitter read (each pinned by `offline-new-transaction.test.tsx`, `transmit-answer.test.tsx`, `answer-request.test.ts`); an animated code (a Payment fits one still code; story 13 verified the animated transport); a real camera. Screenshots opened: `O-larger2-320-dark`, `O-signing-390-dark`, `O-request-320-light`, `T-answered-320-dark`, `O-signed-1280-light`, `O-larger-320-light`, `T-outcome-390-light`. The dev server was stopped after the pass.
+
+**Review round two (2026-11-10, commit `340735d` plus the Radio primitive on the type list).** Gates on the edited files' tests only (the coordinator runs the full set): 13 test files, all green; `tsc -b` and `bun run lint` green. Browser: `bun run dev -- --port 5226 --strictPort`, the same two-context script and harness as above, same funded account (still about 60 XRP), O imported as Offline, T an unsynced Transmitter.
+
+| Check | Result |
+|---|---|
+| OS-SM-1, one full round | Met. 20 XRP, hash `888D96E7F2475B37D13BCA7948B9ADACDB62027131FBC813199C0F71BD58B573`, T outcome VALIDATED; three pasted scans decoded from the QR pixels; two fields typed on O; 0 ledger sockets on O. |
+| New words | Met. O: "Type of transaction" over a checked "Payment" (Radio primitive, visible in dark: `r2-O-type-320-dark`), "Scan 1 of 3" on the request plate, "Scan 2 of 3" on the scan plate, "Signing key" with the key's address on the signing review, "Signed transaction" title (focused) and "Scan 3 of 3". T: status "Checking r9ei3Rb2TDp7xhnV6ZSFgAsoQUPf7PBwtn on Testnet" while reading, then "Data to sign" title, "Scan 2 of 3", the check list inside the plate after it; alt "QR code: data to sign for Testnet". |
+| Kept plate after signing | Met. Fee 0.000012 XRP and Sequence 22206556, no P-1. |
+| The window | LastLedgerSequence = received index + 150 (22214418); no P-14 against the Testnet floor. |
+| Larger code (CSS-sized) | Met (`r2-O-larger-320-light`): fills the dialog width at 320x640, below the close control. |
+| 320 / 390 / 1280 (dark 320, light 390 and 1280) and 320 at 200% text | Met: form, review, request, answer, signing review, signed and outcome: no page side scroll, nothing past the viewport. |
+
+Not driven in the browser in round two: the reserve refusal, the floor's "too high" warning, a refused answer and the unmount cleanup (each pinned by unit tests). Screenshots opened: `r2-T-answered-390-light`, `r2-O-larger-320-light`, `r2-O-form-320-dark`, `r2-O-form-390-light`, `r2-O-type-320-dark`. The dev server was stopped.

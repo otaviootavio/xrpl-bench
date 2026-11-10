@@ -1,4 +1,4 @@
-import { type AccountSet, AccountSetAsfFlags, decode, hashes, type Payment, PaymentFlags, type SetRegularKey, type SubmittableTransaction, type TrustSet, TrustSetFlags, verifySignature } from 'xrpl'
+import { type AccountSet, AccountSetAsfFlags, decode, hashes, XrplError, type Payment, PaymentFlags, type SetRegularKey, type SubmittableTransaction, type TrustSet, TrustSetFlags, verifySignature } from 'xrpl'
 import { getXrplClient, holdXrplClient } from './client'
 import { isNetworkId, NETWORKS, type NetworkId } from './networks'
 import { MAX_FEE_DROPS, feeWithinCap, formatXrp, isCanonicalPositiveDrops } from './money'
@@ -208,6 +208,17 @@ export type SubmitOutcome =
    * the operator to check the hash before trying again, and never resubmit. */
   | { status: 'unknown'; hash: string }
 
+/**
+ * What the Transmit step of a scanned Signed Transaction reports: today's
+ * outcomes, plus `sent-before` (P-23, "Probably sent before"): the submit's
+ * preliminary result was `tefPAST_SEQ` and this blob's hash is not on the
+ * ledger, so the ledger used its Sequence, most likely for an earlier signing
+ * of the same transaction (OS-FR-16). Never "failed", never "expired", never
+ * offered again. Only `transmitSignedTransaction` returns it, so the online
+ * write paths keep their outcome type unchanged.
+ */
+export type TransmitOutcome = SubmitOutcome | { status: 'sent-before'; hash: string; resultCode: 'tefPAST_SEQ' }
+
 function classify(resultCode: string): 'validated' | 'claimed' | 'failed' {
   if (resultCode === 'tesSUCCESS') return 'validated'
   if (resultCode.startsWith('tec')) return 'claimed'
@@ -331,10 +342,10 @@ export async function transmitSignedTransaction(
   expectedAccount: string,
   node?: string,
   review?: ReviewBeforeSending,
-): Promise<SubmitOutcome> {
+): Promise<TransmitOutcome> {
   let attempted = false
   try {
-    return await withWriteInFlight(network, node, async (client) => {
+    return await withWriteInFlight(network, node, async (client): Promise<TransmitOutcome> => {
       // The Network first, as route-checks orders it, before the blob is read.
       assertNetwork(signed.network, network)
       let hash: string
@@ -350,10 +361,21 @@ export async function transmitSignedTransaction(
       if (sentThisSession.has(hash)) throw refuse('already-sent')
       sentThisSession.add(hash)
       try {
-        return await transmit(client, network, { tx_blob: signed.txBlob, hash }, { signedNetwork: signed.network, expectedAccount }, review, node, () => {
-          attempted = true
-        })
+        return await transmit(
+          client,
+          network,
+          { tx_blob: signed.txBlob, hash },
+          { signedNetwork: signed.network, expectedAccount },
+          review,
+          node,
+          () => {
+            attempted = true
+          },
+          true,
+        )
       } catch (err) {
+        // P-23: the ledger used this Sequence and this blob is not on it. Sent once; never offered again.
+        if (err instanceof SequenceUsedSignal) return { status: 'sent-before', hash, resultCode: 'tefPAST_SEQ' }
         if (!attempted) sentThisSession.delete(hash)
         throw err
       }
@@ -515,6 +537,9 @@ async function transmit(
   review: ReviewBeforeSending | undefined,
   node: string | undefined,
   onSubmitting?: () => void,
+  /** The scanned path (`transmitSignedTransaction`): read the submit's preliminary
+   * result, so `tefPAST_SEQ` is reported at once (P-23) instead of after the window. */
+  reportUsedSequence = false,
 ): Promise<SubmitOutcome> {
   const lastLedgerSequence = await checkSignedTransaction(client, network, signed.tx_blob, check)
   if (review) {
@@ -532,7 +557,9 @@ async function transmit(
   }
   try {
     onSubmitting?.()
-    const res = await client.submitAndWait(signed.tx_blob)
+    const res = reportUsedSequence
+      ? await submitOnceAndWait(client, signed, lastLedgerSequence)
+      : await client.submitAndWait(signed.tx_blob)
     const meta: unknown = res.result.meta
     // A meta that is missing, not an object (binary meta) or has no string
     // result is an unreadable outcome, never a failure: reading it as one
@@ -544,6 +571,7 @@ async function transmit(
       ? { status, hash: signed.hash, resultCode }
       : { status, hash: signed.hash, resultCode, ledgerIndex: res.result.ledger_index }
   } catch (err: unknown) {
+    if (err instanceof SequenceUsedSignal) throw err
     // The "stuck/expired" case from docs/decisions.md: the network moved past
     // this transaction's LastLedgerSequence without it appearing in a
     // validated ledger. It may simply never have been included. NEVER
@@ -557,6 +585,68 @@ async function transmit(
       return { status: 'expired', hash: signed.hash }
     }
     throw err
+  }
+}
+
+/** Internal: the submit said `tefPAST_SEQ` and the blob's hash is not on the ledger. */
+class SequenceUsedSignal extends Error {
+  constructor() {
+    super('The ledger used this Sequence.')
+    this.name = 'SequenceUsedSignal'
+  }
+}
+
+/** The wait between two `tx` reads, as xrpl.js's `submitAndWait` has it. Test seam below. */
+let pollMs = 1000
+
+/** Test seam: the wait between two `tx` reads of the scanned path. */
+export function setTransmitPollMsForTests(ms: number | null): void {
+  pollMs = ms ?? 1000
+}
+
+type HeldClient = Awaited<ReturnType<typeof holdXrplClient>>['client']
+type TxRead = Awaited<ReturnType<HeldClient['submitAndWait']>>
+
+/**
+ * One submission and the wait for its outcome: xrpl.js 5.1.0's `submitAndWait`
+ * step by step (`fail_hard` for AccountDelete; a `tem` preliminary result
+ * throws; `tx` by hash until validated, `txnNotFound` waits again; past the
+ * LastLedgerSequence throws the same `XrplError` the expiry check reads), with
+ * one addition: a `tefPAST_SEQ` preliminary result whose hash is not found
+ * validated (or cannot be read) ends at once as `SequenceUsedSignal` (P-23).
+ * A hash found but not validated yet is waited for as before. Exactly one
+ * `submit` request; the blob is never handed to the ledger again.
+ */
+async function submitOnceAndWait(client: HeldClient, signed: { tx_blob: string; hash: string }, lastLedger: number): Promise<TxRead> {
+  const type = (decode(signed.tx_blob) as { TransactionType?: unknown }).TransactionType
+  const response = await client.request({ command: 'submit', tx_blob: signed.tx_blob, fail_hard: type === 'AccountDelete' })
+  const preliminary = response.result.engine_result
+  if (preliminary.startsWith('tem')) throw new XrplError(`Transaction failed, ${preliminary}: ${response.result.engine_result_message}`)
+  if (preliminary === 'tefPAST_SEQ') {
+    let found: TxRead | null = null
+    try {
+      found = (await client.request({ command: 'tx', transaction: signed.hash })) as TxRead
+    } catch {
+      // Not found, or not readable: the Sequence is used and this blob is not known to be on the ledger.
+    }
+    if (!found) throw new SequenceUsedSignal()
+    if (found.result.validated) return found
+  }
+  for (;;) {
+    await new Promise((resolve) => setTimeout(resolve, pollMs))
+    const latest = await client.getLedgerIndex()
+    if (lastLedger < latest) {
+      throw new XrplError(`The latest ledger sequence ${latest} is greater than the transaction's LastLedgerSequence (${lastLedger}).\nPreliminary result: ${preliminary}`)
+    }
+    let read: TxRead
+    try {
+      read = (await client.request({ command: 'tx', transaction: signed.hash })) as TxRead
+    } catch (error) {
+      const data = isRecord(error) && isRecord(error.data) ? error.data : {}
+      if (data.error === 'txnNotFound') continue
+      throw new Error(`${String(data.error)} \n Preliminary result: ${preliminary}.\nFull error details: ${String(error)}`)
+    }
+    if (read.result.validated) return read
   }
 }
 

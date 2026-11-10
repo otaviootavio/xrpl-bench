@@ -45,6 +45,7 @@ import {
   transmitterVerifierText,
   type TransmitterRecord,
 } from './db'
+import { isSignedRecord, type SignedRecord } from '@/lib/signed-list'
 
 /** What every Wallet has, whatever its kind. `id` is the walletId — selection
  * state is never an address (AD-18). */
@@ -567,6 +568,45 @@ export async function noteLedgerSeen(walletId: string, index: number, at: number
       return { ...v, ledgerSeen: { index, at } }
     }),
   }))
+}
+
+/** This Offline Wallet's signed list (OS-FR-16), oldest first; malformed entries are
+ * left out. Throws when the record cannot be read: the caller must not read a
+ * failed read as an empty list, because the list is the guard against paying twice. */
+export async function signedListOf(walletId: string): Promise<SignedRecord[]> {
+  const stored = findSeedRecord(await listStoredWallets(), walletId)
+  const view = stored && viewsOf(stored).find((v) => v.walletId === walletId)
+  if (!view || kindOfView(view) !== 'offline') throw new NotAnOfflineWalletError()
+  const list: unknown = (view as { signed?: unknown }).signed
+  return Array.isArray(list) ? list.filter(isSignedRecord) : []
+}
+
+const signedListeners = new Set<(walletId: string) => void>()
+
+/** Called after each `noteSigned` with the Wallet's id, so the Signed screen reads again. */
+export function subscribeSignedList(listener: (walletId: string) => void): () => void {
+  signedListeners.add(listener)
+  return () => signedListeners.delete(listener)
+}
+
+/** Appends one signing to this Offline Wallet's list (OS-FR-16). Only on an Offline
+ * view; touches nothing else. Throws when it could not be written. */
+export async function noteSigned(walletId: string, record: SignedRecord): Promise<void> {
+  if (!isSignedRecord(record)) throw new Error('The signed record is not valid.')
+  const found = findSeedRecord(await listStoredWallets(), walletId)
+  if (!found) throw new Error('Wallet not found in local vault.')
+  let wrote = false
+  await mutateStoredWallet(found.id, (current) => ({
+    ...current,
+    views: viewsOf(current).map((v) => {
+      if (v.walletId !== walletId || kindOfView(v) !== 'offline') return v
+      wrote = true
+      const before: unknown = (v as { signed?: unknown }).signed
+      return { ...v, signed: [...(Array.isArray(before) ? before.filter(isSignedRecord) : []), record] }
+    }),
+  }))
+  if (!wrote) throw new NotAnOfflineWalletError()
+  signedListeners.forEach((l) => l(walletId))
 }
 
 /** The review a Wallet's sends go through when its setting is on; without a

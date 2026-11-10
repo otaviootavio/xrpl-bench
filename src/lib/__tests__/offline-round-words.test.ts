@@ -45,6 +45,21 @@ describe('Offline-builds round words (OS-FR-11, OS-FR-13 to OS-FR-16)', () => {
     ['P-18', W.KEPT_LINE],
     ['P-18', W.I_KNOW_THE_RESULT],
     ['P-18', W.CANCEL_THIS_TRANSACTION],
+    ['P-18', W.START_THE_REQUEST_AGAIN],
+    ['P-19', W.SIGNED_BEFORE],
+    ['P-20', W.RETRY_HIGHER],
+    ['P-20', W.CHECK_FIRST],
+    ['P-20', W.THIS_IS_A_NEW_PAYMENT],
+    ['P-21', W.RETRY_PASSED],
+    ['P-22', W.RETRY_SAME_SEQUENCE],
+    ['P-23', W.PROBABLY_SENT_BEFORE],
+    ['P-23', W.PROBABLY_SENT_BEFORE_LINE],
+    ['P-49', W.SIGNED_LIST_LINE],
+    ['P-52', W.RECORD_TERMS.sequence],
+    ['P-52', W.RECORD_TERMS.hash],
+    ['P-52', W.RECORD_TERMS.validUntil],
+    ['P-52', W.RECORD_TERMS.signedAt],
+    ['P-56', W.SIGNED_LIST_EMPTY],
     ['P-28', W.ANSWER_READ_FAILED],
     ['P-28', W.READ_AGAIN],
     ['P-34', W.DO_NOT_SIGN],
@@ -70,6 +85,10 @@ describe('Offline-builds round words (OS-FR-11, OS-FR-13 to OS-FR-16)', () => {
     ['P-62', W.PAYMENT],
   ])('%s holds %s', (id, words) => {
     expect(row(id)).toContain(quoted(words))
+  })
+
+  it('"This is a new payment" is a fixed string of the spec', () => {
+    expect(FIXED).toContain(quoted(W.THIS_IS_A_NEW_PAYMENT))
   })
 
   it('the request title is a fixed string of the spec', () => {

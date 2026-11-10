@@ -9,6 +9,7 @@ import { LEDGER_FLOORS, MAX_RECEIVED_LEDGER_INDEX, OFFLINE_LEDGER_WINDOW } from 
 import { WRONG_KIND } from '@/lib/transmitter-words'
 import { DATA_REFUSAL } from '@/lib/offline-round-words'
 import { fill } from '@/lib/transmit-words'
+import type { SignedRecord } from '@/lib/signed-list'
 
 /**
  * The Offline-builds round on the Offline Wallet (OS-FR-13 to OS-FR-16,
@@ -163,6 +164,8 @@ export function ledgerJumpWarning(
 export interface SignedRound {
   text: string
   hash: string
+  sequence: number
+  fee: string
   lastLedgerSequence: number
   signedAt: number
 }
@@ -188,8 +191,22 @@ export async function signRound(
   return {
     text: encodeSigned({ network: wallet.network, txBlob: signed.tx_blob }).text,
     hash: signed.hash,
+    sequence: tx.Sequence as number,
+    fee: tx.Fee as string,
     lastLedgerSequence: tx.LastLedgerSequence as number,
     signedAt: now(),
+  }
+}
+
+/** The signed list's record of one signing (OS-FR-16): no blob, no key. */
+export function signedRecordOf(build: OfflineBuild, signed: SignedRound, ledgerIndex: number): SignedRecord {
+  return {
+    buildHash: buildHashOf(build),
+    sequence: signed.sequence,
+    hash: signed.hash,
+    lastLedgerSequence: signed.lastLedgerSequence,
+    ledgerIndex,
+    signedAt: signed.signedAt,
   }
 }
 
@@ -204,13 +221,31 @@ export type RoundPhase =
   | { name: 'editing' }
   | { name: 'reviewed' }
   | { name: 'request'; requestId: string; notice?: 'not-signed' }
-  | { name: 'signing'; requestId: string; data: DataToSignPayload; warning: 'lower' | 'too-high' | null }
-  | { name: 'signed'; signed: SignedRound; data: DataToSignPayload }
+  /**
+   * The signing review. `data` is the Data to Sign as received; `sequence` is the
+   * one signed with: the received one, or the earlier signing's in retry case (c)
+   * (`signed-list.ts` `retryCaseOf`). `retry` names the notice (P-21, P-22).
+   */
+  | {
+      name: 'signing'
+      requestId: string
+      data: DataToSignPayload
+      sequence: number
+      warning: 'lower' | 'too-high' | null
+      retry?: 'passed' | 'same-sequence'
+    }
+  /** Retry case (a), P-20: a higher Sequence was received for a Same Build. Nothing is signed yet. */
+  | { name: 'retry-higher'; requestId: string; data: DataToSignPayload; warning: 'lower' | 'too-high' | null; earlier: SignedRecord }
+  | { name: 'signed' }
 
 export interface Round {
   lockId: string
   build: OfflineBuild
   phase: RoundPhase
+  /** The last signing of this Build in this round (P-18's Kept transaction), kept
+   * across "Start the request again" until the outcome is marked, cancelled or a
+   * lock erases it. The signed QR's text lives here, in memory only. */
+  kept?: SignedRound
 }
 
 const rounds = new Map<string, Round>()

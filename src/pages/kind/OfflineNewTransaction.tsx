@@ -13,7 +13,10 @@ import { SignedFieldList } from '@/components/wallet/SignedTransactionReview'
 import { useOfflineRound } from '@/hooks/useOfflineRound'
 import { usePrompts } from '@/hooks/usePrompts'
 import { useWakeLock } from '@/hooks/useWakeLock'
-import { ledgerSeenOf, noteLedgerSeen, SigningCheckError, type KeyWalletMeta } from '@/lib/crypto/keystore'
+import { ledgerSeenOf, noteLedgerSeen, noteSigned, signedListOf, SigningCheckError, type KeyWalletMeta } from '@/lib/crypto/keystore'
+import { EarlierSigningRecord } from '@/components/wallet/EarlierSigningRecord'
+import { useSignedList } from '@/hooks/useSignedList'
+import { latestSameBuild, retryCaseOf, type SignedRecord } from '@/lib/signed-list'
 import {
   assembleTransaction,
   buildHashOf,
@@ -25,9 +28,11 @@ import {
   requestText,
   roundOf,
   setRound,
+  signedRecordOf,
   signRound,
   type OfflineBuild,
   type Round,
+  type SignedRound,
 } from '@/lib/offline-round'
 import * as W from '@/lib/offline-round-words'
 import { SIGN_KEY, fill } from '@/lib/transmit-words'
@@ -78,6 +83,8 @@ export function OfflineNewTransaction({ wallet }: { wallet: KeyWalletMeta }) {
         <Reviewed wallet={wallet} round={round} headingRef={headingRef} />
       ) : round.phase.name === 'request' ? (
         <RequestShown wallet={wallet} round={round} headingRef={headingRef} />
+      ) : round.phase.name === 'retry-higher' ? (
+        <RetryHigher wallet={wallet} round={round} headingRef={headingRef} />
       ) : round.phase.name === 'signing' ? (
         <SigningReview wallet={wallet} round={round} headingRef={headingRef} />
       ) : (
@@ -241,6 +248,26 @@ function BuiltFields({ build, signedWith }: { build: OfflineBuild; signedWith?: 
   )
 }
 
+/**
+ * P-19 and the earlier-signing record, when this Wallet signed a Same Build
+ * before (by content hash, so also after a lock and a Build typed again). For
+ * display: the signing path reads the list fresh. A list that cannot be read
+ * shows nothing here, and the Data to Sign is then refused (no signing without it).
+ */
+function SameBuildNotice({ walletId, build }: { walletId: string; build: OfflineBuild }) {
+  const signed = useSignedList(walletId)
+  const earlier = signed.status === 'ok' ? latestSameBuild(signed.list, buildHashOf(build)) : null
+  if (!earlier) return null
+  return (
+    <Alert role="none">
+      <AlertDescription className="flex min-w-0 flex-col gap-2">
+        <p>{W.SIGNED_BEFORE}</p>
+        <EarlierSigningRecord record={earlier} />
+      </AlertDescription>
+    </Alert>
+  )
+}
+
 function startRequest(walletId: string, round: Round) {
   setRound(walletId, { ...round, phase: { name: 'request', requestId: newRequestId() } })
 }
@@ -255,6 +282,7 @@ function Reviewed({ wallet, round, headingRef }: { wallet: KeyWalletMeta; round:
       <h2 ref={headingRef} tabIndex={-1} className="text-sm font-semibold">
         {W.PAYMENT}
       </h2>
+      <SameBuildNotice walletId={wallet.id} build={round.build} />
       <BuiltFields build={round.build} />
       <div className="flex flex-wrap gap-2">
         <Button type="button" onClick={() => startRequest(wallet.id, round)}>
@@ -270,6 +298,7 @@ function Reviewed({ wallet, round, headingRef }: { wallet: KeyWalletMeta; round:
 
 function RequestShown({ wallet, round, headingRef }: { wallet: KeyWalletMeta; round: Round; headingRef: HeadingRef }) {
   const phase = round.phase as Extract<Round['phase'], { name: 'request' }>
+  /** A refusal under P-16: its P-17 reason, or `''` for P-16 alone. */
   const [refusal, setRefusal] = useState<string | null>(null)
   const text = requestText(wallet.network, round.build, phase.requestId)
   useWakeLock(true)
@@ -287,6 +316,15 @@ function RequestShown({ wallet, round, headingRef }: { wallet: KeyWalletMeta; ro
       setRefusal(judged.reason)
       return
     }
+    // The signed list, read now (OS-FR-16): it decides the Sequence. A failed read
+    // is never "no earlier signing", so nothing is signed (P-16; no P-17 reason fits).
+    let list: SignedRecord[]
+    try {
+      list = await signedListOf(wallet.id)
+    } catch {
+      setRefusal('')
+      return
+    }
     setRefusal(null)
     let seen: { index: number; at: number } | null = null
     try {
@@ -300,11 +338,23 @@ function RequestShown({ wallet, round, headingRef }: { wallet: KeyWalletMeta; ro
     // A lock while this ran erased the round: nothing to move on with.
     const now = roundOf(wallet.id)
     if (!now || now.phase.name !== 'request' || now.phase.requestId !== keptPhase?.requestId) return
-    setRound(wallet.id, { ...now, phase: { name: 'signing', requestId: keptPhase.requestId, data: judged.data, warning } })
+    const requestId = keptPhase.requestId
+    const data = judged.data
+    // The retry table (route-checks "Retry without paying twice"), against the latest earlier signing.
+    const earlier = latestSameBuild(list, buildHashOf(now.build))
+    const retry = earlier ? retryCaseOf(earlier, data) : null
+    if (earlier && retry?.case === 'higher') {
+      setRound(wallet.id, { ...now, phase: { name: 'retry-higher', requestId, data, warning, earlier } })
+    } else if (retry && retry.case !== 'higher') {
+      setRound(wallet.id, { ...now, phase: { name: 'signing', requestId, data, sequence: retry.sequence, warning, retry: retry.case } })
+    } else {
+      setRound(wallet.id, { ...now, phase: { name: 'signing', requestId, data, sequence: data.sequence, warning } })
+    }
   }
 
   return (
     <div className="flex min-w-0 flex-col gap-4">
+      <SameBuildNotice walletId={wallet.id} build={round.build} />
       <HandoffPlate heading={W.DATA_TO_SIGN_NEEDED} headingRef={headingRef} network={wallet.network} text={text} scan={1}>
         <p className="text-sm">{W.REQUEST_LINE}</p>
       </HandoffPlate>
@@ -324,14 +374,56 @@ function RequestShown({ wallet, round, headingRef }: { wallet: KeyWalletMeta; ro
         <QrScanner onPayload={(t) => void onPayload(t)} label="a code" />
         {/* Always mounted, so a refusal is announced; focus stays on the scanner. */}
         <div role="alert">
-          {refusal && (
+          {refusal !== null && (
             <div className="text-sm text-text-destructive [overflow-wrap:anywhere]">
               <p className="font-semibold">{W.NOT_SIGNED}</p>
-              <p>{refusal}</p>
+              {refusal && <p>{refusal}</p>}
             </div>
           )}
         </div>
       </section>
+      {round.kept && <KeptPlate wallet={wallet} round={round} kept={round.kept} />}
+    </div>
+  )
+}
+
+/**
+ * Retry case (a), P-20: the received Sequence is higher than the earlier
+ * signing's, so the ledger used it, most likely for that signing. Nothing is
+ * signed here. "Check first" goes back to the request; "This is a new payment"
+ * goes to the signing review with the received Sequence (the user decides).
+ */
+function RetryHigher({ wallet, round, headingRef }: { wallet: KeyWalletMeta; round: Round; headingRef: HeadingRef }) {
+  const phase = round.phase as Extract<Round['phase'], { name: 'retry-higher' }>
+  return (
+    <div className="flex min-w-0 flex-col gap-4">
+      <Alert variant="warning" role="none">
+        <AlertDescription className="flex min-w-0 flex-col gap-2">
+          {/* Its caution's heading takes focus (EXPERIENCE "Focus", retry case (a)). */}
+          <h2 ref={headingRef} tabIndex={-1} className="text-sm font-normal">
+            {W.RETRY_HIGHER}
+          </h2>
+          <EarlierSigningRecord record={phase.earlier} />
+        </AlertDescription>
+      </Alert>
+      <div className="flex flex-wrap gap-2">
+        <Button type="button" onClick={() => setRound(wallet.id, { ...round, phase: { name: 'request', requestId: phase.requestId } })}>
+          {W.CHECK_FIRST}
+        </Button>
+        <Button
+          type="button"
+          variant="outline"
+          onClick={() =>
+            setRound(wallet.id, {
+              ...round,
+              phase: { name: 'signing', requestId: phase.requestId, data: phase.data, sequence: phase.data.sequence, warning: phase.warning },
+            })
+          }
+        >
+          {W.THIS_IS_A_NEW_PAYMENT}
+        </Button>
+      </div>
+      {round.kept && <KeptPlate wallet={wallet} round={round} kept={round.kept} />}
     </div>
   )
 }
@@ -342,18 +434,34 @@ function SigningReview({ wallet, round, headingRef }: { wallet: KeyWalletMeta; r
   const openKey = useWalletOpenKey(wallet.id)
   const [busy, setBusy] = useState(false)
   const [failure, setFailure] = useState<string | null>(null)
-  const tx = assembleTransaction(round.build, phase.data)
+  // The Sequence signed with is the phase's: the received one, or the earlier signing's (retry case c).
+  const signWith = { ...phase.data, sequence: phase.sequence }
+  const tx = assembleTransaction(round.build, signWith)
   const label = NETWORKS[wallet.network].label
 
   async function sign() {
     setBusy(true)
     setFailure(null)
-    try {
-      const signed = await signRound(wallet, round.build, phase.data, { openKey, prompts })
+    const current = () => {
       const now = roundOf(wallet.id)
+      return now && now.phase.name === 'signing' && now.phase.requestId === phase.requestId ? now : null
+    }
+    try {
+      const signed = await signRound(wallet, round.build, signWith, { openKey, prompts })
       // A lock during the Signing Check erased the round: the signed QR is not shown.
-      if (!now || now.phase.name !== 'signing' || now.phase.requestId !== phase.requestId) return
-      setRound(wallet.id, { ...now, phase: { name: 'signed', signed, data: phase.data } })
+      if (!current()) return
+      // The signed list first (OS-FR-16): a signing it does not hold is never shown,
+      // so a later retry always finds it. A failed write drops the blob.
+      try {
+        await noteSigned(wallet.id, signedRecordOf(round.build, signed, phase.data.ledger_index))
+      } catch {
+        setFailure(W.NOT_SIGNED)
+        setBusy(false)
+        return
+      }
+      const now = current()
+      if (!now) return
+      setRound(wallet.id, { ...now, kept: signed, phase: { name: 'signed' } })
       // Only an index actually signed with becomes the highest seen (P-14).
       await noteLedgerSeen(wallet.id, phase.data.ledger_index, signed.signedAt).catch(() => {})
     } catch (err) {
@@ -379,6 +487,11 @@ function SigningReview({ wallet, round, headingRef }: { wallet: KeyWalletMeta; r
         <dt className="panel-legend">{W.SIGNING_KEY}</dt>
         <dd className="font-data text-[0.8125rem] leading-relaxed tracking-tight [overflow-wrap:anywhere]">{wallet.keyAddress}</dd>
       </dl>
+      {phase.retry && (
+        <Alert role="none">
+          <AlertDescription>{phase.retry === 'passed' ? W.RETRY_PASSED : W.RETRY_SAME_SEQUENCE}</AlertDescription>
+        </Alert>
+      )}
       {phase.warning && (
         <Alert variant="warning" role="none">
           <AlertDescription className="flex flex-col gap-1">
@@ -406,8 +519,8 @@ function SigningReview({ wallet, round, headingRef }: { wallet: KeyWalletMeta; r
 }
 
 function Signed({ wallet, round, headingRef }: { wallet: KeyWalletMeta; round: Round; headingRef: HeadingRef }) {
-  const { signed, data } = round.phase as Extract<Round['phase'], { name: 'signed' }>
-  const [erasing, setErasing] = useState(false)
+  const signed = round.kept
+  if (!signed) return null
   const time = new Date(signed.signedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
   return (
     <div className="flex min-w-0 flex-col gap-4">
@@ -416,16 +529,37 @@ function Signed({ wallet, round, headingRef }: { wallet: KeyWalletMeta; round: R
         <p className="text-sm">{W.SIGNED_NOT_SENT}</p>
         <p className="text-sm">{fill(W.SIGNED_VALID_UNTIL, signed.lastLedgerSequence, W.TEN_MINUTES, time)}</p>
       </HandoffPlate>
+      <KeptPlate wallet={wallet} round={round} kept={signed} restart />
+    </div>
+  )
+}
+
+/**
+ * The Kept transaction plate (P-18). It stays on New transaction until the
+ * outcome is marked, the transaction is cancelled or a lock erases it: also
+ * under a restarted request and retry case (a), so "I know the result" is there
+ * after "Check first" (EXPERIENCE Flow 4). "Start the request again" shows a new
+ * request ID for the same Build; the retry table then decides the Sequence.
+ */
+function KeptPlate({ wallet, round, kept, restart = false }: { wallet: KeyWalletMeta; round: Round; kept: SignedRound; restart?: boolean }) {
+  const [erasing, setErasing] = useState(false)
+  return (
+    <>
       <section aria-labelledby="off-kept" className="panel-plate flex min-w-0 flex-col gap-3 rounded-md px-4 pb-4 pt-3">
         <h2 id="off-kept" className="text-sm font-semibold">
           {W.KEPT_TITLE}
         </h2>
         <p className="text-sm">{W.KEPT_LINE}</p>
-        <BuiltFields build={round.build} signedWith={{ fee: data.fee, sequence: data.sequence }} />
+        <BuiltFields build={round.build} signedWith={{ fee: kept.fee, sequence: kept.sequence }} />
         <div className="flex flex-wrap gap-2">
           <Button type="button" variant="outline" onClick={() => setErasing(true)}>
             {W.I_KNOW_THE_RESULT}
           </Button>
+          {restart && (
+            <Button type="button" variant="outline" onClick={() => startRequest(wallet.id, round)}>
+              {W.START_THE_REQUEST_AGAIN}
+            </Button>
+          )}
           <Button type="button" variant="outline" onClick={() => setErasing(true)}>
             {W.CANCEL_THIS_TRANSACTION}
           </Button>
@@ -434,7 +568,7 @@ function Signed({ wallet, round, headingRef }: { wallet: KeyWalletMeta; round: R
       {erasing && (
         <Dialog open onOpenChange={(open) => !open && setErasing(false)}>
           <DialogContent aria-describedby={undefined}>
-            <DialogTitle className="text-base font-normal leading-relaxed">{fill(W.ERASE_QUESTION, signed.lastLedgerSequence)}</DialogTitle>
+            <DialogTitle className="text-base font-normal leading-relaxed">{fill(W.ERASE_QUESTION, kept.lastLedgerSequence)}</DialogTitle>
             <DialogFooter>
               <Button type="button" variant="outline" onClick={() => setErasing(false)}>
                 {W.KEEP_IT}
@@ -446,7 +580,7 @@ function Signed({ wallet, round, headingRef }: { wallet: KeyWalletMeta; round: R
           </DialogContent>
         </Dialog>
       )}
-    </div>
+    </>
   )
 }
 

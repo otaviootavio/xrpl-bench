@@ -5,6 +5,7 @@ import {
   expectedAccountFor,
   previewSignedTransaction,
   resetSentThisSession,
+  setTransmitPollMsForTests,
   FeeAboveCapError,
   resetTxInFlightReporter,
   setTxInFlightReporter,
@@ -35,7 +36,18 @@ function installFakeClient(behaviour: { validated?: number[]; readFails?: boolea
       log.push('autofill')
       return { Sequence: 1, Fee: '12', ...tx }
     },
-    request: async () => {
+    /** The scanned path's own submit and `tx` reads (story 7) map onto the same
+     * fake `submitAndWait`, so one submission is still one 'submitAndWait' entry and
+     * a test that replaces `submitAndWait` covers both paths. */
+    settled: null as unknown,
+    preliminary: 'tesSUCCESS',
+    getLedgerIndex: async () => reads[0],
+    request: async (req: any = {}) => {
+      if (req.command === 'submit') {
+        client.settled = await client.submitAndWait(req.tx_blob)
+        return { result: { engine_result: client.preliminary, engine_result_message: '' } }
+      }
+      if (req.command === 'tx') return { result: { ...(client.settled as any).result, validated: true } }
       log.push('request')
       if (behaviour.readFails) throw new Error('socket closed')
       // The last value repeats once the list is used up.
@@ -71,12 +83,14 @@ function payment(over: Record<string, unknown> = {}): any {
 beforeEach(() => {
   // Each test is a fresh page session: the already-sent guard starts empty (story 4).
   resetSentThisSession()
+  setTransmitPollMsForTests(0)
   log = []
   resetXrplClients()
   setTxInFlightReporter((on) => log.push(`in-flight:${on}`))
 })
 
 afterEach(() => {
+  setTransmitPollMsForTests(null)
   resetTxInFlightReporter()
   resetXrplClients()
   resetXrplClientFactory()

@@ -65,11 +65,39 @@ export const SIGNED_NOT_SENT = 'The app did not send this transaction. To send i
 export const SIGNED_VALID_UNTIL = 'This transaction is valid until ledger {n}. That is approximately {duration} after {time}.'
 export const TEN_MINUTES = '10 minutes'
 
-/** P-18: the Kept transaction plate. ("Start the request again" is story 7's.) */
+/** P-18: the Kept transaction plate. */
 export const KEPT_TITLE = 'Kept transaction'
 export const KEPT_LINE = 'This device keeps the transaction until you record the result. A lock erases the transaction.'
 export const I_KNOW_THE_RESULT = 'I know the result'
+export const START_THE_REQUEST_AGAIN = 'Start the request again'
 export const CANCEL_THIS_TRANSACTION = 'Cancel this transaction'
+
+/** P-19: the Same Build notice at review, above the earlier-signing record. */
+export const SIGNED_BEFORE = 'You signed the same transaction before.'
+/** P-20: retry case (a), a higher Sequence received, and its two keys. */
+export const RETRY_HIGHER =
+  'The ledger probably applied the earlier transaction. The ledger used its Sequence. Look at the history on the Transmitter wallet before you pay again.'
+export const CHECK_FIRST = 'Check first'
+/** Fixed string: the key that signs with the received, higher Sequence. */
+export const THIS_IS_A_NEW_PAYMENT = 'This is a new payment'
+/** P-21: retry case (b), the earlier window passed. */
+export const RETRY_PASSED = 'The ledger cannot apply the earlier transaction now. Only this transaction can apply.'
+/** P-22: retry case (c), the earlier one still valid. */
+export const RETRY_SAME_SEQUENCE = 'This transaction uses the Sequence of the earlier transaction. The ledger can apply only one of the two.'
+/** P-23: the Transmit step, `tefPAST_SEQ` on a same-Sequence retry. Never "Failed". */
+export const PROBABLY_SENT_BEFORE = 'Probably sent before'
+export const PROBABLY_SENT_BEFORE_LINE = 'The ledger probably applied the earlier transaction. Look at the history before you pay again.'
+/** P-52: the earlier-signing record's terms. */
+export const RECORD_TERMS = {
+  sequence: 'Sequence',
+  hash: 'Transaction hash',
+  validUntil: 'Valid until ledger',
+  signedAt: 'Signed at',
+} as const
+/** P-49: the Signed by this wallet plate line. */
+export const SIGNED_LIST_LINE = 'The app does not keep signed transactions. This list has no secret.'
+/** P-56: Signed by this wallet, empty. */
+export const SIGNED_LIST_EMPTY = 'This wallet did not sign a transaction yet.'
 
 /** P-61: the confirm before the kept transaction is erased. */
 export const ERASE_QUESTION = 'Erase the kept transaction? The signed transaction is valid until ledger {n}.'

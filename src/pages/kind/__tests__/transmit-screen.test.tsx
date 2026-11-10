@@ -186,6 +186,22 @@ describe('Transmit on a Synced Transmitter (OS-FR-9)', () => {
     })
     expect(await screen.findByText('Expired. Nothing was sent.')).toBeTruthy()
   })
+
+  it('tefPAST_SEQ on a scanned blob is P-23: "Probably sent before", focused, caution, never "Failed", no Send again (OS-FR-16)', async () => {
+    mount(transmitter())
+    paste(code(GOOD.tx_blob))
+    await screen.findByText('Signature: correct')
+    h.transmit.mockResolvedValue({ status: 'sent-before', hash: GOOD.hash, resultCode: 'tefPAST_SEQ' })
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Send' }))
+    })
+    const heading = await screen.findByRole('heading', { name: /Probably sent before/ })
+    await waitFor(() => expect(document.activeElement).toBe(heading))
+    expect(heading.querySelector('[data-slot="lamp"]')?.className).toMatch(/text-text-warning/)
+    expect(screen.getByText('The ledger probably applied the earlier transaction. Look at the history before you pay again.')).toBeTruthy()
+    expect(screen.queryByText(/Failed/)).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Send' })).toBeNull()
+  })
 })
 
 describe('Transmit on an unsynced Transmitter (OS-FR-4, P-27)', () => {

@@ -1,5 +1,6 @@
 import { openDB, type DBSchema, type IDBPDatabase } from 'idb'
 import { isNetworkId, type NetworkId } from '@/lib/xrpl/networks'
+import type { SignedRecord } from '@/lib/signed-list'
 
 /** Seed Method (FR-62), the one declaration; `policy.ts` re-exports it. */
 export type SeedMethod = 'stored' | 'passkey-derived'
@@ -71,6 +72,10 @@ export interface WalletView {
    * Sign, and when (ms since epoch), for the highest-seen ledger warning
    * (OS-FR-16, P-14). Public ledger facts, no secret; only raised, never lowered. */
   ledgerSeen?: { index: number; at: number }
+  /** The signed list of this Offline Wallet (OS-FR-16, `signed-list.ts`): one
+   * record per signing, public ledger facts only, never a signed blob or a key.
+   * It survives a lock; only removing the Wallet removes it. */
+  signed?: SignedRecord[]
 }
 
 /** Every Wallet is one of three kinds (OS-FR-1). `online` is the absent

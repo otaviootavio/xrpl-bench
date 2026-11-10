@@ -44,7 +44,13 @@ vi.mock('@/lib/crypto/lock', () => ({
   hasAppPin: async () => true,
 }))
 vi.mock('@/lib/crypto/auth', () => ({ wipeVault: async () => {} }))
-vi.mock('@/lib/crypto/keystore', () => ({ listWallets: async () => h.wallets, setShowBeforeSending: h.setShowBeforeSending, setTransmitterSync: h.setTransmitterSync }))
+vi.mock('@/lib/crypto/keystore', () => ({
+  listWallets: async () => h.wallets,
+  setShowBeforeSending: h.setShowBeforeSending,
+  setTransmitterSync: h.setTransmitterSync,
+  signedListOf: async () => [],
+  subscribeSignedList: () => () => {},
+}))
 
 import App from '../App'
 import { useAppStore } from '@/store/app-store'

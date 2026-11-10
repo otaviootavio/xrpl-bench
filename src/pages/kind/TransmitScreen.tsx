@@ -27,8 +27,9 @@ import {
   transmitSignedTransaction,
   type CheckedSignedTransaction,
   type SignedForReview,
-  type SubmitOutcome,
+  type TransmitOutcome,
 } from '@/lib/xrpl/writes'
+import { StatusLegend } from '@/components/ui/lamp'
 import { KindScreenPlate } from './KindScreenPlate'
 
 /** The scanned Signed Transaction, held only while it is shown: never stored. */
@@ -46,7 +47,7 @@ type State =
   | { kind: 'ready'; ready: Ready }
   | { kind: 'sending'; ready: Ready }
   | { kind: 'declined'; text: string }
-  | { kind: 'outcome'; outcome: SubmitOutcome }
+  | { kind: 'outcome'; outcome: TransmitOutcome }
   | { kind: 'expired' }
   | { kind: 'unconfirmed' }
   /** A Data-to-Sign Request is being checked (OS-FR-15). */
@@ -288,7 +289,19 @@ function CheckRow({ term, value }: { term: string; value: string }) {
   )
 }
 
-function Outcome({ outcome, headingRef }: { outcome: SubmitOutcome; headingRef: React.RefObject<HTMLHeadingElement | null> }) {
+function Outcome({ outcome, headingRef }: { outcome: TransmitOutcome; headingRef: React.RefObject<HTMLHeadingElement | null> }) {
+  // P-23: the ledger used this Sequence; never "Failed", and nothing offers to send again.
+  if (outcome.status === 'sent-before') {
+    return (
+      <div className="panel-plate flex min-w-0 flex-col gap-2 rounded-md p-3">
+        <h2 ref={headingRef} tabIndex={-1} className="flex min-w-0 flex-wrap items-center gap-2">
+          <StatusLegend tone="caution">{R.PROBABLY_SENT_BEFORE}</StatusLegend>
+          <TxLink hash={outcome.hash} />
+        </h2>
+        <p className="text-sm">{R.PROBABLY_SENT_BEFORE_LINE}</p>
+      </div>
+    )
+  }
   return (
     <div className="panel-plate flex min-w-0 flex-col gap-2 rounded-md p-3">
       <h2 ref={headingRef} tabIndex={-1} className="flex min-w-0 flex-wrap items-center gap-2">

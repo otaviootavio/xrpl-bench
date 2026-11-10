@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { useAppStore } from '@/store/app-store'
 import { removeLockedAccountData } from '@/lib/teardown'
+import { eraseRoundsOfLocks } from '@/lib/offline-round'
 
 /**
  * Whenever a lock leaves the open set, remove the account-scoped query data of
@@ -30,6 +31,11 @@ export function useClearCacheOnLock() {
     const now = Object.keys(openLocks)
     const closed = previous.current.filter((id) => !now.includes(id))
     previous.current = now
-    if (closed.length > 0) removeLockedAccountData(queryClient, closed)
+    if (closed.length > 0) {
+      removeLockedAccountData(queryClient, closed)
+      // An Offline Wallet's kept Build, request ID and signed QR live only while
+      // its lock is open (OS-FR-13, OS-FR-16): a lock erases them.
+      eraseRoundsOfLocks(closed)
+    }
   }, [openLocks, queryClient])
 }

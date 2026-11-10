@@ -95,7 +95,9 @@ describe('qr-codec', () => {
       ok: false,
       reason: 'That is not an XRPL Bench signing code.',
     })
-    expect(decodeUnsigned(encodeSinglePart({ type: 'xrplbench-request', cbor: json({ v: 1 }) }))).toMatchObject({ ok: false, kind: 'unknown-version' })
+    // A kind a later build may write; `xrplbench-request` is a known kind since story 6.
+    expect(decodeUnsigned(encodeSinglePart({ type: 'xrplbench-later', cbor: json({ v: 1 }) }))).toMatchObject({ ok: false, kind: 'unknown-version' })
+    expect(decodeUnsigned(encodeSinglePart({ type: 'xrplbench-request', cbor: json({ v: 1 }) }))).toMatchObject({ ok: false, kind: 'wrong-kind' })
     // The message must be exactly one CBOR byte string.
     expect(decodeUnsigned(encodeSinglePart({ type: PAYLOAD_UR_TYPES.u, cbor: Uint8Array.from([0x01]) }))).toMatchObject({ ok: false, kind: 'malformed' })
   })

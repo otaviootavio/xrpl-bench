@@ -12,6 +12,7 @@ vi.mock('idb-keyval', () => ({ get: async () => undefined, set: async () => {}, 
 import { useClearCacheOnLock } from '../useClearCacheOnLock'
 import { useAppStore } from '@/store/app-store'
 import { queryKeys } from '@/lib/xrpl/query-keys'
+import { resetRounds, roundOf, setRound } from '@/lib/offline-round'
 
 const ALICE = 'rBoGUS9uiK9m3Kk6qnGRvWWCwAeN8hF3wR'
 const BOB = 'rBobBobBobBobBobBobBobBobBobBobBob'
@@ -114,5 +115,19 @@ describe('useClearCacheOnLock', () => {
       useAppStore.getState().closeLock('Y')
     })
     expect(qc.getQueryData(dest)).toBeUndefined()
+  })
+
+  it('erases the kept offline round of the closed lock only (OS-FR-13, OS-FR-16)', async () => {
+    resetRounds()
+    const build = { type: 'payment' as const, account: ALICE, destination: BOB, amountDrops: '1' }
+    setRound('a', { lockId: 'X', build, phase: { name: 'request', requestId: 'a'.repeat(32) } })
+    setRound('b', { lockId: 'Y', build, phase: { name: 'reviewed' } })
+    mount(new QueryClient())
+    await act(async () => {
+      useAppStore.getState().closeLock('X')
+    })
+    expect(roundOf('a')).toBeNull()
+    expect(roundOf('b')).not.toBeNull()
+    resetRounds()
   })
 })

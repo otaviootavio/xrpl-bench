@@ -14,6 +14,7 @@ import { TransmitterAccount } from './TransmitterAccount'
 import { OFFLINE_SCREENS, TRANSMITTER_SCREENS } from '@/lib/wallet-kind-words'
 import { KindScreenPlate } from './KindScreenPlate'
 import { OfflineReceive } from './OfflineReceive'
+import { OfflineNewTransaction } from './OfflineNewTransaction'
 
 const SETTINGS = { value: 'wallet', label: 'Local settings' } as const
 
@@ -70,7 +71,8 @@ function KindShell({
 /**
  * An Offline Wallet, a signer (OS-FR-1): New transaction, Sign, Receive, Signed and
  * Local settings, with no balance or history. It never reads from or sends to the
- * ledger. Only Receive is built here; every other screen shows its approved title.
+ * ledger. New transaction (the Offline-builds round, story 6) and Receive are
+ * built; Sign and Signed show their approved titles.
  */
 export function OfflineWallet({ wallet }: { wallet: KeyWalletMeta }) {
   const s = OFFLINE_SCREENS
@@ -83,7 +85,7 @@ export function OfflineWallet({ wallet }: { wallet: KeyWalletMeta }) {
         {
           value: 'new-transaction',
           label: s.newTransaction.label,
-          render: () => <KindScreenPlate title={s.newTransaction.title} />,
+          render: () => <OfflineNewTransaction wallet={wallet} />,
         },
         {
           value: 'sign',

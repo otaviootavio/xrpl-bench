@@ -67,6 +67,10 @@ export interface WalletView {
    * import: the app cannot know an imported Seed's past. Only `true` is stored;
    * it is shown on an Offline Wallet only. */
   wasOnline?: true
+  /** The highest validated ledger index this Offline Wallet accepted in a Data to
+   * Sign, and when (ms since epoch), for the highest-seen ledger warning
+   * (OS-FR-16, P-14). Public ledger facts, no secret; only raised, never lowered. */
+  ledgerSeen?: { index: number; at: number }
 }
 
 /** Every Wallet is one of three kinds (OS-FR-1). `online` is the absent

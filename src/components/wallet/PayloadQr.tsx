@@ -11,10 +11,10 @@ import { FRAME_INTERVAL_MS, QR_ERROR_CORRECTION, planQr, qrDrawSizeForVersion, q
  * frame keys and the P-64 caption. A changed payload replaces the whole thing
  * (keyed by the text), so a frame of an old payload never shows under a new one.
  */
-export function PayloadQr({ text }: { text: string }) {
+export function PayloadQr({ text, size }: { text: string; /** Drawn size in px; absent: the plate's size for the code's version. "Make the code larger" (P-59) passes one. */ size?: number }) {
   const plan = useMemo(() => planQr(text), [text])
-  if (plan.kind === 'still') return <QrCode text={plan.text} size={stillSize(plan.text)} />
-  return <AnimatedQr key={text} plan={plan} />
+  if (plan.kind === 'still') return <QrCode text={plan.text} size={size ?? stillSize(plan.text)} />
+  return <AnimatedQr key={text} plan={plan} sizeOverride={size} />
 }
 
 function stillSize(text: string): number {
@@ -28,13 +28,13 @@ function stillSize(text: string): number {
 
 const reducedMotion = () => typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches === true
 
-function AnimatedQr({ plan }: { plan: Extract<QrPlan, { kind: 'animated' }> }) {
+function AnimatedQr({ plan, sizeOverride }: { plan: Extract<QrPlan, { kind: 'animated' }>; sizeOverride?: number }) {
   // Under reduced motion the code starts paused; Next frame steps it (WCAG 2.2.2).
   const [paused, setPaused] = useState(reducedMotion)
   const [index, setIndex] = useState(0)
   const [drawn, setDrawn] = useState<{ index: number; url: string } | null>(null)
   const [failed, setFailed] = useState(false)
-  const size = qrDrawSizeForVersion(plan.version)
+  const size = sizeOverride ?? qrDrawSizeForVersion(plan.version)
 
   // Reduced motion switched on while the code runs: it pauses.
   useEffect(() => {

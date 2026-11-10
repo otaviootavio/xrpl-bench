@@ -738,6 +738,37 @@ export async function prepareUnsigned(
   }
 }
 
+/** What a Transmitter Wallet gives an Offline Wallet for one Built transaction (OS-FR-15). */
+export interface DataToSignValues {
+  sequence: number
+  fee: string
+  ledgerIndex: number
+}
+
+/**
+ * The Data to Sign for a Built transaction (OS-FR-15, route-checks "Transmitter
+ * Wallet"): autofill's Sequence (from the current ledger, so a Sequence already
+ * used in an open ledger is not handed out again) and Fee, the fee cap, then the
+ * validated ledger index the Offline Wallet sets LastLedgerSequence from. Nothing
+ * is signed or submitted. Throws `FeeAboveCapError` over the cap and any other
+ * error when a read fails: a failed read never produces Data to Sign (FR-59).
+ */
+export async function prepareDataToSign(network: NetworkId, tx: SubmittableTransaction, node?: string): Promise<DataToSignValues> {
+  const held = await holdXrplClient(network, node)
+  try {
+    const prepared = await held.client.autofill(tx)
+    if (!feeWithinCap(prepared.Fee)) throw new FeeAboveCapError(prepared.Fee)
+    const sequence = prepared.Sequence
+    if (typeof sequence !== 'number' || !Number.isInteger(sequence) || sequence <= 0) throw new Error('The Sequence could not be read.')
+    const res = await held.client.request({ command: 'ledger', ledger_index: 'validated' })
+    const ledgerIndex = res.result.ledger_index
+    if (typeof ledgerIndex !== 'number') throw new Error('The current ledger could not be read.')
+    return { sequence, fee: String(prepared.Fee), ledgerIndex }
+  } finally {
+    held.release()
+  }
+}
+
 /**
  * Signs an already-prepared transaction once, on the offline device (AD-30). It
  * opens the Wallet's Signing Check, signs, and disposes the Signer in `finally`.

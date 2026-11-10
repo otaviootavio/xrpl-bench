@@ -519,6 +519,56 @@ export async function signingHandleFor(walletId: string, ctx: SigningContext): P
   }
 }
 
+/**
+ * The handle an Offline Wallet signs with (OS-FR-16): the Wallet's Signing Check,
+ * then one signature, never a send (OS-FR-11). Refused for any view that is not
+ * Offline, as `signingHandleFor` refuses any that is not Online, so neither path
+ * signs for the other kind. No review hook: an Offline Wallet never transmits.
+ */
+export async function offlineSigningHandleFor(walletId: string, ctx: SigningContext): Promise<SigningHandle> {
+  const stored = await seedRecordFor(walletId)
+  const view = viewsOf(stored).find((v) => v.walletId === walletId)
+  if (!view || kindOfView(view) !== 'offline') throw new NotAnOfflineWalletError()
+  return {
+    address: accountOf(stored, walletId),
+    async open() {
+      const result = await openSigner(walletId, ctx)
+      if (result.status !== 'ok') throw new SigningCheckError(result)
+      return result.value
+    },
+  }
+}
+
+/** Refused: only an Offline Wallet's view signs a Built transaction for a QR. Developer text, never shown. */
+export class NotAnOfflineWalletError extends Error {
+  constructor() {
+    super('This wallet is not an offline wallet. Nothing was signed.')
+    this.name = 'NotAnOfflineWalletError'
+  }
+}
+
+/** The highest ledger index this Offline Wallet accepted, and when; `null` when none yet (P-14). */
+export async function ledgerSeenOf(walletId: string): Promise<{ index: number; at: number } | null> {
+  const stored = findSeedRecord(await listStoredWallets(), walletId)
+  const seen = stored && viewsOf(stored).find((v) => v.walletId === walletId)?.ledgerSeen
+  return seen && Number.isInteger(seen.index) && Number.isFinite(seen.at) ? { index: seen.index, at: seen.at } : null
+}
+
+/** Records a ledger index this Offline Wallet accepted, only when it is higher than
+ * the one stored (P-14 compares against the highest). Touches nothing else. */
+export async function noteLedgerSeen(walletId: string, index: number, at: number): Promise<void> {
+  const record = findSeedRecord(await listStoredWallets(), walletId)
+  if (!record) throw new Error('Wallet not found in local vault.')
+  await mutateStoredWallet(record.id, (current) => ({
+    ...current,
+    views: viewsOf(current).map((v) => {
+      if (v.walletId !== walletId || kindOfView(v) !== 'offline') return v
+      if (v.ledgerSeen && v.ledgerSeen.index >= index) return v
+      return { ...v, ledgerSeen: { index, at } }
+    }),
+  }))
+}
+
 /** The review a Wallet's sends go through when its setting is on; without a
  * reviewer in the prompts the answer is "no" (fail closed). */
 function reviewerOf(prompts: Prompts): (signed: SignedForReview) => Promise<boolean> {

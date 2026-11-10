@@ -8,7 +8,11 @@ import { TxStatusBadge } from '@/components/wallet/TxStatusBadge'
 import { SignedFieldList } from '@/components/wallet/SignedTransactionReview'
 import { usePrompts } from '@/hooks/usePrompts'
 import type { TransmitterMeta } from '@/lib/crypto/keystore'
-import { decodeSigned, decodeUnsigned } from '@/lib/qr-codec'
+import { decodeRequest, decodeSigned, payloadKindOf, type RequestPayload } from '@/lib/qr-codec'
+import { answerRequest, type AnswerResult } from '@/lib/answer-request'
+import { HandoffPlate } from '@/components/wallet/HandoffPlate'
+import { useWakeLock } from '@/hooks/useWakeLock'
+import * as R from '@/lib/offline-round-words'
 import { EXPIRED_NOTHING_SENT, SEND_KEY, TRANSACTION_HASH, fill } from '@/lib/transmit-words'
 import { CHECK_LIST, CONFIRM_ACCOUNT, TRANSMIT_SCANNER_LINE, UNSIGNED_ON_TRANSMIT } from '@/lib/transmitter-words'
 import { TRANSMITTER_SCREENS } from '@/lib/wallet-kind-words'
@@ -43,6 +47,10 @@ type State =
   | { kind: 'outcome'; outcome: SubmitOutcome }
   | { kind: 'expired' }
   | { kind: 'unconfirmed' }
+  /** A Data-to-Sign Request is being checked (OS-FR-15). */
+  | { kind: 'answering'; request: RequestPayload }
+  | { kind: 'answered'; answer: Extract<AnswerResult, { status: 'answered' }> }
+  | { kind: 'read-failed'; request: RequestPayload }
 
 /**
  * Transmit (OS-FR-9, OS-FR-10, EXPERIENCE "Transmit step"): one scanner. A Signed
@@ -51,8 +59,12 @@ type State =
  * again with the window on a fresh read. The Network passed is the one the
  * signed envelope names (story 2), never this Wallet's own. An unsynced
  * Transmitter shows P-27: Send then confirms the blob's Account. An Unsigned
- * Transaction gets P-36. Answering a Data-to-Sign Request is story 6; that code
- * kind does not exist yet, so the codec's own words answer it.
+ * Transaction (or a Data to Sign, which is the offline wallet's too) gets P-36's
+ * Transmit line. A Data-to-Sign Request is answered after the online pre-flight
+ * checks (`answer-request.ts`, OS-FR-15): the Data to Sign QR, or the refusal in
+ * online words, or P-28 on a failed read. The answered request's Account is then
+ * the Account the Transmit step expects (OS-FR-9), so an unsynced Transmitter does
+ * not ask for P-27's confirm on the signed code that follows.
  */
 export function TransmitScreen({ wallet }: { wallet: TransmitterMeta }) {
   const [state, setState] = useState<State>({ kind: 'idle' })
@@ -60,6 +72,10 @@ export function TransmitScreen({ wallet }: { wallet: TransmitterMeta }) {
   const queryClient = useQueryClient()
   const headingRef = useRef<HTMLHeadingElement | null>(null)
   const network = NETWORKS[wallet.network].label
+  /** The Account of the last request this Transmitter answered (route-checks "Transmit step"). Session memory only. */
+  const [answeredAccount, setAnsweredAccount] = useState<string | null>(null)
+  // A waiting scanner keeps the screen awake (EXPERIENCE "Round timing").
+  useWakeLock(true)
 
   // A new state with a heading takes focus there, never on Send.
   useEffect(() => {
@@ -68,17 +84,39 @@ export function TransmitScreen({ wallet }: { wallet: TransmitterMeta }) {
 
   function onPayload(text: string) {
     // A scan while a send runs is ignored: the blob on screen is the one being sent.
-    if (state.kind === 'sending') return
-    if (decodeUnsigned(text).ok) return setState({ kind: 'refused', text: UNSIGNED_ON_TRANSMIT })
+    if (state.kind === 'sending' || state.kind === 'answering') return
+    const kind = payloadKindOf(text)
+    // Both are for the offline wallet: P-36's Transmit line says so.
+    if (kind === 'u' || kind === 'd') return setState({ kind: 'refused', text: UNSIGNED_ON_TRANSMIT })
+    if (kind === 'r') {
+      const request = decodeRequest(text)
+      if (!request.ok) return setState({ kind: 'refused', text: request.reason })
+      return void answer(request.value)
+    }
     const decoded = decodeSigned(text)
     if (!decoded.ok) return setState({ kind: 'refused', text: decoded.reason })
-    const expected = expectedAccountFor({ syncedAddress: wallet.address ?? undefined })
+    const expected = expectedAccountFor({ syncedAddress: wallet.address ?? undefined, requestAccount: answeredAccount ?? undefined })
     try {
       const checked = previewSignedTransaction(wallet.network, { txBlob: decoded.value.tx_blob, network: decoded.value.network }, expected)
       setState({ kind: 'ready', ready: { txBlob: decoded.value.tx_blob, envelopeNetwork: decoded.value.network, checked, expected } })
     } catch (err) {
       setState({ kind: 'refused', text: err instanceof Error ? err.message : UNCONFIRMED_SUBMIT_WORDS })
     }
+  }
+
+  async function answer(request: RequestPayload) {
+    setState({ kind: 'answering', request })
+    let result: AnswerResult
+    try {
+      result = await answerRequest(wallet, request, { queryClient })
+    } catch {
+      result = { status: 'read-failed' }
+    }
+    if (result.status === 'answered') {
+      setAnsweredAccount(result.account)
+      setState({ kind: 'answered', answer: result })
+    } else if (result.status === 'refused') setState({ kind: 'refused', text: result.reason })
+    else setState({ kind: 'read-failed', request })
   }
 
   async function send(ready: Ready) {
@@ -141,6 +179,17 @@ export function TransmitScreen({ wallet }: { wallet: TransmitterMeta }) {
           </Button>
         </section>
       )}
+      {state.kind === 'read-failed' && (
+        <div className="flex min-w-0 flex-col items-start gap-2">
+          <h2 ref={headingRef} tabIndex={-1} className="text-sm font-normal">
+            {R.ANSWER_READ_FAILED}
+          </h2>
+          <Button type="button" variant="outline" size="sm" onClick={() => void answer(state.request)}>
+            {R.READ_AGAIN}
+          </Button>
+        </div>
+      )}
+      {state.kind === 'answered' && <Answered answer={state.answer} network={wallet.network} headingRef={headingRef} />}
       {state.kind === 'declined' && (
         <div role="status">
           <Alert variant="warning" role="presentation">
@@ -160,6 +209,53 @@ export function TransmitScreen({ wallet }: { wallet: TransmitterMeta }) {
       )}
       {state.kind === 'outcome' && <Outcome outcome={state.outcome} headingRef={headingRef} />}
     </KindScreenPlate>
+  )
+}
+
+/** The answer (EXPERIENCE "Transmitter answer"): what was checked, then the Data to Sign QR on this Wallet's Network. */
+function Answered({
+  answer,
+  network,
+  headingRef,
+}: {
+  answer: Extract<AnswerResult, { status: 'answered' }>
+  network: NetworkId
+  headingRef: React.RefObject<HTMLHeadingElement | null>
+}) {
+  const label = NETWORKS[network].label
+  return (
+    <div className="flex min-w-0 flex-col gap-3 border-t border-border pt-3">
+      <section aria-labelledby="answer-checked" className="flex min-w-0 flex-col gap-2">
+        <h3 id="answer-checked" className="panel-legend">
+          {fill(R.CHECKED_ON, label)}
+        </h3>
+        <dl className="grid min-w-0 gap-1 text-sm">
+          {answer.checks.destinationExists && <CheckRow term={R.FIELD.destination} value={R.CHECK_RESULT.found} />}
+          {answer.checks.tagSupplied && <CheckRow term={R.FIELD.destinationTag} value={R.CHECK_RESULT.supplied} />}
+          <CheckRow term={R.SHIPPED.spendable} value={R.CHECK_RESULT.sufficient} />
+          <CheckRow term={R.FIELD.fee} value={R.CHECK_RESULT.underFeeLimit} />
+        </dl>
+        {/* Online Send warns here and still sends; so does the answer (OS-FR-15). */}
+        {!answer.checks.destinationExists && (
+          <Alert variant="warning" role="none">
+            <AlertDescription>
+              <span className="block font-semibold">{R.SHIPPED.destinationNotActivatedTitle}</span>
+              {R.SHIPPED.destinationNotActivated}
+            </AlertDescription>
+          </Alert>
+        )}
+      </section>
+      <HandoffPlate heading={R.DATA_PLATE_LINE} headingRef={headingRef} network={network} text={answer.text} />
+    </div>
+  )
+}
+
+function CheckRow({ term, value }: { term: string; value: string }) {
+  return (
+    <div className="flex min-w-0 flex-wrap gap-x-2">
+      <dt className="panel-legend self-center">{term}</dt>
+      <dd>{value}</dd>
+    </div>
   )
 }
 

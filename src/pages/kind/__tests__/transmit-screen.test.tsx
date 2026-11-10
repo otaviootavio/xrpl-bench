@@ -145,9 +145,11 @@ describe('Transmit on a Synced Transmitter (OS-FR-9)', () => {
       fireEvent.click(screen.getByRole('button', { name: 'Send' }))
     })
     expect(h.review).toHaveBeenCalledTimes(1)
-    expect((await screen.findByRole('status')).textContent).toBe(
+    // The scanner keeps its own empty status region mounted; the decline is the one that carries words.
+    const statuses = await screen.findAllByRole('status')
+    expect(statuses.map((s) => s.textContent).filter(Boolean)).toEqual([
       'WARNING: This signed transaction is valid until ledger 4321. Until then, a person who has it can send it. The app did not send the transaction.',
-    )
+    ])
   })
 
   it('a submit that throws is never "not sent": it may have been sent', async () => {

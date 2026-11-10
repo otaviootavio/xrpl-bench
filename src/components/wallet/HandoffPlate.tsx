@@ -61,12 +61,13 @@ export function HandoffPlate({
 /** The code at the size of the screen (P-59); "Back" returns. */
 function LargeCode({ text, onBack }: { text: string; onBack: () => void }) {
   // The largest square that fits with the key below it, never wider than the viewport.
-  const size = Math.max(160, Math.floor(Math.min(window.innerWidth - 48, window.innerHeight - 160)))
+  const size = Math.max(160, Math.floor(Math.min(window.innerWidth - 48, window.innerHeight - 184)))
   return (
     <Dialog open onOpenChange={(open) => !open && onBack()}>
       <DialogContent aria-describedby={undefined} className="max-w-[min(100vw,56rem)]">
         <DialogTitle className="sr-only">{MAKE_THE_CODE_LARGER}</DialogTitle>
-        <div className="flex min-w-0 flex-col items-center gap-3">
+        <div className="flex min-w-0 flex-col items-center gap-3 pt-6">
+          {/* Below the close control, which would otherwise sit over a corner of the code. */}
           <PayloadQr text={text} size={size} />
           <Button type="button" variant="outline" onClick={onBack}>
             {BACK}

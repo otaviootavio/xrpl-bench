@@ -29,6 +29,7 @@ vi.mock('@/lib/offline-round', async (importOriginal) => {
   const real = await importOriginal<typeof import('@/lib/offline-round')>()
   return { ...real, signRound: (...a: unknown[]) => h.sign(...a) }
 })
+vi.mock('idb-keyval', () => ({ get: async () => undefined, set: async () => {}, del: async () => {} }))
 vi.mock('@/hooks/usePrompts', () => ({ usePrompts: () => ({ pin: async () => null }) }))
 
 import { OfflineNewTransaction } from '../OfflineNewTransaction'
@@ -38,6 +39,7 @@ import { SigningCheckError } from '@/lib/crypto/keystore'
 import { buildHashOf, eraseRoundsOfLocks, resetRounds, roundOf } from '@/lib/offline-round'
 import * as W from '@/lib/offline-round-words'
 import { encodeDataToSign, encodeSigned } from '@/lib/qr-codec'
+import { touchLock, useAppStore } from '@/store/app-store'
 
 const ACCOUNT = 'rG31cLyErnqeVj2eomEjBZtq7PYaupGYzL'
 const DEST = 'rPT1Sjq2YGrBMTttX4GZHjKu9dyfzbpAYe'
@@ -287,4 +289,26 @@ it('no ledger client is ever asked for during a round (OS-FR-1, OS-FR-13)', asyn
   await screen.findByText(W.KEPT_TITLE)
   expect(h.getXrplClient).not.toHaveBeenCalled()
   expect(h.holdXrplClient).not.toHaveBeenCalled()
+})
+
+describe('P-58 before an auto-lock during a round (EXPERIENCE "Round timing")', () => {
+  afterEach(() => useAppStore.setState({ wallets: [], openLocks: {} } as never))
+  it('shows "This wallet locks in 1 minute…" with "Keep it unlocked" once a minute or less is left', async () => {
+    useAppStore.setState({ wallets: [wallet], openLocks: { L: { key: {} as CryptoKey, autoLockMinutes: 1 } } } as never)
+    touchLock(wallet.id)
+    mount()
+    expect(screen.queryByText(W.LOCKS_SOON)).toBeNull()
+    toRequest()
+    expect(await screen.findByText(W.LOCKS_SOON)).toBeTruthy()
+    expect(screen.getByRole('button', { name: W.KEEP_IT_UNLOCKED })).toBeTruthy()
+  })
+
+  it('says nothing while more than a minute is left', async () => {
+    useAppStore.setState({ wallets: [wallet], openLocks: { L: { key: {} as CryptoKey, autoLockMinutes: 5 } } } as never)
+    touchLock(wallet.id)
+    mount()
+    toRequest()
+    await screen.findByRole('heading', { name: W.DATA_TO_SIGN_NEEDED })
+    expect(screen.queryByText(W.LOCKS_SOON)).toBeNull()
+  })
 })

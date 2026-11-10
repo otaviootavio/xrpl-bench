@@ -637,3 +637,12 @@ Item 8 shipped as a refactor that preserves behaviour (`spec-sendtab-split.md`).
 - source_spec: `_bmad-output/specs/spec-offline-signing/stories/13-animated-qr-with-fountain-codes-for-every-payload.md`
   summary: Parts of the QR hand-off plate and the round screens that story 13 did not build: the screen wake lock during a round, "Make the code larger" on a still and an animated code, and the plate's title, Network row and "Scan 1 of 3" caption; and the Request and Data to Sign kinds need their UR types in `PAYLOAD_UR_TYPES`.
   evidence: EXPERIENCE "Round timing" (wake lock), "Animated QR" ("Make the code larger works on an animated code too") and the QR hand-off plate component row. None exists in the code today, and the plate itself arrives with story 6's round screens. Story 13 built the transport (`PayloadQr`, `ScanSession`) that plate should use; it carries today's Unsigned and Signed kinds only.
+  resolution: (2026-11-10, `_bmad-output/specs/spec-offline-signing/stories/6-offline-send-end-to-end-by-the-offline-builds-route.md`) partly settled. Request and Data to Sign UR types added; wake lock during a round, "Make the code larger" (P-59, still and animated), and the plate's title and Network row built (`HandoffPlate`). Not built: the "Scan 1 of 3" caption, whose words are in no approved list.
+
+- source_spec: `_bmad-output/specs/spec-offline-signing/stories/6-offline-send-end-to-end-by-the-offline-builds-route.md`
+  summary: Missing words in story 6: the "Scan n of 3" caption, titles for the Data to Sign and signed hand-off plates (their first approved lines head them), "Checking {address} on {Network}", a type-list legend, a signing-key row term, and QR alt text naming payload and Network.
+  evidence: Each is quoted in EXPERIENCE outside the P-n list, or in no list. The build shows approved and shipped words only.
+
+- source_spec: `_bmad-output/specs/spec-offline-signing/stories/6-offline-send-end-to-end-by-the-offline-builds-route.md`
+  summary: "Start the request again" (P-18's third key) is not on the Kept transaction plate; the scanner stops its camera after a refusal; the QR shrinks at 320px with 200% text.
+  evidence: Re-requesting a signed Build hands out a new Sequence and could pay twice until story 7's Sequence comparison exists; the Build is kept for it. The camera and QR-size items are shared scanner and plate behaviour (EXPERIENCE "Notes For The Build", Accessibility Floor).

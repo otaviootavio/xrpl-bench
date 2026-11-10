@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState, type CSSProperties } from 'react'
 import QRCode from 'qrcode'
 import { Button } from '@/components/ui/button'
 import { QrCode } from '@/components/wallet/QrCode'
@@ -11,10 +11,23 @@ import { FRAME_INTERVAL_MS, QR_ERROR_CORRECTION, planQr, qrDrawSizeForVersion, q
  * frame keys and the P-64 caption. A changed payload replaces the whole thing
  * (keyed by the text), so a frame of an old payload never shows under a new one.
  */
-export function PayloadQr({ text, size }: { text: string; /** Drawn size in px; absent: the plate's size for the code's version. "Make the code larger" (P-59) passes one. */ size?: number }) {
+export function PayloadQr({
+  text,
+  size,
+  alt,
+  imgStyle,
+}: {
+  text: string
+  /** Drawn size in px; absent: the plate's size for the code's version. */
+  size?: number
+  /** The image's text alternative ("QR code: {payload} for {Network}"); absent: today's words. */
+  alt?: string
+  /** CSS size of the shown image: "Make the code larger" (P-59) sizes it to the screen. */
+  imgStyle?: CSSProperties
+}) {
   const plan = useMemo(() => planQr(text), [text])
-  if (plan.kind === 'still') return <QrCode text={plan.text} size={size ?? stillSize(plan.text)} />
-  return <AnimatedQr key={text} plan={plan} sizeOverride={size} />
+  if (plan.kind === 'still') return <QrCode text={plan.text} size={size ?? stillSize(plan.text)} alt={alt} imgStyle={imgStyle} />
+  return <AnimatedQr key={text} plan={plan} sizeOverride={size} alt={alt} imgStyle={imgStyle} />
 }
 
 function stillSize(text: string): number {
@@ -28,7 +41,17 @@ function stillSize(text: string): number {
 
 const reducedMotion = () => typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches === true
 
-function AnimatedQr({ plan, sizeOverride }: { plan: Extract<QrPlan, { kind: 'animated' }>; sizeOverride?: number }) {
+function AnimatedQr({
+  plan,
+  sizeOverride,
+  alt,
+  imgStyle,
+}: {
+  plan: Extract<QrPlan, { kind: 'animated' }>
+  sizeOverride?: number
+  alt?: string
+  imgStyle?: CSSProperties
+}) {
   // Under reduced motion the code starts paused; Next frame steps it (WCAG 2.2.2).
   const [paused, setPaused] = useState(reducedMotion)
   const [index, setIndex] = useState(0)
@@ -78,9 +101,10 @@ function AnimatedQr({ plan, sizeOverride }: { plan: Extract<QrPlan, { kind: 'ani
           {/* The last drawn frame stays up until the next is ready: no blank between frames. */}
           <img
             src={drawn.url}
-            alt="QR code carrying a signing payload"
+            alt={alt ?? 'QR code carrying a signing payload'}
             width={size}
             height={size}
+            style={imgStyle}
             data-frame={drawn.index + 1}
             className="block h-auto max-w-full"
           />

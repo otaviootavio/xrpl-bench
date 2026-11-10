@@ -20,8 +20,10 @@ const SETTINGS = { value: 'wallet', label: 'Local settings' } as const
 
 /**
  * The shell both non-Online kinds share: their own selector, Local settings last,
- * and the routed task screens in place of the tabs. It mounts no ledger hook, so
- * nothing here can ask the pool for a client (OS-FR-1, CAP-1).
+ * and the routed task screens in place of the tabs. It mounts no ledger hook
+ * itself (OS-FR-1, CAP-1). An Offline Wallet's screens never ask the pool for a
+ * client; a Transmitter's Transmit asks for one only to answer a request or to
+ * send (story 6), and its Synced screens read through their own hooks.
  */
 function KindShell({
   wallet,

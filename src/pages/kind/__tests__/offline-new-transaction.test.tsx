@@ -40,6 +40,7 @@ import { buildHashOf, eraseRoundsOfLocks, resetRounds, roundOf } from '@/lib/off
 import * as W from '@/lib/offline-round-words'
 import { encodeDataToSign, encodeSigned } from '@/lib/qr-codec'
 import { touchLock, useAppStore } from '@/store/app-store'
+import { LEDGER_FLOORS } from '@/lib/offline-window'
 
 const ACCOUNT = 'rG31cLyErnqeVj2eomEjBZtq7PYaupGYzL'
 const DEST = 'rPT1Sjq2YGrBMTttX4GZHjKu9dyfzbpAYe'
@@ -84,7 +85,9 @@ function keptRequest() {
   return { requestId: r.phase.requestId, buildHash: buildHashOf(r.build) }
 }
 const dataFor = (k: { requestId: string; buildHash: string }, over: Partial<{ network: 'testnet' | 'mainnet'; fee: string; ledgerIndex: number }> = {}) =>
-  encodeDataToSign({ network: over.network ?? 'testnet', requestId: k.requestId, buildHash: k.buildHash, sequence: 9, fee: over.fee ?? '12', ledgerIndex: over.ledgerIndex ?? 5000 }).text
+  encodeDataToSign({ network: over.network ?? 'testnet', requestId: k.requestId, buildHash: k.buildHash, sequence: 9, fee: over.fee ?? '12', ledgerIndex: over.ledgerIndex ?? INDEX }).text
+/** An index the Testnet floor accepts as current (no P-14). */
+const INDEX = LEDGER_FLOORS.testnet.index + 10
 const alertText = () => screen.getAllByRole('alert').map((a) => a.textContent).join(' ')
 
 beforeEach(() => {
@@ -98,8 +101,10 @@ beforeEach(() => {
 afterEach(cleanup)
 
 describe('Offline Wallet: build and request (OS-FR-13, OS-FR-14)', () => {
-  it('shows P-1 in each reading\'s slot, never a figure', () => {
+  it('shows P-1 in each reading\'s slot, never a figure, under "Type of transaction"', () => {
     mount()
+    expect(screen.getByRole('group', { name: W.TYPE_OF_TRANSACTION })).toBeTruthy()
+    expect((screen.getByRole('radio', { name: W.PAYMENT }) as HTMLInputElement).checked).toBe(true)
     expect(screen.getAllByText(W.FROM_TRANSMITTER)).toHaveLength(3)
     expect(screen.getByText(W.SHIPPED.networkFee)).toBeTruthy()
     expect(screen.getByText(W.SHIPPED.spendable)).toBeTruthy()
@@ -121,7 +126,8 @@ describe('Offline Wallet: build and request (OS-FR-13, OS-FR-14)', () => {
     toRequest()
     const title = await screen.findByRole('heading', { name: W.DATA_TO_SIGN_NEEDED })
     await waitFor(() => expect(document.activeElement).toBe(title))
-    for (const words of [W.REQUEST_LINE, W.CHANGE_RESTARTS, W.SCAN_DATA_TITLE, W.SCAN_DATA_LINE]) expect(screen.getByText(words)).toBeTruthy()
+    for (const words of [W.REQUEST_LINE, W.CHANGE_RESTARTS, W.SCAN_DATA_TITLE, W.SCAN_DATA_LINE, 'Scan 1 of 3', 'Scan 2 of 3']) expect(screen.getByText(words)).toBeTruthy()
+    expect(await screen.findByAltText('QR code: data to sign needed for Testnet')).toBeTruthy()
     expect(screen.getByText('Testnet')).toBeTruthy()
     // The request carries the Build as typed, once.
     const r = roundOf(wallet.id)!
@@ -147,7 +153,8 @@ describe('Offline Wallet: Data to Sign (OS-FR-16)', () => {
     ['another request', () => dataFor({ requestId: 'b'.repeat(32), buildHash: keptRequest().buildHash }), W.DATA_REFUSAL.request],
     ['another Network', () => dataFor(keptRequest(), { network: 'mainnet' }), 'This transaction is for Mainnet. This wallet is for Testnet.'],
     ['a Fee over the cap', () => dataFor(keptRequest(), { fee: '10000000' }), W.DATA_REFUSAL.fee],
-    ['another kind of code', () => encodeSigned({ network: 'testnet', txBlob: 'AB' }).text, W.DATA_REFUSAL.malformed],
+    ['a signed code (P-36)', () => encodeSigned({ network: 'testnet', txBlob: 'AB' }).text, 'This code is a signed transaction. This screen needs a data to sign.'],
+    ['a ledger index past the UInt32 window', () => dataFor(keptRequest(), { ledgerIndex: 4294967295 - 149 }), W.DATA_REFUSAL.malformed],
   ])('refuses %s with P-16 and P-17; the request stays', async (_n, make, reason) => {
     mount()
     toRequest()
@@ -165,14 +172,18 @@ describe('Offline Wallet: Data to Sign (OS-FR-16)', () => {
     const well = await screen.findByRole('heading', { name: 'You are signing for Testnet' })
     await waitFor(() => expect(document.activeElement).toBe(well))
     expect(screen.getByText(W.TIME_LIMIT_TEN_MINUTES)).toBeTruthy()
-    expect(screen.getByText('Valid until ledger 5150')).toBeTruthy()
+    expect(screen.getByText(`Valid until ledger ${INDEX + 150}`)).toBeTruthy()
     for (const term of ['Account', 'Destination', 'DestinationTag', 'Amount', 'Fee', 'Sequence', 'LastLedgerSequence']) expect(screen.getByText(term)).toBeTruthy()
-    expect(h.noted).toEqual([[wallet.id, 5000]])
+    // Saved only once signed with (story 6 review).
+    expect(h.noted).toEqual([])
     expect(screen.queryByText(W.LEDGER_LOWER)).toBeNull()
+    expect(screen.queryByText(W.LEDGER_TOO_HIGH)).toBeNull()
+    expect(screen.getByText(W.SIGNING_KEY)).toBeTruthy()
+    expect(screen.getByText(W.SIGNING_KEY).nextElementSibling?.textContent).toBe(wallet.keyAddress)
   })
 
   it('warns (P-14) on an index lower than the highest seen, and still offers Sign', async () => {
-    h.seen = { index: 6000, at: Date.now() }
+    h.seen = { index: INDEX + 1000, at: Date.now() }
     mount()
     toRequest()
     paste(dataFor(keptRequest()))
@@ -182,7 +193,7 @@ describe('Offline Wallet: Data to Sign (OS-FR-16)', () => {
   })
 
   it('warns (P-14) on an index too high for the time since the last one', async () => {
-    h.seen = { index: 4000, at: Date.now() }
+    h.seen = { index: INDEX - 1000, at: Date.now() }
     mount()
     toRequest()
     paste(dataFor(keptRequest()))
@@ -197,11 +208,13 @@ describe('Offline Wallet: Data to Sign (OS-FR-16)', () => {
     expect(await screen.findByRole('heading', { name: W.DATA_TO_SIGN_NEEDED })).toBeTruthy()
     expect(screen.getAllByRole('status').some((s) => s.textContent === W.NOT_SIGNED)).toBe(true)
     expect(h.sign).not.toHaveBeenCalled()
+    // A declined answer never moves the highest seen (story 6 review).
+    expect(h.noted).toEqual([])
   })
 })
 
 describe('Offline Wallet: signed (OS-FR-11, OS-FR-13)', () => {
-  const SIGNED = { text: encodeSigned({ network: 'testnet', txBlob: 'ABCD' }).text, hash: 'H', lastLedgerSequence: 5150, signedAt: new Date(2026, 10, 10, 14, 5).getTime() }
+  const SIGNED = { text: encodeSigned({ network: 'testnet', txBlob: 'ABCD' }).text, hash: 'H', lastLedgerSequence: INDEX + 150, signedAt: new Date(2026, 10, 10, 14, 5).getTime() }
 
   it('Sign signs the kept Build plus the Data to Sign, then shows the signed QR, P-12 and the Kept transaction plate; no Send key', async () => {
     h.sign.mockResolvedValue(SIGNED)
@@ -214,10 +227,17 @@ describe('Offline Wallet: signed (OS-FR-11, OS-FR-13)', () => {
     const [w, build, data] = h.sign.mock.calls[0]
     expect(w).toBe(wallet)
     expect(build).toEqual({ type: 'payment', account: ACCOUNT, destination: DEST, amountDrops: '2000000', destinationTag: 7 })
-    expect(data).toMatchObject({ sequence: 9, fee: '12', ledger_index: 5000, network: 'testnet' })
-    const heading = await screen.findByRole('heading', { name: W.SIGNED_NOT_SENT })
+    expect(data).toMatchObject({ sequence: 9, fee: '12', ledger_index: INDEX, network: 'testnet' })
+    const heading = await screen.findByRole('heading', { name: W.SIGNED_TRANSACTION_TITLE })
     await waitFor(() => expect(document.activeElement).toBe(heading))
-    expect(screen.getByText(/^This transaction is valid until ledger 5150\. That is approximately 10 minutes after /)).toBeTruthy()
+    expect(screen.getByText(W.SIGNED_NOT_SENT)).toBeTruthy()
+    expect(screen.getByText(new RegExp(`^This transaction is valid until ledger ${INDEX + 150}\\. That is approximately 10 minutes after `))).toBeTruthy()
+    expect(screen.getByText('Scan 3 of 3')).toBeTruthy()
+    // Signed: the highest seen is saved, and the Kept plate shows the signed Fee and Sequence.
+    expect(h.noted).toEqual([[wallet.id, INDEX]])
+    expect(screen.getByText('0.000012 XRP')).toBeTruthy()
+    expect(screen.getByText('9')).toBeTruthy()
+    expect(screen.queryByText(W.FROM_TRANSMITTER)).toBeNull()
     expect(screen.getByText(W.KEPT_TITLE)).toBeTruthy()
     expect(screen.getByText(W.KEPT_LINE)).toBeTruthy()
     expect(screen.queryByRole('button', { name: /send/i })).toBeNull()
@@ -244,7 +264,7 @@ describe('Offline Wallet: signed (OS-FR-11, OS-FR-13)', () => {
       fireEvent.click(await screen.findByRole('button', { name: 'Sign' }))
     })
     fireEvent.click(await screen.findByRole('button', { name: key }))
-    expect(screen.getByText('Erase the kept transaction? The signed transaction is valid until ledger 5150.')).toBeTruthy()
+    expect(screen.getByText(`Erase the kept transaction? The signed transaction is valid until ledger ${INDEX + 150}.`)).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: W.KEEP_IT }))
     expect(screen.getByText(W.KEPT_TITLE)).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: key }))
@@ -274,7 +294,7 @@ describe('a lock erases the round (OS-FR-13, OS-FR-16)', () => {
     act(() => eraseRoundsOfLocks(['L']))
     await act(async () => finish({ text: 'x', hash: 'H', lastLedgerSequence: 1, signedAt: 0 }))
     expect(roundOf(wallet.id)).toBeNull()
-    expect(screen.queryByRole('heading', { name: W.SIGNED_NOT_SENT })).toBeNull()
+    expect(screen.queryByRole('heading', { name: W.SIGNED_TRANSACTION_TITLE })).toBeNull()
   })
 })
 

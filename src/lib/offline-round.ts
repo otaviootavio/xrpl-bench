@@ -4,7 +4,9 @@ import { NETWORKS, type NetworkId } from '@/lib/xrpl/networks'
 import { feeWithinCap } from '@/lib/xrpl/money'
 import { signPrepared } from '@/lib/xrpl/writes'
 import { offlineSigningHandleFor, type SigningContext } from '@/lib/crypto/keystore'
-import { decodeDataToSign, encodeRequest, encodeSigned, type DataToSignPayload, type RequestTx } from '@/lib/qr-codec'
+import { decodeDataToSign, encodeRequest, encodeSigned, payloadKindOf, type DataToSignPayload, type PayloadKind, type RequestTx } from '@/lib/qr-codec'
+import { LEDGER_FLOORS, MAX_RECEIVED_LEDGER_INDEX, OFFLINE_LEDGER_WINDOW } from '@/lib/offline-window'
+import { WRONG_KIND } from '@/lib/transmitter-words'
 import { DATA_REFUSAL } from '@/lib/offline-round-words'
 import { fill } from '@/lib/transmit-words'
 
@@ -16,12 +18,7 @@ import { fill } from '@/lib/transmit-words'
  * set, nothing else.
  */
 
-/**
- * The signing window, in ledgers: about ten minutes at about four seconds a ledger
- * (OS-FR-16, "ledger count set by architecture"; decided in story 6). Stated to the
- * user as "approximately 10 minutes", never as a promise (P-12, P-13).
- */
-export const OFFLINE_LEDGER_WINDOW = 150
+export { OFFLINE_LEDGER_WINDOW } from '@/lib/offline-window'
 
 /**
  * The ledger-jump warning (P-14, "~4 s per ledger plus an architecture margin";
@@ -83,6 +80,15 @@ export interface KeptRequest {
   buildHash: string
 }
 
+/** The kinds' names in P-36's `{kind}` slots: the approved plate titles (2026-11-10) for
+ * Data to Sign and the Signed Transaction, and the glossary's names for the other two, in lower case. */
+export const PAYLOAD_NAMES: Record<PayloadKind, string> = {
+  r: 'data-to-sign request',
+  d: 'data to sign',
+  s: 'signed transaction',
+  u: 'unsigned transaction',
+}
+
 export type DataJudgement = { ok: true; data: DataToSignPayload } | { ok: false; reason: string }
 
 /**
@@ -98,6 +104,9 @@ export function judgeDataToSign(
   kept: KeptRequest | null,
   build: OfflineBuild | null,
 ): DataJudgement {
+  // A code of another kind of this app: P-36 names both kinds (story 6 review).
+  const kind = payloadKindOf(text)
+  if (kind !== null && kind !== 'd') return { ok: false, reason: fill(WRONG_KIND, PAYLOAD_NAMES[kind], PAYLOAD_NAMES.d) }
   const decoded = decodeDataToSign(text)
   if (!decoded.ok) return { ok: false, reason: DATA_REFUSAL.malformed }
   const data = decoded.value
@@ -118,6 +127,10 @@ export function judgeDataToSign(
  * (OS-FR-16). No `NetworkID`: Mainnet, Testnet and Devnet omit it.
  */
 export function assembleTransaction(build: OfflineBuild, data: Pick<DataToSignPayload, 'sequence' | 'fee' | 'ledger_index'>): Payment {
+  // Bound again here: a LastLedgerSequence past UInt32 cannot be encoded (story 6 review).
+  if (!Number.isInteger(data.ledger_index) || data.ledger_index < 1 || data.ledger_index > MAX_RECEIVED_LEDGER_INDEX) {
+    throw new RangeError('The ledger index is out of range. Nothing was signed.')
+  }
   return {
     ...builtTransaction(build),
     Sequence: data.sequence,
@@ -128,15 +141,22 @@ export function assembleTransaction(build: OfflineBuild, data: Pick<DataToSignPa
 
 /**
  * The highest-seen ledger warning (P-14): `lower` when the received index is
- * below the highest this Wallet accepted, `too-high` when it is further above it
- * than the time since allows, `null` otherwise or when nothing was seen yet.
+ * below the highest this Wallet signed with, `too-high` when it is further above
+ * it than the time since allows, `null` otherwise. Before this Wallet has signed
+ * anything, the reference is the Network's floor baked into this build
+ * (`LEDGER_FLOORS`), so a first answer is bounded too (story 6 review).
  */
-export function ledgerJumpWarning(received: number, seen: { index: number; at: number } | null, now: number): 'lower' | 'too-high' | null {
-  if (!seen) return null
-  if (received < seen.index) return 'lower'
-  const elapsedSeconds = Math.max(0, (now - seen.at) / 1000)
+export function ledgerJumpWarning(
+  received: number,
+  seen: { index: number; at: number } | null,
+  now: number,
+  network: NetworkId,
+): 'lower' | 'too-high' | null {
+  const reference = seen ?? LEDGER_FLOORS[network]
+  if (received < reference.index) return 'lower'
+  const elapsedSeconds = Math.max(0, (now - reference.at) / 1000)
   const allowed = Math.ceil(elapsedSeconds / LEDGER_JUMP_SECONDS_PER_LEDGER) + LEDGER_JUMP_MARGIN
-  return received - seen.index > allowed ? 'too-high' : null
+  return received - reference.index > allowed ? 'too-high' : null
 }
 
 /** The signed QR and what its plate states. The blob is held in memory only, while the round lasts. */
@@ -185,7 +205,7 @@ export type RoundPhase =
   | { name: 'reviewed' }
   | { name: 'request'; requestId: string; notice?: 'not-signed' }
   | { name: 'signing'; requestId: string; data: DataToSignPayload; warning: 'lower' | 'too-high' | null }
-  | { name: 'signed'; signed: SignedRound }
+  | { name: 'signed'; signed: SignedRound; data: DataToSignPayload }
 
 export interface Round {
   lockId: string

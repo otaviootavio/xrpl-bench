@@ -48,6 +48,7 @@ export async function answerRequest(wallet: TransmitterMeta, request: RequestPay
 
   let state: AccountState
   let spendable: string
+  let baseReserve: string
   try {
     state = await fetchAccountStateFresh(ctx.queryClient, network, request.account, node)
     if (!state.exists) return { status: 'refused', reason: SHIPPED.accountNotActivated }
@@ -57,6 +58,7 @@ export async function answerRequest(wallet: TransmitterMeta, request: RequestPay
       staleTime: 0,
       networkMode: 'always',
     })
+    baseReserve = reserves.baseReserveDrops
     spendable = spendableAfterReserve(state.balanceDrops, reserveRequirementDrops(reserves.baseReserveDrops, reserves.ownerReserveDrops, state.ownerCount))
   } catch {
     return { status: 'read-failed' }
@@ -69,6 +71,11 @@ export async function answerRequest(wallet: TransmitterMeta, request: RequestPay
     return { status: 'read-failed' }
   }
   if (destination.requireDestTag && tx.DestinationTag === undefined) return { status: 'refused', reason: SHIPPED.tagRequired }
+  // Below the base reserve, a destination not on the ledger is not created: the ledger
+  // answers tecNO_DST_INSUF_XRP and the fee is burned (route-checks "reserve").
+  if (!destination.exists && BigInt(tx.Amount) < BigInt(baseReserve)) {
+    return { status: 'refused', reason: fill(SHIPPED.belowReserve, formatXrp(baseReserve)) }
+  }
 
   let values: DataToSignValues
   try {

@@ -19,6 +19,7 @@ import { CHECK_LIST, CONFIRM_ACCOUNT, TRANSMIT_SCANNER_LINE, UNSIGNED_ON_TRANSMI
 import { TRANSMITTER_SCREENS } from '@/lib/wallet-kind-words'
 import { NETWORKS, type NetworkId } from '@/lib/xrpl/networks'
 import { invalidateAccountScoped } from '@/lib/xrpl/query-keys'
+import { forgetSyncedAddress } from '@/lib/teardown'
 import { describeResultCode, UNCONFIRMED_SUBMIT_WORDS, UNKNOWN_OUTCOME_WORDS } from '@/lib/xrpl/result-codes'
 import {
   expectedAccountFor,
@@ -63,9 +64,11 @@ type State =
  * Transaction (or a Data to Sign, which is the offline wallet's too) gets P-36's
  * Transmit line. A Data-to-Sign Request is answered after the online pre-flight
  * checks (`answer-request.ts`, OS-FR-15): the Data to Sign QR, or the refusal in
- * online words, or P-28 on a failed read. The answered request's Account is then
- * the Account the Transmit step expects (OS-FR-9), so an unsynced Transmitter does
- * not ask for P-27's confirm on the signed code that follows.
+ * online words, or P-28 on a failed read. Every Account this screen answered a
+ * request for is an Account the Transmit step expects (OS-FR-9), so an unsynced
+ * Transmitter does not ask for P-27's confirm on the signed code that follows.
+ * That set, and the account data the answers read, go when the screen unmounts
+ * (a lock unmounts it).
  */
 export function TransmitScreen({ wallet }: { wallet: TransmitterMeta }) {
   const [state, setState] = useState<State>({ kind: 'idle' })
@@ -73,14 +76,33 @@ export function TransmitScreen({ wallet }: { wallet: TransmitterMeta }) {
   const queryClient = useQueryClient()
   const headingRef = useRef<HTMLHeadingElement | null>(null)
   const network = NETWORKS[wallet.network].label
-  /** The Account of the last request this Transmitter answered (route-checks "Transmit step"). Session memory only. */
-  const [answeredAccount, setAnsweredAccount] = useState<string | null>(null)
-  // A waiting scanner keeps the screen awake (EXPERIENCE "Round timing").
-  useWakeLock(true)
+  const scannerRef = useRef<HTMLDivElement | null>(null)
+  /** The Accounts of the requests this screen answered (route-checks "Transmit step"). This mount only. */
+  const [answered, setAnswered] = useState<ReadonlySet<string>>(() => new Set())
+  const answeredRef = useRef(answered)
+  answeredRef.current = answered
+  // Awake only while a round is up: a request being answered, or a signed code awaited after an answer.
+  useWakeLock(state.kind === 'answering' || (answered.size > 0 && state.kind !== 'outcome' && state.kind !== 'expired' && state.kind !== 'unconfirmed'))
 
-  // A new state with a heading takes focus there, never on Send.
+  // The request Accounts' reads do not outlive this screen (a lock unmounts it),
+  // unless an open Wallet holds the address (story 6 review).
+  useEffect(
+    () => () => {
+      for (const account of answeredRef.current) {
+        if (account !== wallet.address) forgetSyncedAddress(queryClient, wallet.id, wallet.network, account)
+      }
+    },
+    [queryClient, wallet.id, wallet.network, wallet.address],
+  )
+
+  // A new state with a heading takes focus there, never on Send. A refusal and an
+  // answer being read leave focus on the scanner, which stays ready.
   useEffect(() => {
-    if (state.kind !== 'idle' && state.kind !== 'refused') headingRef.current?.focus()
+    if (state.kind === 'refused' || state.kind === 'answering') {
+      scannerRef.current?.querySelector<HTMLElement>('button, textarea')?.focus()
+      return
+    }
+    if (state.kind !== 'idle') headingRef.current?.focus()
   }, [state.kind])
 
   function onPayload(text: string) {
@@ -96,9 +118,15 @@ export function TransmitScreen({ wallet }: { wallet: TransmitterMeta }) {
     }
     const decoded = decodeSigned(text)
     if (!decoded.ok) return setState({ kind: 'refused', text: decoded.reason })
-    const expected = expectedAccountFor({ syncedAddress: wallet.address ?? undefined, requestAccount: answeredAccount ?? undefined })
+    let expected = expectedAccountFor({ syncedAddress: wallet.address ?? undefined })
     try {
-      const checked = previewSignedTransaction(wallet.network, { txBlob: decoded.value.tx_blob, network: decoded.value.network }, expected)
+      const signed = { txBlob: decoded.value.tx_blob, network: decoded.value.network }
+      let checked = previewSignedTransaction(wallet.network, signed, expected)
+      // Unsynced: an Account this screen answered a request for is the expected one.
+      if (expected === null && answered.has(checked.account)) {
+        expected = expectedAccountFor({ requestAccount: checked.account })
+        checked = previewSignedTransaction(wallet.network, signed, expected)
+      }
       setState({ kind: 'ready', ready: { txBlob: decoded.value.tx_blob, envelopeNetwork: decoded.value.network, checked, expected } })
     } catch (err) {
       setState({ kind: 'refused', text: err instanceof Error ? err.message : UNCONFIRMED_SUBMIT_WORDS })
@@ -114,7 +142,8 @@ export function TransmitScreen({ wallet }: { wallet: TransmitterMeta }) {
       result = { status: 'read-failed' }
     }
     if (result.status === 'answered') {
-      setAnsweredAccount(result.account)
+      const account = result.account
+      setAnswered((before) => new Set([...before, account]))
       setState({ kind: 'answered', answer: result })
     } else if (result.status === 'refused') setState({ kind: 'refused', text: result.reason })
     else setState({ kind: 'read-failed', request })
@@ -147,7 +176,13 @@ export function TransmitScreen({ wallet }: { wallet: TransmitterMeta }) {
   return (
     <KindScreenPlate title={TRANSMITTER_SCREENS.transmit.title}>
       <p className="text-sm">{TRANSMIT_SCANNER_LINE}</p>
-      <QrScanner onPayload={onPayload} label="a code" />
+      <div ref={scannerRef}>
+        <QrScanner onPayload={onPayload} label="a code" />
+      </div>
+      {/* Always mounted, so "Checking …" is announced while the answer is read. */}
+      <div role="status" className="text-sm">
+        {state.kind === 'answering' && fill(R.CHECKING, state.request.account, network)}
+      </div>
       {/* Always mounted, so a refusal is announced when it arrives; focus stays on the scanner. */}
       <div role="alert">
         {state.kind === 'refused' && (
@@ -213,7 +248,7 @@ export function TransmitScreen({ wallet }: { wallet: TransmitterMeta }) {
   )
 }
 
-/** The answer (EXPERIENCE "Transmitter answer"): what was checked, then the Data to Sign QR on this Wallet's Network. */
+/** The answer (EXPERIENCE "Transmitter answer"): the Data to Sign QR on this Wallet's Network, its title focused, then what was checked. */
 function Answered({
   answer,
   network,
@@ -226,27 +261,20 @@ function Answered({
   const label = NETWORKS[network].label
   return (
     <div className="flex min-w-0 flex-col gap-3 border-t border-border pt-3">
-      <section aria-labelledby="answer-checked" className="flex min-w-0 flex-col gap-2">
-        <h3 id="answer-checked" className="panel-legend">
-          {fill(R.CHECKED_ON, label)}
-        </h3>
-        <dl className="grid min-w-0 gap-1 text-sm">
-          {answer.checks.destinationExists && <CheckRow term={R.FIELD.destination} value={R.CHECK_RESULT.found} />}
-          {answer.checks.tagSupplied && <CheckRow term={R.FIELD.destinationTag} value={R.CHECK_RESULT.supplied} />}
-          <CheckRow term={R.SHIPPED.spendable} value={R.CHECK_RESULT.sufficient} />
-          <CheckRow term={R.FIELD.fee} value={R.CHECK_RESULT.underFeeLimit} />
-        </dl>
-        {/* Online Send warns here and still sends; so does the answer (OS-FR-15). */}
-        {!answer.checks.destinationExists && (
-          <Alert variant="warning" role="none">
-            <AlertDescription>
-              <span className="block font-semibold">{R.SHIPPED.destinationNotActivatedTitle}</span>
-              {R.SHIPPED.destinationNotActivated}
-            </AlertDescription>
-          </Alert>
-        )}
-      </section>
-      <HandoffPlate heading={R.DATA_PLATE_LINE} headingRef={headingRef} network={network} text={answer.text} />
+      <HandoffPlate heading={R.DATA_TO_SIGN_TITLE} headingRef={headingRef} network={network} text={answer.text} scan={2}>
+        <p className="text-sm">{R.DATA_PLATE_LINE}</p>
+        <section aria-labelledby="answer-checked" className="flex min-w-0 flex-col gap-2">
+          <h3 id="answer-checked" className="panel-legend">
+            {fill(R.CHECKED_ON, label)}
+          </h3>
+          <dl className="grid min-w-0 gap-1 text-sm">
+            {answer.checks.destinationExists && <CheckRow term={R.FIELD.destination} value={R.CHECK_RESULT.found} />}
+            {answer.checks.tagSupplied && <CheckRow term={R.FIELD.destinationTag} value={R.CHECK_RESULT.supplied} />}
+            <CheckRow term={R.SHIPPED.spendable} value={R.CHECK_RESULT.sufficient} />
+            <CheckRow term={R.FIELD.fee} value={R.CHECK_RESULT.underFeeLimit} />
+          </dl>
+        </section>
+      </HandoffPlate>
     </div>
   )
 }

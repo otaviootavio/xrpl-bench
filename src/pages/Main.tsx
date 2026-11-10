@@ -87,7 +87,8 @@ function OnlineWallet() {
  * chosen here, above every ledger hook: an Online Wallet and a Synced Transmitter
  * (its Account, History and live updates, for the Synced address) mount them; an
  * Offline Wallet and an unsynced Transmitter never ask the pool for a client
- * (OS-FR-1, OS-FR-4). Transmit reads the ledger only when Send is pressed. The lifecycle hooks,
+ * (OS-FR-1, OS-FR-4). Transmit reads the ledger only when it answers a scanned
+ * request (story 6) or when Send is pressed, never through a hook. The lifecycle hooks,
  * chassis, header, skip link and main region live in `AppShell` (AD-31). */
 export function Main() {
   const wallet = useActiveWallet()

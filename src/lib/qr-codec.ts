@@ -1,4 +1,6 @@
+import { isValidClassicAddress } from 'xrpl'
 import { NETWORKS, NETWORK_IDS, type NetworkId } from '@/lib/xrpl/networks'
+import { MAX_RECEIVED_LEDGER_INDEX } from '@/lib/offline-window'
 import { CborReader, encodeBytes } from '@/lib/ur/cbor'
 import { decodeSinglePart, encodeSinglePart, looksLikeUr } from '@/lib/ur/ur'
 
@@ -233,7 +235,8 @@ const HEX = (len: number) => new RegExp(`^[0-9a-f]{${len}}$`)
 const REQUEST_ID = HEX(32)
 const BUILD_HASH = HEX(64)
 const isUint32 = (v: unknown): v is number => typeof v === 'number' && Number.isInteger(v) && v >= 0 && v <= 4294967295
-const isClassicAddress = (v: unknown): v is string => typeof v === 'string' && /^r[1-9A-HJ-NP-Za-km-z]{24,34}$/.test(v)
+/** A classic address with a correct checksum (story 6 review). */
+const isClassicAddress = (v: unknown): v is string => typeof v === 'string' && isValidClassicAddress(v)
 const isDrops = (v: unknown): v is string => typeof v === 'string' && /^[1-9][0-9]{0,17}$/.test(v)
 const exactKeys = (o: Record<string, unknown>, required: readonly string[], optional: readonly string[] = []) =>
   required.every((k) => Object.prototype.hasOwnProperty.call(o, k)) && Object.keys(o).every((k) => required.includes(k) || optional.includes(k))
@@ -354,7 +357,8 @@ export function decodeDataToSign(text: unknown): Decoded<DataToSignPayload> {
   if (typeof body.build_hash !== 'string' || !BUILD_HASH.test(body.build_hash)) return malformed()
   // Sequence 0 never signs anything; a ledger index is never 0 either.
   if (!isUint32(body.sequence) || body.sequence === 0) return malformed()
-  if (!isUint32(body.ledger_index) || body.ledger_index === 0) return malformed()
+  // Its LastLedgerSequence (index + window) must still be a UInt32: a higher index is malformed.
+  if (!isUint32(body.ledger_index) || body.ledger_index === 0 || body.ledger_index > MAX_RECEIVED_LEDGER_INDEX) return malformed()
   if (!isDrops(body.fee)) return malformed()
   const network = networkOfId(body.network_id)
   if (network === null) return unknownNetwork()

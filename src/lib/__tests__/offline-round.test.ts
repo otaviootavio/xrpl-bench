@@ -11,7 +11,9 @@ import {
   payloadKindOf,
   PAYLOAD_UR_TYPES,
 } from '../qr-codec'
+import { LEDGER_FLOORS, MAX_RECEIVED_LEDGER_INDEX } from '../offline-window'
 import {
+  assembleTransaction,
   buildHashOf,
   clearRound,
   eraseRoundsOfLocks,
@@ -112,7 +114,9 @@ describe('the Offline Wallet judges a Data to Sign (OS-FR-16, P-17)', () => {
   it.each([
     ['an extra value', dataText({ extra: true }), DATA_REFUSAL.malformed],
     ['a missing value', raw(PAYLOAD_UR_TYPES.d, { ...data(), sequence: undefined }), DATA_REFUSAL.malformed],
-    ['another kind of code', requestText('testnet', build, requestId), DATA_REFUSAL.malformed],
+    ['another kind of code (P-36)', requestText('testnet', build, requestId), 'This code is a data-to-sign request. This screen needs a data to sign.'],
+    ['a signed code (P-36)', encodeSigned({ network: 'testnet', txBlob: 'AB' }).text, 'This code is a signed transaction. This screen needs a data to sign.'],
+    ['a ledger index whose window passes UInt32', dataText({ ledger_index: 4294967295 - 149 }), DATA_REFUSAL.malformed],
     ['another Network', dataText({ network_id: 0 }), 'This transaction is for Mainnet. This wallet is for Testnet.'],
     ['another request ID', dataText({ request_id: 'b'.repeat(32) }), DATA_REFUSAL.request],
     ['another Build hash', dataText({ build_hash: 'c'.repeat(64) }), DATA_REFUSAL.request],
@@ -135,13 +139,35 @@ describe('the Offline Wallet judges a Data to Sign (OS-FR-16, P-17)', () => {
 
 describe('highest-seen ledger warning (P-14)', () => {
   const seen = { index: 1000, at: 0 }
-  it('says nothing before any index was seen', () => expect(ledgerJumpWarning(5, null, 0)).toBeNull())
-  it('warns on an index lower than the highest seen', () => expect(ledgerJumpWarning(999, seen, 60_000)).toBe('lower'))
+  it('warns on an index lower than the highest seen', () => expect(ledgerJumpWarning(999, seen, 60_000, 'testnet')).toBe('lower'))
   it('allows elapsed / 3 s plus 30 ledgers above it', () => {
-    expect(ledgerJumpWarning(1000 + 20 + 30, seen, 60_000)).toBeNull()
-    expect(ledgerJumpWarning(1000 + 20 + 31, seen, 60_000)).toBe('too-high')
+    expect(ledgerJumpWarning(1000 + 20 + 30, seen, 60_000, 'testnet')).toBeNull()
+    expect(ledgerJumpWarning(1000 + 20 + 31, seen, 60_000, 'testnet')).toBe('too-high')
     // An hour later, a jump of an hour of ledgers at ~4 s is no warning.
-    expect(ledgerJumpWarning(1000 + 900, seen, 3_600_000)).toBeNull()
+    expect(ledgerJumpWarning(1000 + 900, seen, 3_600_000, 'testnet')).toBeNull()
+  })
+  it('before any index was seen, the Network\'s build-time floor is the reference (story 6 review)', () => {
+    const floor = LEDGER_FLOORS.mainnet
+    const hourLater = floor.at + 3_600_000
+    expect(ledgerJumpWarning(floor.index + 1000, null, hourLater, 'mainnet')).toBeNull()
+    expect(ledgerJumpWarning(floor.index - 1, null, hourLater, 'mainnet')).toBe('lower')
+    // A first answer that would make a blob valid for years is warned.
+    expect(ledgerJumpWarning(floor.index + 10_000_000, null, hourLater, 'mainnet')).toBe('too-high')
+    expect(ledgerJumpWarning(LEDGER_FLOORS.testnet.index + 5, null, LEDGER_FLOORS.testnet.at, 'testnet')).toBeNull()
+  })
+})
+
+describe('the assembled window is a UInt32 (story 6 review)', () => {
+  it('refuses to assemble past the bound, and assembles at it', () => {
+    expect(() => assembleTransaction(build, { sequence: 1, fee: '12', ledger_index: MAX_RECEIVED_LEDGER_INDEX + 1 })).toThrow(RangeError)
+    expect(assembleTransaction(build, { sequence: 1, fee: '12', ledger_index: MAX_RECEIVED_LEDGER_INDEX }).LastLedgerSequence).toBe(4294967295)
+  })
+  it('the codec refuses the same index, and a checksum-bad address', () => {
+    expect(decodeDataToSign(dataText({ ledger_index: MAX_RECEIVED_LEDGER_INDEX + 1 }))).toMatchObject({ ok: false, kind: 'malformed' })
+    expect(decodeDataToSign(dataText({ ledger_index: MAX_RECEIVED_LEDGER_INDEX })).ok).toBe(true)
+    const badChecksum = ACCOUNT.slice(0, -1) + (ACCOUNT.endsWith('L') ? 'M' : 'L')
+    const body = { v: 1, network_id: 1, request_id: requestId, build_hash: kept.buildHash, account: badChecksum, tx: { TransactionType: 'Payment', Account: badChecksum, Destination: DEST, Amount: '1' } }
+    expect(decodeRequest(raw(PAYLOAD_UR_TYPES.r, body))).toMatchObject({ ok: false, kind: 'malformed' })
   })
 })
 

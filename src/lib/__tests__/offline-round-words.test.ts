@@ -86,15 +86,25 @@ describe('Offline-builds round words (OS-FR-11, OS-FR-13 to OS-FR-16)', () => {
 
   it('every shipped string is still shipped by its own screen', () => {
     const S = W.SHIPPED
-    for (const words of [S.destinationAddress, S.invalidAddress, S.selfSend, S.destinationTagUnknown, S.networkFee, S.spendable, S.reviewPayment, S.destinationNotActivatedTitle]) {
+    for (const words of [S.destinationAddress, S.invalidAddress, S.selfSend, S.destinationTagUnknown, S.networkFee, S.spendable, S.reviewPayment]) {
       expect(SEND_TAB).toContain(words)
     }
     expect(SEND_TAB).toContain('label="Amount"')
-    // Wrapped over two lines in SendTab's JSX.
-    expect(SEND_TAB.replace(/\s+/g, ' ')).toContain(S.destinationNotActivated)
-    expect(TWO_DEVICE).toContain(S.tagRequired)
+    expect(SEND_TAB).toContain(`'${S.tagRequired}'`)
+    const [r1, r2] = S.belowReserve.split('{amount}')
+    expect(TWO_DEVICE).toContain(`${r1}\${formatXrp(base)}${r2}`)
     expect(FUNDS).toContain(S.accountNotActivated)
     const [before, after] = S.overSpendable.split('{amount}')
     expect(FUNDS).toContain(`${before}\${formatXrp(spendableDrops)}${after}`)
+  })
+
+  it('the words approved on 2026-11-10 are pinned as written', () => {
+    expect([fill(W.SCAN_COUNT, 1), fill(W.SCAN_COUNT, 2), fill(W.SCAN_COUNT, 3)]).toEqual(['Scan 1 of 3', 'Scan 2 of 3', 'Scan 3 of 3'])
+    expect(W.DATA_TO_SIGN_TITLE).toBe('Data to sign')
+    expect(W.SIGNED_TRANSACTION_TITLE).toBe('Signed transaction')
+    expect(W.CHECKING).toBe('Checking {address} on {Network}')
+    expect(W.TYPE_OF_TRANSACTION).toBe('Type of transaction')
+    expect(W.SIGNING_KEY).toBe('Signing key')
+    expect(W.QR_ALT).toBe('QR code: {payload} for {Network}')
   })
 })

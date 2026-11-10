@@ -25,6 +25,7 @@ import { requestText } from '@/lib/offline-round'
 import type { TransmitterMeta } from '@/lib/crypto/keystore'
 import * as R from '@/lib/offline-round-words'
 import { CONFIRM_ACCOUNT, UNSIGNED_ON_TRANSMIT } from '@/lib/transmitter-words'
+import { queryKeys } from '@/lib/xrpl/query-keys'
 
 // Signed once in Node by xrpl.js (see transmit-screen.test.tsx): 1 XRP to DEST, LastLedgerSequence 4321.
 const master = 'rG31cLyErnqeVj2eomEjBZtq7PYaupGYzL'
@@ -47,9 +48,9 @@ const answered = (over: Record<string, unknown> = {}) => ({
   ...over,
 })
 
-function mount(wallet: TransmitterMeta = unsynced) {
-  render(
-    <QueryClientProvider client={new QueryClient()}>
+function mount(wallet: TransmitterMeta = unsynced, client: QueryClient = new QueryClient()) {
+  return render(
+    <QueryClientProvider client={client}>
       <TooltipProvider>
         <TransmitScreen wallet={wallet} />
       </TooltipProvider>
@@ -72,7 +73,7 @@ describe('Transmit answers a Data-to-Sign Request (OS-FR-15)', () => {
     h.answer.mockResolvedValue(answered())
     mount()
     paste(REQUEST)
-    const heading = await screen.findByRole('heading', { name: R.DATA_PLATE_LINE })
+    const heading = await screen.findByRole('heading', { name: R.DATA_TO_SIGN_TITLE })
     await waitFor(() => expect(document.activeElement).toBe(heading))
     expect(screen.getByText('Checked on Testnet')).toBeTruthy()
     for (const v of [R.CHECK_RESULT.found, R.CHECK_RESULT.sufficient, R.CHECK_RESULT.underFeeLimit]) expect(screen.getByText(v)).toBeTruthy()
@@ -83,13 +84,27 @@ describe('Transmit answers a Data-to-Sign Request (OS-FR-15)', () => {
     expect(h.answer.mock.calls[0][1]).toMatchObject({ account: master, request_id: 'a'.repeat(32) })
   })
 
-  it('a destination not on the ledger: online Send\'s warning, and still the QR', async () => {
+  it('a destination not on the ledger: no "found" row; the tag row when one was supplied', async () => {
     h.answer.mockResolvedValue(answered({ checks: { tagSupplied: true, destinationExists: false } }))
     mount()
     paste(REQUEST)
-    expect(await screen.findByText(R.SHIPPED.destinationNotActivated)).toBeTruthy()
+    expect(await screen.findByRole('heading', { name: R.DATA_TO_SIGN_TITLE })).toBeTruthy()
     expect(screen.getByText(R.CHECK_RESULT.supplied)).toBeTruthy()
-    expect(screen.getByRole('heading', { name: R.DATA_PLATE_LINE })).toBeTruthy()
+    expect(screen.queryByText(R.CHECK_RESULT.found)).toBeNull()
+    expect(screen.getByText('Scan 2 of 3')).toBeTruthy()
+    expect(await screen.findByAltText('QR code: data to sign for Testnet')).toBeTruthy()
+  })
+
+  it('announces "Checking {address} on {Network}" while it reads, with focus on the scanner', async () => {
+    let finish: (v: unknown) => void = () => {}
+    h.answer.mockImplementation(() => new Promise((r) => (finish = r)))
+    mount()
+    paste(REQUEST)
+    await waitFor(() => expect(screen.getAllByRole('status').some((s) => s.textContent === `Checking ${master} on Testnet`)).toBe(true))
+    expect(document.activeElement).toBe(screen.getByLabelText(/Or paste the text of a code/))
+    finish(answered())
+    expect(await screen.findByRole('heading', { name: R.DATA_TO_SIGN_TITLE })).toBeTruthy()
+    expect(screen.getAllByRole('status').some((s) => s.textContent?.startsWith('Checking'))).toBe(false)
   })
 
   it('a refusal is an alert with no QR', async () => {
@@ -97,7 +112,9 @@ describe('Transmit answers a Data-to-Sign Request (OS-FR-15)', () => {
     mount()
     paste(REQUEST)
     await waitFor(() => expect(screen.getAllByRole('alert').some((a) => a.textContent === R.SHIPPED.tagRequired)).toBe(true))
-    expect(screen.queryByRole('heading', { name: R.DATA_PLATE_LINE })).toBeNull()
+    expect(screen.queryByRole('heading', { name: R.DATA_TO_SIGN_TITLE })).toBeNull()
+    // Focus is on the scanner, which stays ready.
+    expect(document.activeElement).toBe(screen.getByLabelText(/Or paste the text of a code/))
   })
 
   it('a failed read: P-28 and no QR; "Read again" asks again', async () => {
@@ -105,9 +122,9 @@ describe('Transmit answers a Data-to-Sign Request (OS-FR-15)', () => {
     mount()
     paste(REQUEST)
     expect(await screen.findByText(R.ANSWER_READ_FAILED)).toBeTruthy()
-    expect(screen.queryByRole('heading', { name: R.DATA_PLATE_LINE })).toBeNull()
+    expect(screen.queryByRole('heading', { name: R.DATA_TO_SIGN_TITLE })).toBeNull()
     fireEvent.click(screen.getByRole('button', { name: R.READ_AGAIN }))
-    expect(await screen.findByRole('heading', { name: R.DATA_PLATE_LINE })).toBeTruthy()
+    expect(await screen.findByRole('heading', { name: R.DATA_TO_SIGN_TITLE })).toBeTruthy()
     expect(h.answer).toHaveBeenCalledTimes(2)
   })
 
@@ -125,7 +142,7 @@ describe('after an answer, the Transmit step expects the request\'s Account (OS-
     h.transmit.mockResolvedValue({ status: 'validated', hash: 'H', resultCode: 'tesSUCCESS', ledgerIndex: 4001 })
     mount()
     paste(REQUEST)
-    await screen.findByRole('heading', { name: R.DATA_PLATE_LINE })
+    await screen.findByRole('heading', { name: R.DATA_TO_SIGN_TITLE })
     paste(encodeSigned({ network: 'testnet', txBlob: GOOD }).text)
     expect(await screen.findByText(`Account: ${master}, correct`)).toBeTruthy()
     expect(screen.queryByText(CONFIRM_ACCOUNT.replace('{address}', master))).toBeNull()
@@ -134,15 +151,48 @@ describe('after an answer, the Transmit step expects the request\'s Account (OS-
     expect(h.transmit.mock.calls[0][2]).toBe(master)
   })
 
-  it('a signed code for another Account than the answered request is refused (P-26)', async () => {
+  it('a signed code for an Account no request was answered for asks for P-27\'s confirm', async () => {
     h.answer.mockResolvedValue(answered())
     mount()
     paste(REQUEST)
-    await screen.findByRole('heading', { name: R.DATA_PLATE_LINE })
+    await screen.findByRole('heading', { name: R.DATA_TO_SIGN_TITLE })
     paste(encodeSigned({ network: 'testnet', txBlob: BY_OTHER }).text)
-    await waitFor(() =>
-      expect(screen.getAllByRole('alert').some((a) => a.textContent?.includes(`The account ${other} signed this transaction. The correct account is ${master}.`))).toBe(true),
-    )
-    expect(screen.queryByRole('button', { name: 'Send' })).toBeNull()
+    expect(await screen.findByText(CONFIRM_ACCOUNT.replace('{address}', other))).toBeTruthy()
+  })
+
+  it('every answered Account is remembered, not only the last', async () => {
+    const OTHER_REQUEST = requestText('testnet', { type: 'payment', account: other, destination: DEST, amountDrops: '1000000' }, 'c'.repeat(32))
+    h.answer.mockResolvedValueOnce(answered()).mockResolvedValueOnce(answered({ account: other }))
+    mount()
+    paste(REQUEST)
+    await screen.findByRole('heading', { name: R.DATA_TO_SIGN_TITLE })
+    paste(OTHER_REQUEST)
+    await waitFor(() => expect(h.answer).toHaveBeenCalledTimes(2))
+    await screen.findByRole('heading', { name: R.DATA_TO_SIGN_TITLE })
+    paste(encodeSigned({ network: 'testnet', txBlob: GOOD }).text)
+    expect(await screen.findByText(`Account: ${master}, correct`)).toBeTruthy()
+  })
+
+  it('a refused answer does not add its Account', async () => {
+    h.answer.mockResolvedValue({ status: 'refused', reason: R.SHIPPED.tagRequired })
+    mount()
+    paste(REQUEST)
+    await waitFor(() => expect(h.answer).toHaveBeenCalled())
+    paste(encodeSigned({ network: 'testnet', txBlob: GOOD }).text)
+    expect(await screen.findByText(CONFIRM_ACCOUNT.replace('{address}', master))).toBeTruthy()
+  })
+
+  it('the answered set and the request Account\'s reads do not outlive the screen (a lock unmounts it)', async () => {
+    const client = new QueryClient()
+    client.setQueryData(queryKeys.accountState('testnet', master), { exists: true })
+    h.answer.mockResolvedValue(answered())
+    const first = mount(unsynced, client)
+    paste(REQUEST)
+    await screen.findByRole('heading', { name: R.DATA_TO_SIGN_TITLE })
+    first.unmount()
+    expect(client.getQueryData(queryKeys.accountState('testnet', master))).toBeUndefined()
+    mount(unsynced, client)
+    paste(encodeSigned({ network: 'testnet', txBlob: GOOD }).text)
+    expect(await screen.findByText(CONFIRM_ACCOUNT.replace('{address}', master))).toBeTruthy()
   })
 })

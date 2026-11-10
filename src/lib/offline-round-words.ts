@@ -111,13 +111,26 @@ export const SHIPPED = {
   networkFee: 'Network fee',
   spendable: 'Spendable',
   reviewPayment: 'Review payment',
-  destinationNotActivatedTitle: 'Destination not activated',
-  destinationNotActivated:
-    "This address doesn't exist on-ledger yet. If you send less than the base reserve in XRP, this payment will fail to activate it.",
-  tagRequired: 'The destination requires a destination tag. Nothing was built.',
+  /** Online Send's words for a recipient that requires a tag (its tag label). */
+  tagRequired: 'Destination tag (required by recipient)',
+  /** Two-device's words for a payment below the base reserve to a destination not on the ledger. */
+  belowReserve: 'The destination is not on the ledger yet and needs at least {amount} to be created. Nothing was built.',
   accountNotActivated: "This account isn't activated yet, so there is no spendable balance to check this against.",
   overSpendable: "That's more than your spendable balance ({amount}) once the network fee is included.",
 } as const
 
 /** Check-list and field terms are the ledger's own field names (P-52 keeps them as the ledger names them). */
 export const FIELD = { destination: 'Destination', destinationTag: 'DestinationTag', fee: 'Fee' } as const
+
+/**
+ * Approved by the owner on 2026-11-10 (story 6, review round two), exactly as
+ * written. They have no source file, so `offline-round-words.test.ts` pins them
+ * as literals.
+ */
+export const SCAN_COUNT = 'Scan {n} of 3'
+export const DATA_TO_SIGN_TITLE = 'Data to sign'
+export const SIGNED_TRANSACTION_TITLE = 'Signed transaction'
+export const CHECKING = 'Checking {address} on {Network}'
+export const TYPE_OF_TRANSACTION = 'Type of transaction'
+export const SIGNING_KEY = 'Signing key'
+export const QR_ALT = 'QR code: {payload} for {Network}'

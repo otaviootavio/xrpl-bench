@@ -122,9 +122,16 @@ function BuildForm({
 
   return (
     <div className="flex min-w-0 flex-col gap-4">
-      <h2 ref={headingRef} tabIndex={-1} className="text-sm font-semibold">
-        {W.PAYMENT}
-      </h2>
+      <fieldset className="grid gap-1.5">
+        <legend ref={headingRef as unknown as React.RefObject<HTMLLegendElement | null>} tabIndex={-1} className="panel-legend mb-1">
+          {W.TYPE_OF_TRANSACTION}
+        </legend>
+        {/* This build has the Payment type only (story 6); trust lines and key actions are story 8's. */}
+        <label className="flex items-center gap-2 text-sm">
+          <input type="radio" name="off-type" value="payment" checked readOnly />
+          {W.PAYMENT}
+        </label>
+      </fieldset>
       <div className="grid gap-1.5">
         <Label htmlFor="off-dest">{W.SHIPPED.destinationAddress}</Label>
         <Input
@@ -198,8 +205,9 @@ function BuildForm({
   )
 }
 
-/** The Built transaction in the ledger's own field names (P-52); the Fee is a reading (P-1). */
-function BuiltFields({ build }: { build: OfflineBuild }) {
+/** The Built transaction in the ledger's own field names (P-52). Before signing the Fee is a
+ * reading (P-1); after it, the signed Fee and Sequence are shown. */
+function BuiltFields({ build, signedWith }: { build: OfflineBuild; signedWith?: { fee: string; sequence: number } }) {
   const tx = builtTransaction(build)
   return (
     <dl className="grid min-w-0 gap-2">
@@ -211,10 +219,23 @@ function BuiltFields({ build }: { build: OfflineBuild }) {
           </dd>
         </div>
       ))}
-      <div className="grid min-w-0 gap-0.5">
-        <dt className="panel-legend">{W.FIELD.fee}</dt>
-        <dd className="text-sm">{W.FROM_TRANSMITTER}</dd>
-      </div>
+      {signedWith ? (
+        <>
+          <div className="grid min-w-0 gap-0.5">
+            <dt className="panel-legend">{W.FIELD.fee}</dt>
+            <dd className="font-data text-[0.8125rem] leading-relaxed tracking-tight">{formatXrp(signedWith.fee)}</dd>
+          </div>
+          <div className="grid min-w-0 gap-0.5">
+            <dt className="panel-legend">Sequence</dt>
+            <dd className="font-data text-[0.8125rem] leading-relaxed tracking-tight">{signedWith.sequence}</dd>
+          </div>
+        </>
+      ) : (
+        <div className="grid min-w-0 gap-0.5">
+          <dt className="panel-legend">{W.FIELD.fee}</dt>
+          <dd className="text-sm">{W.FROM_TRANSMITTER}</dd>
+        </div>
+      )}
     </dl>
   )
 }
@@ -266,13 +287,15 @@ function RequestShown({ wallet, round, headingRef }: { wallet: KeyWalletMeta; ro
       return
     }
     setRefusal(null)
-    let warning: 'lower' | 'too-high' | null = null
+    let seen: { index: number; at: number } | null = null
     try {
-      warning = ledgerJumpWarning(judged.data.ledger_index, await ledgerSeenOf(wallet.id), Date.now())
-      await noteLedgerSeen(wallet.id, judged.data.ledger_index, Date.now())
+      seen = await ledgerSeenOf(wallet.id)
     } catch {
-      // The record could not be read or written: no comparison is made this time. Never a refusal.
+      // The record could not be read: the Network's floor is the reference this time. Never a refusal.
     }
+    // The highest seen is saved only once this answer is signed with (story 6 review):
+    // a declined answer never moves it.
+    const warning = ledgerJumpWarning(judged.data.ledger_index, seen, Date.now(), wallet.network)
     // A lock while this ran erased the round: nothing to move on with.
     const now = roundOf(wallet.id)
     if (!now || now.phase.name !== 'request' || now.phase.requestId !== keptPhase?.requestId) return
@@ -281,7 +304,7 @@ function RequestShown({ wallet, round, headingRef }: { wallet: KeyWalletMeta; ro
 
   return (
     <div className="flex min-w-0 flex-col gap-4">
-      <HandoffPlate heading={W.DATA_TO_SIGN_NEEDED} headingRef={headingRef} network={wallet.network} text={text}>
+      <HandoffPlate heading={W.DATA_TO_SIGN_NEEDED} headingRef={headingRef} network={wallet.network} text={text} scan={1}>
         <p className="text-sm">{W.REQUEST_LINE}</p>
       </HandoffPlate>
       <div className="flex min-w-0 flex-col items-start gap-1">
@@ -296,6 +319,7 @@ function RequestShown({ wallet, round, headingRef }: { wallet: KeyWalletMeta; ro
           {W.SCAN_DATA_TITLE}
         </h2>
         <p className="text-sm">{W.SCAN_DATA_LINE}</p>
+        <p className="text-xs text-muted-foreground">{fill(W.SCAN_COUNT, 2)}</p>
         <QrScanner onPayload={(t) => void onPayload(t)} label="a code" />
         {/* Always mounted, so a refusal is announced; focus stays on the scanner. */}
         <div role="alert">
@@ -328,7 +352,9 @@ function SigningReview({ wallet, round, headingRef }: { wallet: KeyWalletMeta; r
       const now = roundOf(wallet.id)
       // A lock during the Signing Check erased the round: the signed QR is not shown.
       if (!now || now.phase.name !== 'signing' || now.phase.requestId !== phase.requestId) return
-      setRound(wallet.id, { ...now, phase: { name: 'signed', signed } })
+      setRound(wallet.id, { ...now, phase: { name: 'signed', signed, data: phase.data } })
+      // Only an index actually signed with becomes the highest seen (P-14).
+      await noteLedgerSeen(wallet.id, phase.data.ledger_index, signed.signedAt).catch(() => {})
     } catch (err) {
       setFailure(err instanceof SigningCheckError ? err.message : W.NOT_SIGNED)
       setBusy(false)
@@ -348,6 +374,10 @@ function SigningReview({ wallet, round, headingRef }: { wallet: KeyWalletMeta; r
         </div>
       </section>
       <SignedFieldList txBlob={encode(tx)} />
+      <dl className="grid min-w-0 gap-0.5">
+        <dt className="panel-legend">{W.SIGNING_KEY}</dt>
+        <dd className="font-data text-[0.8125rem] leading-relaxed tracking-tight [overflow-wrap:anywhere]">{wallet.keyAddress}</dd>
+      </dl>
       {phase.warning && (
         <Alert variant="warning" role="none">
           <AlertDescription className="flex flex-col gap-1">
@@ -375,13 +405,14 @@ function SigningReview({ wallet, round, headingRef }: { wallet: KeyWalletMeta; r
 }
 
 function Signed({ wallet, round, headingRef }: { wallet: KeyWalletMeta; round: Round; headingRef: HeadingRef }) {
-  const { signed } = round.phase as Extract<Round['phase'], { name: 'signed' }>
+  const { signed, data } = round.phase as Extract<Round['phase'], { name: 'signed' }>
   const [erasing, setErasing] = useState(false)
   const time = new Date(signed.signedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
   return (
     <div className="flex min-w-0 flex-col gap-4">
       {/* No Send key anywhere (OS-FR-11): the last screen is the signed QR. */}
-      <HandoffPlate heading={W.SIGNED_NOT_SENT} headingRef={headingRef} network={wallet.network} text={signed.text}>
+      <HandoffPlate heading={W.SIGNED_TRANSACTION_TITLE} headingRef={headingRef} network={wallet.network} text={signed.text} scan={3}>
+        <p className="text-sm">{W.SIGNED_NOT_SENT}</p>
         <p className="text-sm">{fill(W.SIGNED_VALID_UNTIL, signed.lastLedgerSequence, W.TEN_MINUTES, time)}</p>
       </HandoffPlate>
       <section aria-labelledby="off-kept" className="panel-plate flex min-w-0 flex-col gap-3 rounded-md px-4 pb-4 pt-3">
@@ -389,7 +420,7 @@ function Signed({ wallet, round, headingRef }: { wallet: KeyWalletMeta; round: R
           {W.KEPT_TITLE}
         </h2>
         <p className="text-sm">{W.KEPT_LINE}</p>
-        <BuiltFields build={round.build} />
+        <BuiltFields build={round.build} signedWith={{ fee: data.fee, sequence: data.sequence }} />
         <div className="flex flex-wrap gap-2">
           <Button type="button" variant="outline" onClick={() => setErasing(true)}>
             {W.I_KNOW_THE_RESULT}

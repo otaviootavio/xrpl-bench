@@ -133,9 +133,14 @@ describe('the Transmitter answers a request (OS-FR-15)', () => {
     expect(fee.status === 'refused' && fee.reason).toMatch(/above this wallet's limit/)
   })
 
-  it('a destination not on the ledger is warned, as online Send warns, and still answered', async () => {
+  it('a destination not on the ledger: below the base reserve is refused in two-device\'s words; at or above it is answered', async () => {
     delete h.accounts[DEST]
-    expect(await answerRequest(unsynced, request(), { queryClient: qc() })).toMatchObject({ status: 'answered', checks: { destinationExists: false } })
+    // The base reserve is 1 XRP here.
+    expect(await answerRequest(unsynced, request({ ...build, amountDrops: '999999' }), { queryClient: qc() })).toEqual({
+      status: 'refused',
+      reason: 'The destination is not on the ledger yet and needs at least 1 XRP to be created. Nothing was built.',
+    })
+    expect(await answerRequest(unsynced, request({ ...build, amountDrops: '1000000' }), { queryClient: qc() })).toMatchObject({ status: 'answered', checks: { destinationExists: false } })
   })
 
   it.each([

@@ -92,9 +92,10 @@ describe('tefPAST_SEQ on a scanned blob is P-23, "Probably sent before" (OS-FR-1
     expect(client.submits).toHaveLength(1)
   })
 
-  it('the same hash found but not validated yet is waited for, as before', async () => {
-    installRawClient({ preliminary: 'tefPAST_SEQ', tx: [{ result: { validated: false } }, { result: { validated: false } }, VALIDATED] })
-    expect((await send(signedPayment().tx_blob)).status).toBe('validated')
+  it('the hash known to the server but not validated (rippled keeps a rejected hash) is sent-before at once, not waited out', async () => {
+    const client = installRawClient({ preliminary: 'tefPAST_SEQ', tx: [{ result: { validated: false } }, VALIDATED] })
+    expect((await send(signedPayment().tx_blob)).status).toBe('sent-before')
+    expect(client.txReads).toBe(1)
   })
 
   it('the online write path is unchanged: it still goes through submitAndWait, never its own submit', async () => {

@@ -613,8 +613,9 @@ type TxRead = Awaited<ReturnType<HeldClient['submitAndWait']>>
  * throws; `tx` by hash until validated, `txnNotFound` waits again; past the
  * LastLedgerSequence throws the same `XrplError` the expiry check reads), with
  * one addition: a `tefPAST_SEQ` preliminary result whose hash is not found
- * validated (or cannot be read) ends at once as `SequenceUsedSignal` (P-23).
- * A hash found but not validated yet is waited for as before. Exactly one
+ * validated (not found, found unvalidated, or not readable) ends at once as
+ * `SequenceUsedSignal` (P-23): rippled answers `tx` for a hash it rejected with
+ * `validated: false`, so waiting would only run out the window. Exactly one
  * `submit` request; the blob is never handed to the ledger again.
  */
 async function submitOnceAndWait(client: HeldClient, signed: { tx_blob: string; hash: string }, lastLedger: number): Promise<TxRead> {
@@ -629,8 +630,11 @@ async function submitOnceAndWait(client: HeldClient, signed: { tx_blob: string; 
     } catch {
       // Not found, or not readable: the Sequence is used and this blob is not known to be on the ledger.
     }
-    if (!found) throw new SequenceUsedSignal()
-    if (found.result.validated) return found
+    // Only a validated read of this very hash is an outcome. rippled answers `tx` for
+    // a hash it rejected with `validated: false` (seen on Testnet, story 7), so a
+    // read that is not validated is not waited for: the Sequence is used.
+    if (found?.result.validated) return found
+    throw new SequenceUsedSignal()
   }
   for (;;) {
     await new Promise((resolve) => setTimeout(resolve, pollMs))

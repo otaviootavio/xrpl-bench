@@ -46,6 +46,10 @@ context:
 
 </frozen-after-approval>
 
+## Spec Change Log
+
+- 2026-11-10, after the browser probe: the I/O row "Transmit `tefPAST_SEQ`" reads "hash not validated on the ledger" (was "not on the ledger"), because rippled answers `tx` for a hash it rejected with `validated: false` (`.playwright-mcp/s7-probe.mjs`). Nothing else in the intent changed.
+
 ## Code Map
 
 - New `src/lib/signed-list.ts` -- `SignedRecord`, `latestSameBuild`, `retryCaseOf` (the retry table), sequence to sign with.
@@ -72,7 +76,7 @@ context:
 
 ## Implementation Notes
 
-- Commits: `e35e8de` (code and tests), then this commit (the `tefPAST_SEQ` read fixed after the browser pass, and this record).
+- Commits: `e35e8de` (code and tests), `a35fe1e` (the `tefPAST_SEQ` read fixed after the browser pass, and this record), then the case (c) rerun, one more test and the deferred entries.
 - **Signed list.** `WalletView.signed?: SignedRecord[]` (`signed-list.ts`): buildHash, sequence, hash, lastLedgerSequence, ledgerIndex, signedAt. Written by `keystore.noteSigned` (Offline view only, record validated), read by `signedListOf` (throws on a failed read; it never returns a failed read as `[]`; malformed entries are dropped). It survives a lock and a reload, and goes with the Wallet's removal. A change of kind keeps it on the view.
 - **Order of signing.** Sign, check the round is still current, write the record, check again, then show the signed QR. If the write fails, the blob is dropped and P-16 shows. So every signing whose QR was shown is in the list.
 - **Retry table** (`retryCaseOf`), compared against `latestSameBuild`: the record with the highest Sequence, then the highest LastLedgerSequence. Reading the Data to Sign does a fresh `signedListOf`; a failed read is P-16 alone. Round phases: `retry-higher` (P-20) and `signing.retry` (`passed`/P-21, `same-sequence`/P-22), with `signing.sequence` as the Sequence signed with.
@@ -91,9 +95,9 @@ context:
 
 ## Verification
 
-**Gates (2026-11-10, final tree):** `bun run lint` · `bun run build` · `bun run test` (167 files, 2504 tests; baseline 164 / 2429 on story 6's record) · `bun run check:contrast`. All green.
+**Gates (2026-11-10, final tree):** `bun run lint` · `bun run build` · `bun run test` (167 files, 2505 tests; baseline 164 / 2429 on story 6's record) · `bun run check:contrast`. All green.
 
-**Browser pass (2026-11-10, the code of this commit).** Setup:
+**Browser pass (2026-11-10, code at `a35fe1e`; the rerun only changed the transmit order in the script).** Setup:
 - Dev server: `bun run dev -- --port 5227 --strictPort`.
 - Driver: `.playwright-mcp/s7-full.js` (git-ignored), run through the Playwright MCP in a headless Chromium with two fresh contexts. O is the offline device, T the online device; each has a CDP virtual authenticator.
 - Account: a throwaway Testnet account `r99Q3ajqELB6csnN9w4tQpYQo8Mv31pAjz`, funded with 100 XRP by the faucet from a Node script. Its Seed was imported in O as an Offline Wallet. T is an unsynced Transmitter. Destination `rsSzdKMq…EYbnE`.
@@ -105,13 +109,13 @@ context:
 |---|---|
 | First signing, no notice | Met: no P-19, no retry notice; validated `619A7AF4…BF514F` (Sequence 22214701). |
 | Start the request again | Met: request plate focused, P-19 + record and the Kept plate shown. |
-| Case (a) after a validated payment | Met: the Transmitter answered Sequence 22214702; P-20 heading focused, record shown, no Sign key, "This is a new payment" offered. "Check first", then "I know the result", then Erase. Nothing paid twice: `account_tx` shows one 5 XRP payment for this round (Sequence 22214701), and 22214702 went to the case (c) payment. |
+| Case (a) after a validated payment | Met in both runs (rerun: round 1 `B129A546…330729`, Sequence 22214703; case (a) signed nothing, and 22214704 went to case (c)). First run: the Transmitter answered Sequence 22214702; P-20 heading focused, record shown, no Sign key, "This is a new payment" offered. "Check first", then "I know the result", then Erase. Nothing paid twice: `account_tx` shows one 5 XRP payment for this round (Sequence 22214701), and 22214702 went to the case (c) payment. |
 | Same Build after a lock | Met: after a reload and Open, the same 5 XRP typed again shows P-19 with the record. A 3 XRP Build shows none. |
-| Case (c): two signings inside the window, both transmitted | Met: A signed (Sequence 22214702, LLS 22214966). Restarting gave P-22 and no "This is a new payment"; B signed with the same Sequence (LLS 22214967). B transmitted: VALIDATED `1E825C4B…5EB15C`. A transmitted: "PROBABLY SENT BEFORE" plus the P-23 line, focused, caution lamp, no Send key. A Node `tx` read of A shows it is not validated; one payment applied. |
+| Case (c): two signings inside the window, both transmitted | Met, in the order of EXPERIENCE Flow 4's variant (rerun): A signed (Sequence 22214704, LLS 22215047). Restarting gave P-22 and no "This is a new payment"; B signed with the same Sequence (LLS 22215048). A transmitted first: VALIDATED `3DD28AD7…7122A9`. B transmitted next: "PROBABLY SENT BEFORE" `D95C895C…ED5A42` plus the P-23 line, focused, caution lamp, no Send key (`s7-T-p23b-320-dark`). `account_tx` holds A and not B: one payment applied. A first run sent them the other way round (B validated `1E825C4B…`, A got P-23); the code path is the same. |
 | Signed by this wallet | Met: P-49, three records newest first, P-52 terms. |
 | Offline Wallet makes no ledger connection | Met: 0 non-local WebSockets on O. |
 | 320 dark / 390 light / 1280 light, and 320 at 200% text | Met for restart, case (a), P-19 review, case (c), P-23 and the Signed list: no side scroll, nothing past the viewport (measured). |
 
-Screenshots are in the session scratchpad `s7/`. Opened: `s7-O-case-a-320-dark`, `s7-T-p23-390-light`, `s7-O-review-p19-390-light`, `s7-O-signed-list-1280-light`, `s7-O-case-c-320-zoom200` (a full-page capture at 200% shows the top of the page only; overflow measured). The dev server was stopped.
+Screenshots are in the session scratchpad `s7/`. Opened: `s7-T-p23b-320-dark`, `s7-O-case-a-320-dark`, `s7-T-p23-390-light`, `s7-O-review-p19-390-light`, `s7-O-signed-list-1280-light`, `s7-O-case-c-320-zoom200` (a full-page capture at 200% shows the top of the page only; overflow measured). The dev server was stopped.
 
 Not driven in the browser (pinned by unit tests): case (b), a lower Sequence, a failed list read or write, and the online path.

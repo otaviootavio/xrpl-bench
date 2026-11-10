@@ -648,3 +648,13 @@ Item 8 shipped as a refactor that preserves behaviour (`spec-sendtab-split.md`).
 - source_spec: `_bmad-output/specs/spec-offline-signing/stories/6-offline-send-end-to-end-by-the-offline-builds-route.md`
   summary: "Start the request again" (P-18's third key) is not on the Kept transaction plate; the scanner stops its camera after a refusal; the QR shrinks at 320px with 200% text.
   evidence: Re-requesting a signed Build hands out a new Sequence and could pay twice until story 7's Sequence comparison exists; the Build is kept for it. The camera and QR-size items are shared scanner and plate behaviour (EXPERIENCE "Notes For The Build", Accessibility Floor).
+  resolution: (2026-11-10, `_bmad-output/specs/spec-offline-signing/stories/7-retry-without-paying-twice.md`) partly settled. "Start the request again" is built on the Kept transaction plate, with the retry table deciding the Sequence. The scanner's camera after a refusal and the QR size at 320px with 200% text stay open.
+
+- source_spec: `_bmad-output/specs/spec-offline-signing/stories/7-retry-without-paying-twice.md`
+  summary: Missing words in story 7: the mockup's "Sequence received" row on retry case (a); "(same as before)" beside the Sequence in case (c); "Ledger result" with `tefPAST_SEQ` on the P-23 outcome; a reason line under P-16 when the signed list cannot be read or written (P-16 shows alone); a line on the Signed screen when its list cannot be read (P-49 shows alone, never P-56).
+  evidence: Each is in neither approved list (the first three are in `mockups/key-retry.html` only). The build shows approved words only.
+
+- source_spec: `_bmad-output/specs/spec-offline-signing/stories/7-retry-without-paying-twice.md`
+  summary: On the online Send path (`submitAndClassify`), a `tefPAST_SEQ` race still waits out the window and ends as today's "expired" outcome.
+  evidence: Story 7 reads the preliminary result on the scanned path only (`transmitSignedTransaction`), so online sending stays exactly as before (story 2). rippled answers `tx` for a rejected hash with `validated: false`, so `submitAndWait` waits until LastLedgerSequence passes. Settle by sharing the scanned path's submit-and-wait, with words for that case.
+

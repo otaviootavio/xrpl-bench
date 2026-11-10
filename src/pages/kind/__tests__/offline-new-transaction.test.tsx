@@ -387,6 +387,15 @@ describe('retry without paying twice (story 7; OS-FR-16)', () => {
     expect(screen.getByText(String(INDEX + 50))).toBeTruthy()
   })
 
+  it('a signed list that cannot be read shows no notice at review (the Data to Sign is then refused)', async () => {
+    h.signed = null
+    mount()
+    toReview()
+    await screen.findByRole('button', { name: W.SHOW_THE_REQUEST })
+    await act(async () => {})
+    expect(screen.queryByText(W.SIGNED_BEFORE)).toBeNull()
+  })
+
   it('another Build shows no notice', async () => {
     h.signed = [earlier({ buildHash: 'f'.repeat(64) })]
     mount()

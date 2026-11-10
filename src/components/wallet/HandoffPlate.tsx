@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog'
 import { PayloadQr } from '@/components/wallet/PayloadQr'
 import { useWakeLock } from '@/hooks/useWakeLock'
+import { WRAPPING_KEYS } from '@/components/wallet/wrapping-keys'
 import { BACK, MAKE_THE_CODE_LARGER } from '@/lib/offline-round-words'
 import { NETWORKS, type NetworkId } from '@/lib/xrpl/networks'
 
@@ -36,7 +37,7 @@ export function HandoffPlate({
   useWakeLock(true)
   const label = NETWORKS[network].label
   return (
-    <section aria-label={heading} className="panel-plate flex min-w-0 flex-col gap-3 rounded-md px-4 pb-4 pt-3">
+    <section aria-label={heading} className={`panel-plate flex min-w-0 flex-col gap-3 rounded-md px-4 pb-4 pt-3 ${WRAPPING_KEYS}`}>
       <h2 ref={headingRef} tabIndex={-1} className="text-sm font-semibold [overflow-wrap:anywhere]">
         {heading}
       </h2>

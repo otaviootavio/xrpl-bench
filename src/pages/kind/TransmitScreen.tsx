@@ -11,6 +11,7 @@ import type { TransmitterMeta } from '@/lib/crypto/keystore'
 import { decodeRequest, decodeSigned, payloadKindOf, type RequestPayload } from '@/lib/qr-codec'
 import { answerRequest, type AnswerResult } from '@/lib/answer-request'
 import { HandoffPlate } from '@/components/wallet/HandoffPlate'
+import { WRAPPING_KEYS } from '@/components/wallet/wrapping-keys'
 import { useWakeLock } from '@/hooks/useWakeLock'
 import * as R from '@/lib/offline-round-words'
 import { EXPIRED_NOTHING_SENT, SEND_KEY, TRANSACTION_HASH, fill } from '@/lib/transmit-words'
@@ -180,7 +181,7 @@ export function TransmitScreen({ wallet }: { wallet: TransmitterMeta }) {
         </section>
       )}
       {state.kind === 'read-failed' && (
-        <div className="flex min-w-0 flex-col items-start gap-2">
+        <div className={`flex min-w-0 flex-col items-start gap-2 ${WRAPPING_KEYS}`}>
           <h2 ref={headingRef} tabIndex={-1} className="text-sm font-normal">
             {R.ANSWER_READ_FAILED}
           </h2>

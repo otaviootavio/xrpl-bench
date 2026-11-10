@@ -35,6 +35,7 @@ import { dropsToXrpString, formatXrp, xrpToDropsString } from '@/lib/xrpl/money'
 import { NETWORKS } from '@/lib/xrpl/networks'
 import { lockRemainingMs, useAppStore, useWalletOpenKey } from '@/store/app-store'
 import { KindScreenPlate } from './KindScreenPlate'
+import { WRAPPING_KEYS } from '@/components/wallet/wrapping-keys'
 
 const MAX_DESTINATION_TAG = 4294967295
 
@@ -63,6 +64,7 @@ export function OfflineNewTransaction({ wallet }: { wallet: KeyWalletMeta }) {
 
   return (
     <KindScreenPlate title={OFFLINE_SCREENS.newTransaction.title}>
+      <div className={`flex min-w-0 flex-col gap-3 ${WRAPPING_KEYS}`}>
       {round && round.phase.name !== 'editing' && round.phase.name !== 'reviewed' && <LockSoon lockId={round.lockId} />}
       {!round || round.phase.name === 'editing' ? (
         <BuildForm
@@ -80,6 +82,7 @@ export function OfflineNewTransaction({ wallet }: { wallet: KeyWalletMeta }) {
       ) : (
         <Signed wallet={wallet} round={round} headingRef={headingRef} />
       )}
+      </div>
     </KindScreenPlate>
   )
 }

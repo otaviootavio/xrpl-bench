@@ -86,6 +86,8 @@ async function openImport() {
   const view = render(<AddWalletScreen onClose={onClose} />)
   await click(await screen.findByRole('radio', { name: 'Import a wallet' }))
   await screen.findByLabelText('Seed')
+  // Offline signing story 3: the kind question has no default; these tests drive an Online import.
+  await click(screen.getByRole('radio', { name: 'Online' }))
   return view
 }
 
@@ -216,7 +218,7 @@ describe('Import with every lock closed', () => {
     expect(seen).toEqual(['Node', 'Node', 'Authentication to open the wallet, and auto-lock', 'Authentication required to open the wallet', 'Auto-lock after inactivity', 'Authentication to sign a transaction', 'Authentication required to sign a transaction', 'Review'])
     // The Review for an import: no Seed Method, Passkey or Signature type row, and no Seed.
     const terms = Array.from(document.querySelectorAll('dt')).map((dt) => dt.textContent)
-    expect(terms).toEqual(['Create or import', 'Label', 'Network', 'Node', 'Authentication required to open the wallet', 'Auto-lock', 'Authentication required to sign a transaction'])
+    expect(terms).toEqual(['Create or import', 'Online wallet or offline wallet?', 'Label', 'Network', 'Node', 'Authentication required to open the wallet', 'Auto-lock', 'Authentication required to sign a transaction'])
     expect(document.body.textContent).not.toContain(SEED)
     expect(screen.queryByRole('button', { name: 'Next' })).toBeNull()
     expect(button('Import wallet')).toBeTruthy()
@@ -639,7 +641,7 @@ describe('Create or Import is the first question', () => {
     await click(button('Back'))
     await click(screen.getByRole('radio', { name: /^Devnet/ }))
     expect(seedInput().value).toBe(SEED)
-    expect(screen.getByRole('status').textContent).toBe('The later questions start again.')
+    expect(screen.getAllByRole('status').find((el) => !el.closest('[data-slot="kind-choice"]'))!.textContent).toBe('The later questions start again.')
     for (let guard = 0; guard < 6 && screen.queryByRole('button', { name: 'Next' }); guard++) await click(button('Next'))
     const row = (term: string) => screen.getByText(term, { selector: 'dt' }).parentElement?.textContent ?? ''
     expect(row('Node')).toContain('Built-in Nodes')
@@ -706,6 +708,7 @@ describe('Create or Import is the first question', () => {
     cleanup()
     render(<AddWalletScreen onClose={onClose} />)
     await screen.findByRole('radio', { name: 'Create a new wallet' })
+    await click(screen.getByRole('radio', { name: 'Online' }))
     for (let n = 2; n <= 7; n++) {
       await click(button('Next'))
       noPath()
@@ -812,5 +815,114 @@ describe('the Mainnet fact is display only', () => {
       expect(src, f).not.toContain(sentence)
       expect(src, f).not.toMatch(/IMPORT_MAINNET_FACT|importMainnetFact/)
     }
+  })
+})
+
+describe('Import into an Offline Wallet (offline signing story 3, OS-FR-2, OS-FR-7)', () => {
+  const tick = (title: string) => screen.getByRole('checkbox', { name: `I read this warning. ${title}` })
+  const B = 'WARNING: The app cannot make your device offline.'
+  const E = 'WARNING: An offline wallet does not make an unsafe seed safe.'
+
+  async function openOfflineImport() {
+    render(<AddWalletScreen onClose={onClose} />)
+    await click(await screen.findByRole('radio', { name: 'Import a wallet' }))
+    await screen.findByLabelText('Seed')
+    await click(screen.getByRole('radio', { name: 'Offline' }))
+  }
+
+  it('shows Text E directly above the Seed field, and Next waits on both boxes', async () => {
+    await openOfflineImport()
+    const textE = screen.getByText(E)
+    expect(textE.compareDocumentPosition(seedInput()) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(screen.getByText(B).compareDocumentPosition(textE) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    typeSeed(SEED)
+    expect(button('Next').getAttribute('aria-disabled')).toBe('true')
+    await click(tick(B))
+    expect(button('Next').getAttribute('aria-disabled')).toBe('true')
+    await click(tick(E))
+    expect(button('Next').getAttribute('aria-disabled')).toBeNull()
+  })
+
+  it('P-60 after a kind change stays until both boxes are ticked again', async () => {
+    await openOfflineImport()
+    const status = () => document.querySelector('[data-slot="kind-choice"] [role="status"]')!
+    await click(tick(B))
+    await click(tick(E))
+    await click(screen.getByRole('radio', { name: 'Online' }))
+    expect(status().textContent).toBe('')
+    await click(screen.getByRole('radio', { name: 'Offline' }))
+    const P60 = 'The text below changed. Select the box below each warning again.'
+    expect(status().textContent).toBe(P60)
+    await click(tick(B))
+    expect(status().textContent).toBe(P60)
+    await click(tick(E))
+    expect(status().textContent).toBe('')
+  })
+
+  it('Text E is not shown for an Online import', async () => {
+    await openImport()
+    expect(screen.queryByText(E)).toBeNull()
+  })
+
+  it('makes no ledger read: the duplicate probe runs, the master-key check does not, and the write is Offline with no Node', async () => {
+    await openOfflineImport()
+    await click(tick(B))
+    await click(tick(E))
+    await submit()
+    await waitFor(() => expect(h.importStoredWallet).toHaveBeenCalledTimes(1))
+    expect(h.importDuplicateReason).toHaveBeenCalledWith(SEED, 'testnet')
+    expect(h.checkBeforeImport).not.toHaveBeenCalled()
+    expect(h.fetchAccountStateOnce).not.toHaveBeenCalled()
+    const input = h.importStoredWallet.mock.calls[0][0]
+    expect(input.kind).toBe('offline')
+    expect(input).not.toHaveProperty('node')
+    expect(screen.queryByText('Master key not checked')).toBeNull()
+  })
+
+  // P-8, second form (offline signing story 4, OS-FR-3): warned, never refused.
+  const P8 = 'WARNING: A Transmitter wallet on this device has this address.'
+  const synced = { id: 'tx', seedId: 'tx', lockId: 'LT', label: 'Send', createdAt: 1, network: 'mainnet', openCheck: 'pin', kind: 'transmitter', address: ADDRESS }
+
+  it('a Transmitter here synced to the address: the warning shows, Import anyway imports', async () => {
+    useAppStore.setState({ wallets: [synced as never] })
+    await openOfflineImport()
+    await click(tick(B))
+    await click(tick(E))
+    await submit()
+    expect(await screen.findByText(P8)).toBeTruthy()
+    expect(screen.getByText('Thus the offline key is on a device that connects to the internet.')).toBeTruthy()
+    expect(h.importStoredWallet).not.toHaveBeenCalled()
+    await click(button('Import anyway'))
+    await waitFor(() => expect(h.importStoredWallet).toHaveBeenCalledTimes(1))
+  })
+
+  it('Cancel import on that warning writes nothing', async () => {
+    useAppStore.setState({ wallets: [synced as never] })
+    await openOfflineImport()
+    await click(tick(B))
+    await click(tick(E))
+    await submit()
+    await click(await screen.findByRole('button', { name: 'Cancel import' }))
+    expect(h.importStoredWallet).not.toHaveBeenCalled()
+  })
+
+  it('no warning without a Transmitter synced to that address', async () => {
+    useAppStore.setState({ wallets: [{ ...synced, address: null } as never] })
+    await openOfflineImport()
+    await click(tick(B))
+    await click(tick(E))
+    await submit()
+    await waitFor(() => expect(h.importStoredWallet).toHaveBeenCalledTimes(1))
+    expect(screen.queryByText(P8)).toBeNull()
+  })
+
+  it('a duplicate is still refused for an Offline import', async () => {
+    h.importDuplicateReason.mockResolvedValue(DUPLICATE)
+    await openOfflineImport()
+    await click(tick(B))
+    await click(tick(E))
+    await submit()
+    expect(await screen.findByText(DUPLICATE)).toBeTruthy()
+    expect(h.importStoredWallet).not.toHaveBeenCalled()
   })
 })

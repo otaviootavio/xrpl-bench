@@ -1,7 +1,7 @@
 import { QueryClient } from '@tanstack/react-query'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { Wallet, decode, encode } from 'xrpl'
-import { encodeSigned, encodeUnsigned } from '../qr-codec'
+import { decodeUnsigned, encodeSigned, encodeUnsigned } from '../qr-codec'
 import { resetXrplClientFactory, resetXrplClients, setXrplClientFactory } from '../xrpl/client'
 import { resetTxInFlightReporter } from '../xrpl/writes'
 
@@ -15,18 +15,8 @@ const h = vi.hoisted(() => ({
   failAccountRead: false,
   signAs: null as any,
   checkResult: null as any,
-  tooLarge: false,
   ledgerFails: false,
 }))
-
-vi.mock('../qr-codec', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('../qr-codec')>()
-  return {
-    ...actual,
-    encodeUnsigned: (...a: Parameters<typeof actual.encodeUnsigned>) =>
-      h.tooLarge ? { ok: false as const, reason: 'This transaction is too large for one QR code, so it cannot be carried between the two devices.' } : actual.encodeUnsigned(...a),
-  }
-})
 
 vi.mock('@/lib/xrpl/reads', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/lib/xrpl/reads')>()
@@ -114,7 +104,6 @@ beforeEach(() => {
   h.failAccountRead = false
   h.signAs = master
   h.checkResult = null
-  h.tooLarge = false
   h.ledgerFails = false
   validated = 1000
   submitted = []
@@ -167,10 +156,10 @@ describe('buildUnsigned', () => {
     expect(await buildUnsigned('on', paymentReq, { queryClient: qc() })).toMatchObject({ status: 'refused', reason: expect.stringContaining('destination tag') })
   })
 
-  it('refuses a payload too large for one QR', async () => {
-    h.accounts = { [master.address]: acct({ regularKey: other.address }) }
-    // A regular-key build is small; prove the refusal path through the codec directly.
-    expect(encodeUnsigned({ network: 'testnet', tx: { M: 'x'.repeat(5000) } })).toMatchObject({ ok: false })
+  it('refuses nothing for its size: a payload over one QR is carried whole (OS-FR-24)', () => {
+    const big = encodeUnsigned({ network: 'testnet', tx: { M: 'x'.repeat(5000) } })
+    expect(big.ok).toBe(true)
+    expect(decodeUnsigned(big.text)).toMatchObject({ ok: true, value: { tx: { M: 'x'.repeat(5000) } } })
   })
 
   it('exposes the same guard to the UI: an errored read blocks with a reason', () => {
@@ -264,11 +253,19 @@ describe('the round trip', () => {
     }
   })
 
+  it('refuses a signed code whose envelope names another Network, and submits nothing (story 4, OS-FR-9)', async () => {
+    const r = await built()
+    const text = (encodeSigned({ network: 'mainnet', txBlob: master.sign(r.tx as any).tx_blob }) as any).text
+    const out = await submitReturned(onlineMeta as any, r.tx, text, { queryClient: qc() })
+    expect(out).toEqual({ status: 'refused', reason: 'The app did not send the transaction. This transaction is for Mainnet. This wallet sends on Testnet.' })
+    expect(submitted).toEqual([])
+  })
+
   it('refuses a tampered blob (amount, destination, fee, LastLedgerSequence) and submits nothing', async () => {
     const r = await built()
     for (const change of [{ Amount: '9000000' }, { Destination: other.address }, { Fee: '13' }, { LastLedgerSequence: 99999 }]) {
       const tampered = master.sign({ ...(r.tx as any), ...change })
-      const out = await submitReturned(onlineMeta as any, r.tx, encodeSigned(tampered.tx_blob).ok ? (encodeSigned(tampered.tx_blob) as any).text : '', { queryClient: qc() })
+      const out = await submitReturned(onlineMeta as any, r.tx, encodeSigned({ network: 'testnet', txBlob: tampered.tx_blob }).ok ? (encodeSigned({ network: 'testnet', txBlob: tampered.tx_blob }) as any).text : '', { queryClient: qc() })
       expect(out).toMatchObject({ status: 'refused', reason: expect.stringContaining('not the one that was sent') })
     }
     expect(submitted).toEqual([])
@@ -279,7 +276,7 @@ describe('the round trip', () => {
     h.accounts = { [master.address]: acct({ regularKey: DEST }) }
     h.signAs = other
     // `other` signs a transaction whose Account is the master's: the key is not authorised.
-    const s = encodeSigned(other.sign(r.tx as any).tx_blob)
+    const s = encodeSigned({ network: 'testnet', txBlob: other.sign(r.tx as any).tx_blob })
     const out = await submitReturned(onlineMeta as any, r.tx, (s as any).text, { queryClient: qc() })
     expect(out).toMatchObject({ status: 'refused', reason: expect.stringContaining('not this account’s master key or Regular Key') })
     expect(submitted).toEqual([])
@@ -288,11 +285,11 @@ describe('the round trip', () => {
   it('accepts the Regular Key, and refuses the master key once it is off', async () => {
     const r = await built()
     h.accounts = { [master.address]: acct({ regularKey: other.address }) }
-    const byRegular = (encodeSigned(other.sign(r.tx as any).tx_blob) as any).text
+    const byRegular = (encodeSigned({ network: 'testnet', txBlob: other.sign(r.tx as any).tx_blob }) as any).text
     expect((await submitReturned(onlineMeta as any, r.tx, byRegular, { queryClient: qc() })).status).toBe('validated')
     submitted = []
     h.accounts = { [master.address]: acct({ regularKey: other.address, disableMasterKey: true }) }
-    const byMaster = (encodeSigned(master.sign(r.tx as any).tx_blob) as any).text
+    const byMaster = (encodeSigned({ network: 'testnet', txBlob: master.sign(r.tx as any).tx_blob }) as any).text
     expect((await submitReturned(onlineMeta as any, r.tx, byMaster, { queryClient: qc() })).status).toBe('refused')
     expect(submitted).toEqual([])
   })
@@ -316,6 +313,30 @@ describe('the round trip', () => {
     validated = 1076
     const out = await submitReturned(onlineMeta as any, r.tx, signed, { queryClient: qc() })
     expect(out).toMatchObject({ status: 'expired', reason: expect.stringContaining('expired') })
+    expect(submitted).toEqual([])
+  })
+
+  it('reports a refusal at the Transmit step as expired or refused, never as "may have been sent" (OS-FR-9)', async () => {
+    const r = await built()
+    const signed = await signOffline(r)
+    const last = (r.tx as any).LastLedgerSequence as number
+    // The pre-check here reads a ledger inside the window; the Transmit step's own
+    // read, a moment later, is past it.
+    let reads = 0
+    const client = { isConnected: () => true, connect: async () => {}, autofill: async (tx: any) => tx,
+      request: async () => ({ result: { ledger_index: reads++ === 0 ? last : last + 1 } }),
+      submitAndWait: async (blob: string) => (submitted.push(blob), submitResult()) }
+    setXrplClientFactory(() => client as any)
+    resetXrplClients()
+    expect(await submitReturned(onlineMeta as any, r.tx, signed, { queryClient: qc() })).toMatchObject({ status: 'expired' })
+    expect(submitted).toEqual([])
+    // And a read that fails at the Transmit step is a refusal: nothing was sent.
+    reads = 0
+    client.request = async () => {
+      if (reads++ === 0) return { result: { ledger_index: last } }
+      throw new Error('ledger down')
+    }
+    expect(await submitReturned(onlineMeta as any, r.tx, signed, { queryClient: qc() })).toMatchObject({ status: 'refused', reason: 'The app did not send the transaction. The app cannot read the ledger.' })
     expect(submitted).toEqual([])
   })
 
@@ -366,7 +387,7 @@ describe('the round trip', () => {
 
 describe('hardening', () => {
   async function signed(r: Awaited<ReturnType<typeof built>>, who: Wallet = master) {
-    return (encodeSigned(who.sign(r.tx as any).tx_blob) as any).text as string
+    return (encodeSigned({ network: 'testnet', txBlob: who.sign(r.tx as any).tx_blob }) as any).text as string
   }
 
   it('refuses a blob whose signature byte was flipped, though every field matches', async () => {
@@ -375,7 +396,7 @@ describe('hardening', () => {
     const d: any = decode(blob)
     const last = d.TxnSignature.slice(-1)
     d.TxnSignature = d.TxnSignature.slice(0, -1) + (last === '0' ? '1' : '0')
-    const text = (encodeSigned(encode(d)) as any).text
+    const text = (encodeSigned({ network: 'testnet', txBlob: encode(d) }) as any).text
     expect(await submitReturned(onlineMeta as any, r.tx, text, { queryClient: qc() })).toMatchObject({ status: 'refused', reason: expect.stringContaining('signature') })
     expect(submitted).toEqual([])
   })
@@ -455,11 +476,6 @@ describe('hardening', () => {
     h.ledgerFails = true
     expect(await submitReturned(onlineMeta as any, r.tx, text, { queryClient: qc() })).toMatchObject({ status: 'refused', reason: expect.stringContaining('could not be read') })
     expect(submitted).toEqual([])
-  })
-
-  it('a build over one QR is refused with the plain reason', async () => {
-    h.tooLarge = true
-    expect(await buildUnsigned('on', paymentReq, { queryClient: qc() })).toMatchObject({ status: 'refused', reason: expect.stringContaining('too large for one QR') })
   })
 
   it('round-trips turning the master key on (ClearFlag) signed by the Regular Key', async () => {

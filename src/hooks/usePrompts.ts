@@ -27,8 +27,9 @@ export function useYieldingPrompts(): { prompts: Prompts; promptOpen: boolean } 
   const inner = usePrompts()
   // A count, not a flag: one prompt settling must not reveal the sheet while another is open.
   const [openPrompts, setOpenPrompts] = useState(0)
-  const prompts = useMemo<Prompts>(
-    () => ({
+  const prompts = useMemo<Prompts>(() => {
+    const review = inner.reviewSignedTransaction
+    return {
       pin: async (info) => {
         setOpenPrompts((n) => n + 1)
         try {
@@ -37,8 +38,22 @@ export function useYieldingPrompts(): { prompts: Prompts; promptOpen: boolean } 
           setOpenPrompts((n) => n - 1)
         }
       },
-    }),
-    [inner],
-  )
+      // The show-before-sending screen (OS-FR-10) is an overlay too: the sheet
+      // that started the send yields to it. Absent when the provider has none,
+      // so a Wallet with the setting on still declines (fail closed).
+      ...(review
+        ? {
+            reviewSignedTransaction: async (signed) => {
+              setOpenPrompts((n) => n + 1)
+              try {
+                return await review(signed)
+              } finally {
+                setOpenPrompts((n) => n - 1)
+              }
+            },
+          }
+        : {}),
+    }
+  }, [inner])
   return { prompts, promptOpen: openPrompts > 0 }
 }

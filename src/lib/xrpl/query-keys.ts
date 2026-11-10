@@ -55,6 +55,10 @@ const accountScoped = {
 
   incomingPaymentWatch: (network: NetworkId, address: string | null) =>
     ['incomingPaymentWatch', network, address] as const,
+
+  /** The Account's delegates (OS-FR-22), read on a Synced Transmitter. */
+  delegates: (network: NetworkId, address: string | null) =>
+    ['delegates', network, address] as const,
 } satisfies Record<string, AccountScopedKeyBuilder>
 
 /**

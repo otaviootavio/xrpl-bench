@@ -27,5 +27,10 @@ export function describeResultCode(code: string): string {
  * choke point's `unknown` outcome). It may have done what was asked, so it is
  * never worded as a failure or as "not sent": the operator checks the hash
  * before trying again, or pays twice. */
+/** A submit that threw: it may or may not have reached the ledger (two-device's
+ * shipped words, shared with the Transmitter's Transmit screen). Never "not sent". */
+export const UNCONFIRMED_SUBMIT_WORDS =
+  'The transaction may have been sent, but the wallet could not confirm what happened. Check the account’s history before building another, and do not send this one again.'
+
 export const UNKNOWN_OUTCOME_WORDS =
   'Outcome unknown. The transaction reached a validated ledger, but its result could not be read. Check it by its hash before trying again.'

@@ -1,6 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
+import { SCAN_COMPLETE, scanProgressWords } from '@/lib/animated-qr-words'
+import { CODE_UNREADABLE, MAX_TEXT_LENGTH } from '@/lib/qr-codec'
+import { ScanSession, isPayloadText, quarterOf } from '@/lib/qr-scan-session'
 
 /** The part of the browser's `BarcodeDetector` this uses (not in `lib.dom`). */
 interface Detector {
@@ -13,17 +16,34 @@ function detectorCtor(): DetectorCtor | null {
   return ctor && typeof navigator !== 'undefined' && typeof navigator.mediaDevices?.getUserMedia === 'function' ? ctor : null
 }
 
+/** A frame of an animated code: `ur:<type>/<seqNum>-<seqLen>/…`. */
+const isFrame = (t: string) => /^ur:[a-z0-9-]+\/[0-9]+-[0-9]+\//i.test(t)
+
+/** Pasted frames read in one press, at most: a paste past this is not read at all. */
+const MAX_PASTED_FRAMES = 1024
+
+type Progress = { percent: number } | 'complete' | null
+
 /**
  * Takes a two-device payload (AD-30) from the camera where the browser has
  * `BarcodeDetector` and `getUserMedia`, and always from pasted text. Both hand
  * the same string to `onPayload`; judging it is the codec's job. Holds no
  * payload after it is handed up, and stops the camera when it stops scanning
  * or unmounts.
+ *
+ * An animated QR (OS-FR-24) is read frame by frame into one `ScanSession`, from
+ * the camera or from pasted frames, starting at any frame and surviving missed
+ * ones; `onPayload` gets the whole payload once, only when its checksum is
+ * right. The progress line (P-65) updates at each frame; screen readers hear it
+ * at each quarter only.
  */
 export function QrScanner({ onPayload, label }: { onPayload: (text: string) => void; label: string }) {
   const [scanning, setScanning] = useState(false)
   const [cameraError, setCameraError] = useState<string | null>(null)
   const [pasteError, setPasteError] = useState(false)
+  const [progress, setProgress] = useState<Progress>(null)
+  const [unreadable, setUnreadable] = useState(false)
+  const session = useRef<ScanSession | null>(null)
   const videoRef = useRef<HTMLVideoElement>(null)
   const pasteRef = useRef<HTMLTextAreaElement>(null)
   const canScan = detectorCtor() !== null
@@ -31,6 +51,35 @@ export function QrScanner({ onPayload, label }: { onPayload: (text: string) => v
   useEffect(() => {
     handoff.current = onPayload
   })
+
+  /** One code read: true when it completed a payload (already handed up). */
+  const take = useRef((text: string): boolean => {
+    session.current ??= new ScanSession()
+    const wasCollecting = session.current.collecting
+    const step = session.current.receive(text)
+    if (step.status === 'ignored') return false
+    if (step.status === 'failed') {
+      setProgress(null)
+      setUnreadable(true)
+      return false
+    }
+    setUnreadable(false)
+    if (step.status === 'progress') {
+      setProgress({ percent: step.percent })
+      return false
+    }
+    setProgress(wasCollecting ? 'complete' : null)
+    handoff.current(step.text)
+    return true
+  })
+
+  useEffect(
+    () => () => {
+      // Nothing read is kept past the plate.
+      session.current?.reset()
+    },
+    [],
+  )
 
   useEffect(() => {
     if (!scanning) return
@@ -61,12 +110,14 @@ export function QrScanner({ onPayload, label }: { onPayload: (text: string) => v
       if (video) {
         try {
           const found = await detector.detect(video)
-          const hit = found.find((f) => f.rawValue.startsWith('xrplbench:'))
-          if (hit && !stopped) {
-            stop()
-            setScanning(false)
-            handoff.current(hit.rawValue)
-            return
+          for (const f of found) {
+            if (stopped || !isPayloadText(f.rawValue)) continue
+            // The camera stays on through the frames of an animated code; a whole payload stops it.
+            if (take.current(f.rawValue)) {
+              stop()
+              setScanning(false)
+              return
+            }
           }
         } catch {
           // A frame that cannot be read is skipped.
@@ -111,8 +162,26 @@ export function QrScanner({ onPayload, label }: { onPayload: (text: string) => v
       return
     }
     setPasteError(false)
-    onPayload(text)
     if (pasteRef.current) pasteRef.current.value = ''
+    // A hand-up from a paste ends the scan: the camera must not hand the same payload up again.
+    const ended = () => {
+      setScanning(false)
+      session.current?.reset()
+    }
+    // Pasted frames of an animated code (one or several) join the session; anything else is judged whole by the screen.
+    const tokens = text.split(/\s+/)
+    if (tokens.every(isFrame) && tokens.some(isPayloadText)) {
+      if (text.length > MAX_TEXT_LENGTH || tokens.length > MAX_PASTED_FRAMES) {
+        setUnreadable(true)
+        return
+      }
+      for (const t of tokens) {
+        if (take.current(t)) return ended()
+      }
+      return
+    }
+    ended()
+    onPayload(text)
   }
 
   return (
@@ -127,6 +196,20 @@ export function QrScanner({ onPayload, label }: { onPayload: (text: string) => v
         </>
       ) : (
         <p className="text-xs text-muted-foreground">This browser cannot scan a QR code, so paste the text of {label} instead.</p>
+      )}
+      {progress !== null && (
+        <p aria-hidden="true" className="font-data text-xs" data-testid="scan-progress">
+          {progress === 'complete' ? SCAN_COMPLETE : scanProgressWords(progress.percent)}
+        </p>
+      )}
+      {/* Always mounted, so its first text is announced; it changes only when a quarter is passed, not every frame. */}
+      <p role="status" className="sr-only" data-testid="scan-status">
+        {progress === null ? '' : progress === 'complete' ? SCAN_COMPLETE : scanProgressWords(quarterOf(progress.percent))}
+      </p>
+      {unreadable && (
+        <p role="alert" className="text-xs">
+          {CODE_UNREADABLE}
+        </p>
       )}
       <Label htmlFor="qr-paste">Or paste the text of {label}</Label>
       <textarea

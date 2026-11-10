@@ -20,6 +20,7 @@ const h = vi.hoisted(() => ({
   addressFromSeed: vi.fn(),
   fetchQuery: vi.fn(),
   startLockSession: vi.fn(async () => {}),
+  checkBeforeImport: vi.fn(),
 }))
 
 vi.mock('idb-keyval', () => ({ get: async () => undefined, set: async () => {}, del: async () => {} }))
@@ -32,6 +33,11 @@ vi.mock('@/lib/crypto/lock', () => ({
 vi.mock('@/lib/crypto/pin', () => ({ triesRemaining: async () => 8 }))
 vi.mock('@/lib/crypto/auth', () => ({ wipeVault: async () => {} }))
 vi.mock('@/lib/xrpl/client', () => ({ verifyNode: vi.fn() }))
+// The real pre-flight check, watched: an Offline import must never call it.
+vi.mock('@/lib/seed-import', async (importOriginal) => {
+  const real = await importOriginal<typeof import('@/lib/seed-import')>()
+  return { ...real, checkBeforeImport: (...a: Parameters<typeof real.checkBeforeImport>) => (h.checkBeforeImport(...a), real.checkBeforeImport(...a)) }
+})
 vi.mock('@tanstack/react-query', () => ({
   useQueryClient: () => ({ fetchQuery: h.fetchQuery, invalidateQueries: vi.fn() }),
   useQuery: () => ({ data: undefined, refetch: vi.fn() }),
@@ -86,6 +92,7 @@ beforeEach(() => {
   h.importDuplicateReason.mockReset().mockResolvedValue(null)
   h.addressFromSeed.mockReset().mockReturnValue(ADDRESS)
   h.fetchQuery.mockReset()
+  h.checkBeforeImport.mockReset()
   h.startLockSession.mockClear()
   toastSuccess.mockReset()
   useAppStore.setState({ wallets: [], activeWalletId: null, openLocks: {} } as never)
@@ -99,6 +106,7 @@ const seedInput = () => document.getElementById('wseed') as HTMLInputElement | n
 async function onboardingImport(value: string, { network }: { network?: RegExp } = {}) {
   render(<Onboarding />)
   await click('Import an existing wallet')
+  await act(async () => void fireEvent.click(await screen.findByRole('radio', { name: 'Online' })))
   if (network) fireEvent.click(screen.getByRole('radio', { name: network }))
   fireEvent.change(seedInput()!, { target: { value } })
   await click('Next')
@@ -148,6 +156,7 @@ describe('Onboarding: first-run Import is the quiz in import mode', () => {
     ledger.masterKeyDisabled()
     const view = render(<Onboarding />)
     await click('Import an existing wallet')
+    await act(async () => void fireEvent.click(await screen.findByRole('radio', { name: 'Online' })))
     const field = seedInput()!
     fireEvent.change(field, { target: { value: SEED } })
     await click('Next')
@@ -217,6 +226,7 @@ describe('Onboarding: first-run Import is the quiz in import mode', () => {
   it('refuses a whitespace-only Seed: Next never gets past step 1 and nothing is written', async () => {
     render(<Onboarding />)
     await click('Import an existing wallet')
+    await act(async () => void fireEvent.click(await screen.findByRole('radio', { name: 'Online' })))
     fireEvent.change(seedInput()!, { target: { value: ' \n\t ' } })
     expect(screen.getByRole('button', { name: 'Next' }).getAttribute('aria-disabled')).toBe('true')
     await click('Next')
@@ -235,6 +245,7 @@ describe('Onboarding: first-run Import is the quiz in import mode', () => {
   it('empties the Seed field when the step is left with "Back to start"', async () => {
     render(<Onboarding />)
     await click('Import an existing wallet')
+    await act(async () => void fireEvent.click(await screen.findByRole('radio', { name: 'Online' })))
     const field = seedInput()!
     fireEvent.change(field, { target: { value: SEED } })
     await click('Back to start')
@@ -260,5 +271,34 @@ describe('one import path', () => {
     expect(source).not.toMatch(/importAndStoreWallet|setUpVaultAuth|LEGACY_LOCK_ID|openLock\(|importDuplicateReason|parseSeedInput/)
     expect(source).toMatch(/useSeedImport\(/)
     expect(readFileSync('src/components/wallet/AddWalletScreen.tsx', 'utf8')).toMatch(/useSeedImport\(/)
+  })
+})
+
+describe('Onboarding Import into an Offline Wallet (offline signing story 3, OS-FR-2, OS-FR-7)', () => {
+  it('asks both warnings (Text B, Text E), reads no ledger, and writes an Offline Wallet', async () => {
+    render(<Onboarding />)
+    await click('Import an existing wallet')
+    await act(async () => void fireEvent.click(await screen.findByRole('radio', { name: 'Offline' })))
+    const textB = screen.getByRole('checkbox', { name: 'I read this warning. WARNING: The app cannot make your device offline.' })
+    const textE = screen.getByRole('checkbox', { name: 'I read this warning. WARNING: An offline wallet does not make an unsafe seed safe.' })
+    fireEvent.change(seedInput()!, { target: { value: SEED } })
+    expect(screen.getByRole('button', { name: 'Next' }).getAttribute('aria-disabled')).toBe('true')
+    await act(async () => void fireEvent.click(textB))
+    expect(screen.getByRole('button', { name: 'Next' }).getAttribute('aria-disabled')).toBe('true')
+    await act(async () => void fireEvent.click(textE))
+    for (let guard = 0; guard < 6; guard++) {
+      const next = screen.queryByRole('button', { name: 'Next' })
+      if (!next) break
+      await act(async () => void fireEvent.click(next))
+    }
+    const pinField = document.querySelector('input[id$="-pin"]') as HTMLInputElement | null
+    if (pinField) pinField.value = '123456'
+    await click(/Import wallet/)
+    await waitFor(() => expect(h.importStoredWallet).toHaveBeenCalledTimes(1))
+    expect(h.importDuplicateReason).toHaveBeenCalledWith(SEED, 'testnet')
+    expect(h.checkBeforeImport).not.toHaveBeenCalled()
+    expect(h.fetchQuery).not.toHaveBeenCalled()
+    expect(h.importStoredWallet.mock.calls[0][0]).toMatchObject({ seed: SEED, network: 'testnet', kind: 'offline' })
+    expect(h.importStoredWallet.mock.calls[0][0]).not.toHaveProperty('node')
   })
 })

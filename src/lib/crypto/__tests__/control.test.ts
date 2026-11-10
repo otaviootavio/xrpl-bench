@@ -115,6 +115,8 @@ const ledger = vi.hoisted(() => ({
   applyOnValidated: true,
   /** The submit throws after (`sent`) or instead of (`unsent`) reaching the ledger. */
   throwOn: null as null | 'sent' | 'unsent',
+  /** The submit throws this error, unsent (a Transmit step refusal or decline). */
+  throwError: null as null | Error,
   submits: [] as { address: string; regularKey: string }[],
   reads: 0,
 }))
@@ -139,6 +141,7 @@ vi.mock('@/lib/xrpl/writes', async (importOriginal) => {
       signer.dispose()
       if (ledger.failReadsAfterSubmit) ledger.failReads = true
       if (ledger.throwOn === 'unsent') throw new Error('socket closed')
+      if (ledger.throwError) throw ledger.throwError
       ledger.submits.push({ address: signing.address, regularKey: params.regularKey })
       if (ledger.throwOn === 'sent') {
         ledger.state.regularKey = params.regularKey
@@ -151,16 +154,17 @@ vi.mock('@/lib/xrpl/writes', async (importOriginal) => {
 })
 
 import { QueryClient } from '@tanstack/react-query'
+import { TransmitDeclinedError, TransmitRefusedError } from '@/lib/xrpl/writes'
 import { decode } from 'xrpl'
 import { makePinLock, sealRecordUnderPin, storeSeedWallet } from './fixtures'
 import {
   importStoredWallet,
-  listWallets,
+  listKeyWallets as listWallets,
   openSigner,
   signingHandleFor,
   unavailablePrompts,
   type Prompts,
-  type WalletMeta,
+  type KeyWalletMeta,
 } from '../keystore'
 import { confirmControl, controlStatus, eligibleTargets, setRegularKey, setRegularKeyBlockedReason } from '../../control'
 
@@ -169,10 +173,10 @@ const pinPrompt = (pin: string | null): Prompts => ({ pin: async () => pin })
 const failedAttempts = () => h.state.stores.vault.get('vault')?.failedAttempts ?? 0
 
 let key: CryptoKey
-let controller: WalletMeta
+let controller: KeyWalletMeta
 let controllerSeed: string
 let lock: Awaited<ReturnType<typeof makePinLock>>
-let target: WalletMeta
+let target: KeyWalletMeta
 let targetSeed: string
 let queryClient: QueryClient
 
@@ -195,6 +199,7 @@ beforeEach(async () => {
   ledger.outcome = { status: 'validated', hash: 'H', resultCode: 'tesSUCCESS' }
   ledger.applyOnValidated = true
   ledger.throwOn = null
+  ledger.throwError = null
   ledger.submits = []
   ledger.reads = 0
   queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
@@ -341,6 +346,17 @@ describe('setRegularKey', () => {
     expect(viewsOfTarget()).toHaveLength(1)
   })
 
+  it('a Transmit refusal or decline is refused with its words even when the re-read fails: nothing was sent (OS-FR-9)', async () => {
+    ledger.failReadsAfterSubmit = true
+    ledger.throwError = new TransmitRefusedError('expired', 'Expired. Nothing was sent.')
+    expect(await setRegularKey(controller.id, target.id, ctx())).toEqual({ status: 'refused', reason: 'Expired. Nothing was sent.' })
+    ledger.failReads = false
+    ledger.throwError = new TransmitDeclinedError(100)
+    const declined = await setRegularKey(controller.id, target.id, ctx())
+    expect(declined).toEqual({ status: 'refused', reason: new TransmitDeclinedError(100).message })
+    expect(viewsOfTarget()).toHaveLength(1)
+  })
+
   it('adds no view when the re-read does not show the key', async () => {
     ledger.applyOnValidated = false
     expect((await setRegularKey(controller.id, target.id, ctx())).status).toBe('unconfirmed')
@@ -371,6 +387,14 @@ describe('setRegularKey', () => {
     expect((await setRegularKey(claimed.id, controller.id, ctx())).status).toBe('refused')
     // The Seed stays offered: the ledger, not an old view, says whether its key is the Regular Key.
     expect(eligibleTargets(controller, await listWallets()).map((m) => m.id)).toEqual([target.id])
+  })
+
+  it('offers Online Wallets only: an Offline key must not sign here, and a Transmitter has none (offline signing story 3)', async () => {
+    const all = await listWallets()
+    const base = all.find((m) => m.id === target.id)!
+    const asKind = (kind: 'offline' | 'transmitter', id: string) => ({ ...base, id, seedId: id, keyAddress: `r${id}`, address: `r${id}`, kind })
+    const listed = [...all, asKind('offline', 'off'), asKind('transmitter', 'tx')] as unknown as KeyWalletMeta[]
+    expect(eligibleTargets(controller, listed).map((m) => m.id)).toEqual([target.id])
   })
 
   it('a key that was replaced and is set again is claimed through its old view, with no second view', async () => {

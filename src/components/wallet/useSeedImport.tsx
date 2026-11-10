@@ -7,14 +7,24 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import type { ImportSource } from '@/components/wallet/CreateWalletFlow'
 import { addressFromSeed, importDuplicateReason, parseSeedInput } from '@/lib/crypto/keystore'
-import { checkBeforeImport, IMPORT_WARNING_COPY, INVALID_SEED_MESSAGE, type ImportWarning } from '@/lib/seed-import'
+import { checkBeforeImport, IMPORT_WARNING_COPY, INVALID_SEED_MESSAGE } from '@/lib/seed-import'
+import { transmitterSyncedTo } from '@/lib/same-address'
+import { SAME_ADDRESS_TRANSMITTER_HERE } from '@/lib/transmitter-words'
+import { useAppStore } from '@/store/app-store'
+
+/** An approved WARNING as a title (its first sentence) and a body (the rest), words unchanged. */
+function splitWarning(words: string): { title: string; body: string } {
+  const split = words.indexOf('. ') + 1
+  return { title: words.slice(0, split), body: words.slice(split + 1) }
+}
 
 /**
  * The one Seed-import wiring (AD-39, AD-40), used by Add wallet and by first-run
  * Onboarding. It supplies `CreateWalletFlow` with a Seed source. Order, with
  * nothing written until the last step: parse the typed Seed; the duplicate probe
  * (before any prompt and before any ledger read); the master-key pre-check and
- * its warning (lib/seed-import.ts); then the flow's `importStoredWallet` under its
+ * its warning (lib/seed-import.ts), skipped for an Offline Wallet, which reads
+ * nothing; then the flow's `importStoredWallet` under its
  * own new lock.
  *
  * Guardrail #3: the typed Seed is in an uncontrolled input; the parsed one waits
@@ -28,7 +38,7 @@ import { checkBeforeImport, IMPORT_WARNING_COPY, INVALID_SEED_MESSAGE, type Impo
  */
 export function useSeedImport(): { importSource: ImportSource; clearSeed: () => void; warningDialog: ReactNode } {
   const queryClient = useQueryClient()
-  const [importWarning, setImportWarning] = useState<ImportWarning | null>(null)
+  const [importWarning, setImportWarning] = useState<{ title: string; body: string } | null>(null)
   // Only whether the Seed field holds anything, never what: step 1 of the flow waits on it.
   const [seedTyped, setSeedTyped] = useState(false)
 
@@ -80,7 +90,7 @@ export function useSeedImport(): { importSource: ImportSource; clearSeed: () => 
     resolve?.(proceed)
   }
 
-  function askWarning(warning: ImportWarning): Promise<boolean> {
+  function askWarning(warning: { title: string; body: string }): Promise<boolean> {
     return new Promise<boolean>((resolve) => {
       warningResolveRef.current = resolve
       setImportWarning(warning)
@@ -117,7 +127,7 @@ export function useSeedImport(): { importSource: ImportSource; clearSeed: () => 
       </div>
     ),
     clear: clearSeed,
-    async acquire({ network, node }) {
+    async acquire({ network, node, offline }) {
       const seed = parseSeedInput(seedInputRef.current?.value ?? '')
       if (!seed) return { status: 'refused', reason: INVALID_SEED_MESSAGE, at: 'seed' }
       pendingSeedRef.current = seed
@@ -126,9 +136,17 @@ export function useSeedImport(): { importSource: ImportSource; clearSeed: () => 
         const duplicate = await importDuplicateReason(seed, network)
         if (duplicate) return { status: 'refused', reason: duplicate, at: 'seed' }
         if (!mountedRef.current) return { status: 'cancelled' } // left meanwhile: no ledger read for an abandoned address
-        const warning = await checkBeforeImport(queryClient, network, addressFromSeed(seed), node)
-        if (!mountedRef.current) return { status: 'cancelled' }
-        if (warning && !(await askWarning(warning))) return { status: 'cancelled' }
+        // An Offline Wallet never reads the ledger (OS-FR-2): no master-key check, and so
+        // no warning about it. Its Text E was acknowledged on step 1 instead.
+        if (!offline) {
+          const warning = await checkBeforeImport(queryClient, network, addressFromSeed(seed), node)
+          if (!mountedRef.current) return { status: 'cancelled' }
+          if (warning && !(await askWarning(IMPORT_WARNING_COPY[warning]))) return { status: 'cancelled' }
+        } else if (transmitterSyncedTo(useAppStore.getState().wallets, addressFromSeed(seed))) {
+          // P-8, second form (OS-FR-3): a Transmitter here is synced to this address.
+          // Warned, never refused; the first sentence is the legend, words unchanged.
+          if (!(await askWarning(splitWarning(SAME_ADDRESS_TRANSMITTER_HERE)))) return { status: 'cancelled' }
+        }
       } catch {
         return { status: 'refused', reason: 'Could not check this key against the wallets on this device. Nothing was imported.' }
       }
@@ -148,8 +166,8 @@ export function useSeedImport(): { importSource: ImportSource; clearSeed: () => 
         </DialogHeader>
         {importWarning && (
           <Alert variant="warning">
-            <AlertTitle>{IMPORT_WARNING_COPY[importWarning].title}</AlertTitle>
-            <AlertDescription>{IMPORT_WARNING_COPY[importWarning].body}</AlertDescription>
+            <AlertTitle>{importWarning.title}</AlertTitle>
+            <AlertDescription>{importWarning.body}</AlertDescription>
           </Alert>
         )}
         <DialogFooter>

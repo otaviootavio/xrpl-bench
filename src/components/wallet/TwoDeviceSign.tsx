@@ -3,7 +3,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { QrCode } from '@/components/wallet/QrCode'
+import { PayloadQr } from '@/components/wallet/PayloadQr'
 import { TaskScreen } from '@/components/wallet/TaskScreen'
 import { useLeaveBlocker } from '@/hooks/useRoute'
 import { launchFromConfigure } from '@/lib/configure-launch'
@@ -11,7 +11,8 @@ import { walletScreenPath } from '@/lib/route'
 import { QrScanner } from '@/components/wallet/QrScanner'
 import { useAccountState } from '@/hooks/useAccountState'
 import { usePrompts } from '@/hooks/usePrompts'
-import type { WalletMeta } from '@/lib/crypto/keystore'
+import type { KeyWalletMeta } from '@/lib/crypto/keystore'
+import { isKeyWallet } from '@/lib/wallet-meta'
 import {
   buildUnsigned,
   expiryWords,
@@ -39,7 +40,7 @@ const KINDS: { kind: TwoDeviceKind; label: string }[] = [
 
 /** The entry to the two-device screen, mounted by the Local settings tab, which passes `configureKey`:
  * the screen opens through `launchFromConfigure` (label `Back to Wallet`, focus returns to this key). */
-export function TwoDeviceSign({ wallet, configureKey }: { wallet: WalletMeta; configureKey: string }) {
+export function TwoDeviceSign({ wallet, configureKey }: { wallet: KeyWalletMeta; configureKey: string }) {
   const path = walletScreenPath('two-device', wallet.id)
   return (
     <div className="mt-1 text-xs text-muted-foreground" data-testid="two-device-sign">
@@ -65,7 +66,7 @@ const ROLE_BUTTON = 'h-auto min-h-9 w-full whitespace-normal py-2 text-center'
  * `lib/two-device.ts`, and nothing here outlives the screen. Mount only for a
  * Wallet whose lock is open (AD-26).
  */
-export function TwoDeviceScreen({ wallet, onClose, backLabel }: { wallet: WalletMeta; onClose: () => void; backLabel?: string }) {
+export function TwoDeviceScreen({ wallet, onClose, backLabel }: { wallet: KeyWalletMeta; onClose: () => void; backLabel?: string }) {
   const [role, setRole] = useState<Role | null>(null)
   // True while a build, a Signing Check or a submission is running: leaving then would hide the outcome.
   const [busy, setBusy] = useState(false)
@@ -105,13 +106,6 @@ export function TwoDeviceScreen({ wallet, onClose, backLabel }: { wallet: Wallet
   )
 }
 
-/** About four pixels per module, estimated from the payload's length (a QR's side is
- * roughly sqrt(bytes x 14) + 17 modules), so a long payload stays scannable. */
-function qrDrawSize(text: string): number {
-  const modules = Math.min(177, Math.max(21, Math.ceil(Math.sqrt(text.length * 14)) + 17))
-  return Math.min(720, Math.max(220, (modules + 2) * 4))
-}
-
 function Field({ label, value, mono = true }: { label: string; value: string; mono?: boolean }) {
   return (
     <div className="flex flex-col">
@@ -149,8 +143,9 @@ function CopyText({ text, label }: { text: string; label: string }) {
   )
 }
 
-function OnlinePanel({ wallet, onBusy }: { wallet: WalletMeta; onBusy: (busy: boolean) => void }) {
+function OnlinePanel({ wallet, onBusy }: { wallet: KeyWalletMeta; onBusy: (busy: boolean) => void }) {
   const queryClient = useQueryClient()
+  const prompts = usePrompts()
   const account = useAccountState(wallet.network, wallet.address, wallet.node)
   const [kind, setKind] = useState<TwoDeviceKind>('payment')
   const [destination, setDestination] = useState('')
@@ -165,7 +160,7 @@ function OnlinePanel({ wallet, onBusy }: { wallet: WalletMeta; onBusy: (busy: bo
   const [result, setResult] = useState<ReturnedResult | null>(null)
 
   const wallets = useAppStore((s) => s.wallets)
-  const blocked = twoDeviceBlockedReason(kind, account.isError ? null : account.data, account.isError, enable, { wallet, wallets })
+  const blocked = twoDeviceBlockedReason(kind, account.isError ? null : account.data, account.isError, enable, { wallet, wallets: wallets.filter(isKeyWallet) })
   const mainnet = wallet.network === 'mainnet'
 
   function request(): TwoDeviceRequest | string {
@@ -211,7 +206,7 @@ function OnlinePanel({ wallet, onBusy }: { wallet: WalletMeta; onBusy: (busy: bo
     setBusy(true)
     onBusy(true)
     try {
-      setResult(await submitReturned(wallet, built.tx, text, { queryClient }))
+      setResult(await submitReturned(wallet, built.tx, text, { queryClient, prompts }))
     } finally {
       inFlight.current = false
       setBusy(false)
@@ -236,7 +231,7 @@ function OnlinePanel({ wallet, onBusy }: { wallet: WalletMeta; onBusy: (busy: bo
         {!settled && (
           <>
             <p>Step 1. Show this to the offline device, which has this account’s wallet on {NETWORKS[wallet.network].label}.</p>
-            <QrCode text={built.text} size={qrDrawSize(built.text)} />
+            <PayloadQr text={built.text} />
             <CopyText text={built.text} label="the transaction to sign" />
             <p>Step 2. When the offline device shows its signed result, bring it back here.</p>
             <QrScanner label="the signed transaction" onPayload={(t) => void returned(t)} />
@@ -304,7 +299,7 @@ function OnlinePanel({ wallet, onBusy }: { wallet: WalletMeta; onBusy: (busy: bo
   )
 }
 
-function OfflinePanel({ wallet, onBusy }: { wallet: WalletMeta; onBusy: (busy: boolean) => void }) {
+function OfflinePanel({ wallet, onBusy }: { wallet: KeyWalletMeta; onBusy: (busy: boolean) => void }) {
   const prompts = usePrompts()
   const openKey = useWalletOpenKey(wallet.id)
   const [pending, setPending] = useState<{ text: string; review: UnsignedReview } | null>(null)
@@ -347,7 +342,7 @@ function OfflinePanel({ wallet, onBusy }: { wallet: WalletMeta; onBusy: (busy: b
     return (
       <div className="flex flex-col gap-3 text-sm" data-testid="two-device-offline-signed">
         <p>Signed. Show this to the online device, which checks it and sends it. Close this window when it has it: nothing is kept.</p>
-        <QrCode text={signed} size={qrDrawSize(signed)} />
+        <PayloadQr text={signed} />
         <CopyText text={signed} label="the signed transaction" />
       </div>
     )

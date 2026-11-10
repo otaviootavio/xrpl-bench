@@ -33,7 +33,7 @@ vi.mock('@/lib/master-key', async (importOriginal) => {
 import { WalletTab } from '@/pages/tabs/WalletTab'
 import { useAppStore } from '@/store/app-store'
 
-const base = { seedId: 's', lockId: 'l', createdAt: 1, network: 'testnet', algorithm: 'ed25519', seedMethod: 'stored', openCheck: 'pin', signingCheck: 'standard' } as const
+const base = { seedId: 's', lockId: 'l', createdAt: 1, network: 'testnet', algorithm: 'ed25519', seedMethod: 'stored', openCheck: 'pin', signingCheck: 'standard', kind: 'online' } as const
 const MASTER = { ...base, id: 'm', label: 'Vault', address: 'rAcct', keyAddress: 'rAcct' }
 const REGULAR = { ...base, id: 'r', label: 'Phone', address: 'rAcct', keyAddress: 'rKey' }
 const MAINNET_MASTER = { ...base, id: 'mm', label: 'Vault', network: 'mainnet', address: 'rAcct', keyAddress: 'rAcct' }

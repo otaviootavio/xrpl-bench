@@ -27,7 +27,7 @@ vi.mock('@/lib/control', async (importOriginal) => {
 import { ControlWalletScreen } from '../ControlWalletScreen'
 import { ControlledNote } from '../ControlledNote'
 
-const base = { seedId: 's', lockId: 'l', createdAt: 1, network: 'testnet', algorithm: 'ed25519', seedMethod: 'stored', openCheck: 'pin', signingCheck: 'standard' } as const
+const base = { seedId: 's', lockId: 'l', createdAt: 1, network: 'testnet', algorithm: 'ed25519', seedMethod: 'stored', openCheck: 'pin', signingCheck: 'standard', kind: 'online' } as const
 const CONTROLLER = { ...base, id: 'c', seedId: 'sc', label: 'Vault', address: 'rAcct', keyAddress: 'rAcct' } as never
 const TARGET = { ...base, id: 't', seedId: 'st', label: 'Phone', address: 'rKey', keyAddress: 'rKey' }
 const PASSKEY_TARGET = { ...TARGET, id: 'p', seedId: 'sp', label: 'Passkey wallet', address: 'rPk', keyAddress: 'rPk', seedMethod: 'passkey-derived', signingCheck: 'passkey' }

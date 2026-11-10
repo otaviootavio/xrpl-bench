@@ -1,7 +1,7 @@
 import type { QueryClient } from '@tanstack/react-query'
 import { wipeVault } from '@/lib/crypto/auth'
 import type { WalletMeta } from '@/lib/crypto/keystore'
-import { disconnectAllClients } from '@/lib/xrpl/client'
+import { disconnectAllClients, retireNetworkClient } from '@/lib/xrpl/client'
 import { removeAccountScoped } from '@/lib/xrpl/query-keys'
 import { clearPersistedAppState, useAppStore } from '@/store/app-store'
 
@@ -150,6 +150,37 @@ export function leaveWallet(queryClient: QueryClient, walletId: string): void {
   )
   if (shared) return
   removeAccountScoped(queryClient, left.network, left.address)
+}
+
+/**
+ * Sync scope (OS-FR-4): a Transmitter's Synced address changed or was removed.
+ * Removes the old address's account-scoped query data unless another Wallet on an
+ * OPEN lock still holds the same `(network, address)`. Never closes a lock.
+ */
+export function forgetSyncedAddress(queryClient: QueryClient, walletId: string, network: WalletMeta['network'], oldAddress: string | null): void {
+  if (oldAddress === null) return
+  const { wallets, openLocks } = useAppStore.getState()
+  const shared = wallets.some((w) => w.id !== walletId && w.lockId in openLocks && w.network === network && w.address === oldAddress)
+  if (!shared) removeAccountScoped(queryClient, network, oldAddress)
+}
+
+/**
+ * Offline scope (OS-FR-5): a Wallet changed to an Offline Wallet and stops all
+ * connections to the ledger (Text C). `before` is its meta as it was, Online.
+ * Removes its account-scoped query data unless another Wallet on an OPEN lock
+ * still holds the same `(network, address)`, and retires the socket it read
+ * through (its custom Node, or the built-in one) unless another Wallet on an
+ * OPEN lock still reads the ledger through it. Never closes a lock. Run it after
+ * the store holds the new meta, so no live hook of the Wallet is mounted.
+ */
+export function forgetLedgerOf(queryClient: QueryClient, before: WalletMeta): void {
+  const { wallets, openLocks } = useAppStore.getState()
+  forgetSyncedAddress(queryClient, before.id, before.network, before.address)
+  const reads = (w: WalletMeta) => w.kind === 'online' || (w.kind === 'transmitter' && w.address !== null)
+  const shared = wallets.some(
+    (w) => w.id !== before.id && w.lockId in openLocks && reads(w) && w.network === before.network && (w.node ?? '') === (before.node ?? ''),
+  )
+  if (!shared) retireNetworkClient(before.network, before.node)
 }
 
 /**

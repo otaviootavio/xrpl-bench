@@ -57,7 +57,7 @@ import { useAppStore } from '@/store/app-store'
 
 const A = {
   id: 'a', seedId: 'a', lockId: 'X', label: 'Alpha', address: 'rAlphaAddr', keyAddress: 'rAlphaAddr',
-  createdAt: 1, algorithm: 'ed25519', openCheck: 'pin', signingCheck: 'standard', network: 'testnet',
+  createdAt: 1, algorithm: 'ed25519', openCheck: 'pin', signingCheck: 'standard', kind: 'online', network: 'testnet',
 }
 const OPEN = { key: {} as CryptoKey, autoLockMinutes: 5 }
 

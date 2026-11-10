@@ -57,7 +57,7 @@ import { PinPromptProvider } from '@/components/wallet/PinPromptDialog'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { useAppStore } from '@/store/app-store'
 
-const W = { id: 'w1', seedId: 's1', lockId: 'lock-1', label: 'Savings', address: 'rBoGUS9uiK9m3Kk6qnGRvWWCwAeN8hF3wR', createdAt: 1, network: 'testnet', algorithm: 'ed25519', openCheck: 'pin', signingCheck: 'pin' }
+const W = { id: 'w1', seedId: 's1', lockId: 'lock-1', label: 'Savings', address: 'rBoGUS9uiK9m3Kk6qnGRvWWCwAeN8hF3wR', createdAt: 1, network: 'testnet', algorithm: 'ed25519', openCheck: 'pin', signingCheck: 'pin', kind: 'online' }
 const ISSUER = 'rHb9CJAWyB4rj91VRWn96DkukG4bwdtyTh'
 
 function renderWithPrompts(ui: React.ReactNode) {

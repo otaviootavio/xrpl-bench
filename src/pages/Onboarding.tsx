@@ -4,6 +4,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { CreateWalletFlow } from '@/components/wallet/CreateWalletFlow'
 import { useSeedImport } from '@/components/wallet/useSeedImport'
 import { ChassisShell } from '@/components/ChassisShell'
+import { AddTransmitterScreen } from '@/components/wallet/AddTransmitterScreen'
+import { ADD_TRANSMITTER } from '@/lib/transmitter-words'
 import { RemoveAllPlate } from '@/components/wallet/RemoveAllPlate'
 import { appPinResidue, type WalletMeta } from '@/lib/crypto/keystore'
 import { toast } from '@/lib/notify'
@@ -11,7 +13,7 @@ import { useAppStore } from '@/store/app-store'
 import { BUILD, shortSha, sourceUrl } from '@/lib/build-info'
 import { ExternalLinkIcon } from 'lucide-react'
 
-type Step = 'choice' | 'create' | 'import'
+type Step = 'choice' | 'create' | 'import' | 'transmitter'
 
 /**
  * `CreateWalletFlow` (Create and Import alike) opens the Wallet's own lock, then
@@ -71,6 +73,10 @@ export function Onboarding() {
               >
                 Import an existing wallet
               </Button>
+              {/* P-2 (OS-FR-3): a daily phone may hold only a Transmitter, so first run offers it too. */}
+              <Button variant="outline" className="h-auto min-h-8 whitespace-normal py-1" onClick={() => setStep('transmitter')}>
+                {ADD_TRANSMITTER}
+              </Button>
             </CardContent>
           </Card>
 
@@ -92,6 +98,16 @@ export function Onboarding() {
               <ExternalLinkIcon className="size-3 shrink-0 opacity-60" aria-hidden="true" />
             </a>
           </p>
+        </div>
+      </ChassisShell>
+    )
+  }
+
+  if (step === 'transmitter') {
+    return (
+      <ChassisShell maxWidthClassName="max-w-md">
+        <div className="flex min-h-full flex-col justify-center gap-6 p-6">
+          <AddTransmitterScreen backLabel="Back to start" onClose={() => setStep('choice')} onAdded={(id) => setActiveWalletId(id)} />
         </div>
       </ChassisShell>
     )

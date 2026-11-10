@@ -6,6 +6,7 @@ import {
   holdXrplClient,
   resetXrplClientFactory,
   resetXrplClients,
+  retireNetworkClient,
   setXrplClientFactory,
 } from '../client'
 import { NETWORKS } from '../networks'
@@ -524,5 +525,51 @@ describe('getXrplClient shares one connect attempt per network', () => {
     expect(built).toHaveLength(2)
     built[1].resolve()
     expect(await next).not.toBe(staleClient)
+  })
+})
+
+describe('retireNetworkClient (offline signing story 5, OS-FR-5)', () => {
+  it('closes the built-in socket, so the next read opens a new one', async () => {
+    const built: FakeClient[] = []
+    setXrplClientFactory((url) => {
+      const c = fakeClient(url, async () => {})
+      built.push(c)
+      return c
+    })
+    const first = (await getXrplClient('testnet')) as FakeClient
+    retireNetworkClient('testnet')
+    await vi.waitFor(() => expect(first.disconnectCalls).toBe(1))
+    const second = await getXrplClient('testnet')
+    expect(second).not.toBe(first)
+  })
+
+  it('defers the close while a write still holds the client', async () => {
+    setXrplClientFactory((url) => fakeClient(url, async () => {}))
+    const held = await holdXrplClient('testnet')
+    retireNetworkClient('testnet')
+    await Promise.resolve()
+    expect((held.client as FakeClient).disconnectCalls).toBe(0)
+    held.release()
+    await vi.waitFor(() => expect((held.client as FakeClient).disconnectCalls).toBe(1))
+  })
+
+  it('a connect still running when the slot is retired closes its own client and caches nothing (review round two)', async () => {
+    let finish!: () => void
+    const built: FakeClient[] = []
+    setXrplClientFactory((url) => {
+      const c = fakeClient(url, () => new Promise<void>((r) => (finish = r)))
+      built.push(c)
+      return c
+    })
+    const pending = getXrplClient('testnet')
+    await vi.waitFor(() => expect(built).toHaveLength(1))
+    retireNetworkClient('testnet')
+    finish()
+    await expect(pending).rejects.toThrow('reset')
+    await vi.waitFor(() => expect(built[0].disconnectCalls).toBe(1))
+    // Only the primary was tried: the failover stops once the slot is retired.
+    expect(built).toHaveLength(1)
+    setXrplClientFactory((url) => fakeClient(url, async () => {}))
+    expect(await getXrplClient('testnet')).not.toBe(built[0])
   })
 })

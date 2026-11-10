@@ -46,7 +46,7 @@ import { useAppStore } from '@/store/app-store'
 
 const useAppStoreRef = useAppStore
 const KEY = {} as CryptoKey
-const base = { lockId: 'L1', createdAt: 1, algorithm: 'ed25519', openCheck: 'pin', signingCheck: 'standard' }
+const base = { lockId: 'L1', createdAt: 1, algorithm: 'ed25519', openCheck: 'pin', signingCheck: 'standard', kind: 'online' }
 const W = { ...base, id: 'w1', seedId: 's1', label: 'Savings', address: 'rA', keyAddress: 'rA', network: 'testnet' }
 const SIBLING = { ...base, id: 'w1b', seedId: 's1', label: 'Savings', address: 'rA2', keyAddress: 'rA', network: 'devnet' }
 const OTHER = { ...base, id: 'w2', seedId: 's2', label: 'Travel', address: 'rB', keyAddress: 'rB', network: 'mainnet', lockId: 'other' }

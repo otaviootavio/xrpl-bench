@@ -103,6 +103,57 @@ export async function fetchAccountLines(network: NetworkId, address: string, nod
   }
 }
 
+/** One delegate of an Account (OS-FR-22): who may act, and the permissions the
+ * ledger names (transaction types or granular permissions), as written there. */
+export interface AccountDelegate {
+  authorize: string
+  permissions: string[]
+}
+
+/**
+ * Wraps `account_objects` of type `delegate` (XLS-75, `PermissionDelegationV1_1`),
+ * following `marker` to completion. `actNotFound` is an Account with no delegates;
+ * every other error (a server that does not know the type included) is a failed
+ * read and is thrown, so it is shown as unknown, never as "none".
+ */
+export async function fetchAccountDelegates(network: NetworkId, address: string, node?: string): Promise<AccountDelegate[]> {
+  const client = await getXrplClient(network, node)
+  try {
+    const delegates: AccountDelegate[] = []
+    let marker: unknown = undefined
+    // Every page reads the ledger the first page read: a later validated ledger could
+    // move entries between pages, so one is listed twice or not at all.
+    let ledger: number | 'validated' = 'validated'
+    do {
+      const res: { result: { account_objects: unknown[]; marker?: unknown; ledger_index?: number } } = await client.request({
+        command: 'account_objects',
+        account: address,
+        type: 'delegate',
+        ledger_index: ledger,
+        marker,
+      })
+      const pinned = res.result.ledger_index
+      if (ledger === 'validated' && typeof pinned === 'number') ledger = pinned
+      for (const o of res.result.account_objects) {
+        if (!isRecord(o) || o.LedgerEntryType !== 'Delegate' || o.Account !== address || typeof o.Authorize !== 'string') continue
+        if (delegates.some((d) => d.authorize === o.Authorize)) continue
+        const permissions = Array.isArray(o.Permissions)
+          ? o.Permissions.flatMap((p: unknown) => {
+              const value = isRecord(p) && isRecord(p.Permission) ? p.Permission.PermissionValue : undefined
+              return typeof value === 'string' || typeof value === 'number' ? [String(value)] : []
+            })
+          : []
+        delegates.push({ authorize: o.Authorize, permissions })
+      }
+      marker = res.result.marker
+    } while (marker !== undefined)
+    return delegates
+  } catch (err: unknown) {
+    if (rippledErrorCode(err) === 'actNotFound') return []
+    throw err
+  }
+}
+
 export interface ServerReserves {
   baseReserveDrops: string
   ownerReserveDrops: string

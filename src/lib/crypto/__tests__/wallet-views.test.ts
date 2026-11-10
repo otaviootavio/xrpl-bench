@@ -75,7 +75,7 @@ vi.mock('idb', () => ({
 
 import {
   addControlledView,
-  listWallets,
+  listKeyWallets as listWallets,
   removeWallet,
   setWalletNode,
   openSigner,

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, type CSSProperties } from 'react'
 import QRCode from 'qrcode'
 
 /** receiving-payments.md US-1/US-2: QR code for an address, optionally
@@ -8,6 +8,8 @@ export function QrCode({
   text,
   destinationTag,
   size = 220,
+  alt,
+  imgStyle,
 }: {
   address?: string
   /** Arbitrary text to draw instead of an address: the two-device signing payload (AD-30). */
@@ -15,6 +17,10 @@ export function QrCode({
   destinationTag?: number
   className?: string
   size?: number
+  /** The image's text alternative; absent: today's words. */
+  alt?: string
+  /** CSS size for the drawn image (the larger code, P-59); absent: its drawn size. */
+  imgStyle?: CSSProperties
 }) {
   const [done, setDone] = useState<{ uri: string; size: number; url: string } | null>(null)
   const [failedFor, setFailedFor] = useState<string | null>(null)
@@ -52,7 +58,14 @@ export function QrCode({
   // the panel rather than a themed surface.
   return (
     <div className="panel-plate rounded-md bg-white p-2">
-      <img src={dataUrl} alt={text !== undefined ? 'QR code carrying a signing payload' : `QR code for address ${address}`} width={size} height={size} className="block h-auto max-w-full" />
+      <img
+        src={dataUrl}
+        alt={alt ?? (text !== undefined ? 'QR code carrying a signing payload' : `QR code for address ${address}`)}
+        width={size}
+        height={size}
+        style={imgStyle}
+        className="block h-auto max-w-full"
+      />
     </div>
   )
 }

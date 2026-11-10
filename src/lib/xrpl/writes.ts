@@ -1,9 +1,10 @@
-import { type AccountSet, AccountSetAsfFlags, hashes, type Payment, type SetRegularKey, type SubmittableTransaction, type TrustSet, TrustSetFlags } from 'xrpl'
+import { type AccountSet, AccountSetAsfFlags, decode, hashes, type Payment, PaymentFlags, type SetRegularKey, type SubmittableTransaction, type TrustSet, TrustSetFlags, verifySignature } from 'xrpl'
 import { getXrplClient, holdXrplClient } from './client'
-import type { NetworkId } from './networks'
+import { isNetworkId, NETWORKS, type NetworkId } from './networks'
 import { MAX_FEE_DROPS, feeWithinCap, formatXrp, isCanonicalPositiveDrops } from './money'
 import { isRecord } from './narrow'
 import { fetchAccountState } from './reads'
+import { EXPIRED_NOTHING_SENT, LEDGER_UNREAD, NOT_SENT, REFUSAL, STILL_VALID_WARNING, fill } from '../transmit-words'
 
 /**
  * Reports whether a transaction is currently in flight.
@@ -110,6 +111,80 @@ export interface SigningHandle {
    * so the ledger refuses it once the master key is off. Absent: not known. */
   signsAsMaster?: boolean
   open(): Promise<Signer>
+  /**
+   * "Show the signed transaction before sending" (OS-FR-10): present only when
+   * the Wallet's setting is on. The choke point calls it after signing and
+   * before the Transmit step, with the blob; `true` sends it, `false` sends
+   * nothing (`TransmitDeclinedError`). Absent: the blob goes straight to the
+   * Transmit step, as before the setting existed. Whoever answers it must
+   * settle it on every exit (decline, unmount, lock): the in-flight depth stays
+   * raised until it does, because a live signed blob exists.
+   */
+  reviewBeforeSending?: ReviewBeforeSending
+}
+
+/** What the review is shown: the blob, its hash, the Network it is for, and the
+ * last ledger it can apply in. Held only until the review settles. */
+export interface SignedForReview {
+  txBlob: string
+  hash: string
+  network: NetworkId
+  lastLedgerSequence: number
+}
+
+/**
+ * A Signed Transaction that enters the Transmit step from outside this module
+ * (a scanned signed QR, story 4): the blob and the Network its envelope names.
+ */
+export interface SignedTransaction {
+  txBlob: string
+  /** As the envelope names it: checked, never trusted to be a known Network. */
+  network: NetworkId | string
+}
+
+/** Why the Transmit step refused a Signed Transaction. Nothing was submitted. */
+export type TransmitRefusal = 'signature' | 'account' | 'network' | 'partial-payment' | 'expired' | 'no-window' | 'ledger-unread' | 'already-sent'
+
+/** Asks the user "Send it to the ledger?" (OS-FR-10). A rejection is a "no". */
+export type ReviewBeforeSending = (signed: SignedForReview) => Promise<boolean>
+
+/**
+ * The Transmit step refused (route-checks.md "Transmit step", OS-FR-9). Nothing
+ * was submitted, so no fee was spent and the blob can still be valid. The words
+ * are P-26 and the fixed "Expired. Nothing was sent." (`transmit-words.ts`).
+ */
+export class TransmitRefusedError extends Error {
+  readonly reason: TransmitRefusal
+  constructor(reason: TransmitRefusal, message: string) {
+    super(message)
+    this.name = 'TransmitRefusedError'
+    this.reason = reason
+  }
+}
+
+/**
+ * The user declined at "Send it to the ledger?" (OS-FR-10). Nothing was
+ * submitted. The blob stays valid until its LastLedgerSequence, so the message
+ * is P-24 and its decline line.
+ */
+export class TransmitDeclinedError extends Error {
+  readonly lastLedgerSequence: number
+  constructor(lastLedgerSequence: number) {
+    super(`${fill(STILL_VALID_WARNING, lastLedgerSequence)} ${NOT_SENT}`)
+    this.name = 'TransmitDeclinedError'
+    this.lastLedgerSequence = lastLedgerSequence
+  }
+}
+
+/**
+ * The Account a Signed Transaction must be signed for at the Transmit step
+ * (route-checks.md, OS-FR-9): the Synced address; else the Account of the
+ * request this Transmitter answered; else the Account the user confirmed on
+ * screen. `null`: none is known, and the caller must ask the user to confirm
+ * one (P-27) before calling `transmitSignedTransaction`.
+ */
+export function expectedAccountFor(from: { syncedAddress?: string; requestAccount?: string; confirmedAccount?: string }): string | null {
+  return from.syncedAddress ?? from.requestAccount ?? from.confirmedAccount ?? null
 }
 
 /** Two-device signing (AD-30): the window must outlast a round trip between two
@@ -157,9 +232,70 @@ export async function submitAndClassify(
   // in flight right now" signal regardless of which tab is mounted. Raised
   // before the first network call (autofill needs the current sequence, so
   // signing has effectively already started) and lowered in `finally` so a
-  // thrown/expired outcome still releases it. The increment is the last
-  // statement before `try` and cannot throw, and the report is inside the
-  // `try`, so nothing can raise the depth without the `finally` lowering it.
+  // thrown/expired outcome still releases it (`withWriteInFlight`).
+  return withWriteInFlight(network, node, async (client) => {
+    // A `Fee` already on `tx` (Send pins the figure it showed) is left alone
+    // by autofill; otherwise autofill computes one. Either way the cap below
+    // is the only ceiling, and it is checked on what will actually be signed.
+    const prepared = await client.autofill(tx)
+    // Thrown inside `run`, so the in-flight depth is still lowered.
+    if (!feeWithinCap(prepared.Fee)) throw new FeeAboveCapError(prepared.Fee)
+    // Before the Signing Check, so no PIN or passkey prompt is wasted on a send the
+    // ledger can only refuse. A failed read does not relax it.
+    if (signing.signsAsMaster) await assertMasterKeyOn(network, signing.address, node)
+    // The Signing Check runs HERE, after the fee was shown and capped and
+    // before the window is fixed. It may take as long as the user does.
+    const signer = await signing.open()
+    let signed: { tx_blob: string; hash: string }
+    // The validated ledger read for the window, moments before signing. With
+    // no pause before sending, the past-LastLedgerSequence check uses it, so
+    // the send makes no extra round trip.
+    let validatedAtSigning: number | undefined
+    try {
+      // The window starts at the validated ledger as it is NOW, not as it was
+      // at autofill. A caller-supplied `LastLedgerSequence` is kept.
+      let toSign: SubmittableTransaction = prepared
+      if (tx.LastLedgerSequence === undefined) {
+        const res = await client.request({ command: 'ledger', ledger_index: 'validated' })
+        const validated = res.result.ledger_index
+        if (typeof validated !== 'number') throw new Error('The current ledger could not be read, so nothing was signed.')
+        validatedAtSigning = validated
+        toSign = { ...prepared, LastLedgerSequence: validated + LEDGER_WINDOW }
+      }
+      signed = signer.sign(toSign)
+    } finally {
+      signer.dispose()
+    }
+    try {
+      return await transmit(
+        client,
+        network,
+        signed,
+        { signedNetwork: network, expectedAccount: signing.address, validatedIndex: validatedAtSigning },
+        signing.reviewBeforeSending,
+        node,
+      )
+    } catch (err) {
+      // An online write whose window passed before it was sent (after a long
+      // review) is today's `expired` outcome: not applied, retry with a fresh
+      // one. The screens' expired handling then applies (fee re-read, panel).
+      if (err instanceof TransmitRefusedError && err.reason === 'expired') return { status: 'expired', hash: signed.hash }
+      throw err
+    }
+  })
+}
+
+/**
+ * The in-flight depth and the held client around one write (AD-9, US-5). The
+ * increment is the last statement before `try` and cannot throw, and the report
+ * is inside the `try`, so nothing can raise the depth without the `finally`
+ * lowering it.
+ */
+async function withWriteInFlight<T>(
+  network: NetworkId,
+  node: string | undefined,
+  run: (client: Awaited<ReturnType<typeof holdXrplClient>>['client']) => Promise<T>,
+): Promise<T> {
   inFlightDepth += 1
   let release: (() => void) | undefined
   try {
@@ -169,63 +305,7 @@ export async function submitAndClassify(
     // must not close it under the wait (see `holdXrplClient`).
     const held = await holdXrplClient(network, node)
     release = held.release
-    const client = held.client
-    // A `Fee` already on `tx` (Send pins the figure it showed) is left alone
-    // by autofill; otherwise autofill computes one. Either way the cap below
-    // is the only ceiling, and it is checked on what will actually be signed.
-    const prepared = await client.autofill(tx)
-    // Thrown inside the `try`, so the in-flight depth is still lowered.
-    if (!feeWithinCap(prepared.Fee)) throw new FeeAboveCapError(prepared.Fee)
-    // Before the Signing Check, so no PIN or passkey prompt is wasted on a send the
-    // ledger can only refuse. A failed read does not relax it.
-    if (signing.signsAsMaster) await assertMasterKeyOn(network, signing.address, node)
-    // The Signing Check runs HERE, after the fee was shown and capped and
-    // before the window is fixed. It may take as long as the user does.
-    const signer = await signing.open()
-    let signed: { tx_blob: string; hash: string }
-    let lastLedgerSequence: number | undefined
-    try {
-      // The window starts at the validated ledger as it is NOW, not as it was
-      // at autofill. A caller-supplied `LastLedgerSequence` is kept.
-      let toSign: SubmittableTransaction = prepared
-      if (tx.LastLedgerSequence === undefined) {
-        const res = await client.request({ command: 'ledger', ledger_index: 'validated' })
-        const validated = res.result.ledger_index
-        if (typeof validated !== 'number') throw new Error('The current ledger could not be read, so nothing was signed.')
-        toSign = { ...prepared, LastLedgerSequence: validated + LEDGER_WINDOW }
-      }
-      lastLedgerSequence = toSign.LastLedgerSequence
-      signed = signer.sign(toSign)
-    } finally {
-      signer.dispose()
-    }
-    try {
-      const res = await client.submitAndWait(signed.tx_blob)
-      const meta: unknown = res.result.meta
-      // A meta that is missing, not an object (binary meta) or has no string
-      // result is an unreadable outcome, never a failure: reading it as one
-      // would invite a resend that pays twice.
-      if (!isRecord(meta) || typeof meta.TransactionResult !== 'string' || meta.TransactionResult === '') return { status: 'unknown', hash: signed.hash }
-      const resultCode = meta.TransactionResult
-      const status = classify(resultCode)
-      return status === 'failed'
-        ? { status, hash: signed.hash, resultCode }
-        : { status, hash: signed.hash, resultCode, ledgerIndex: res.result.ledger_index }
-    } catch (err: unknown) {
-      // The "stuck/expired" case from docs/decisions.md: the network moved past
-      // this transaction's LastLedgerSequence without it appearing in a
-      // validated ledger. It may simply never have been included. NEVER
-      // resubmit this exact signed blob — the caller must build a fresh
-      // transaction with a new sequence.
-      //
-      // Detected structurally (comparing the validated ledger index against the
-      // tx's own LastLedgerSequence) rather than by matching on error-message
-      // text, which silently reclassifies whenever xrpl.js rewords it.
-      if (await isExpiry(err, network, lastLedgerSequence, node)) {
-        return { status: 'expired', hash: signed.hash }
-      }
-      throw err
-    }
+    return await run(held.client)
   } finally {
     // Nested so the depth is lowered even if releasing the client throws: a
     // depth stranded above zero would refuse every update for the session.
@@ -235,6 +315,248 @@ export async function submitAndClassify(
       inFlightDepth -= 1
       if (inFlightDepth === 0) reportTxInFlight(false)
     }
+  }
+}
+
+/**
+ * The Transmit step for a Signed Transaction that was not signed here (a
+ * scanned signed QR, story 4; OS-FR-9). Same in-flight signal, same checks
+ * (the window on a fresh read), one submission, the same outcomes as every
+ * other write. `expectedAccount` comes from `expectedAccountFor`; the caller
+ * gets the user's confirm (P-27) before calling when that returns `null`.
+ */
+export async function transmitSignedTransaction(
+  network: NetworkId,
+  signed: SignedTransaction,
+  expectedAccount: string,
+  node?: string,
+  review?: ReviewBeforeSending,
+): Promise<SubmitOutcome> {
+  let attempted = false
+  try {
+    return await withWriteInFlight(network, node, async (client) => {
+      // The Network first, as route-checks orders it, before the blob is read.
+      assertNetwork(signed.network, network)
+      let hash: string
+      try {
+        hash = hashes.hashSignedTx(signed.txBlob)
+      } catch {
+        throw refuse('signature', REFUSAL.signature)
+      }
+      // Never-resubmit, across scans (OS-FR-9, FR-24): a blob this session already
+      // handed to the ledger is not handed again, whatever its outcome was.
+      // Claimed at once, so a second call for the same blob (a re-scan while this one
+      // runs) is refused rather than racing it; released only when nothing was submitted.
+      if (sentThisSession.has(hash)) throw refuse('already-sent')
+      sentThisSession.add(hash)
+      try {
+        return await transmit(client, network, { tx_blob: signed.txBlob, hash }, { signedNetwork: signed.network, expectedAccount }, review, node, () => {
+          attempted = true
+        })
+      } catch (err) {
+        if (!attempted) sentThisSession.delete(hash)
+        throw err
+      }
+    })
+  } catch (err) {
+    // A failure before the submission (no client could be held, a check threw) sent
+    // nothing: it is a refusal in the approved unread-ledger words, never "may have
+    // been sent". After the submission, the caller gets the error as it is.
+    if (!attempted && !(err instanceof TransmitRefusedError) && !(err instanceof TransmitDeclinedError) && !(err instanceof FeeAboveCapError)) {
+      throw refuse('ledger-unread', LEDGER_UNREAD)
+    }
+    throw err
+  }
+}
+
+/** The hashes of the scanned Signed Transactions this page has submitted, or is
+ * submitting. In memory only: no blob, no secret, gone with the page. Claimed when
+ * a call starts; released on a refusal, a decline or any failure before the
+ * submission (nothing was sent), never after it. */
+const sentThisSession = new Set<string>()
+
+/** Test seam: a fresh session. */
+export function resetSentThisSession(): void {
+  sentThisSession.clear()
+}
+
+function refuse(reason: TransmitRefusal, detail?: string): TransmitRefusedError {
+  if (reason === 'expired') return new TransmitRefusedError(reason, EXPIRED_NOTHING_SENT)
+  return new TransmitRefusedError(reason, detail === undefined ? NOT_SENT : `${NOT_SENT} ${detail}`)
+}
+
+/**
+ * The Network the Signed Transaction names must be this Wallet's. On Mainnet,
+ * Testnet and Devnet a blob carries no `NetworkID` (it is only for chains above
+ * 1024), so this compares the ENVELOPE's Network: it stops a mistake, not a
+ * compromised sender (route-checks "Known limit", fact-check case 1). Story 4's
+ * scanner must pass the Network its signed-QR envelope names, never its own.
+ */
+function assertNetwork(signedNetwork: NetworkId | string, network: NetworkId): void {
+  if (signedNetwork === network) return
+  const named = isNetworkId(signedNetwork) ? NETWORKS[signedNetwork].label : String(signedNetwork)
+  throw refuse('network', fill(REFUSAL.network, named, NETWORKS[network].label))
+}
+
+/**
+ * Refuses a blob whose window has passed: the ledger can no longer apply it
+ * once the validated ledger has reached its LastLedgerSequence. `validated` is
+ * the index as just read; when absent it is read now, and a failed read
+ * refuses (a failed read never relaxes a guard).
+ */
+async function assertWindowOpen(
+  client: Awaited<ReturnType<typeof holdXrplClient>>['client'],
+  lastLedgerSequence: number,
+  validated: number | undefined,
+): Promise<void> {
+  if (validated === undefined) {
+    try {
+      const res = await client.request({ command: 'ledger', ledger_index: 'validated' })
+      if (typeof res.result.ledger_index === 'number') validated = res.result.ledger_index
+    } catch {
+      // Stated below as a refusal, never as "not expired".
+    }
+    if (validated === undefined) throw refuse('ledger-unread', LEDGER_UNREAD)
+  }
+  if (validated >= lastLedgerSequence) throw refuse('expired')
+}
+
+/**
+ * The Transmit step's checks (route-checks.md, OS-FR-9), on the blob that will
+ * be sent, before anything is submitted. Throws on the first that fails, in
+ * this order: Network, signature, Account, partial payment, fee cap, window.
+ * Returns the blob's LastLedgerSequence.
+ */
+async function checkSignedTransaction(
+  client: Awaited<ReturnType<typeof holdXrplClient>>['client'],
+  network: NetworkId,
+  txBlob: string,
+  check: { signedNetwork: NetworkId | string; expectedAccount: string; validatedIndex?: number },
+): Promise<number> {
+  const { lastLedgerSequence } = checkSignedBlob(network, txBlob, check)
+  await assertWindowOpen(client, lastLedgerSequence, check.validatedIndex)
+  return lastLedgerSequence
+}
+
+/** What a Signed Transaction is, once its blob passed every check that needs no
+ * ledger read: the decoded fields, its hash, the Account and the window's end. */
+export interface CheckedSignedTransaction {
+  tx: Record<string, unknown>
+  hash: string
+  account: string
+  lastLedgerSequence: number
+}
+
+/**
+ * The Transmit step's checks that need no ledger read (OS-FR-9), in the order
+ * `transmit` runs them: Network, signature, Account (`null`: none is expected
+ * yet, so the caller shows P-27 and the user confirms the blob's own Account),
+ * partial payment, fee cap, a window present. Throws `TransmitRefusedError` or
+ * `FeeAboveCapError`; submits nothing. The Transmit screen shows its result
+ * (P-25) before Send, and Send runs every check again, with the window on a
+ * fresh read.
+ */
+export function previewSignedTransaction(network: NetworkId, signed: SignedTransaction, expectedAccount: string | null): CheckedSignedTransaction {
+  let hash: string
+  assertNetwork(signed.network, network)
+  try {
+    hash = hashes.hashSignedTx(signed.txBlob)
+  } catch {
+    throw refuse('signature', REFUSAL.signature)
+  }
+  const checked = checkSignedBlob(network, signed.txBlob, { signedNetwork: signed.network, expectedAccount })
+  return { ...checked, hash }
+}
+
+function checkSignedBlob(
+  network: NetworkId,
+  txBlob: string,
+  check: { signedNetwork: NetworkId | string; expectedAccount: string | null },
+): { tx: Record<string, unknown>; account: string; lastLedgerSequence: number } {
+  assertNetwork(check.signedNetwork, network)
+  let tx: Record<string, unknown>
+  let verified = false
+  try {
+    tx = decode(txBlob)
+    verified = verifySignature(txBlob)
+  } catch {
+    throw refuse('signature', REFUSAL.signature)
+  }
+  if (!verified) throw refuse('signature', REFUSAL.signature)
+  // The Account it is signed for, never the signing key's own address: a
+  // Regular Key signs for another Account (OS-FR-20), and the ledger itself
+  // refuses a key that is not the master (when on) or the current Regular Key.
+  if (typeof tx.Account !== 'string') throw refuse('signature', REFUSAL.signature)
+  if (check.expectedAccount !== null && tx.Account !== check.expectedAccount) {
+    throw refuse('account', fill(REFUSAL.account, String(tx.Account), check.expectedAccount))
+  }
+  if (tx.TransactionType === 'Payment' && typeof tx.Flags === 'number' && (tx.Flags & PaymentFlags.tfPartialPayment) !== 0) {
+    throw refuse('partial-payment', REFUSAL.partialPayment)
+  }
+  // Checked again on what is sent, whatever signed it (decisions §14).
+  if (!feeWithinCap(tx.Fee)) throw new FeeAboveCapError(tx.Fee)
+  // A blob with no window could stay valid for ever: never sent (P-26 heading).
+  const lastLedgerSequence = tx.LastLedgerSequence
+  if (typeof lastLedgerSequence !== 'number') throw refuse('no-window')
+  return { tx, account: tx.Account, lastLedgerSequence }
+}
+
+/**
+ * The Transmit step's core (OS-FR-9): the one place a Signed Transaction is
+ * submitted and its outcome classified, whatever signed it. Private, and only
+ * ever called inside the in-flight depth a caller raised, on a client the
+ * caller holds. It checks the blob, submits it once and never resubmits it.
+ */
+async function transmit(
+  client: Awaited<ReturnType<typeof holdXrplClient>>['client'],
+  network: NetworkId,
+  signed: { tx_blob: string; hash: string },
+  check: { signedNetwork: NetworkId | string; expectedAccount: string; validatedIndex?: number },
+  review: ReviewBeforeSending | undefined,
+  node: string | undefined,
+  onSubmitting?: () => void,
+): Promise<SubmitOutcome> {
+  const lastLedgerSequence = await checkSignedTransaction(client, network, signed.tx_blob, check)
+  if (review) {
+    // "Show the signed transaction before sending" (OS-FR-10). A rejected
+    // review is a "no": nothing is sent, the same as Do not send.
+    let send = false
+    try {
+      send = await review({ txBlob: signed.tx_blob, hash: signed.hash, network, lastLedgerSequence })
+    } catch {
+      send = false
+    }
+    if (!send) throw new TransmitDeclinedError(lastLedgerSequence)
+    // Time passed during the review: the window is judged on a fresh read.
+    await assertWindowOpen(client, lastLedgerSequence, undefined)
+  }
+  try {
+    onSubmitting?.()
+    const res = await client.submitAndWait(signed.tx_blob)
+    const meta: unknown = res.result.meta
+    // A meta that is missing, not an object (binary meta) or has no string
+    // result is an unreadable outcome, never a failure: reading it as one
+    // would invite a resend that pays twice.
+    if (!isRecord(meta) || typeof meta.TransactionResult !== 'string' || meta.TransactionResult === '') return { status: 'unknown', hash: signed.hash }
+    const resultCode = meta.TransactionResult
+    const status = classify(resultCode)
+    return status === 'failed'
+      ? { status, hash: signed.hash, resultCode }
+      : { status, hash: signed.hash, resultCode, ledgerIndex: res.result.ledger_index }
+  } catch (err: unknown) {
+    // The "stuck/expired" case from docs/decisions.md: the network moved past
+    // this transaction's LastLedgerSequence without it appearing in a
+    // validated ledger. It may simply never have been included. NEVER
+    // resubmit this exact signed blob — the caller must build a fresh
+    // transaction with a new sequence.
+    //
+    // Detected structurally (comparing the validated ledger index against the
+    // tx's own LastLedgerSequence) rather than by matching on error-message
+    // text, which silently reclassifies whenever xrpl.js rewords it.
+    if (await isExpiry(err, network, lastLedgerSequence, node)) {
+      return { status: 'expired', hash: signed.hash }
+    }
+    throw err
   }
 }
 
@@ -416,6 +738,37 @@ export async function prepareUnsigned(
   }
 }
 
+/** What a Transmitter Wallet gives an Offline Wallet for one Built transaction (OS-FR-15). */
+export interface DataToSignValues {
+  sequence: number
+  fee: string
+  ledgerIndex: number
+}
+
+/**
+ * The Data to Sign for a Built transaction (OS-FR-15, route-checks "Transmitter
+ * Wallet"): autofill's Sequence (from the current ledger, so a Sequence already
+ * used in an open ledger is not handed out again) and Fee, the fee cap, then the
+ * validated ledger index the Offline Wallet sets LastLedgerSequence from. Nothing
+ * is signed or submitted. Throws `FeeAboveCapError` over the cap and any other
+ * error when a read fails: a failed read never produces Data to Sign (FR-59).
+ */
+export async function prepareDataToSign(network: NetworkId, tx: SubmittableTransaction, node?: string): Promise<DataToSignValues> {
+  const held = await holdXrplClient(network, node)
+  try {
+    const prepared = await held.client.autofill(tx)
+    if (!feeWithinCap(prepared.Fee)) throw new FeeAboveCapError(prepared.Fee)
+    const sequence = prepared.Sequence
+    if (typeof sequence !== 'number' || !Number.isInteger(sequence) || sequence <= 0) throw new Error('The Sequence could not be read.')
+    const res = await held.client.request({ command: 'ledger', ledger_index: 'validated' })
+    const ledgerIndex = res.result.ledger_index
+    if (typeof ledgerIndex !== 'number') throw new Error('The current ledger could not be read.')
+    return { sequence, fee: String(prepared.Fee), ledgerIndex }
+  } finally {
+    held.release()
+  }
+}
+
 /**
  * Signs an already-prepared transaction once, on the offline device (AD-30). It
  * opens the Wallet's Signing Check, signs, and disposes the Signer in `finally`.
@@ -445,6 +798,7 @@ export function submitSignedBlob(
   tx: SubmittableTransaction,
   txBlob: string,
   node?: string,
+  review?: ReviewBeforeSending,
 ): Promise<SubmitOutcome> {
   const signing: SigningHandle = {
     address: tx.Account,
@@ -452,6 +806,8 @@ export function submitSignedBlob(
       sign: () => ({ tx_blob: txBlob, hash: hashes.hashSignedTx(txBlob) }),
       dispose: () => {},
     }),
+    // The sending Wallet's "Show the signed transaction before sending".
+    ...(review ? { reviewBeforeSending: review } : {}),
   }
   return submitAndClassify(network, signing, tx, node)
 }

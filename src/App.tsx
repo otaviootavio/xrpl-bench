@@ -8,7 +8,8 @@ import { GateError } from '@/components/wallet/GateError'
 import { appStateHydrationFailed, appStateSettled, useAppStore } from '@/store/app-store'
 import { listWallets } from '@/lib/crypto/keystore'
 import { currentPathname, parseRoute, resetToHome, subscribeRoute } from '@/lib/route'
-import { restoreOpenLocks } from '@/lib/crypto/lock'
+import { endLockSession, restoreOpenLocks } from '@/lib/crypto/lock'
+import { proveTransmitterUnlock } from '@/lib/crypto/transmitter-unlock'
 import { notify, setNoticeWalletReader } from '@/lib/notify'
 import { setTxInFlightReporter } from '@/lib/xrpl/writes'
 
@@ -77,7 +78,17 @@ function Gate() {
         // auto-lock window doesn't force re-entering the PIN/passkey — see
         // lib/crypto/lock.ts restoreOpenLocks(). Locks without a valid session stay closed.
         if (stored.length > 0) {
+          // A Transmitter's lock reopens only when its known ciphertext decrypts under
+          // the restored key (OS-FR-3); a failed or thrown proof leaves it closed.
+          const transmitterLocks = new Set(stored.filter((w) => w.kind === 'transmitter').map((w) => w.lockId))
           for (const restored of await restoreOpenLocks().catch(() => [])) {
+            if (transmitterLocks.has(restored.lockId)) {
+              const proven = await proveTransmitterUnlock(restored.lockId, restored.key).catch(() => false)
+              if (!proven) {
+                await endLockSession(restored.lockId).catch(() => {})
+                continue
+              }
+            }
             if (!cancelled) openLock(restored.lockId, restored.key, restored.autoLockMinutes, restored.expiresAt)
           }
         }

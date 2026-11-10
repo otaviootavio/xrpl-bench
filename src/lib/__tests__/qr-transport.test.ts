@@ -207,14 +207,42 @@ describe('scan session (OS-FR-24)', () => {
     expect(s.collecting).toBe(false)
   })
 
-  it('a frame of another payload starts over on it; a still code while collecting is whole at once', () => {
-    const other = planQr(encodeSigned({ network: 'testnet', txBlob: master.sign(TXS.accountSetFull as never).tx_blob }).text) as Extract<QrPlan, { kind: 'animated' }>
+  const other = planQr(encodeSigned({ network: 'testnet', txBlob: master.sign(TXS.accountSetFull as never).tx_blob }).text) as Extract<QrPlan, { kind: 'animated' }>
+
+  it('a stray frame of another payload is ignored; the new payload wins after three in a row', () => {
     const s = new ScanSession()
     s.receive(plan.frameAt(0))
     s.receive(plan.frameAt(1))
-    expect(s.receive(other.frameAt(0))).toEqual({ status: 'progress', percent: Math.floor(100 / other.seqLen) })
+    expect(s.receive(other.frameAt(0))).toEqual({ status: 'ignored' })
+    expect(s.receive(other.frameAt(1))).toEqual({ status: 'ignored' })
+    expect(s.receive(other.frameAt(2))).toEqual({ status: 'progress', percent: Math.floor(100 / other.seqLen) })
+  })
+
+  it('two codes in view, frames interleaved: the first one held still finishes', () => {
+    const s = new ScanSession()
+    let done: string | null = null
+    for (let i = 0; i < plan.seqLen * 3 && !done; i++) {
+      const a = s.receive(plan.frameAt(i))
+      if (a.status === 'complete') done = a.text
+      else s.receive(other.frameAt(i))
+    }
+    expect(done).toBe(text)
+  })
+
+  it('a still code while collecting is whole at once', () => {
+    const s = new ScanSession()
+    s.receive(plan.frameAt(0))
     const small = encodeSigned({ network: 'testnet', txBlob: 'AB' }).text
     expect(s.receive(small)).toEqual({ status: 'complete', text: small })
+  })
+
+  it('never animates a payload past what the decoder takes in (64,001 bytes)', () => {
+    const ur = encodeUnsigned({ network: 'testnet', tx: {} }).text.replace(/\/.*/, '/') + encodeMinimal(encodeBytes(new Uint8Array(64_001 - 3)))
+    expect(decodeSinglePart(ur).cbor.length).toBe(64_001)
+    expect(planQr(ur).kind).toBe('still')
+    // Just under the bound is animated, and every frame count it makes is one the decoder accepts.
+    const under = encodeUnsigned({ network: 'testnet', tx: {} }).text.replace(/\/.*/, '/') + encodeMinimal(encodeBytes(new Uint8Array(64_000 - 3)))
+    expect(planQr(under)).toMatchObject({ kind: 'animated', seqLen: 256 })
   })
 
   it('refuses a frame claiming a huge message without doing the work', () => {

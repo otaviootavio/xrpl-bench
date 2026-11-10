@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { BytewordsError, decodeMinimal, decodeWords, encodeMinimal, encodeWords } from '../ur/bytewords'
-import { concat, encodeBytes } from '../ur/cbor'
+import { CborError, CborReader, concat, encodeBytes } from '../ur/cbor'
 import { crc32, u32be } from '../ur/crc32'
 import {
   FountainDecoder,
@@ -261,5 +261,13 @@ describe('UR decoder hardening (OS-FR-24)', () => {
     const encoder = new UREncoder(ur, 30)
     while (!decoder.result) decoder.receive(encoder.nextPart().toUpperCase())
     expect(decoder.result).toEqual({ ok: true, ur })
+  })
+
+  it('refuses a CBOR head longer than its value needs (shortest form only)', () => {
+    expect(() => new CborReader(Uint8Array.from([0x18, 0x05])).uint()).toThrow(CborError)
+    expect(() => new CborReader(Uint8Array.from([0x19, 0x00, 0x10])).uint()).toThrow(CborError)
+    expect(() => new CborReader(Uint8Array.from([0x1a, 0x00, 0x00, 0xff, 0xff])).uint()).toThrow(CborError)
+    expect(new CborReader(Uint8Array.from([0x18, 0x18])).uint()).toBe(24)
+    expect(new CborReader(Uint8Array.from([0x1a, 0x00, 0x01, 0x00, 0x00])).uint()).toBe(65536)
   })
 })

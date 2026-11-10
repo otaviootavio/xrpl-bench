@@ -107,7 +107,7 @@ describe('QrScanner animated code', () => {
   const blob = 'AB'.repeat(3000)
   const whole = encodeSigned({ network: 'testnet', txBlob: blob }).text
   const plan = planQr(whole) as Extract<QrPlan, { kind: 'animated' }>
-  const status = () => document.querySelector('[role="status"]')?.textContent ?? null
+  const status = () => screen.getByTestId('scan-status').textContent || null
 
   it('reads frames from the camera, from frame 6 with every third missed, and hands up the whole payload once', async () => {
     const frames: string[][] = []
@@ -194,5 +194,51 @@ describe('QrScanner animated code', () => {
     await act(async () => void fireEvent.click(screen.getByRole('button', { name: 'Use the pasted text' })))
     expect(onPayload).toHaveBeenCalledWith('hello there')
     expect(screen.queryByTestId('scan-progress')).toBeNull()
+  })
+
+  it('the status region is mounted, empty, before any frame, so its first text is announced', () => {
+    delete (globalThis as { BarcodeDetector?: unknown }).BarcodeDetector
+    render(<QrScanner onPayload={vi.fn()} label="the code" />)
+    expect(screen.getByTestId('scan-status').getAttribute('role')).toBe('status')
+    expect(screen.getByTestId('scan-status').textContent).toBe('')
+  })
+
+  it('camera on, a paste completes the payload: one hand-up, the camera stops', async () => {
+    const onPayload = vi.fn()
+    render(<QrScanner onPayload={onPayload} label="the code" />)
+    await startScan()
+    await waitFor(() => expect(cam.getUserMedia).toHaveBeenCalled())
+    fireEvent.change(screen.getByLabelText('Or paste the text of the code'), { target: { value: whole } })
+    await act(async () => void fireEvent.click(screen.getByRole('button', { name: 'Use the pasted text' })))
+    // The same payload now in front of the camera must not be handed up again.
+    cam.frames = [[whole], [whole], [whole]]
+    await act(async () => void (await new Promise((r) => setTimeout(r, 900))))
+    expect(onPayload).toHaveBeenCalledTimes(1)
+    expect(screen.getByRole('button', { name: /^Scan .* with the camera$/ })).toBeTruthy()
+  })
+
+  it('camera on, pasted frames complete the payload: one hand-up, the camera stops', async () => {
+    const onPayload = vi.fn()
+    render(<QrScanner onPayload={onPayload} label="the code" />)
+    await startScan()
+    await waitFor(() => expect(cam.getUserMedia).toHaveBeenCalled())
+    const all = Array.from({ length: plan.seqLen }, (_, i) => plan.frameAt(i)).join(' ')
+    fireEvent.change(screen.getByLabelText('Or paste the text of the code'), { target: { value: all } })
+    await act(async () => void fireEvent.click(screen.getByRole('button', { name: 'Use the pasted text' })))
+    cam.frames = Array.from({ length: plan.seqLen }, (_, i) => [plan.frameAt(i)])
+    await act(async () => void (await new Promise((r) => setTimeout(r, 900))))
+    expect(onPayload).toHaveBeenCalledTimes(1)
+    expect(screen.getByRole('button', { name: /^Scan .* with the camera$/ })).toBeTruthy()
+  })
+
+  it('a paste of more frames than the cap is not read, and says the code could not be read', async () => {
+    delete (globalThis as { BarcodeDetector?: unknown }).BarcodeDetector
+    const onPayload = vi.fn()
+    render(<QrScanner onPayload={onPayload} label="the code" />)
+    const many = Array.from({ length: 1025 }, (_, i) => plan.frameAt(i % plan.seqLen)).join(' ')
+    fireEvent.change(screen.getByLabelText('Or paste the text of the code'), { target: { value: many } })
+    await act(async () => void fireEvent.click(screen.getByRole('button', { name: 'Use the pasted text' })))
+    expect(onPayload).not.toHaveBeenCalled()
+    expect(screen.getByRole('alert').textContent).toBe('That code could not be read.')
   })
 })

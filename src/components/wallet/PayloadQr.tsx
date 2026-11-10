@@ -36,6 +36,17 @@ function AnimatedQr({ plan }: { plan: Extract<QrPlan, { kind: 'animated' }> }) {
   const [failed, setFailed] = useState(false)
   const size = qrDrawSizeForVersion(plan.version)
 
+  // Reduced motion switched on while the code runs: it pauses.
+  useEffect(() => {
+    const mq = typeof window !== 'undefined' ? window.matchMedia?.('(prefers-reduced-motion: reduce)') : undefined
+    if (!mq?.addEventListener) return
+    const onChange = (e: MediaQueryListEvent) => {
+      if (e.matches) setPaused(true)
+    }
+    mq.addEventListener('change', onChange)
+    return () => mq.removeEventListener('change', onChange)
+  }, [])
+
   useEffect(() => {
     let cancelled = false
     QRCode.toDataURL(plan.frameAt(index), { width: size, margin: 1, errorCorrectionLevel: QR_ERROR_CORRECTION, version: plan.version })

@@ -24,13 +24,20 @@ const big = encodeSigned({ network: 'testnet', txBlob: 'AB'.repeat(3000) }).text
 const CAPTION = 'This code has more than one frame. Keep the camera on the code until the other device reads all of it.'
 
 let reduce = false
+let mqListeners: ((e: { matches: boolean }) => void)[] = []
 beforeEach(() => {
   vi.useFakeTimers()
   reduce = false
+  mqListeners = []
   h.toDataURL.mockReset().mockImplementation(async (text: string) => `data:image/png;base64,${encodeURIComponent(text.slice(0, 40))}`)
   Object.defineProperty(window, 'matchMedia', {
     configurable: true,
-    value: (q: string) => ({ matches: q.includes('reduce') && reduce, media: q, addEventListener() {}, removeEventListener() {} }),
+    value: (q: string) => ({
+      matches: q.includes('reduce') && reduce,
+      media: q,
+      addEventListener: (_: string, l: (e: { matches: boolean }) => void) => void mqListeners.push(l),
+      removeEventListener: (_: string, l: (e: { matches: boolean }) => void) => void (mqListeners = mqListeners.filter((x) => x !== l)),
+    }),
   })
 })
 afterEach(() => {
@@ -107,5 +114,16 @@ describe('PayloadQr', () => {
     await settle()
     expect(frameShown()).toBe(1)
     expect(h.toDataURL.mock.calls.at(-1)?.[0]).toBe(h.toDataURL.mock.calls.at(-1)?.[0].toUpperCase())
+  })
+
+  it('pauses when reduced motion is switched on while it runs', async () => {
+    render(<PayloadQr text={big} />)
+    await settle()
+    expect(screen.getByRole('button', { name: 'Pause' })).toBeTruthy()
+    await act(async () => mqListeners.forEach((l) => l({ matches: true })))
+    expect(screen.getByRole('button', { name: 'Continue' })).toBeTruthy()
+    const at = frameShown()
+    await act(async () => void (await vi.advanceTimersByTimeAsync(3000)))
+    expect(frameShown()).toBe(at)
   })
 })

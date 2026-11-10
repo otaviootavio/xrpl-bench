@@ -10,9 +10,11 @@ import { URDecoder, encodeSinglePart, looksLikeUr } from '@/lib/ur/ur'
  *
  * - A still code (a single-part payload UR, or today's `xrplbench:` form) is
  *   whole at once.
- * - A frame of another payload than the one being collected starts over on the
- *   new one: a plate re-renders for a changed payload, and the old frames are
- *   never wanted again.
+ * - A frame of another payload than the one being collected is ignored, until
+ *   `SWITCH_AFTER_FOREIGN` such frames come in a row: then the session starts
+ *   over on the new payload (a plate re-renders for a changed payload). One
+ *   stray frame, or a second code in view, does not drop what is held.
+ * - A whole payload (a single-part UR) is whole at once, even while collecting.
  * - A UR that is not an XRPL Bench payload, and any other text, is ignored, as
  *   the camera ignores any other QR code in view.
  */
@@ -35,8 +37,14 @@ export function isPayloadText(text: string): boolean {
   return m !== null && isPayloadUrType(m[1].toLowerCase())
 }
 
+/** Foreign frames in a row before the session gives up what it holds for the new payload. */
+export const SWITCH_AFTER_FOREIGN = 3
+
+const isSinglePart = (t: string) => /^ur:[a-z0-9-]+\/[^/]+$/i.test(t)
+
 export class ScanSession {
   private decoder = new URDecoder()
+  private foreignInARow = 0
 
   /** True while frames of an animated code are held. */
   get collecting(): boolean {
@@ -50,12 +58,23 @@ export class ScanSession {
       this.reset()
       return { status: 'complete', text }
     }
+    if (isSinglePart(text)) {
+      // A still code is a whole payload: read it alone, leaving any frames held untouched.
+      const single = new URDecoder()
+      const r = single.receive(text) === 'accepted' ? single.result : null
+      if (!r?.ok) return { status: 'ignored' }
+      this.reset()
+      return { status: 'complete', text: encodeSinglePart(r.ur) }
+    }
     let status = this.decoder.receive(text)
     if (status === 'foreign') {
+      this.foreignInARow += 1
+      if (this.foreignInARow < SWITCH_AFTER_FOREIGN) return { status: 'ignored' }
       this.reset()
       status = this.decoder.receive(text)
     }
     if (status === 'invalid' || status === 'foreign') return { status: 'ignored' }
+    this.foreignInARow = 0
     const result = this.decoder.result
     if (result) {
       this.reset()
@@ -68,6 +87,7 @@ export class ScanSession {
 
   reset(): void {
     this.decoder.reset()
+    this.foreignInARow = 0
   }
 }
 

@@ -71,6 +71,8 @@ export class CborReader {
     if (this.offset + width > this.data.length) throw new CborError('truncated')
     let value = 0
     for (let i = 0; i < width; i++) value = value * 256 + this.data[this.offset++]
+    // Shortest form only: a head longer than its value needs is refused.
+    if (value < (width === 1 ? 24 : width === 2 ? 0x100 : 0x10000)) throw new CborError('non-canonical length')
     return value
   }
 

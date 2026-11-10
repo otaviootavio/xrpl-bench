@@ -1,6 +1,6 @@
 import QRCode from 'qrcode'
 import { isPayloadUrType } from '@/lib/qr-codec'
-import { encodePartCbor, findNominalFragmentLength } from '@/lib/ur/fountain'
+import { DEFAULT_LIMITS, encodePartCbor, findNominalFragmentLength } from '@/lib/ur/fountain'
 import { encodeMinimal } from '@/lib/ur/bytewords'
 import { UREncoder, decodeSinglePart, looksLikeUr } from '@/lib/ur/ur'
 
@@ -58,6 +58,9 @@ export function planQr(text: string): QrPlan {
   }
   if (!isPayloadUrType(ur.type) || ur.cbor.length <= STILL_MAX_MESSAGE_BYTES) return { kind: 'still', text: text.toUpperCase() }
   const encoder = new UREncoder(ur, FRAME_MAX_FRAGMENT_BYTES)
+  // Never animate what no decoder of this app would take in: drawn still, such a code fails to draw
+  // and says so (QrCode), rather than animating without end.
+  if (ur.cbor.length > DEFAULT_LIMITS.maxMessageLen || encoder.seqLen > DEFAULT_LIMITS.maxSeqLen) return { kind: 'still', text: text.toUpperCase() }
   // The longest frame this stream can ever make: the largest sequence number in
   // the path and in the CBOR, over a fragment of the stream's length.
   const fragmentLen = findNominalFragmentLength(ur.cbor.length, 10, FRAME_MAX_FRAGMENT_BYTES)

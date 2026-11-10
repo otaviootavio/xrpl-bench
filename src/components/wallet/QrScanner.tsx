@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
 import { SCAN_COMPLETE, scanProgressWords } from '@/lib/animated-qr-words'
-import { CODE_UNREADABLE } from '@/lib/qr-codec'
+import { CODE_UNREADABLE, MAX_TEXT_LENGTH } from '@/lib/qr-codec'
 import { ScanSession, isPayloadText, quarterOf } from '@/lib/qr-scan-session'
 
 /** The part of the browser's `BarcodeDetector` this uses (not in `lib.dom`). */
@@ -18,6 +18,9 @@ function detectorCtor(): DetectorCtor | null {
 
 /** A frame of an animated code: `ur:<type>/<seqNum>-<seqLen>/…`. */
 const isFrame = (t: string) => /^ur:[a-z0-9-]+\/[0-9]+-[0-9]+\//i.test(t)
+
+/** Pasted frames read in one press, at most: a paste past this is not read at all. */
+const MAX_PASTED_FRAMES = 1024
 
 type Progress = { percent: number } | 'complete' | null
 
@@ -160,12 +163,24 @@ export function QrScanner({ onPayload, label }: { onPayload: (text: string) => v
     }
     setPasteError(false)
     if (pasteRef.current) pasteRef.current.value = ''
+    // A hand-up from a paste ends the scan: the camera must not hand the same payload up again.
+    const ended = () => {
+      setScanning(false)
+      session.current?.reset()
+    }
     // Pasted frames of an animated code (one or several) join the session; anything else is judged whole by the screen.
     const tokens = text.split(/\s+/)
     if (tokens.every(isFrame) && tokens.some(isPayloadText)) {
-      for (const t of tokens) if (take.current(t)) return
+      if (text.length > MAX_TEXT_LENGTH || tokens.length > MAX_PASTED_FRAMES) {
+        setUnreadable(true)
+        return
+      }
+      for (const t of tokens) {
+        if (take.current(t)) return ended()
+      }
       return
     }
+    ended()
     onPayload(text)
   }
 
@@ -183,16 +198,14 @@ export function QrScanner({ onPayload, label }: { onPayload: (text: string) => v
         <p className="text-xs text-muted-foreground">This browser cannot scan a QR code, so paste the text of {label} instead.</p>
       )}
       {progress !== null && (
-        <>
-          <p aria-hidden="true" className="font-data text-xs" data-testid="scan-progress">
-            {progress === 'complete' ? SCAN_COMPLETE : scanProgressWords(progress.percent)}
-          </p>
-          {/* Changes only when a quarter is passed, so a screen reader is not read every frame. */}
-          <p role="status" className="sr-only">
-            {progress === 'complete' ? SCAN_COMPLETE : scanProgressWords(quarterOf(progress.percent))}
-          </p>
-        </>
+        <p aria-hidden="true" className="font-data text-xs" data-testid="scan-progress">
+          {progress === 'complete' ? SCAN_COMPLETE : scanProgressWords(progress.percent)}
+        </p>
       )}
+      {/* Always mounted, so its first text is announced; it changes only when a quarter is passed, not every frame. */}
+      <p role="status" className="sr-only" data-testid="scan-status">
+        {progress === null ? '' : progress === 'complete' ? SCAN_COMPLETE : scanProgressWords(quarterOf(progress.percent))}
+      </p>
       {unreadable && (
         <p role="alert" className="text-xs">
           {CODE_UNREADABLE}

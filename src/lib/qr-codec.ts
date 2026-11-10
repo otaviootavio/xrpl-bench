@@ -40,7 +40,7 @@ type PayloadKind = keyof typeof PAYLOAD_UR_TYPES
 export const isPayloadUrType = (type: string): boolean => type.startsWith('xrplbench-')
 
 /** Text longer than this is not read at all: the message bound of the UR decoder, in Bytewords, plus room for the type. */
-const MAX_TEXT_LENGTH = 2 * 65536 + 256
+export const MAX_TEXT_LENGTH = 2 * 65536 + 256
 
 /** Always `ok`: nothing is refused for its size (OS-FR-24). The shape is kept for the callers. */
 export type Encoded = { ok: true; text: string }

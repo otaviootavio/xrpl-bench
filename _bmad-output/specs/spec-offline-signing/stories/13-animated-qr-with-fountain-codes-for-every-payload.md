@@ -38,7 +38,7 @@ context:
 | Scan, any start | frames from frame 6, every third missed | completes; payload handed up once, whole | — |
 | Progress | each frame | visible line updates each frame; `role=status` only at 0/25/50/75, then "The app read the code." | — |
 | Bad checksum | per-frame Bytewords valid, joined message altered | nothing handed up; shipped "That code could not be read." as `role=alert`; session starts over | — |
-| Foreign frame | frame of another payload | session restarts on the new payload | — |
+| Foreign frame | frame of another payload | ignored; after 3 in a row the session restarts on the new payload | — |
 | Still code while collecting | single-part payload UR | whole at once; handed up | — |
 | Crafted frame | `seqLen` 2^32-1 / path ≠ CBOR / trailing CBOR / not xrplbench | ignored, under 200 ms, nothing allocated | — |
 | Paste | one frame, several frames, all at once out of order | joins the session; any other text handed up as today | — |
@@ -97,6 +97,20 @@ context:
 - **Words.** P-64 (keys, caption) and P-65 (progress, complete) from `animated-qr-words.ts`, tested against EXPERIENCE.md. The checksum failure reuses the shipped codec sentence "That code could not be read."; the frame image reuses the shipped alt "QR code carrying a signing payload". No new words.
 - **Deferred work.** No open `deferred-work.md` entry belongs to this story. The open story 4 entry about scanning a plain address (`QrScanner` hands up only payload codes) is unchanged: the scanner now accepts payload URs and the old form, and still no address.
 - **Not built here.** Wake lock during a round and "Make the code larger" (EXPERIENCE "Round timing", "Animated QR"): neither exists today; story 6's QR hand-off plate owns them. The plate's title, Network row and "Scan 1 of 3" caption are story 6's too.
+
+## Review Triage Log
+
+Round one (coordinator review, 2026-11-09). Each fixed with the smallest change; tests run on the edited files only.
+
+| # | Finding | Verdict | Fix |
+|---|---|---|---|
+| 1 | A paste that completes a payload left the camera on, so it handed the same payload up again | real | `usePasted` ends the scan on any hand-up (frames or plain text): camera off, session reset. The "The app read the code." line stays (P-65 complete), since it is no stale progress. Tests: camera on, paste of a whole code / of all frames, then the same code in front of the camera: one hand-up, camera key back. |
+| 2 | `planQr` animated any size; the decoder refuses more than 256 fragments, so a payload over 64,000 bytes animated unreadable | real | One bound: `planQr` reads `DEFAULT_LIMITS` and never animates past `maxMessageLen` or `maxSeqLen`; such a code is drawn still, and `QrCode` says it could not be drawn (shipped words). Test at 64,001 bytes (still) and 64,000 (256 frames). |
+| 3 | Every foreign frame reset the session: one stray frame dropped progress; two codes in view never finished | real | `ScanSession` switches only after `SWITCH_AFTER_FOREIGN` (3) foreign frames in a row; a whole still code is read on its own without touching held frames. Tests: two stray frames ignored, third switches; interleaved frames of two codes, the first finishes. |
+| 4 | `CborReader` accepted heads longer than needed | real | `readHead` refuses a 1/2/4-byte head whose value fits a shorter one. Test. |
+| 5 | The `role=status` element mounted with its first text, so the first announcement was missed | real | The sr-only status element is always mounted, empty without progress. Test. |
+| 6 | No cap on pasted frames (1,300 crafted frames block for seconds) | real | A paste of frames over 1,024 tokens or over `MAX_TEXT_LENGTH` is not read; the shipped "That code could not be read." shows. Test at 1,025 frames. |
+| 7 | Reduced motion read once | real | `AnimatedQr` listens to the media query's `change` and pauses when it turns on. Test. |
 
 ## Design Notes
 

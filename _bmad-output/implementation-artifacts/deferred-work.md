@@ -681,3 +681,19 @@ Item 8 shipped as a refactor that preserves behaviour (`spec-sendtab-split.md`).
   summary: Notes from story 8 review round two, not built: a trust line to the Account's own address is not refused (the same as the online screen; the ledger refuses it); key-action ledger refusals other than today's mapping (`temBAD_REGKEY`, `tecNO_ALTERNATIVE_KEY`, `tecNEED_MASTER_KEY`, P-31) belong to story 11; "This is a new payment" (approved fixed string) reads oddly on a retried trust line or key change: a wording question for the owner.
   evidence: Coordinator review, 2026-11-14.
 
+- source_spec: `_bmad-output/specs/spec-offline-signing/stories/9-transmitter-builds-route-for-every-write.md`
+  summary: Missing words in story 9: a title for the Unsigned plate (P-33 heads it), a scan count for the two-scan route ("Scan 1 of 2" / "Scan 2 of 2"; only "Scan {n} of 3" is approved), and a way back to the scanner after a signing on the Offline Sign screen (leaving the screen resets it).
+  evidence: Each is in neither approved list. P-12's `{duration}` on this route is filled with the window in minutes ("10 minutes" for 150 ledgers, "1 minute" / "N minutes" otherwise), and P-53's `{flag in words}` with the ledger's flag name (P-52). Both fillings want the owner's eye.
+
+- source_spec: `_bmad-output/specs/spec-offline-signing/stories/9-transmitter-builds-route-for-every-write.md`
+  summary: P-62's "Other transactions" is not shown. The online app builds no write beyond Payment (XRP and token), TrustSet, SetRegularKey and the master key flag, so the type would open nothing.
+  evidence: Grep of `TransactionType:` literals and `autofill(` callers (2026-11-14). When the online app gains a write, add it under "Other transactions" on the Transmitter and to `unsigned-judge.ts`'s allow-list.
+
+- source_spec: `_bmad-output/specs/spec-offline-signing/stories/9-transmitter-builds-route-for-every-write.md`
+  summary: The Transmitter-builds route records its signings in the signed list and shows P-19, but does not apply the retry table. The Transmitter sets the Sequence, so building the same payment twice on the Transmitter gives two Sequences and both can apply.
+  evidence: route-checks puts the retry table on the Offline-builds route only. The Offline Wallet could refuse or warn when a Same Build record's window is still open, but that needs words beyond P-19 / P-22.
+
+- source_spec: `_bmad-output/specs/spec-offline-signing/stories/9-transmitter-builds-route-for-every-write.md`
+  summary: The Transmit step on the Synced Transmitter's New transaction does not compare the returned blob with the Unsigned Transaction it made (two-device's `verifySigned` does). It checks the signature, the expected Account (the Synced address), the Network and the window, as every Transmit step does.
+  evidence: route-checks "Transmit step" does not ask for it, and a refusal would need words.
+

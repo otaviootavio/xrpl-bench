@@ -365,7 +365,8 @@ function PaymentForm({ wallet, address, busy, onMake, initial }: FormProps & { i
           </p>
         )}
       </div>
-      <div className="grid gap-1.5">
+      {/* min-w-0: the trigger does not wrap, so at 320px with 200% text it would widen the column. */}
+      <div className="grid min-w-0 gap-1.5">
         <Label>{W.SHIPPED_SEND.asset}</Label>
         <Select
           value={asset}
@@ -374,7 +375,7 @@ function PaymentForm({ wallet, address, busy, onMake, initial }: FormProps & { i
             setAsset(next)
           }}
         >
-          <SelectTrigger>
+          <SelectTrigger className="min-w-0">
             <SelectValue>{asset !== 'XRP' && !selectedLine ? displayCurrencyCode(asset.split('|')[0]) : undefined}</SelectValue>
           </SelectTrigger>
           <SelectContent>

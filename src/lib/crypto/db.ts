@@ -1,4 +1,5 @@
 import { openDB, type DBSchema, type IDBPDatabase } from 'idb'
+import { isValidClassicAddress } from 'xrpl'
 import { isNetworkId, type NetworkId } from '@/lib/xrpl/networks'
 import type { SignedRecord } from '@/lib/signed-list'
 
@@ -51,6 +52,13 @@ export interface WalletView {
    * `address`. A claim only; whether the key still controls the Account is
    * always read from the ledger, never from this field. */
   accountAddress?: string
+  /** "Signs for" (OS-FR-20, CAP-13): the Account this Wallet signs for when it is
+   * not the Seed's own address, set by the quiz's optional step, the Signs for
+   * plate or P-54. The key is that Account's Regular Key, a claim only, never read
+   * back from here as proof. Kept apart from `accountAddress` (today's controlled
+   * views, FR-75) so story 12 can remove those alone. Absent: the record's
+   * `address`. Never stored equal to it. */
+  signsFor?: string
   /** The Wallet's kind (OS-FR-1, CAP-1). Absent is an Online Wallet, so every
    * record made before the kind existed reads as Online with nothing rewritten.
    * Only `offline` is stored on a Seed view: a Transmitter holds no Seed and has a
@@ -311,7 +319,13 @@ export const isSigningCheck = (v: unknown): v is SigningCheck => v === 'standard
 function isCompleteView(v: unknown): boolean {
   if (!v || typeof v !== 'object') return false
   const r = v as Record<string, unknown>
-  return typeof r.walletId === 'string' && r.walletId.length > 0 && isNetworkId(r.network)
+  return (
+    typeof r.walletId === 'string' &&
+    r.walletId.length > 0 &&
+    isNetworkId(r.network) &&
+    // A Signs-for value that is not an address is never read as the key's own Account (fail closed).
+    (r.signsFor === undefined || (typeof r.signsFor === 'string' && isValidClassicAddress(r.signsFor)))
+  )
 }
 
 /** FR-95: the one validity rule for a Seed record. Every field the screens read

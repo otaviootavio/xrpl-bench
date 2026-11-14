@@ -472,5 +472,6 @@ export function recordOfJudged(judged: JudgedUnsigned, signed: SignedUnsigned): 
     lastLedgerSequence: signed.lastLedgerSequence,
     ledgerIndex: judged.ledgerIndex,
     signedAt: signed.signedAt,
+    account: judged.tx.Account,
   }
 }

@@ -514,7 +514,7 @@ function BuiltFields({ build, signedWith }: { build: OfflineBuild; signedWith?: 
  * shows P-16 here (never silence, which would read as "no earlier signing"),
  * and the Data to Sign is then refused.
  */
-function SameBuildNotice({ walletId, build }: { walletId: string; build: OfflineBuild }) {
+function SameBuildNotice({ walletId, keyAddress, build }: { walletId: string; keyAddress: string; build: OfflineBuild }) {
   const signed = useSignedList(walletId)
   if (signed.status === 'failed') {
     return (
@@ -523,7 +523,7 @@ function SameBuildNotice({ walletId, build }: { walletId: string; build: Offline
       </Alert>
     )
   }
-  const earlier = signed.status === 'ok' ? latestSameBuild(signed.list, buildHashOf(build)) : null
+  const earlier = signed.status === 'ok' ? latestSameBuild(signed.list, buildHashOf(build), { account: build.account, keyAddress }) : null
   if (!earlier) return null
   return (
     <Alert role="none">
@@ -549,7 +549,7 @@ function Reviewed({ wallet, round, headingRef }: { wallet: KeyWalletMeta; round:
       <h2 ref={headingRef} tabIndex={-1} className="text-sm font-semibold">
         {TYPE_WORDS[round.build.type]}
       </h2>
-      <SameBuildNotice walletId={wallet.id} build={round.build} />
+      <SameBuildNotice walletId={wallet.id} keyAddress={wallet.keyAddress} build={round.build} />
       <BuiltFields build={round.build} />
       <div className="flex flex-wrap gap-2">
         <Button type="button" onClick={() => startRequest(wallet.id, round)}>
@@ -608,7 +608,7 @@ function RequestShown({ wallet, round, headingRef }: { wallet: KeyWalletMeta; ro
     const requestId = keptPhase.requestId
     const data = judged.data
     // The retry table (route-checks "Retry without paying twice"), against the latest earlier signing.
-    const earlier = latestSameBuild(list, buildHashOf(now.build))
+    const earlier = latestSameBuild(list, buildHashOf(now.build), { account: now.build.account, keyAddress: wallet.keyAddress })
     const retry = earlier ? retryCaseOf(earlier, data) : null
     if (earlier && retry?.case === 'higher') {
       setRound(wallet.id, { ...now, phase: { name: 'retry-higher', requestId, data, warning, earlier } })
@@ -621,7 +621,7 @@ function RequestShown({ wallet, round, headingRef }: { wallet: KeyWalletMeta; ro
 
   return (
     <div className="flex min-w-0 flex-col gap-4">
-      <SameBuildNotice walletId={wallet.id} build={round.build} />
+      <SameBuildNotice walletId={wallet.id} keyAddress={wallet.keyAddress} build={round.build} />
       <HandoffPlate heading={W.DATA_TO_SIGN_NEEDED} headingRef={headingRef} network={wallet.network} text={text} scan={1}>
         <p className="text-sm">{W.REQUEST_LINE}</p>
       </HandoffPlate>

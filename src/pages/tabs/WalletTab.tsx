@@ -28,7 +28,7 @@ import {
 import { launchFromConfigure, peekConfigureFocusReturn, clearConfigureFocusReturn } from '@/lib/configure-launch'
 import { useLockMinutesChanged } from '@/hooks/useLockMinutesChanged'
 import { usePrompts } from '@/hooks/usePrompts'
-import { listWallets, renameWallet, setLockAutoLock, setShowBeforeSending, setTransmitterSync, type KeyWalletMeta, type TransmitterMeta, type WalletMeta } from '@/lib/crypto/keystore'
+import { listWallets, renameWallet, setLockAutoLock, setShowBeforeSending, setSignsFor, setTransmitterSync, SignsForRefusedError, type KeyWalletMeta, type TransmitterMeta, type WalletMeta } from '@/lib/crypto/keystore'
 import { isValidClassicAddress } from 'xrpl'
 import { Input } from '@/components/ui/input'
 import { WarningSentence } from '@/components/wallet/WarningSentence'
@@ -53,6 +53,9 @@ import { NeverOnlineSteps } from '@/components/wallet/ChangeKindScreens'
 import { CHANGE_TO_OFFLINE, CHANGE_TO_ONLINE, NOW_OFFLINE, NOW_ONLINE, PASSKEY_SEED_NOT_OFFLINE, SHARED_SEED_NO_CHANGE, WALLET_KIND, WAS_ONLINE_WHY } from '@/lib/kind-change-words'
 import { clearKindChanged, peekKindChanged } from '@/lib/kind-change-result'
 import { fill } from '@/lib/transmit-words'
+import { SET_IT, SIGNS_FOR_ANOTHER_ACCOUNT, WALLET_SIGNS_FOR } from '@/lib/signs-for-words'
+import { SignsForFields } from '@/components/wallet/SignsForFields'
+import { signsForDraftState, signsForIds } from '@/lib/signs-for'
 
 /** A key that wraps its legend rather than push a plate past 320px or 200% text. */
 const KEY = 'h-auto min-h-8 w-fit max-w-full whitespace-normal py-1 pointer-coarse:min-h-11'
@@ -266,6 +269,94 @@ function ControlPlate({ wallet }: { wallet: KeyWalletMeta }) {
         </Button>
       )}
       <MasterKeyControl wallet={wallet} />
+    </ConfigPlate>
+  )
+}
+
+/**
+ * Signs for (OS-FR-20, CAP-13; EXPERIENCE "Local settings plates, per kind"), on an
+ * Online and an Offline Wallet: the Account this key signs for, changed or removed
+ * without re-creating the Wallet. The title is the fixed string; the state line is
+ * P-17's sentence; the keys reuse P-54's "Set it" and P-46's "Remove the address"
+ * (story 10: the spine's "Signs for", "Account" and "Change" are not approved).
+ * A change forgets the old Account's cached reads (Online), so nothing for the old
+ * Account shows as current for the new one. A
+ * Wallet that shares its Seed record (today's controlled views, FR-75) shows the
+ * Account and no keys until story 12 removes those views.
+ */
+function SignsForPlate({ wallet }: { wallet: KeyWalletMeta }) {
+  const queryClient = useQueryClient()
+  const allWallets = useAppStore((s) => s.wallets)
+  const setWallets = useAppStore((s) => s.setWallets)
+  const [draft, setDraft] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [refusal, setRefusal] = useState<string | null>(null)
+  const id = useId()
+  const state = signsForDraftState(draft)
+  const typed = draft.trim()
+  const signsForAnother = wallet.address !== wallet.keyAddress
+  const shared = allWallets.filter((w) => w.seedId === wallet.seedId).length > 1
+
+  async function apply(next: string | null) {
+    if (busy || (next !== null && signsForDraftState(next) !== 'valid')) return
+    setBusy(true)
+    setRefusal(null)
+    const before = wallet
+    let meta: KeyWalletMeta
+    try {
+      meta = await setSignsFor(wallet.id, next)
+    } catch (err) {
+      // P-35 for FR-93's duplicate; otherwise the shipped words: nothing was written.
+      if (err instanceof SignsForRefusedError && err.refusal === 'duplicate') setRefusal(err.message)
+      else notify.error('Nothing was changed.')
+      setBusy(false)
+      return
+    }
+    try {
+      const { wallets: current } = useAppStore.getState()
+      setWallets(current.map((w) => (w.id === meta.id ? meta : w)))
+      // An Offline Wallet reads nothing; its kept round stays (it may hold a signed
+      // transaction still in its window), and any answer for it is refused by the
+      // Account check (P-17), since its Build is for the old Account.
+      if (before.address !== meta.address && before.kind === 'online') forgetSyncedAddress(queryClient, before.id, before.network, before.address)
+      setDraft('')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <ConfigPlate title={SIGNS_FOR_ANOTHER_ACCOUNT}>
+      {signsForAnother && <p className="text-sm [overflow-wrap:anywhere]">{fill(WALLET_SIGNS_FOR, wallet.address)}</p>}
+      {!shared && (
+        <>
+          <SignsForFields draft={draft} onDraft={(d) => (setDraft(d), setRefusal(null))} disabled={busy} idPrefix={id} />
+          {refusal && (
+            <p role="alert" className="text-sm text-text-destructive">
+              {refusal}
+            </p>
+          )}
+          <div className="flex flex-wrap gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className={KEY}
+              aria-disabled={state !== 'valid' ? true : undefined}
+              aria-describedby={state === 'invalid' ? signsForIds(id).error : undefined}
+              disabled={busy}
+              onClick={() => void apply(typed)}
+            >
+              {SET_IT}
+            </Button>
+            {signsForAnother && (
+              <Button type="button" variant="outline" size="sm" className={KEY} disabled={busy} onClick={() => void apply(null)}>
+                {REMOVE_THE_ADDRESS}
+              </Button>
+            )}
+          </div>
+        </>
+      )}
     </ConfigPlate>
   )
 }
@@ -583,6 +674,7 @@ function KindPlates({ wallet }: { wallet: WalletMeta }) {
         <>
           <ChecksPlate wallet={wallet} />
           <SeedPlate wallet={wallet} />
+          <SignsForPlate wallet={wallet} />
           {/* A wallet either operates another account or holds the Account Master Key, so this plate always has something to say. */}
           <ControlPlate wallet={wallet} />
           <ConfigPlate title="Node">
@@ -600,6 +692,7 @@ function KindPlates({ wallet }: { wallet: WalletMeta }) {
         <>
           <ChecksPlate wallet={wallet} />
           <SeedPlate wallet={wallet} />
+          <SignsForPlate wallet={wallet} />
         </>
       )
     case 'transmitter':

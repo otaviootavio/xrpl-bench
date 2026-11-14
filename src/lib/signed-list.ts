@@ -17,6 +17,10 @@ export interface SignedRecord {
   ledgerIndex: number
   /** When it was signed, ms since epoch. */
   signedAt: number
+  /** The Account it was signed for (OS-FR-20). Absent on a record made before Signs
+   * for existed: then it was the Wallet's key address, the only Account an Offline
+   * Wallet could sign for. */
+  account?: string
 }
 
 const isUInt = (v: unknown): v is number => typeof v === 'number' && Number.isInteger(v) && v >= 0 && v <= 0xffffffff
@@ -34,7 +38,8 @@ export function isSignedRecord(v: unknown): v is SignedRecord {
     isUInt(r.lastLedgerSequence) &&
     isUInt(r.ledgerIndex) &&
     typeof r.signedAt === 'number' &&
-    Number.isFinite(r.signedAt)
+    Number.isFinite(r.signedAt) &&
+    (r.account === undefined || (typeof r.account === 'string' && r.account.length > 0))
   )
 }
 
@@ -45,10 +50,18 @@ export function isSignedRecord(v: unknown): v is SignedRecord {
  * later window is the one that can still apply, so P-21 is never shown while it
  * is open.
  */
-export function latestSameBuild(list: readonly SignedRecord[], buildHash: string): SignedRecord | null {
+export function latestSameBuild(
+  list: readonly SignedRecord[],
+  buildHash: string,
+  /** The Account the new Build is for, and the Wallet's key address (what a record
+   * with no `account` was signed for). A record for another Account is never a Same
+   * Build: its Sequence is that Account's (OS-FR-20, a Signs-for change). */
+  scope: { account: string; keyAddress: string },
+): SignedRecord | null {
   let best: SignedRecord | null = null
   for (const r of list) {
     if (r.buildHash !== buildHash) continue
+    if ((r.account ?? scope.keyAddress) !== scope.account) continue
     if (!best || r.sequence > best.sequence || (r.sequence === best.sequence && r.lastLedgerSequence > best.lastLedgerSequence)) best = r
   }
   return best

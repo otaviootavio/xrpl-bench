@@ -1,4 +1,4 @@
-import { decodeSeed, ECDSA, isValidClassicAddress, Wallet } from 'xrpl'
+import { decode, decodeSeed, deriveAddress, ECDSA, isValidClassicAddress, Wallet } from 'xrpl'
 import { canonicalNodeUrl, NETWORKS, type NetworkId } from '@/lib/xrpl/networks'
 import type { SignedForReview, Signer, SigningHandle } from '@/lib/xrpl/writes'
 import { aesDecrypt, aesEncrypt } from './aes'
@@ -116,6 +116,14 @@ function viewsOf(w: StoredWallet): WalletView[] {
   return w.views
 }
 
+/** The one resolver of the Account a view signs for (AD-18, OS-FR-20): its Signs-for
+ * Account, else a controlled view's `accountAddress` (FR-75, removed by story 12),
+ * else the Seed's own address. Every reader goes through it, so `address` and
+ * `keyAddress` agree for every caller. */
+function accountOfView(w: StoredWallet, v: WalletView): string {
+  return v.signsFor ?? v.accountAddress ?? w.address
+}
+
 function toMetas(w: StoredWallet): KeyWalletMeta[] {
   return viewsOf(w).flatMap((v): KeyWalletMeta[] => {
     const kind = kindOfView(v)
@@ -130,7 +138,7 @@ function toMeta(w: StoredWallet, v: WalletView, kind: 'online' | 'offline'): Key
     seedId: w.id,
     lockId: w.lockId,
     label: w.label,
-    address: v.accountAddress ?? w.address,
+    address: accountOfView(w, v),
     keyAddress: w.address,
     createdAt: w.createdAt,
     network: v.network,
@@ -161,7 +169,7 @@ function findSeedRecord(all: StoredWallet[], walletId: string): StoredWallet | u
 /** One Wallet is identified by `(network, Account, key)`; a second view with the
  * same triple, on any Seed record, is refused (AD-18). */
 function hasView(all: StoredWallet[], network: NetworkId, account: string, keyAddress: string): boolean {
-  return all.some((w) => w.address === keyAddress && viewsOf(w).some((v) => v.network === network && (v.accountAddress ?? w.address) === account))
+  return all.some((w) => w.address === keyAddress && viewsOf(w).some((v) => v.network === network && accountOfView(w, v) === account))
 }
 
 /** A Transmitter record as the app sees it. */
@@ -450,10 +458,10 @@ async function seedRecordFor(walletId: string): Promise<StoredWallet> {
   return stored
 }
 
-/** The Account a Wallet's view operates: the view's `accountAddress`, else the
- * Seed record's own address (AD-18). */
+/** The Account a Wallet's view operates (AD-18). */
 function accountOf(stored: StoredWallet, walletId: string): string {
-  return viewsOf(stored).find((v) => v.walletId === walletId)?.accountAddress ?? stored.address
+  const view = viewsOf(stored).find((v) => v.walletId === walletId)
+  return view ? accountOfView(stored, view) : stored.address
 }
 
 /**
@@ -530,14 +538,49 @@ export async function offlineSigningHandleFor(walletId: string, ctx: SigningCont
   const stored = await seedRecordFor(walletId)
   const view = viewsOf(stored).find((v) => v.walletId === walletId)
   if (!view || kindOfView(view) !== 'offline') throw new NotAnOfflineWalletError()
+  const account = accountOf(stored, walletId)
   return {
-    address: accountOf(stored, walletId),
+    address: account,
     async open() {
       const result = await openSigner(walletId, ctx)
       if (result.status !== 'ok') throw new SigningCheckError(result)
-      return result.value
+      const inner = result.value
+      // OS-FR-20: the signed blob is for the Account this Wallet Signs for, and its
+      // signing key is this Wallet's own key. Checked on the SDK's real output; a
+      // mismatch returns no blob, so no signed QR can show.
+      return {
+        sign(tx) {
+          // A wrapper of the one-use Signer, called only from writes.ts `signPrepared`.
+          // check-write-choke-point-allow
+          const signed = inner.sign(tx)
+          assertSignedFor(signed.tx_blob, account, stored.address)
+          return signed
+        },
+        dispose: () => inner.dispose(),
+      }
     },
   }
+}
+
+/** Thrown when a signed blob is not for this Wallet's Signs-for Account or not by its
+ * key (OS-FR-20). Developer text: the screens show their own words for a failed signing. */
+export class SignedForWrongAccountError extends Error {
+  constructor() {
+    super('The signed transaction is not for this wallet. Nothing was signed.')
+    this.name = 'SignedForWrongAccountError'
+  }
+}
+
+/** The decoded blob's `Account` is `account` and its `SigningPubKey` derives `keyAddress`. */
+export function assertSignedFor(txBlob: string, account: string, keyAddress: string): void {
+  let ok = false
+  try {
+    const tx = decode(txBlob) as { Account?: unknown; SigningPubKey?: unknown }
+    ok = tx.Account === account && typeof tx.SigningPubKey === 'string' && deriveAddress(tx.SigningPubKey) === keyAddress
+  } catch {
+    ok = false
+  }
+  if (!ok) throw new SignedForWrongAccountError()
 }
 
 /** Refused: only an Offline Wallet's view signs a Built transaction for a QR. Developer text, never shown. */
@@ -1033,6 +1076,9 @@ export interface CreateStoredWalletInput {
   /** `offline`: an Offline Wallet (OS-FR-2). Absent: an Online Wallet. An Offline
    * Wallet has no Node, so `node` with it is refused before anything is written. */
   kind?: 'offline'
+  /** "This key signs for another account" (OS-FR-20): the Account this key signs
+   * for, when it is not the key's own. Absent, or equal to the key's address: none. */
+  signsFor?: string
 }
 
 export type CreateStoredWalletResult =
@@ -1103,6 +1149,9 @@ export interface ImportStoredWalletInput {
   passkey?: PasskeyCapability
   /** `offline`: an Offline Wallet (OS-FR-2, OS-FR-7). Absent: an Online Wallet. */
   kind?: 'offline'
+  /** "This key signs for another account" (OS-FR-20): the Account this key signs
+   * for, when it is not the key's own. Absent, or equal to the key's address: none. */
+  signsFor?: string
 }
 
 export type ImportWalletContext = CreateWalletContext
@@ -1116,9 +1165,20 @@ function importDuplicateReasonText(network: NetworkId): string {
 }
 
 /** The one duplicate check, shared by the writer and the screen's probe so the two
- * cannot disagree: the key is the address plus the Network (FR-93, AD-39). */
-async function duplicateReasonFor(address: string, network: NetworkId): Promise<string | null> {
-  return hasView(await listStoredWallets(), network, address, address) ? importDuplicateReasonText(network) : null
+ * cannot disagree (FR-93, AD-39): one Wallet is `(Network, Signs-for Account, key)`.
+ * `account` is the Signs-for Account, the key's own address when there is none.
+ * A key that signs for itself keeps today's words; a Signs-for collision says P-35. */
+async function duplicateReasonFor(address: string, network: NetworkId, account: string = address): Promise<string | null> {
+  if (!hasView(await listStoredWallets(), network, account, address)) return null
+  return account === address ? importDuplicateReasonText(network) : sameAddressReason(network)
+}
+
+/** The Signs-for Account a writer stores: `undefined` when none, or when it is the
+ * key's own address (never stored equal to it). `null`: not an address. */
+function signsForToStore(signsFor: string | undefined, keyAddress: string): string | undefined | null {
+  if (signsFor === undefined || signsFor === '') return undefined
+  if (!isValidClassicAddress(signsFor)) return null
+  return signsFor === keyAddress ? undefined : signsFor
 }
 
 /**
@@ -1126,14 +1186,15 @@ async function duplicateReasonFor(address: string, network: NetworkId): Promise<
  * the device on this Network: the reason to show, or `null`. A value that is not a Seed
  * is not a duplicate (the caller parses first). Reads only; the Seed is a parameter.
  */
-export async function importDuplicateReason(seed: string, network: NetworkId): Promise<string | null> {
+export async function importDuplicateReason(seed: string, network: NetworkId, signsFor?: string): Promise<string | null> {
   let address: string
   try {
     address = Wallet.fromSeed(seed).address
   } catch {
     return null
   }
-  return duplicateReasonFor(address, network)
+  const account = signsForToStore(signsFor, address)
+  return duplicateReasonFor(address, network, account ?? address)
 }
 
 /**
@@ -1173,6 +1234,7 @@ interface NewWalletSpec {
   passkey: PasskeyCapability
   origin: 'generated' | 'imported'
   kind?: 'offline'
+  signsFor?: string
 }
 
 /** A programming error, never shown: an Offline Wallet has no Node (OS-FR-2), so a
@@ -1228,10 +1290,13 @@ async function writeNewStoredWallet(
   const obtained = obtainSeed()
   if ('refused' in obtained) return { status: 'refused', reason: obtained.refused }
   const { seed, address, algorithm } = obtained
+  const signsFor = signsForToStore(input.signsFor, address)
+  if (signsFor === null) return { status: 'refused', reason: INVALID_ADDRESS }
+  // One Wallet is held once per (Network, Signs-for Account, key) (AD-39, FR-93, OS-FR-20).
+  // A generated key is new, so only an import can collide; both ask.
+  const duplicate = await duplicateReasonFor(address, input.network, signsFor ?? address)
+  if (duplicate) return { status: 'refused', reason: duplicate }
   if (input.origin === 'imported') {
-    // One Account is held once per Network (AD-39, FR-93).
-    const duplicate = await duplicateReasonFor(address, input.network)
-    if (duplicate) return { status: 'refused', reason: duplicate }
     const blocked = await pinGate()
     if (blocked) return blocked
   }
@@ -1271,7 +1336,15 @@ async function writeNewStoredWallet(
       lockId,
       openCheck: input.openCheck,
       signingCheck: input.signing,
-      views: [{ walletId, network: input.network, ...(node ? { node } : {}), ...(input.kind === 'offline' ? { kind: 'offline' as const } : {}) }],
+      views: [
+        {
+          walletId,
+          network: input.network,
+          ...(node ? { node } : {}),
+          ...(input.kind === 'offline' ? { kind: 'offline' as const } : {}),
+          ...(signsFor ? { signsFor } : {}),
+        },
+      ],
       ...(confirmedAt ? { writtenSeedConfirmedAt: confirmedAt } : {}),
       ...(sealed
         ? { sealedSeed: sealed.sealedSeed, signing: sealed.signing }
@@ -1332,6 +1405,9 @@ export interface CreateDerivedWalletInput {
   ordinal?: string
   /** A restore accepts the derived Wallet only if it is this address. */
   expectedAddress?: string
+  /** "This key signs for another account" (OS-FR-20): the Account this key signs
+   * for, when it is not the key's own. Absent, or equal to the key's address: none. */
+  signsFor?: string
 }
 
 export type CreateDerivedWalletResult =
@@ -1422,6 +1498,12 @@ async function createDerivedWalletUnguarded(requested: CreateDerivedWalletInput,
     if (input.expectedAddress !== undefined && address !== input.expectedAddress) {
       return await abandon(hadAppPin, { status: 'wrong-credential', kind: 'passkey', triesRemaining: await triesRemaining() })
     }
+    const signsFor = signsForToStore(input.signsFor, address)
+    if (signsFor === null) return await abandon(hadAppPin, { status: 'refused' as const, reason: INVALID_ADDRESS })
+    // A Signs-for collision is refused as on the other writers (FR-93, OS-FR-20); without
+    // Signs for, this writer's duplicate rule is the passkey triple below, as before.
+    const duplicate = signsFor ? await duplicateReasonFor(address, input.network, signsFor) : null
+    if (duplicate) return await abandon(hadAppPin, { status: 'refused' as const, reason: duplicate })
     const taken = (await listStoredWallets()).some(
       (w) =>
         w.derived?.credentialIdB64 === credentialIdB64 &&
@@ -1465,7 +1547,7 @@ async function createDerivedWalletUnguarded(requested: CreateDerivedWalletInput,
       lockId,
       openCheck: input.openCheck,
       signingCheck: 'passkey',
-      views: [{ walletId, network: input.network, ...(node ? { node } : {}) }],
+      views: [{ walletId, network: input.network, ...(node ? { node } : {}), ...(signsFor ? { signsFor } : {}) }],
       derived: { credentialIdB64, rpId, ordinal, ...(backupEligible === undefined ? {} : { backupEligible }) },
       ...(confirmedAt ? { writtenSeedConfirmedAt: confirmedAt } : {}),
     }
@@ -1554,7 +1636,7 @@ export async function addControlledView(
     // One record holds one kind (story 5): no Online view is added to a record that became Offline.
     notOnline = views.some((v) => kindOfView(v) !== 'online')
     if (notOnline) return current
-    if (views.some((v) => v.network === view.network && (v.accountAddress ?? current.address) === view.accountAddress)) return current
+    if (views.some((v) => v.network === view.network && accountOfView(current, v) === view.accountAddress)) return current
     added = true
     return {
       ...current,
@@ -1629,7 +1711,7 @@ export class KindChangeRefusedError extends Error {
  * is not counted (FR-93 never counted one; OS-FR-3 warns, never refuses). */
 function hasOtherView(all: StoredWallet[], walletId: string, network: NetworkId, account: string, keyAddress: string): boolean {
   return all.some(
-    (w) => w.address === keyAddress && viewsOf(w).some((v) => v.walletId !== walletId && v.network === network && (v.accountAddress ?? w.address) === account),
+    (w) => w.address === keyAddress && viewsOf(w).some((v) => v.walletId !== walletId && v.network === network && accountOfView(w, v) === account),
   )
 }
 
@@ -1719,7 +1801,7 @@ export async function changeToOnlineWallet(
   const { all, record, view } = await seedViewFor(walletId)
   if (kindOfView(view) !== 'offline') throw new KindChangeRefusedError('not-offline')
   if (viewsOf(record).length !== 1) throw new KindChangeRefusedError('shared-record')
-  const account = view.accountAddress ?? record.address
+  const account = accountOfView(record, view)
   if (hasOtherView(all, walletId, view.network, account, record.address)) return { status: 'refused', reason: sameAddressReason(view.network) }
 
   const opened = await openSigner(walletId, ctx)
@@ -1749,6 +1831,70 @@ export async function changeToOnlineWallet(
   })
   if (during) throw new KindChangeRefusedError(during)
   return { status: 'ok', value: metaFromWritten(written, walletId) }
+}
+
+// ---------------------------------------------------------------------------
+// Signs for (OS-FR-20, CAP-13)
+// ---------------------------------------------------------------------------
+
+/** Why a Signs-for change was not made. `shared-record`: the Seed record holds more
+ * than one view (today's controlled views, FR-75), so its views are left as they are
+ * until story 12. `duplicate`: another Wallet here is the same `(Network, Signs-for
+ * Account, key)` (FR-93); `reason` is P-35. */
+export class SignsForRefusedError extends Error {
+  readonly refusal: 'transmitter' | 'shared-record' | 'duplicate' | 'invalid'
+  constructor(refusal: SignsForRefusedError['refusal'], message: string) {
+    super(message)
+    this.name = 'SignsForRefusedError'
+    this.refusal = refusal
+  }
+}
+
+/**
+ * Sets the Account an Online or Offline Wallet Signs for (OS-FR-20), or removes it
+ * (`null`, or the key's own address): the Wallet then signs for the key's own
+ * address. Only the view's `signsFor` changes; the Seed, lock, checks, kind, Network
+ * and signed list stay. Whether the key IS that Account's Regular Key is the
+ * ledger's to say (P-40), never checked here. Refused, nothing written: a
+ * Transmitter, a record with more than one view, an address that is not one, and
+ * FR-93's duplicate, checked again inside the transaction.
+ */
+export async function setSignsFor(walletId: string, account: string | null): Promise<KeyWalletMeta> {
+  if (await isTransmitterId(walletId)) throw new SignsForRefusedError('transmitter', 'A Transmitter wallet has no key.')
+  if (account !== null && !isValidClassicAddress(account)) throw new SignsForRefusedError('invalid', INVALID_ADDRESS)
+  const all = await listStoredWallets()
+  const record = findSeedRecord(all, walletId)
+  const view = record && viewsOf(record).find((v) => v.walletId === walletId)
+  if (!record || !view || kindOfView(view) === null) throw new Error('Wallet not found in local vault.')
+  const refusalIn = (current: StoredWallet, others: StoredWallet[]): SignsForRefusedError | null => {
+    const v = viewsOf(current).find((x) => x.walletId === walletId)
+    if (!v || kindOfView(v) === null) return new SignsForRefusedError('invalid', 'Wallet not found in local vault.')
+    if (viewsOf(current).length !== 1) return new SignsForRefusedError('shared-record', 'This wallet shares its seed record. Nothing was changed.')
+    const next = account ?? current.address
+    if (hasOtherView(others, walletId, v.network, next, current.address)) return new SignsForRefusedError('duplicate', sameAddressReason(v.network))
+    return null
+  }
+  const before = refusalIn(record, all)
+  if (before) throw before
+  let during: SignsForRefusedError | null = null
+  let written: StoredWallet | null = null
+  await mutateStoredWallet(record.id, (current) => {
+    // Checked again in the transaction: the read above may be stale. The other
+    // records were read just before; a duplicate written between is FR-93's race,
+    // the same window every writer here has.
+    during = refusalIn(current, all.map((w) => (w.id === current.id ? current : w)))
+    if (during) return current
+    return (written = {
+      ...current,
+      views: viewsOf(current).map((v) => {
+        if (v.walletId !== walletId) return v
+        const { signsFor: _old, ...rest } = v
+        return account === null || account === current.address ? rest : { ...rest, signsFor: account }
+      }),
+    })
+  })
+  if (during) throw during
+  return metaFromWritten(written, walletId)
 }
 
 // ---------------------------------------------------------------------------

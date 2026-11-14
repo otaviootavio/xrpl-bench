@@ -166,7 +166,7 @@ describe('Import with every lock closed', () => {
     await waitFor(() => expect(onClose).toHaveBeenCalled())
     const order = [h.importDuplicateReason, h.checkBeforeImport, h.importStoredWallet].map((m) => m.mock.invocationCallOrder[0])
     expect(order).toEqual([...order].sort((a, b) => a - b))
-    expect(h.importDuplicateReason).toHaveBeenCalledWith(SEED, 'testnet')
+    expect(h.importDuplicateReason).toHaveBeenCalledWith(SEED, 'testnet', undefined)
     expect(h.checkBeforeImport.mock.calls[0][1]).toBe('testnet')
     expect(h.checkBeforeImport.mock.calls[0][2]).toBe(ADDRESS)
   })
@@ -176,7 +176,7 @@ describe('Import with every lock closed', () => {
     await click(screen.getByRole('radio', { name: /^Devnet/ }))
     await submit()
     await waitFor(() => expect(h.importDuplicateReason).toHaveBeenCalled())
-    expect(h.importDuplicateReason).toHaveBeenCalledWith(SEED, 'devnet')
+    expect(h.importDuplicateReason).toHaveBeenCalledWith(SEED, 'devnet', undefined)
   })
 
   it.each([['Devnet', 'devnet'], ['Testnet', 'testnet']] as const)('the chosen network (%s) reaches the master-key check and the keystore', async (label, network) => {
@@ -201,21 +201,21 @@ describe('Import with every lock closed', () => {
     expect(screen.getByRole('radio', { name: 'Create a new wallet' })).toBeTruthy()
     expect(screen.queryByRole('button', { name: /^(Generate|Import)$/ })).toBeNull()
     const legends = () => Array.from(document.querySelectorAll('legend')).map((l) => l.textContent)
-    expect(screen.getByText('Step 1 of 5')).toBeTruthy()
+    expect(screen.getByText('Step 1 of 6')).toBeTruthy()
     typeSeed(SEED)
     await click(button('Next'))
     expect(document.querySelectorAll('dt').length).toBe(0)
     expect(screen.queryByRole('button', { name: 'Walk me through it' })).toBeNull()
     const seen: string[] = []
-    for (const n of [2, 3, 4, 5]) {
-      expect(screen.getByText(`Step ${n} of 5`)).toBeTruthy()
+    for (const n of [2, 3, 4, 5, 6]) {
+      expect(screen.getByText(`Step ${n} of 6`)).toBeTruthy()
       seen.push(screen.getByRole('heading', { level: 2 }).textContent ?? '', ...legends())
-      if (n < 5) {
+      if (n < 6) {
         expect(screen.queryByRole('button', { name: 'Import wallet' })).toBeNull()
         await click(button('Next'))
       }
     }
-    expect(seen).toEqual(['Node', 'Node', 'Authentication to open the wallet, and auto-lock', 'Authentication required to open the wallet', 'Auto-lock after inactivity', 'Authentication to sign a transaction', 'Authentication required to sign a transaction', 'Review'])
+    expect(seen).toEqual(['Node', 'Node', 'Authentication to open the wallet, and auto-lock', 'Authentication required to open the wallet', 'Auto-lock after inactivity', 'Authentication to sign a transaction', 'Authentication required to sign a transaction', 'This key signs for another account', 'Review'])
     // The Review for an import: no Seed Method, Passkey or Signature type row, and no Seed.
     const terms = Array.from(document.querySelectorAll('dt')).map((dt) => dt.textContent)
     expect(terms).toEqual(['Create or import', 'Online wallet or offline wallet?', 'Label', 'Network', 'Node', 'Authentication required to open the wallet', 'Auto-lock', 'Authentication required to sign a transaction'])
@@ -232,6 +232,7 @@ describe('Import with every lock closed', () => {
     expect(seedInput().value).toBe(SEED) // still mounted, hidden
     expect(seedInput().closest('[hidden]')).not.toBeNull()
     expect(screen.queryByRole('button', { name: /Import wallet|Create wallet/ })).toBeNull()
+    await click(button('Next'))
     await click(button('Next'))
     await click(button('Next'))
     await click(button('Next'))
@@ -262,11 +263,11 @@ describe('the Seed field and step 1', () => {
     expect(next.getAttribute('aria-disabled')).toBe('true')
     expect(screen.getByText('Type your Seed to continue.')).toBeTruthy()
     await click(next)
-    expect(screen.getByText('Step 1 of 5')).toBeTruthy()
+    expect(screen.getByText('Step 1 of 6')).toBeTruthy()
     typeSeed(SEED)
     expect(button('Next').getAttribute('aria-disabled')).toBeNull()
     await click(button('Next'))
-    expect(screen.getByText('Step 2 of 5')).toBeTruthy()
+    expect(screen.getByText('Step 2 of 6')).toBeTruthy()
   })
 
   it('a Seed cleared by hand blocks Next again', async () => {
@@ -296,7 +297,7 @@ describe('the Seed field and step 1', () => {
     await openImport()
     await submit('garbage-not-a-seed')
     const reason = await screen.findByText(INVALID)
-    expect(screen.getByText('Step 1 of 5')).toBeTruthy()
+    expect(screen.getByText('Step 1 of 6')).toBeTruthy()
     expect(reason.closest('[hidden]')).toBeNull()
     expect(seedInput().getAttribute('aria-describedby')).toBe(reason.id)
     expect(button('Next').getAttribute('aria-disabled')).toBe('true') // the field was cleared
@@ -308,7 +309,7 @@ describe('the Seed field and step 1', () => {
     await openImport()
     await submit()
     const reason = await screen.findByText(DUPLICATE)
-    expect(screen.getByText('Step 1 of 5')).toBeTruthy()
+    expect(screen.getByText('Step 1 of 6')).toBeTruthy()
     expect(reason.closest('[hidden]')).toBeNull()
   })
 
@@ -317,7 +318,7 @@ describe('the Seed field and step 1', () => {
     await openImport()
     await submit()
     await screen.findByText('The policy said no.')
-    expect(screen.getByText('Step 5 of 5')).toBeTruthy()
+    expect(screen.getByText('Step 6 of 6')).toBeTruthy()
   })
 })
 
@@ -411,16 +412,18 @@ describe('the walk, to its last step', () => {
     await click(button('Next'))
     const pinField = () => document.querySelector('input[id$="-pin"]') as HTMLInputElement
     const pinHidden = () => pinField().closest('[hidden]') !== null
-    expect(screen.getByText('Step 2 of 5')).toBeTruthy()
+    expect(screen.getByText('Step 2 of 6')).toBeTruthy()
     expect(pinHidden()).toBe(true)
     await click(button('Next'))
-    expect(screen.getByText('Step 3 of 5')).toBeTruthy()
+    expect(screen.getByText('Step 3 of 6')).toBeTruthy()
     expect(pinHidden()).toBe(true)
     await click(button('Next'))
-    expect(screen.getByText('Step 4 of 5')).toBeTruthy()
+    expect(screen.getByText('Step 4 of 6')).toBeTruthy()
     await click(screen.getByRole('radio', { name: /^App PIN only/ }))
     await click(button('Next'))
-    expect(screen.getByText('Step 5 of 5')).toBeTruthy()
+    expect(screen.getByText('Step 5 of 6')).toBeTruthy()
+    await click(button('Next'))
+    expect(screen.getByText('Step 6 of 6')).toBeTruthy()
     expect(pinHidden()).toBe(false)
     pinField().value = '123456'
     expect(seedInput().value).toBe(SEED)
@@ -428,17 +431,19 @@ describe('the walk, to its last step', () => {
     await click(button('Back'))
     await click(button('Back'))
     await click(button('Back'))
-    expect(screen.getByText('Step 2 of 5')).toBeTruthy()
+    await click(button('Back'))
+    expect(screen.getByText('Step 2 of 6')).toBeTruthy()
     expect(pinHidden()).toBe(true)
     await click(button('Next'))
     await click(button('Next'))
     await click(button('Next'))
-    expect(screen.getByText('Step 5 of 5')).toBeTruthy()
+    await click(button('Next'))
+    expect(screen.getByText('Step 6 of 6')).toBeTruthy()
     expect(pinField().value).toBe('123456')
     expect(seedInput().value).toBe(SEED)
     await click(button('Import wallet'))
     await waitFor(() => expect(h.importStoredWallet).toHaveBeenCalledTimes(1))
-    expect(h.importDuplicateReason).toHaveBeenCalledWith(SEED, 'testnet')
+    expect(h.importDuplicateReason).toHaveBeenCalledWith(SEED, 'testnet', undefined)
     expect(h.checkBeforeImport).toHaveBeenCalledTimes(1)
     expect(h.importStoredWallet.mock.calls[0][0]).toMatchObject({ seed: SEED, network: 'testnet', signing: 'pin' })
   })
@@ -612,7 +617,7 @@ describe('Create or Import is the first question', () => {
   it('step 1 titles the question, selects Create, and shows no Seed field', async () => {
     render(<AddWalletScreen onClose={onClose} />)
     await screen.findByRole('radio', { name: 'Create a new wallet' })
-    expect(screen.getByText('Step 1 of 7')).toBeTruthy()
+    expect(screen.getByText('Step 1 of 8')).toBeTruthy()
     expect(screen.getByRole('heading', { level: 2 }).textContent).toBe('Create or import')
     expect(screen.getAllByText('Create or import').filter((el) => !el.className.includes('sr-only')).length).toBe(1)
     expect(radio('Create a new wallet').checked).toBe(true)
@@ -622,9 +627,9 @@ describe('Create or Import is the first question', () => {
     expect(screen.queryByRole('button', { name: /^(Generate|Import)$/ })).toBeNull()
   })
 
-  it('choosing Import shows the Seed field above the Label, as Step 1 of 5, with focus on the radio', async () => {
+  it('choosing Import shows the Seed field above the Label, as Step 1 of 6, with focus on the radio', async () => {
     await openImport()
-    expect(screen.getByText('Step 1 of 5')).toBeTruthy()
+    expect(screen.getByText('Step 1 of 6')).toBeTruthy()
     expect(radio('Import a wallet').checked).toBe(true)
     expect(document.activeElement).toBe(radio('Import a wallet'))
     expect(seedInput().compareDocumentPosition(screen.getByLabelText('Label')) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
@@ -655,6 +660,7 @@ describe('Create or Import is the first question', () => {
     for (let guard = 0; guard < 6 && screen.queryByRole('button', { name: 'Next' }); guard++) await click(button('Next'))
     expect(text()).toContain('This wallet holds test funds only.')
     expect(screen.queryByText('Real funds')).toBeNull()
+    await click(button('Back'))
     await click(button('Back'))
     await click(button('Back'))
     await click(button('Back'))
@@ -724,7 +730,7 @@ describe('Create or Import is the first question', () => {
     await click(button('Back'))
     expect(seedInput().value).toBe(SEED)
     await click(radio('Create a new wallet'))
-    expect(screen.getByText('Step 1 of 7')).toBeTruthy()
+    expect(screen.getByText('Step 1 of 8')).toBeTruthy()
     expect((screen.getByLabelText('Label') as HTMLInputElement).value).toBe('')
     expect((screen.getByRole('radio', { name: /^Testnet/ }) as HTMLInputElement).checked).toBe(true)
     await click(radio('Import a wallet'))
@@ -870,7 +876,7 @@ describe('Import into an Offline Wallet (offline signing story 3, OS-FR-2, OS-FR
     await click(tick(E))
     await submit()
     await waitFor(() => expect(h.importStoredWallet).toHaveBeenCalledTimes(1))
-    expect(h.importDuplicateReason).toHaveBeenCalledWith(SEED, 'testnet')
+    expect(h.importDuplicateReason).toHaveBeenCalledWith(SEED, 'testnet', undefined)
     expect(h.checkBeforeImport).not.toHaveBeenCalled()
     expect(h.fetchAccountStateOnce).not.toHaveBeenCalled()
     const input = h.importStoredWallet.mock.calls[0][0]
@@ -923,6 +929,39 @@ describe('Import into an Offline Wallet (offline signing story 3, OS-FR-2, OS-FR
     await click(tick(E))
     await submit()
     expect(await screen.findByText(DUPLICATE)).toBeTruthy()
+    expect(h.importStoredWallet).not.toHaveBeenCalled()
+  })
+})
+
+describe('Import with "This key signs for another account" (offline signing story 10; OS-FR-20)', () => {
+  const X = 'rHb9CJAWyB4rj91VRWn96DkukG4bwdtyTh'
+  async function walkToSignsFor() {
+    typeSeed(SEED)
+    for (let guard = 0; guard < 6 && screen.getByRole('heading', { level: 2 }).textContent !== 'This key signs for another account'; guard++) await click(button('Next'))
+    await click(screen.getByRole('checkbox', { name: 'This key signs for another account' }))
+    fireEvent.change(screen.getByRole('textbox', { name: 'Address' }), { target: { value: X } })
+    await click(button('Next'))
+    const pinField = document.querySelector('input[id$="-pin"]') as HTMLInputElement | null
+    if (pinField) pinField.value = '123456'
+  }
+
+  it('the duplicate probe compares the Signs-for Account; no master-key check of the key\'s own Account; the write carries it', async () => {
+    await openImport()
+    await walkToSignsFor()
+    await click(button(/Import wallet/))
+    await waitFor(() => expect(h.importStoredWallet).toHaveBeenCalled())
+    expect(h.importDuplicateReason).toHaveBeenCalledWith(SEED, 'testnet', X)
+    expect(h.checkBeforeImport).not.toHaveBeenCalled()
+    expect(h.importStoredWallet.mock.calls[0][0]).toMatchObject({ seed: SEED, signsFor: X })
+  })
+
+  it('a Signs-for collision (P-35) shows on the Review, not beside the Seed', async () => {
+    h.importDuplicateReason.mockResolvedValue('Another wallet on this device has this address on Testnet.')
+    await openImport()
+    await walkToSignsFor()
+    await click(button(/Import wallet/))
+    expect(await screen.findByText('Another wallet on this device has this address on Testnet.')).toBeTruthy()
+    expect(screen.getByRole('heading', { level: 2 }).textContent).toBe('Review')
     expect(h.importStoredWallet).not.toHaveBeenCalled()
   })
 })

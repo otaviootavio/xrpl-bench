@@ -9,10 +9,23 @@ const OPEN = (...ids: string[]) => Object.fromEntries(ids.map((i) => [i, {}]))
 describe('listWalletCards (AD-43, FR-93)', () => {
   it('empty', () => expect(listWalletCards([], {})).toEqual([]))
 
-  it('a locked card holds exactly walletId, lockId, label, address, network, kind, wasOnline and state', () => {
+  it('a locked card holds exactly walletId, lockId, label, address, signsFor, network, kind, wasOnline and state', () => {
     const [c] = listWalletCards([W('a', { node: 'wss://n', network: 'mainnet' })], {})
-    expect(Object.keys(c).sort()).toEqual(['address', 'kind', 'label', 'lockId', 'network', 'state', 'walletId', 'wasOnline'])
-    expect(c).toEqual({ state: 'locked', walletId: 'a', lockId: 'L-a', label: 'a', address: 'ra', network: 'mainnet', kind: 'online', wasOnline: false })
+    expect(Object.keys(c).sort()).toEqual(['address', 'kind', 'label', 'lockId', 'network', 'signsFor', 'state', 'walletId', 'wasOnline'])
+    expect(c).toEqual({ state: 'locked', walletId: 'a', lockId: 'L-a', label: 'a', address: 'ra', signsFor: null, network: 'mainnet', kind: 'online', wasOnline: false })
+  })
+
+  it('a key Wallet that Signs for another Account: the key address in the row, the Account as signsFor, locked or open (OS-FR-20)', () => {
+    for (const open of [{}, OPEN('L-a')]) {
+      for (const kind of ['online', 'offline'] as const) {
+        const [c] = listWalletCards([W('a', { kind, address: 'rX', keyAddress: 'rK' })], open)
+        expect(c.address).toBe('rK')
+        expect(c.signsFor).toBe('rX')
+      }
+      // A Transmitter's row is its Synced address and it has no Signs for.
+      const [t] = listWalletCards([{ ...W('t'), kind: 'transmitter', address: 'rS' } as Meta], open)
+      expect([t.address, t.signsFor]).toEqual(['rS', null])
+    }
   })
 
   it('a card carries its Wallet\'s kind, locked or open (OS-FR-1)', () => {
@@ -31,13 +44,13 @@ describe('listWalletCards (AD-43, FR-93)', () => {
   })
 
   it('locked type holds exactly those keys (a Node, check kind or balance fails to compile)', () => {
-    expectTypeOf<keyof LockedCard>().toEqualTypeOf<'state' | 'walletId' | 'lockId' | 'label' | 'address' | 'network' | 'kind' | 'wasOnline'>()
+    expectTypeOf<keyof LockedCard>().toEqualTypeOf<'state' | 'walletId' | 'lockId' | 'label' | 'address' | 'signsFor' | 'network' | 'kind' | 'wasOnline'>()
     expectTypeOf<keyof OpenCard>().toEqualTypeOf<keyof LockedCard | 'allowsLock' | 'hasNode'>()
   })
 
   it('an open card adds allowsLock and hasNode', () => {
     const [c] = listWalletCards([W('a', { node: 'wss://n' })], OPEN('L-a'))
-    expect(c).toEqual({ state: 'open', walletId: 'a', lockId: 'L-a', label: 'a', address: 'ra', network: 'testnet', kind: 'online', wasOnline: false, allowsLock: true, hasNode: true })
+    expect(c).toEqual({ state: 'open', walletId: 'a', lockId: 'L-a', label: 'a', address: 'ra', signsFor: null, network: 'testnet', kind: 'online', wasOnline: false, allowsLock: true, hasNode: true })
   })
 
   it('one card per Wallet: a Seed with a controlled view gives two cards, each with its own address and network', () => {

@@ -259,7 +259,7 @@ describe.each(['mainnet', 'devnet'] as const)('Onboarding import: choosing %s on
     ledger.masterKeyEnabled()
     await onboardingImport(SEED, { network: network === 'mainnet' ? /^Mainnet/ : /^Devnet/ })
     await waitFor(() => expect(h.importStoredWallet).toHaveBeenCalled())
-    expect(h.importDuplicateReason).toHaveBeenCalledWith(SEED, network)
+    expect(h.importDuplicateReason).toHaveBeenCalledWith(SEED, network, undefined)
     expect(h.fetchQuery.mock.calls[0][0].queryKey).toEqual(['accountState', network, ADDRESS])
     expect(h.importStoredWallet.mock.calls[0][0]).toMatchObject({ network })
   })
@@ -295,7 +295,7 @@ describe('Onboarding Import into an Offline Wallet (offline signing story 3, OS-
     if (pinField) pinField.value = '123456'
     await click(/Import wallet/)
     await waitFor(() => expect(h.importStoredWallet).toHaveBeenCalledTimes(1))
-    expect(h.importDuplicateReason).toHaveBeenCalledWith(SEED, 'testnet')
+    expect(h.importDuplicateReason).toHaveBeenCalledWith(SEED, 'testnet', undefined)
     expect(h.checkBeforeImport).not.toHaveBeenCalled()
     expect(h.fetchQuery).not.toHaveBeenCalled()
     expect(h.importStoredWallet.mock.calls[0][0]).toMatchObject({ seed: SEED, network: 'testnet', kind: 'offline' })

@@ -185,6 +185,6 @@ describe('Offline Wallet signs an Unsigned Transaction (OS-FR-18)', () => {
     await noteSigned(meta.id, recordOfJudged(j, signed))
     const list = await signedListOf(meta.id)
     const later = buildHashOf({ type: 'payment', account: meta.address, destination: DEST, amountDrops: '3000000' })
-    expect(latestSameBuild(list, later)).toMatchObject({ sequence: 41, hash: signed.hash, ledgerIndex: LEDGER, lastLedgerSequence: LEDGER + 150 })
+    expect(latestSameBuild(list, later, { account: meta.address, keyAddress: meta.keyAddress })).toMatchObject({ sequence: 41, hash: signed.hash, ledgerIndex: LEDGER, lastLedgerSequence: LEDGER + 150 })
   })
 })

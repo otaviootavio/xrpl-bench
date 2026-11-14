@@ -152,7 +152,7 @@ describe('an Offline Wallet (OS-FR-1)', () => {
     const h1 = screen.getByRole('heading', { level: 1, name: /Local settings/ })
     const row = h1.parentElement as HTMLElement
     expect(within(row).getByText(KIND_WORDS.offline)).toBeTruthy()
-    expect(plateTitles()).toEqual(['This wallet', 'Wallet kind', 'Name', 'Address Book', 'Checks', 'Seed', 'Remove this wallet'])
+    expect(plateTitles()).toEqual(['This wallet', 'Wallet kind', 'Name', 'Address Book', 'Checks', 'Seed', 'This key signs for another account', 'Remove this wallet'])
     expect(screen.getByRole('button', { name: 'Edit checks' })).toBeTruthy()
     expect(h.getXrplClient).not.toHaveBeenCalled()
   })
@@ -272,6 +272,7 @@ describe('an Online Wallet keeps today\'s screens', () => {
       'Address Book',
       'Checks',
       'Seed',
+      'This key signs for another account',
       'Operating another account',
       'Node',
       'Before sending',

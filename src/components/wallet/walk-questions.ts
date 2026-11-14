@@ -5,6 +5,7 @@ import {
   SeedMethodQuestion,
   SignatureTypeQuestion,
   SigningCheckQuestion,
+  SignsForQuestion,
   type AnswerRow,
   type WalletPath,
   type WalletQuestionsProps,
@@ -14,6 +15,7 @@ import { minutesLabel } from '@/lib/minutes-label'
 import { KIND_WORDS } from '@/lib/wallet-kind-words'
 import { KIND_QUESTION } from '@/lib/offline-wallet-words'
 import { normalizeWalletName } from '@/lib/wallet-name'
+import { SIGNS_FOR_ANOTHER_ACCOUNT } from '@/lib/signs-for-words'
 import type { describeOptions, NewOpenCheck, SeedMethod, SigningKind } from '@/lib/crypto/policy'
 import { NETWORKS, type NetworkId } from '@/lib/xrpl/networks'
 
@@ -52,7 +54,7 @@ export const VERDICT_KEYS = ['combination', 'writtenSeedRequired'] as const
  * the step asks; Node and Signature type are not policy keys and cover none. A
  * test fails when the policy lists a question no entry covers. */
 export interface WalkQuestion {
-  id: 'node' | 'seed-method' | 'signature-type' | 'open-check' | 'signing-check'
+  id: 'node' | 'seed-method' | 'signature-type' | 'open-check' | 'signing-check' | 'signs-for'
   title: string
   covers: readonly (keyof ReturnType<typeof describeOptions>)[]
   importApplies: boolean
@@ -116,6 +118,17 @@ export const WALK_QUESTIONS: readonly WalkQuestion[] = [
     offlineApplies: true,
     summary: (p) => [{ step: 'signing-check', term: QUESTION_TERMS['Signing Check'], value: formatSigning(p.signing) }],
     render: SigningCheckQuestion,
+  },
+  {
+    // Optional (OS-FR-20): an unticked box adds no Review row, since no approved
+    // words say "none" here; a ticked one shows the Account.
+    id: 'signs-for',
+    title: SIGNS_FOR_ANOTHER_ACCOUNT,
+    covers: [],
+    importApplies: true,
+    offlineApplies: true,
+    summary: (p) => (p.signsForOn ? [{ step: 'signs-for', term: SIGNS_FOR_ANOTHER_ACCOUNT, value: (p.signsForDraft ?? '').trim(), data: true }] : []),
+    render: SignsForQuestion,
   },
 ]
 

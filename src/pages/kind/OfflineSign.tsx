@@ -209,7 +209,7 @@ function SigningReview({
           <span className="font-data">{fill(W.VALID_UNTIL_LEDGER, judged.tx.LastLedgerSequence as number)}</span>
         </div>
       </section>
-      <SameBuild walletId={wallet.id} buildHash={judged.buildHash} />
+      <SameBuild walletId={wallet.id} buildHash={judged.buildHash} scope={{ account: wallet.address, keyAddress: wallet.keyAddress }} />
       <FieldRows rows={judged.rows} txType={tx.TransactionType as string} />
       {/* A removal of the Regular Key this device did not build: W5 (round two). */}
       {tx.TransactionType === 'SetRegularKey' && tx.RegularKey === undefined && <KeyWarning words={W.W5_SENTENCE} />}
@@ -286,7 +286,7 @@ function FieldRows({ rows, txType }: { rows: FieldRow[]; txType: string }) {
 }
 
 /** P-19 and the earlier-signing record, when this Wallet signed the same transaction before by either route. A failed list read is P-16, never silence. */
-function SameBuild({ walletId, buildHash }: { walletId: string; buildHash: string }) {
+function SameBuild({ walletId, buildHash, scope }: { walletId: string; buildHash: string; scope: { account: string; keyAddress: string } }) {
   const signed = useSignedList(walletId)
   if (signed.status === 'failed') {
     return (
@@ -295,7 +295,7 @@ function SameBuild({ walletId, buildHash }: { walletId: string; buildHash: strin
       </Alert>
     )
   }
-  const earlier = signed.status === 'ok' ? latestSameBuild(signed.list, buildHash) : null
+  const earlier = signed.status === 'ok' ? latestSameBuild(signed.list, buildHash, scope) : null
   if (!earlier) return null
   return (
     <Alert role="none">

@@ -3,7 +3,7 @@ import type { WalletMeta } from '@/lib/crypto/keystore'
 type NetworkId = WalletMeta['network']
 type WalletKind = WalletMeta['kind']
 
-/** A closed lock: the seven things a card may show and nothing else (AD-43, AD-26, FR-93).
+/** A closed lock: the eight things a card may show and nothing else (AD-43, AD-26, FR-93).
  * The kind joined the Network as a record field, not an Account read (UX owner ruling,
  * 2026-11-08: a locked card still shows its name, kind and Network; OS-FR-1). The
  * Was-online mark (OS-FR-7) is a record field of the same sort, shown in that same
@@ -14,8 +14,12 @@ export interface LockedCard {
   walletId: string
   lockId: string
   label: string
-  /** The Account, or `null` for a Transmitter that is not synced (P-5). */
+  /** The address row: a key Wallet's key address, a Transmitter's Synced address, or
+   * `null` for a Transmitter that is not synced (P-5). */
   address: string | null
+  /** The Account a key Wallet Signs for when it differs from its key address
+   * (OS-FR-20, EXPERIENCE "Chooser card": a record field, so a locked card shows it). */
+  signsFor: string | null
   network: NetworkId
   kind: WalletKind
   /** An Offline Wallet whose key was held by an Online Wallet (OS-FR-7). */
@@ -73,6 +77,9 @@ export function nextActiveWalletId(
 }
 
 const wasOnline = (w: WalletMeta) => w.kind === 'offline' && w.wasOnline === true
+/** The address row: the key's own address for a key Wallet (its Signs-for Account has its own line). */
+const rowAddress = (w: WalletMeta) => (w.kind === 'transmitter' ? w.address : w.keyAddress)
+const signsForOf = (w: WalletMeta) => (w.kind !== 'transmitter' && w.address !== w.keyAddress ? w.address : null)
 
 /** One card per Wallet, in chooser order (AD-43, FR-93). Pure; a lock is open when the Wallet's own `lockId` is. */
 export function listWalletCards(wallets: readonly WalletMeta[], openLocks: Readonly<Record<string, unknown>>): WalletCardData[] {
@@ -83,7 +90,8 @@ export function listWalletCards(wallets: readonly WalletMeta[], openLocks: Reado
           walletId: w.id,
           lockId: w.lockId,
           label: w.label,
-          address: w.address,
+          address: rowAddress(w),
+          signsFor: signsForOf(w),
           network: w.network,
           kind: w.kind,
           wasOnline: wasOnline(w),
@@ -91,6 +99,16 @@ export function listWalletCards(wallets: readonly WalletMeta[], openLocks: Reado
           hasNode: w.node !== undefined && w.node !== '',
         }
       : // Explicit fields, not a spread: a field added for the open variant must not reach a locked card.
-        { state: 'locked', walletId: w.id, lockId: w.lockId, label: w.label, address: w.address, network: w.network, kind: w.kind, wasOnline: wasOnline(w) },
+        {
+          state: 'locked',
+          walletId: w.id,
+          lockId: w.lockId,
+          label: w.label,
+          address: rowAddress(w),
+          signsFor: signsForOf(w),
+          network: w.network,
+          kind: w.kind,
+          wasOnline: wasOnline(w),
+        },
   )
 }

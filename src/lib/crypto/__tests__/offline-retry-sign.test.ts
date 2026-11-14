@@ -114,11 +114,11 @@ describe('the signed list on the Offline Wallet\'s record (OS-FR-16)', () => {
     await noteSigned(meta.id, signedRecordOf(build, signed, 500))
     off()
     const list = await signedListOf(meta.id)
-    expect(list).toEqual([{ buildHash: buildHashOf(build), sequence: 11, hash: signed.hash, lastLedgerSequence: 500 + OFFLINE_LEDGER_WINDOW, ledgerIndex: 500, signedAt: 1000 }])
+    expect(list).toEqual([{ buildHash: buildHashOf(build), sequence: 11, hash: signed.hash, lastLedgerSequence: 500 + OFFLINE_LEDGER_WINDOW, ledgerIndex: 500, signedAt: 1000, account: meta.address }])
     expect(heard).toEqual([meta.id])
     // On the stored view: exactly these keys, nothing that could sign or be sent.
     const view = (await listStoredWallets())[0].views[0]
-    expect(Object.keys(view.signed![0]).sort()).toEqual(['buildHash', 'hash', 'lastLedgerSequence', 'ledgerIndex', 'sequence', 'signedAt'])
+    expect(Object.keys(view.signed![0]).sort()).toEqual(['account', 'buildHash', 'hash', 'lastLedgerSequence', 'ledgerIndex', 'sequence', 'signedAt'])
     expect(JSON.stringify(view.signed)).not.toContain(blobOf(signed.text).TxnSignature as string)
   })
 
@@ -164,7 +164,7 @@ describe('each retry case signs with the Sequence the table decides; read off th
     const build = buildFor(meta.address)
     const first = await signRound(meta, build, { sequence: 40, fee: '12', ledger_index: 1000 }, { openKey: lock.key, prompts })
     await noteSigned(meta.id, signedRecordOf(build, first, 1000))
-    const earlier = latestSameBuild(await signedListOf(meta.id), buildHashOf(buildFor(meta.address)))!
+    const earlier = latestSameBuild(await signedListOf(meta.id), buildHashOf(buildFor(meta.address)), { account: meta.address, keyAddress: meta.keyAddress })!
     const signAgain = async (data: { sequence: number; fee: string; ledger_index: number }, sequence: number) =>
       blobOf((await signRound(meta, build, { ...data, sequence }, { openKey: lock.key, prompts })).text)
     return { first, earlier, signAgain }

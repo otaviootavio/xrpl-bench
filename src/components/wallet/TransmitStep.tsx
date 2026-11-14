@@ -4,6 +4,7 @@ import { StatusLegend } from '@/components/ui/lamp'
 import { TxLink } from '@/components/wallet/AddressLink'
 import { TxStatusBadge } from '@/components/wallet/TxStatusBadge'
 import { SignedFieldList } from '@/components/wallet/SignedTransactionReview'
+import { SignsForOffer } from '@/components/wallet/SignsForOffer'
 import * as R from '@/lib/offline-round-words'
 import { EXPIRED_NOTHING_SENT, SEND_KEY, TRANSACTION_HASH, fill } from '@/lib/transmit-words'
 import { CHECK_LIST, CONFIRM_ACCOUNT } from '@/lib/transmitter-words'
@@ -88,7 +89,13 @@ export function ResultView({ result, headingRef }: { result: StepResult; heading
         </h2>
       )
     case 'outcome':
-      return <Outcome outcome={result.outcome} headingRef={headingRef} />
+      return (
+        <>
+          <Outcome outcome={result.outcome} headingRef={headingRef} />
+          {/* P-54 (OS-FR-20): after a validated Regular Key change. */}
+          {result.regularKeySet && <SignsForOffer set={result.regularKeySet} />}
+        </>
+      )
     default:
       return null
   }

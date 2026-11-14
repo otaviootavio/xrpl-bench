@@ -8,6 +8,8 @@ import { KindStamp } from '@/components/wallet/KindStamp'
 import { WasOnlineStamp } from '@/components/wallet/WasOnlineStamp'
 import { WAS_ONLINE_WHY } from '@/lib/kind-change-words'
 import { NOT_SYNCED } from '@/lib/wallet-kind-words'
+import { WALLET_SIGNS_FOR } from '@/lib/signs-for-words'
+import { fill } from '@/lib/transmit-words'
 import { NETWORKS } from '@/lib/xrpl/networks'
 import { enterWallet } from '@/store/app-store'
 import type { OpenCard, WalletCardData } from '@/store/wallet-groups'
@@ -105,6 +107,8 @@ export function WalletCard({
           </div>
         </div>
       </div>
+      {/* Signs for (OS-FR-20): only when it differs from the key address, in P-17's sentence. */}
+      {card.signsFor !== null && <p className="text-sm [overflow-wrap:anywhere]">{fill(WALLET_SIGNS_FOR, card.signsFor)}</p>}
       {card.network === 'devnet' && <p className="text-xs text-muted-foreground">{DEVNET_NOTICE}</p>}
       {card.state === 'open' && !card.allowsLock && (
         <p className="text-sm text-muted-foreground">{NO_OPEN_CHECK_ANSWER}. This wallet opens itself, so there is nothing to lock.</p>

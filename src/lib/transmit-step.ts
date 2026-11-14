@@ -30,11 +30,26 @@ export interface Ready {
   expected: string | null
 }
 
+/** A Regular Key change the ledger validated: the Account, the new key and the Network it was sent on. */
+export interface RegularKeySet {
+  account: string
+  regularKey: string
+  network: NetworkId
+}
+
+/** P-54's trigger (OS-FR-20): a validated SetRegularKey that sets a key (not one that removes it). */
+export function regularKeySetBy(tx: Record<string, unknown>, outcome: TransmitOutcome, network: NetworkId): RegularKeySet | undefined {
+  if (outcome.status !== 'validated' || tx.TransactionType !== 'SetRegularKey') return undefined
+  if (typeof tx.Account !== 'string' || typeof tx.RegularKey !== 'string' || tx.RegularKey === '') return undefined
+  return { account: tx.Account, regularKey: tx.RegularKey, network }
+}
+
 /** What follows a Send. */
 export type StepResult =
   | { kind: 'refused'; text: string }
   | { kind: 'declined'; text: string }
-  | { kind: 'outcome'; outcome: TransmitOutcome }
+  /** `regularKeySet`: a validated SetRegularKey that set a key, for P-54 (OS-FR-20). */
+  | { kind: 'outcome'; outcome: TransmitOutcome; regularKeySet?: RegularKeySet }
   | { kind: 'expired' }
   | { kind: 'unconfirmed' }
 
@@ -71,7 +86,9 @@ export async function sendReady(wallet: TransmitterMeta, ready: Ready, ctx: { pr
   try {
     const outcome = await transmitSignedTransaction(wallet.network, { txBlob: ready.txBlob, network: ready.envelopeNetwork }, expected, wallet.node, review)
     await invalidateAccountScoped(ctx.queryClient, wallet.network, ready.checked.account).catch(() => {})
-    return outcome.status === 'expired' ? { kind: 'expired' } : { kind: 'outcome', outcome }
+    if (outcome.status === 'expired') return { kind: 'expired' }
+    const regularKeySet = regularKeySetBy(ready.checked.tx, outcome, wallet.network)
+    return regularKeySet ? { kind: 'outcome', outcome, regularKeySet } : { kind: 'outcome', outcome }
   } catch (err) {
     const name = err instanceof Error ? err.name : ''
     if (name === 'TransmitDeclinedError') return { kind: 'declined', text: (err as Error).message }

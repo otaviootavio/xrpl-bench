@@ -12,18 +12,35 @@ const rec = (over: Partial<SignedRecord> = {}): SignedRecord => ({
   ...over,
 })
 
+const KEY = 'rKEY'
+const scope = { account: KEY, keyAddress: KEY }
+
 describe('latestSameBuild', () => {
   it('finds nothing for another Build hash', () => {
-    expect(latestSameBuild([rec()], 'b'.repeat(64))).toBeNull()
+    expect(latestSameBuild([rec()], 'b'.repeat(64), scope)).toBeNull()
+  })
+
+  it('a record for another Account is never a Same Build (OS-FR-20: a Signs-for change)', () => {
+    const forX = rec({ account: 'rX' })
+    // A record with no account was signed for the key's own address.
+    const legacy = rec({ sequence: 7 })
+    expect(latestSameBuild([forX, legacy], 'a'.repeat(64), { account: 'rY', keyAddress: KEY })).toBeNull()
+    expect(latestSameBuild([forX, legacy], 'a'.repeat(64), { account: 'rX', keyAddress: KEY })).toBe(forX)
+    expect(latestSameBuild([forX, legacy], 'a'.repeat(64), scope)).toBe(legacy)
+  })
+
+  it('isSignedRecord accepts an Account and refuses a non-string one', () => {
+    expect(isSignedRecord(rec({ account: 'rX' }))).toBe(true)
+    expect(isSignedRecord({ ...rec(), account: 5 })).toBe(false)
   })
 
   it('takes the highest Sequence, then the highest LastLedgerSequence (after a case (c) re-sign)', () => {
     const a = rec({ sequence: 10, lastLedgerSequence: 1150, hash: '1'.repeat(64) })
     const c = rec({ sequence: 10, lastLedgerSequence: 1250, hash: '2'.repeat(64) })
     const other = rec({ buildHash: 'b'.repeat(64), sequence: 99 })
-    expect(latestSameBuild([c, a, other], 'a'.repeat(64))).toBe(c)
+    expect(latestSameBuild([c, a, other], 'a'.repeat(64), scope)).toBe(c)
     const n = rec({ sequence: 11, lastLedgerSequence: 1200, hash: '3'.repeat(64) })
-    expect(latestSameBuild([a, n, c], 'a'.repeat(64))).toBe(n)
+    expect(latestSameBuild([a, n, c], 'a'.repeat(64), scope)).toBe(n)
   })
 })
 

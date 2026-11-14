@@ -308,6 +308,7 @@ export function signedRecordOf(build: OfflineBuild, signed: SignedRound, ledgerI
     lastLedgerSequence: signed.lastLedgerSequence,
     ledgerIndex,
     signedAt: signed.signedAt,
+    account: build.account,
   }
 }
 

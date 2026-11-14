@@ -23,6 +23,7 @@ import { AcknowledgedWarning, KindChoice, type NewWalletKind } from '@/component
 import { ONE_SEED_ONE_NETWORK, READ_EACH_WARNING, TEXT_E } from '@/lib/offline-wallet-words'
 import { SeedReveal } from '@/components/wallet/SeedReveal'
 import { WrittenSeedConfirm } from '@/components/wallet/WrittenSeedConfirm'
+import { signsForDraftState, signsForIds } from '@/lib/signs-for'
 import { createDerivedWallet, createStoredWallet, describeCheckFailure, importStoredWallet, listWallets, type WalletMeta } from '@/lib/crypto/keystore'
 import { hasAppPin, startLockSession } from '@/lib/crypto/lock'
 import { triesRemaining } from '@/lib/crypto/pin'
@@ -76,7 +77,7 @@ export interface ImportSource {
 }
 
 /** What `acquire` is told: `offline` makes no ledger read (an Offline Wallet never reads, OS-FR-2). */
-export type AcquireChoice = { network: NetworkId; node?: string; offline?: boolean }
+export type AcquireChoice = { network: NetworkId; node?: string; offline?: boolean; signsFor?: string }
 
 export interface CreateWalletFlowProps {
   /** Present: this flow imports a Seed instead of generating one. */
@@ -175,6 +176,13 @@ function CreateWalletForm({ capability, onDone, onInProgressChange, defaultLabel
   const [pinError, setPinError] = useState<{ field: 'pin' | 'confirm'; text: string } | null>(null)
   const [backedUp, setBackedUp] = useState(false)
   const [passkeyChoice, setPasskeyChoice] = useState<'new' | 'existing'>('new')
+  // The optional Signs-for step (OS-FR-20): the box and the typed Account.
+  const [signsForOn, setSignsForOn] = useState(false)
+  const [signsForDraft, setSignsForDraft] = useState('')
+  const signsForState = signsForDraftState(signsForDraft)
+  // A ticked box needs an address that checks before Next or Create.
+  const signsForBlocked = signsForOn && signsForState !== 'valid'
+  const signsFor = signsForOn && signsForState === 'valid' ? signsForDraft.trim() : undefined
   // Step 1's kind (OS-FR-2). No default: the consequences are read before a choice.
   const [kind, setKind] = useState<NewWalletKind | null>(null)
   // The P-6 ticks under Text B and Text E. A kind change clears both.
@@ -316,6 +324,8 @@ function CreateWalletForm({ capability, onDone, onInProgressChange, defaultLabel
     setNodeMode('builtin')
     setVerifiedNode(null)
     setNodeReason(null)
+    setSignsForOn(false)
+    setSignsForDraft('')
     setResetNote(NETWORK_RESET_NOTE)
     // The reset answers were never walked: Next goes step by step, not back to the Review.
     setReturnToReview(false)
@@ -391,7 +401,7 @@ function CreateWalletForm({ capability, onDone, onInProgressChange, defaultLabel
   }
 
   async function handleCreate() {
-    if (busy || !options.combination.ok || labelError || kind === null || warningsUnread) return
+    if (busy || !options.combination.ok || labelError || kind === null || warningsUnread || signsForBlocked) return
     setError(null)
     setSeedError(null)
     setPinError(null)
@@ -443,6 +453,7 @@ function CreateWalletForm({ capability, onDone, onInProgressChange, defaultLabel
             autoLockMinutes,
             passkeyChoice,
             passkey: capability,
+            ...(signsFor ? { signsFor } : {}),
           },
           { pin, confirmWrittenSeed, appPinExpected: appPin?.exists === true },
         )
@@ -468,12 +479,12 @@ function CreateWalletForm({ capability, onDone, onInProgressChange, defaultLabel
       }
       // An Offline Wallet has no Node (OS-FR-2): nothing Node-shaped is passed for it.
       const nodeChoice = !offline && nodeMode === 'custom' && verifiedNode ? { node: verifiedNode } : {}
-      const kindChoice = offline ? { kind: 'offline' as const } : {}
+      const kindChoice = { ...(offline ? { kind: 'offline' as const } : {}), ...(signsFor ? { signsFor } : {}) }
       const ctx = { pin, confirmWrittenSeed, appPinExpected: appPin?.exists === true }
       let result: Awaited<ReturnType<typeof createStoredWallet>> | Awaited<ReturnType<typeof importStoredWallet>>
       if (importSource) {
         // Order (AD-39): parse, duplicate probe, master-key check, then the keystore.
-        const got = await importSource.acquire({ network, ...nodeChoice, ...(offline ? { offline: true } : {}) })
+        const got = await importSource.acquire({ network, ...nodeChoice, ...(offline ? { offline: true } : {}), ...(signsFor ? { signsFor } : {}) })
         if (got.status !== 'ok') {
           if (got.status === 'refused' && got.at === 'seed') {
             // The reason shows beside the Seed field, which is on step 1.
@@ -649,7 +660,7 @@ function CreateWalletForm({ capability, onDone, onInProgressChange, defaultLabel
   const verdict = options.combination
 
   const createButton = (
-    <Button type="button" aria-disabled={!verdict.ok || labelError || (needsPin && pinReadFailed) || kind === null || warningsUnread ? true : undefined} aria-describedby={!verdict.ok ? `${group}-blocked` : labelError ? `${group}-label-error` : network === 'mainnet' ? `${group}-consequence` : undefined} disabled={busy} onClick={() => void handleCreate()}>
+    <Button type="button" aria-disabled={!verdict.ok || labelError || (needsPin && pinReadFailed) || kind === null || warningsUnread || signsForBlocked ? true : undefined} aria-describedby={!verdict.ok ? `${group}-blocked` : labelError ? `${group}-label-error` : network === 'mainnet' ? `${group}-consequence` : undefined} disabled={busy} onClick={() => void handleCreate()}>
       {busy ? (importSource ? 'Importing…' : 'Creating…') : importSource ? 'Import wallet' : 'Create wallet'}
     </Button>
   )
@@ -698,6 +709,10 @@ function CreateWalletForm({ capability, onDone, onInProgressChange, defaultLabel
     onSigning: (kind) => {
       setSigning(kind)
     },
+    signsForOn,
+    onSignsForOn: setSignsForOn,
+    signsForDraft,
+    onSignsForDraft: setSignsForDraft,
   }
 
   const walk = walkQuestions(!!importSource, kind)
@@ -711,7 +726,12 @@ function CreateWalletForm({ capability, onDone, onInProgressChange, defaultLabel
       // The reason Next points at: the unanswered question itself, then P-7.
       ...(kind === null ? { blockedReasonId: kindLegendId } : warningsUnread ? { blockedReasonId: unreadId } : {}),
     },
-    ...walk.map((q) => ({ id: q.id, title: q.title })),
+    ...walk.map((q) =>
+      q.id === 'signs-for'
+        ? // Next points at the visible reason: the shipped words for a bad address, else the field's own note (P-40).
+          { id: q.id, title: q.title, blocked: signsForBlocked, ...(signsForBlocked ? { blockedReasonId: signsForState === 'invalid' ? signsForIds(group).error : signsForIds(group).note } : {}) }
+        : { id: q.id, title: q.title },
+    ),
     { id: 'review', title: 'Review' },
   ]
   const reviewIndex = quizSteps.length - 1

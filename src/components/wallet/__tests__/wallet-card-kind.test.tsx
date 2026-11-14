@@ -6,6 +6,8 @@ import { WalletCard } from '../WalletCard'
 import { NOT_SYNCED } from '@/lib/wallet-kind-words'
 import { WAS_ONLINE, WAS_ONLINE_WHY } from '@/lib/kind-change-words'
 import type { WalletCardData } from '@/store/wallet-groups'
+import { WALLET_SIGNS_FOR } from '@/lib/signs-for-words'
+import { fill } from '@/lib/transmit-words'
 
 /**
  * OS-FR-1: the chooser card shows the Wallet's kind in words, first in the Network
@@ -15,10 +17,10 @@ import type { WalletCardData } from '@/store/wallet-groups'
 const ADDRESS = 'rKINDCARDaddressXXXXXXXXXXXX'
 type Kind = WalletCardData['kind']
 // A Transmitter's card address is its Synced address or null (story 4); the other kinds carry their Account.
-const card = (kind: Kind, state: 'locked' | 'open', network: 'testnet' | 'mainnet' = 'testnet', address: string | null = kind === 'transmitter' ? null : ADDRESS, wasOnline = false): WalletCardData =>
+const card = (kind: Kind, state: 'locked' | 'open', network: 'testnet' | 'mainnet' = 'testnet', address: string | null = kind === 'transmitter' ? null : ADDRESS, wasOnline = false, signsFor: string | null = null): WalletCardData =>
   state === 'locked'
-    ? { state, walletId: 'w', lockId: 'L', label: 'Savings', address, network, kind, wasOnline }
-    : { state, walletId: 'w', lockId: 'L', label: 'Savings', address, network, kind, wasOnline, allowsLock: true, hasNode: false }
+    ? { state, walletId: 'w', lockId: 'L', label: 'Savings', address, signsFor, network, kind, wasOnline }
+    : { state, walletId: 'w', lockId: 'L', label: 'Savings', address, signsFor, network, kind, wasOnline, allowsLock: true, hasNode: false }
 
 function mount(data: WalletCardData) {
   render(
@@ -92,5 +94,18 @@ describe('chooser card, per kind (OS-FR-1)', () => {
     const stamp = within(li).getByText('Offline')
     expect(stamp.className).toContain('border-input')
     expect(stamp.className).toContain('bg-transparent')
+  })
+
+  it('a key Wallet that Signs for another Account shows P-17\'s sentence with it, locked or open, and nothing when it signs for itself (OS-FR-20)', () => {
+    for (const kind of ['online', 'offline'] as const) {
+      for (const state of ['locked', 'open'] as const) {
+        const li = mount(card(kind, state, 'testnet', ADDRESS, false, 'rSIGNSFORaccountXXXXXXXXXXXX'))
+        expect(within(li).getByText(fill(WALLET_SIGNS_FOR, 'rSIGNSFORaccountXXXXXXXXXXXX'))).toBeTruthy()
+        cleanup()
+        const plain = mount(card(kind, state))
+        expect(within(plain).queryByText(/This wallet signs for/)).toBeNull()
+        cleanup()
+      }
+    }
   })
 })

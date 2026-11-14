@@ -29,17 +29,17 @@ describe('the walk covers the policy', () => {
   it('every key a step covers is a real policy key; only Node and Signature type cover none', () => {
     for (const q of WALK_QUESTIONS) {
       for (const key of q.covers) expect(Object.keys(OPTIONS)).toContain(key)
-      if (q.covers.length === 0) expect(['node', 'signature-type']).toContain(q.id)
+      if (q.covers.length === 0) expect(['node', 'signature-type', 'signs-for']).toContain(q.id)
     }
   })
 
   it('the order is the one in quiz-steps.md', () => {
-    expect(WALK_QUESTIONS.map((q) => q.title)).toEqual(['Node', 'Seed Method', 'Signature type', 'Authentication to open the wallet, and auto-lock', 'Authentication to sign a transaction'])
+    expect(WALK_QUESTIONS.map((q) => q.title)).toEqual(['Node', 'Seed Method', 'Signature type', 'Authentication to open the wallet, and auto-lock', 'Authentication to sign a transaction', 'This key signs for another account'])
   })
 
   it('Import omits Seed Method and Signature type', () => {
-    expect(walkQuestions(true).map((q) => q.id)).toEqual(['node', 'open-check', 'signing-check'])
-    expect(walkQuestions(false)).toHaveLength(5)
+    expect(walkQuestions(true).map((q) => q.id)).toEqual(['node', 'open-check', 'signing-check', 'signs-for'])
+    expect(walkQuestions(false)).toHaveLength(6)
   })
 })
 
@@ -67,7 +67,8 @@ const PROPS = {
 describe('the Review lists every answer once', () => {
   it('every question of the walk yields at least one row tagged with its own step', () => {
     for (const q of WALK_QUESTIONS) {
-      const rows = q.summary(PROPS)
+      // The optional Signs-for step adds a row only when its box is ticked.
+      const rows = q.summary(q.id === 'signs-for' ? { ...PROPS, signsForOn: true, signsForDraft: ' rX ' } : PROPS)
       expect(rows.length, q.id).toBeGreaterThan(0)
       for (const row of rows) expect(row.step).toBe(q.id)
     }
@@ -117,8 +118,8 @@ describe('the Review lists every answer once', () => {
 
 describe('an Offline Wallet walk (offline signing story 3, OS-FR-2, OS-FR-8)', () => {
   it('has no Node and no Seed Method step, on create and import', () => {
-    expect(walkQuestions(false, 'offline').map((q) => q.id)).toEqual(['signature-type', 'open-check', 'signing-check'])
-    expect(walkQuestions(true, 'offline').map((q) => q.id)).toEqual(['open-check', 'signing-check'])
+    expect(walkQuestions(false, 'offline').map((q) => q.id)).toEqual(['signature-type', 'open-check', 'signing-check', 'signs-for'])
+    expect(walkQuestions(true, 'offline').map((q) => q.id)).toEqual(['open-check', 'signing-check', 'signs-for'])
   })
 
   it('before a kind is chosen the walk is the Online one', () => {
@@ -156,5 +157,17 @@ describe('an Offline Wallet walk (offline signing story 3, OS-FR-2, OS-FR-8)', (
       'Auto-lock',
       'Authentication required to sign a transaction',
     ])
+  })
+})
+
+describe('the optional Signs-for step (OS-FR-20)', () => {
+  const step = WALK_QUESTIONS.find((q) => q.id === 'signs-for')!
+  it('is offered on Online and Offline, create and import', () => {
+    for (const imported of [false, true]) for (const kind of ['online', 'offline'] as const) expect(walkQuestions(imported, kind)).toContain(step)
+  })
+  it('an unticked box adds no Review row; a ticked one shows the Account trimmed, as data, with Change to its step', () => {
+    expect(step.summary(PROPS)).toEqual([])
+    expect(step.summary({ ...PROPS, signsForOn: false, signsForDraft: 'rX' })).toEqual([])
+    expect(step.summary({ ...PROPS, signsForOn: true, signsForDraft: ' rX ' })).toEqual([{ step: 'signs-for', term: 'This key signs for another account', value: 'rX', data: true }])
   })
 })

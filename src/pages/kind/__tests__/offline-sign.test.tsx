@@ -251,7 +251,7 @@ describe('Offline Sign screen: sign, decline, lock (OS-FR-18, OS-FR-16)', () => 
     expect(screen.getByText(W.SIGNED_NOT_SENT)).toBeTruthy()
     expect(screen.getByText(new RegExp(`valid until ledger ${INDEX + 150}\\. That is approximately 10 minutes after`))).toBeTruthy()
     expect(h.written).toEqual([
-      { buildHash: buildHashOf({ type: 'payment', account: ACCOUNT, destination: DEST, amountDrops: '3000000' }), sequence: 41, hash: 'A'.repeat(64), lastLedgerSequence: INDEX + 150, ledgerIndex: INDEX, signedAt: 1_700_000_000_000 },
+      { buildHash: buildHashOf({ type: 'payment', account: ACCOUNT, destination: DEST, amountDrops: '3000000' }), sequence: 41, hash: 'A'.repeat(64), lastLedgerSequence: INDEX + 150, ledgerIndex: INDEX, signedAt: 1_700_000_000_000, account: ACCOUNT },
     ])
     await waitFor(() => expect(h.noted).toEqual([['off', INDEX]]))
     // The judged transaction is what is signed.

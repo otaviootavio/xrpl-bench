@@ -706,3 +706,15 @@ Item 8 shipped as a refactor that preserves behaviour (`spec-sendtab-split.md`).
   summary: The window on the Transmitter-builds review counts from this device's upper bound for the current ledger (highest seen or floor, + elapsed / 3 s + 30). A Transmitter that shifts the index and LastLedgerSequence inside that allowance still hides up to that many extra ledgers (about elapsed x (1/3 - 1/real rate) + 30; small right after a signing, hours from an old floor).
   evidence: A low estimate at ~4.5 s a ledger read a correct first round as 29,436 ledgers on Testnet (real rate ~3.3 s since the 2026-11-10 floor). A fresher floor at each release, or a per-Network measured rate, narrows it.
 
+
+- source_spec: `_bmad-output/specs/spec-offline-signing/stories/10-a-key-that-signs-for-another-account.md`
+  summary: P-54 is offered only at a Transmit step's validated outcome (the Transmitter's Transmit screen and the Synced Transmitter's New transaction). The Online Keys plate, which P-54 also names, does not exist yet; the legacy "Let another wallet sign" flow adds a controlled view on its own and gets no P-54.
+  evidence: Story 11 builds the Online Keys plate (P-47, any Regular Key address). Hang `SignsForOffer` on its validated SetRegularKey outcome (`regularKeySetBy` + `signsForTarget`).
+
+- source_spec: `_bmad-output/specs/spec-offline-signing/stories/10-a-key-that-signs-for-another-account.md`
+  summary: What story 12 removes with FR-75: `WalletView.accountAddress` and the resolver's fallback to it (`accountOfView`), `addControlledView`, `ControlWalletScreen`, `ControlPlate`, `ControlledNote`, `control.ts`'s flows, the shared-record kind refusal, and the read-only Signs for plate on a shared record. Signs for (`WalletView.signsFor`) stays. Story 12 also decides whether a controlled view stays listed after its screens go (FR-95: not converted).
+  evidence: Story 10 kept the two fields apart so the removal is a filter on `accountAddress` alone.
+
+- source_spec: `_bmad-output/specs/spec-offline-signing/stories/10-a-key-that-signs-for-another-account.md`
+  summary: Owner questions. (1) FR-93 is built as the triple (Network, Signs-for Account, key), not the pair "Signs-for Account and Network": the pair refuses Flow 7 on one device (the master Wallet and its Regular Key Wallet both sign for one Account). (2) Words reused outside their rows because the spine's "Signs for" card line, the plate's "Signs for" title, "Account" legend and "Change" key are not approved: P-17's "This wallet signs for {address}." (card line, plate state), the fixed string (plate title), P-54's "Set it" (plate set key), P-46's "Remove the address" (plate remove key), P-35 (Signs-for duplicate refusal).
+  evidence: Each is one constant in `src/lib/signs-for-words.ts` (P-46 in `transmitter-words.ts`, P-35 in `kind-change-words.ts`). For the pair reading, `hasView` drops the key comparison and P-54's first form must be refused for a key on this device.

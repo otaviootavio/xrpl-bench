@@ -1,6 +1,9 @@
 import { useEffect, useRef, type ReactNode } from 'react'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
+import { Checkbox } from '@/components/ui/checkbox'
+import { SignsForFields } from '@/components/wallet/SignsForFields'
+import { SIGNS_FOR_ANOTHER_ACCOUNT } from '@/lib/signs-for-words'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Axis, Choice } from '@/components/wallet/check-controls'
@@ -71,6 +74,13 @@ export interface WalletQuestionsProps {
 
   /** An import: the Seed fixes the Seed Method and the signature type, so neither is asked or summarised. */
   imported?: boolean
+
+  /** "This key signs for another account" (OS-FR-20): the optional step's box and its
+   * typed address. Absent where no key Wallet is made (Add Transmitter): unticked. */
+  signsForOn?: boolean
+  onSignsForOn?: (on: boolean) => void
+  signsForDraft?: string
+  onSignsForDraft?: (draft: string) => void
 }
 
 /** Step 1: Label and Network. Nothing that depends on Network is shown. */
@@ -404,5 +414,20 @@ export function SigningCheckQuestion(p: WalletQuestionsProps) {
         onSelect={() => p.onSigning('pin')}
       />
     </Axis>
+  )
+}
+
+/** The optional Signs-for step (OS-FR-20, EXPERIENCE "Quiz walk"): its title and the
+ * box are the fixed string; a ticked box asks for the Account, with P-40 under it. */
+export function SignsForQuestion(p: WalletQuestionsProps) {
+  const { group, busy } = p
+  return (
+    <>
+      <label className="flex items-center gap-2 text-sm pointer-coarse:min-h-11">
+        <Checkbox checked={p.signsForOn === true} disabled={busy} onCheckedChange={(v) => p.onSignsForOn?.(v === true)} />
+        {SIGNS_FOR_ANOTHER_ACCOUNT}
+      </label>
+      {p.signsForOn && <SignsForFields draft={p.signsForDraft ?? ''} onDraft={(d) => p.onSignsForDraft?.(d)} disabled={busy} idPrefix={group} />}
+    </>
   )
 }

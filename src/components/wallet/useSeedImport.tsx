@@ -127,22 +127,27 @@ export function useSeedImport(): { importSource: ImportSource; clearSeed: () => 
       </div>
     ),
     clear: clearSeed,
-    async acquire({ network, node, offline }) {
+    async acquire({ network, node, offline, signsFor }) {
       const seed = parseSeedInput(seedInputRef.current?.value ?? '')
       if (!seed) return { status: 'refused', reason: INVALID_SEED_MESSAGE, at: 'seed' }
       pendingSeedRef.current = seed
+      // The Account this Wallet will sign for (OS-FR-20): the Signs-for Account, else the key's own.
+      const account = signsFor && signsFor !== addressFromSeed(seed) ? signsFor : addressFromSeed(seed)
       try {
-        // Before any prompt and before any ledger read: a duplicate stops here.
-        const duplicate = await importDuplicateReason(seed, network)
-        if (duplicate) return { status: 'refused', reason: duplicate, at: 'seed' }
+        // Before any prompt and before any ledger read: a duplicate stops here. A Signs-for
+        // collision is about the Account typed on its own step, not the Seed (FR-93, OS-FR-20).
+        const duplicate = await importDuplicateReason(seed, network, signsFor)
+        if (duplicate) return account === addressFromSeed(seed) ? { status: 'refused', reason: duplicate, at: 'seed' } : { status: 'refused', reason: duplicate }
         if (!mountedRef.current) return { status: 'cancelled' } // left meanwhile: no ledger read for an abandoned address
         // An Offline Wallet never reads the ledger (OS-FR-2): no master-key check, and so
-        // no warning about it. Its Text E was acknowledged on step 1 instead.
-        if (!offline) {
+        // no warning about it. Its Text E was acknowledged on step 1 instead. A key that
+        // signs for another Account is that Account's Regular Key: its own Account's
+        // master key says nothing about it, so there is no check (OS-FR-20).
+        if (!offline && account === addressFromSeed(seed)) {
           const warning = await checkBeforeImport(queryClient, network, addressFromSeed(seed), node)
           if (!mountedRef.current) return { status: 'cancelled' }
           if (warning && !(await askWarning(IMPORT_WARNING_COPY[warning]))) return { status: 'cancelled' }
-        } else if (transmitterSyncedTo(useAppStore.getState().wallets, addressFromSeed(seed))) {
+        } else if (offline && transmitterSyncedTo(useAppStore.getState().wallets, account)) {
           // P-8, second form (OS-FR-3): a Transmitter here is synced to this address.
           // Warned, never refused; the first sentence is the legend, words unchanged.
           if (!(await askWarning(splitWarning(SAME_ADDRESS_TRANSMITTER_HERE)))) return { status: 'cancelled' }

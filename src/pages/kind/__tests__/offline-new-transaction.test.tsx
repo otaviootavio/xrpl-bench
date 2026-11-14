@@ -489,7 +489,7 @@ describe('retry without paying twice (story 7; OS-FR-16)', () => {
     await sign()
     expect(await screen.findByRole('heading', { name: W.SIGNED_TRANSACTION_TITLE })).toBeTruthy()
     expect(h.written).toEqual([
-      { buildHash: buildHashOf(BUILD), sequence: 9, hash: 'B'.repeat(64), lastLedgerSequence: INDEX + 150, ledgerIndex: INDEX, signedAt: SIGNED.signedAt },
+      { buildHash: buildHashOf(BUILD), sequence: 9, hash: 'B'.repeat(64), lastLedgerSequence: INDEX + 150, ledgerIndex: INDEX, signedAt: SIGNED.signedAt, account: BUILD.account },
     ])
   })
 

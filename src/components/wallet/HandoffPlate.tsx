@@ -28,9 +28,12 @@ export function HandoffPlate({
   network,
   text,
   scan,
+  payload,
   children,
 }: {
   heading: string
+  /** The payload's name in the QR's text alternative when the heading is not its title (the Unsigned plate, headed by P-33). */
+  payload?: string
   scan?: 1 | 2 | 3
   headingRef?: RefObject<HTMLHeadingElement | null>
   network: NetworkId
@@ -41,7 +44,7 @@ export function HandoffPlate({
   useWakeLock(true)
   const label = NETWORKS[network].label
   const headingId = useId()
-  const alt = fill(QR_ALT, heading.toLowerCase(), label)
+  const alt = fill(QR_ALT, payload ?? heading.toLowerCase(), label)
   return (
     <section aria-labelledby={headingId} className={`panel-plate flex min-w-0 flex-col gap-3 rounded-md px-4 pb-4 pt-3 ${WRAPPING_KEYS}`}>
       <h2 id={headingId} ref={headingRef} tabIndex={-1} className="text-sm font-semibold [overflow-wrap:anywhere]">

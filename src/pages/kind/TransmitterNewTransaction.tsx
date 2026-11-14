@@ -178,7 +178,7 @@ function UnsignedPlate({ made, wallet, headingRef }: { made: Made; wallet: Trans
   const label = NETWORKS[wallet.network].label
   const { checks, tx } = made
   return (
-    <HandoffPlate heading={W.UNSIGNED_LINE} headingRef={headingRef} network={wallet.network} text={made.text}>
+    <HandoffPlate heading={W.UNSIGNED_LINE} payload={PAYLOAD_NAMES.u} headingRef={headingRef} network={wallet.network} text={made.text}>
       <dl className="grid min-w-0 gap-2">
         {Object.entries(tx).map(([name, value]) => (
           <div key={name} className="grid min-w-0 gap-0.5">

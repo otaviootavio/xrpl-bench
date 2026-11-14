@@ -184,4 +184,11 @@ describe('Offline-builds round words (OS-FR-11, OS-FR-13 to OS-FR-16)', () => {
     expect(QR_SCANNER).toContain(`'${K.cameraFailed}'`)
     expect(CREATE_FLOW).toContain(`title: '${K.review}'`)
   })
+
+  it('the words approved on 2026-11-14 (story 8 round two) are pinned as written', () => {
+    expect(W.SIGNER_LIST).toBe('Signer list')
+    expect(fill(W.SIGNER_LIST_VALUE, 3, 2)).toBe('3 signers, quorum 2')
+    expect(W.KEY_STATE).toBe('Key state')
+    expect(W.SHIPPED_KEYS.review).toBe('Review')
+  })
 })

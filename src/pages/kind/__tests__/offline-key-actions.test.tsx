@@ -154,22 +154,24 @@ describe('Trust line (story 8, the online trust-line fields)', () => {
     pick(W.TRUST_LINE)
     fireEvent.change(screen.getByLabelText(W.SHIPPED_KEYS.issuerAddress), { target: { value: 'rNope' } })
     expect(screen.getByText(W.SHIPPED.invalidAddress)).toBeTruthy()
-    fireEvent.change(screen.getByLabelText(W.SHIPPED_KEYS.currencyCode), { target: { value: 'xrp' } })
+    fireEvent.change(screen.getByLabelText(W.SHIPPED_KEYS.currencyCode), { target: { value: 'XRP' } })
+    expect(screen.getByText(W.SHIPPED_KEYS.currencyError)).toBeTruthy()
+    fireEvent.change(screen.getByLabelText(W.SHIPPED_KEYS.currencyCode), { target: { value: '0000000000000000000000005553440000000000' } })
     expect(screen.getByText(W.SHIPPED_KEYS.currencyError)).toBeTruthy()
     expect((screen.getByRole('button', { name: W.SHIPPED_KEYS.review }) as HTMLButtonElement).disabled).toBe(true)
   })
 
-  it('add: upper-case code and the canonical limit are the Build; the review names the type and its flag', async () => {
+  it('add: the code as typed and the canonical limit are the Build; the review names the type and its flag', async () => {
     mount()
     pick(W.TRUST_LINE)
     fireEvent.change(screen.getByLabelText(W.SHIPPED_KEYS.issuerAddress), { target: { value: DEST } })
     fireEvent.change(screen.getByLabelText(W.SHIPPED_KEYS.currencyCode), { target: { value: 'usd' } })
     fireEvent.change(screen.getByLabelText(W.SHIPPED_KEYS.trustLimit), { target: { value: '0100.50' } })
     review()
-    expect(roundOf(wallet.id)!.build).toEqual({ type: 'trust-line', account: ACCOUNT, currency: 'USD', issuer: DEST, limit: '100.5' })
+    expect(roundOf(wallet.id)!.build).toEqual({ type: 'trust-line', account: ACCOUNT, currency: 'usd', issuer: DEST, limit: '100.5' })
     expect(await screen.findByRole('heading', { name: W.TRUST_LINE })).toBeTruthy()
     expect(screen.getByText('tfSetNoRipple')).toBeTruthy()
-    expect(screen.getByText(`100.5 USD ${DEST}`)).toBeTruthy()
+    expect(screen.getByText(`100.5 usd ${DEST}`)).toBeTruthy()
     expect(screen.queryByText('[object Object]')).toBeNull()
   })
 
@@ -284,7 +286,7 @@ describe('the signing review of a key change (OS-FR-16, OS-FR-21)', () => {
   it('shows the key state the Data to Sign carries, and W5 when a set key is replaced', async () => {
     mount()
     regularKeyRequest()
-    paste(dataFor(keptRequest(), { keyState: { regular_key: DEST, master_key: 'on' } }))
+    paste(dataFor(keptRequest(), { keyState: { regular_key: DEST, master_key: 'on', signer_list: null } }))
     expect(await screen.findByRole('heading', { name: 'You are signing for Testnet' })).toBeTruthy()
     expect(screen.getByText(W.W5_SENTENCE)).toBeTruthy()
     expect(screen.getByText(W.SHIPPED_KEYS.masterKeyOn)).toBeTruthy()
@@ -296,12 +298,12 @@ describe('the signing review of a key change (OS-FR-16, OS-FR-21)', () => {
     mount()
     regularKeyRequest()
     const k = keptRequest()
-    paste(dataFor(k, { keyState: { regular_key: null, master_key: 'on' } }))
-    expect(await screen.findByText('None.')).toBeTruthy()
+    paste(dataFor(k, { keyState: { regular_key: null, master_key: 'on', signer_list: null } }))
+    await waitFor(() => expect(screen.getAllByText('None.')).toHaveLength(2))
     expect(screen.queryByText(W.W5_SENTENCE)).toBeNull()
     fireEvent.click(screen.getByRole('button', { name: W.DO_NOT_SIGN }))
     paste(dataFor(k, { keyState: 'unknown' }))
-    await waitFor(() => expect(screen.getAllByText(P29)).toHaveLength(2))
+    await waitFor(() => expect(screen.getAllByText(P29)).toHaveLength(3))
     expect(screen.queryByText(W.W5_SENTENCE)).toBeNull()
   })
 
@@ -318,7 +320,7 @@ describe('the signing review of a key change (OS-FR-16, OS-FR-21)', () => {
     fireEvent.change(screen.getByLabelText(W.SHIPPED_KEYS.currencyCode), { target: { value: 'USD' } })
     review()
     showRequest()
-    paste(dataFor(keptRequest(), { keyState: { regular_key: null, master_key: 'on' } }))
+    paste(dataFor(keptRequest(), { keyState: { regular_key: null, master_key: 'on', signer_list: null } }))
     await waitFor(() => expect(alertText()).toContain(W.DATA_REFUSAL.malformed))
   })
 
@@ -326,7 +328,7 @@ describe('the signing review of a key change (OS-FR-16, OS-FR-21)', () => {
     h.sign.mockResolvedValue(SIGNED)
     mount()
     masterOffRequest()
-    paste(dataFor(keptRequest(), { keyState: { regular_key: OTHER, master_key: 'on' } }))
+    paste(dataFor(keptRequest(), { keyState: { regular_key: OTHER, master_key: 'on', signer_list: null } }))
     expect(await screen.findByText(W.W4_SENTENCE)).toBeTruthy()
     expect(screen.queryByLabelText(W.SHIPPED_KEYS.offPhraseLabel)).toBeNull()
     await sign()
@@ -344,7 +346,7 @@ describe('the signing review of a key change (OS-FR-16, OS-FR-21)', () => {
     paste(
       encodeDataToSign({
         network: 'mainnet', requestId: r.phase.requestId, buildHash: buildHashOf(r.build), sequence: 9, fee: '12',
-        ledgerIndex: LEDGER_FLOORS.mainnet.index + 10, keyState: { regular_key: OTHER, master_key: 'on' },
+        ledgerIndex: LEDGER_FLOORS.mainnet.index + 10, keyState: { regular_key: OTHER, master_key: 'on', signer_list: null },
       }).text,
     )
     const phrase = await screen.findByLabelText(W.SHIPPED_KEYS.offPhraseLabel)
@@ -365,7 +367,7 @@ describe('the signing review of a key change (OS-FR-16, OS-FR-21)', () => {
     pick(W.TURN_ON_THE_MASTER_KEY)
     review()
     showRequest()
-    paste(dataFor(keptRequest(), { keyState: { regular_key: OTHER, master_key: 'off' } }))
+    paste(dataFor(keptRequest(), { keyState: { regular_key: OTHER, master_key: 'off', signer_list: null } }))
     expect(await screen.findByText(W.SHIPPED_KEYS.masterKeyOff)).toBeTruthy()
     expect(screen.queryByText(W.W4_SENTENCE)).toBeNull()
   })
@@ -390,8 +392,8 @@ it.each([
     review()
     showRequest()
   }, undefined],
-  ['a Regular Key', regularKeyRequest, { regular_key: null, master_key: 'on' } as KeyState],
-  ['master key off', masterOffRequest, { regular_key: OTHER, master_key: 'on' } as KeyState],
+  ['a Regular Key', regularKeyRequest, { regular_key: null, master_key: 'on', signer_list: null } as KeyState],
+  ['master key off', masterOffRequest, { regular_key: OTHER, master_key: 'on', signer_list: null } as KeyState],
 ])('no ledger client is ever asked for during a round of %s (OS-FR-13)', async (_n, toRequestOf, keyState) => {
   h.sign.mockResolvedValue(SIGNED)
   mount()
@@ -402,3 +404,22 @@ it.each([
   expect(h.getXrplClient).not.toHaveBeenCalled()
   expect(h.holdXrplClient).not.toHaveBeenCalled()
 })
+
+it('a 40-hex currency shows in full on the review (story 8 review round two)', async () => {
+  const hex = '0158415500000000C1F76FF6ECB0BAC600000000'
+  mount()
+  pick(W.TRUST_LINE)
+  fireEvent.change(screen.getByLabelText(W.SHIPPED_KEYS.issuerAddress), { target: { value: DEST } })
+  fireEvent.change(screen.getByLabelText(W.SHIPPED_KEYS.currencyCode), { target: { value: hex } })
+  review()
+  expect(await screen.findByText(new RegExp(` ${hex} ${DEST}$`))).toBeTruthy()
+})
+
+it('the signing review of a key change has the "Key state" heading and the signer list', async () => {
+  mount()
+  regularKeyRequest()
+  paste(dataFor(keptRequest(), { keyState: { regular_key: null, master_key: 'on', signer_list: { signers: 4, quorum: 3 } } }))
+  expect(await screen.findByRole('heading', { name: W.KEY_STATE })).toBeTruthy()
+  expect(screen.getByText('4 signers, quorum 3')).toBeTruthy()
+})
+

@@ -2,7 +2,7 @@ import type { QueryClient } from '@tanstack/react-query'
 import { NETWORKS } from '@/lib/xrpl/networks'
 import { queryKeys } from '@/lib/xrpl/query-keys'
 import { fetchAccountStateFresh, fetchDestinationInfoOnce } from '@/lib/xrpl/query-reads'
-import { fetchAccountLines, fetchServerReserves, type AccountState, type TrustLine } from '@/lib/xrpl/reads'
+import { fetchAccountLines, fetchServerReserves, fetchSignerList, type AccountState, type TrustLine } from '@/lib/xrpl/reads'
 import { amountPlusFeeFits, coversOwnerReserveAndFee, formatXrp, reserveRequirementDrops, spendableAfterReserve } from '@/lib/xrpl/money'
 import { FeeAboveCapError, prepareDataToSign, type DataToSignValues } from '@/lib/xrpl/writes'
 import type { SubmittableTransaction } from 'xrpl'
@@ -14,6 +14,7 @@ import {
   type RequestPayload,
   type RequestTx,
   type SetRegularKeyRequestTx,
+  type SignerListState,
   type TrustSetRequestTx,
 } from '@/lib/qr-codec'
 import type { TransmitterMeta } from '@/lib/crypto/keystore'
@@ -177,7 +178,9 @@ async function answerTrustSet(wallet: TransmitterMeta, request: RequestPayload, 
     return { status: 'read-failed' }
   }
   const { currency, issuer, value } = tx.LimitAmount
-  const exists = lines.some((l) => l.account === issuer && l.currency === currency)
+  // Hex codes compare by value (rippled writes them in upper case); 3-character codes are case-sensitive.
+  const sameCode = (c: string) => (currency.length === 40 ? c.toUpperCase() === currency.toUpperCase() : c === currency)
+  const exists = lines.some((l) => l.account === issuer && sameCode(l.currency))
   const adds = !exists && value !== '0'
 
   let ownerReserve = '0'
@@ -218,7 +221,20 @@ async function answerKeyChange(wallet: TransmitterMeta, request: RequestPayload,
   if (!state.exists) {
     return { status: 'refused', reason: tx.TransactionType === 'SetRegularKey' ? SHIPPED.noKeysToChange : SHIPPED.noMasterKeySetting }
   }
-  const keyState: KeyState = { regular_key: state.regularKey ?? null, master_key: state.disableMasterKey ? 'off' : 'on' }
+  // The signer list is its own read, for display only: a failed read is "unknown" (P-29),
+  // never "none" and never a reason not to answer (route-checks "Transmitter Wallet").
+  let signerList: SignerListState
+  try {
+    signerList = await ctx.queryClient.fetchQuery({
+      queryKey: queryKeys.signerList(wallet.network, request.account),
+      queryFn: () => fetchSignerList(wallet.network, request.account, wallet.node),
+      staleTime: 0,
+      networkMode: 'always',
+    })
+  } catch {
+    signerList = 'unknown'
+  }
+  const keyState: KeyState = { regular_key: state.regularKey ?? null, master_key: state.disableMasterKey ? 'off' : 'on', signer_list: signerList }
   const prepared = await dataToSign(wallet, tx)
   if (!('values' in prepared)) return prepared
   return answered(wallet, request, prepared.values, { type: 'key' }, keyState)

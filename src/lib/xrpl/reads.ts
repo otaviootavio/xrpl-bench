@@ -154,6 +154,41 @@ export async function fetchAccountDelegates(network: NetworkId, address: string,
   }
 }
 
+/** The Account's signer list (OS-FR-21 key state): how many signers and the quorum. */
+export interface SignerListSummary {
+  signers: number
+  quorum: number
+}
+
+/**
+ * Wraps `account_objects` of type `signer_list` (an Account has at most one).
+ * `null`: no signer list (also an Account not on the ledger). Any other error, or an
+ * entry it cannot read, is thrown, so it is shown as unknown (P-29), never as "none".
+ */
+export async function fetchSignerList(network: NetworkId, address: string, node?: string): Promise<SignerListSummary | null> {
+  const client = await getXrplClient(network, node)
+  try {
+    const res: { result: { account_objects: unknown[] } } = await client.request({
+      command: 'account_objects',
+      account: address,
+      type: 'signer_list',
+      ledger_index: 'validated',
+    })
+    const lists = res.result.account_objects.filter((o) => isRecord(o) && o.LedgerEntryType === 'SignerList')
+    if (lists.length === 0) return null
+    const o = lists[0] as Record<string, unknown>
+    const entries = o.SignerEntries
+    const quorum = o.SignerQuorum
+    if (lists.length > 1 || !Array.isArray(entries) || entries.length === 0 || typeof quorum !== 'number' || !Number.isInteger(quorum) || quorum < 1) {
+      throw new Error('The signer list could not be read.')
+    }
+    return { signers: entries.length, quorum }
+  } catch (err: unknown) {
+    if (rippledErrorCode(err) === 'actNotFound') return null
+    throw err
+  }
+}
+
 export interface ServerReserves {
   baseReserveDrops: string
   ownerReserveDrops: string

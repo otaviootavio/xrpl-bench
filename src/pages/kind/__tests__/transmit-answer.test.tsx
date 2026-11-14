@@ -1,5 +1,5 @@
 /** @vitest-environment jsdom */
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -217,7 +217,7 @@ describe('after an answer, the Transmit step expects the request\'s Account (OS-
 
   it('a Regular Key replaced: the key state inside the plate after its heading, then W5', async () => {
     const tx = { TransactionType: 'SetRegularKey', Account: master, RegularKey: other }
-    h.answer.mockResolvedValue(answered({ checks: { type: 'key' }, tx, keyState: { regular_key: DEST, master_key: 'on' } }))
+    h.answer.mockResolvedValue(answered({ checks: { type: 'key' }, tx, keyState: { regular_key: DEST, master_key: 'on', signer_list: null } }))
     mount()
     paste(REQUEST)
     const heading = await screen.findByRole('heading', { name: R.DATA_TO_SIGN_TITLE })
@@ -233,14 +233,14 @@ describe('after an answer, the Transmit step expects the request\'s Account (OS-
   })
 
   it('no W5 when no Regular Key is set ("None."), or when the same key is set again', async () => {
-    h.answer.mockResolvedValueOnce(answered({ checks: { type: 'key' }, tx: { TransactionType: 'SetRegularKey', Account: master, RegularKey: other }, keyState: { regular_key: null, master_key: 'on' } }))
+    h.answer.mockResolvedValueOnce(answered({ checks: { type: 'key' }, tx: { TransactionType: 'SetRegularKey', Account: master, RegularKey: other }, keyState: { regular_key: null, master_key: 'on', signer_list: null } }))
     mount()
     paste(REQUEST)
     expect(await screen.findByRole('heading', { name: R.DATA_TO_SIGN_TITLE })).toBeTruthy()
-    expect(screen.getByText('None.')).toBeTruthy()
+    expect(screen.getByText(R.REGULAR_KEY_TYPE).nextElementSibling?.textContent).toBe('None.')
     expect(screen.queryByText(R.W5_SENTENCE)).toBeNull()
     cleanup()
-    h.answer.mockResolvedValueOnce(answered({ checks: { type: 'key' }, tx: { TransactionType: 'SetRegularKey', Account: master, RegularKey: other }, keyState: { regular_key: other, master_key: 'on' } }))
+    h.answer.mockResolvedValueOnce(answered({ checks: { type: 'key' }, tx: { TransactionType: 'SetRegularKey', Account: master, RegularKey: other }, keyState: { regular_key: other, master_key: 'on', signer_list: null } }))
     mount()
     paste(REQUEST)
     expect(await screen.findByRole('heading', { name: R.DATA_TO_SIGN_TITLE })).toBeTruthy()
@@ -248,7 +248,7 @@ describe('after an answer, the Transmit step expects the request\'s Account (OS-
   })
 
   it('master key off: W4\'s sentence on the answer; on: no W4; an unknown key state is P-29, never safe', async () => {
-    h.answer.mockResolvedValueOnce(answered({ checks: { type: 'key' }, tx: { TransactionType: 'AccountSet', Account: master, SetFlag: 4 }, keyState: { regular_key: other, master_key: 'on' } }))
+    h.answer.mockResolvedValueOnce(answered({ checks: { type: 'key' }, tx: { TransactionType: 'AccountSet', Account: master, SetFlag: 4 }, keyState: { regular_key: other, master_key: 'on', signer_list: null } }))
     mount()
     paste(REQUEST)
     expect(await screen.findByRole('heading', { name: R.DATA_TO_SIGN_TITLE })).toBeTruthy()
@@ -259,6 +259,23 @@ describe('after an answer, the Transmit step expects the request\'s Account (OS-
     paste(REQUEST)
     expect(await screen.findByRole('heading', { name: R.DATA_TO_SIGN_TITLE })).toBeTruthy()
     expect(screen.queryByText(R.W4_SENTENCE)).toBeNull()
-    expect(screen.getAllByText('Unknown. The app cannot read this value.')).toHaveLength(2)
+    expect(screen.getAllByText('Unknown. The app cannot read this value.')).toHaveLength(3)
+  })
+
+  it('the key state sits under "Key state" with its signer list (approved 2026-11-14); an unread list is P-29 alone', async () => {
+    const tx = { TransactionType: 'SetRegularKey', Account: master, RegularKey: other }
+    h.answer.mockResolvedValueOnce(answered({ checks: { type: 'key' }, tx, keyState: { regular_key: null, master_key: 'on', signer_list: { signers: 2, quorum: 2 } } }))
+    mount()
+    paste(REQUEST)
+    const plate = (await screen.findByRole('heading', { name: R.DATA_TO_SIGN_TITLE })).closest('section')!
+    expect(within(plate).getByRole('heading', { name: 'Key state' })).toBeTruthy()
+    expect(within(plate).getByText('2 signers, quorum 2')).toBeTruthy()
+    cleanup()
+    h.answer.mockResolvedValueOnce(answered({ checks: { type: 'key' }, tx, keyState: { regular_key: null, master_key: 'on', signer_list: 'unknown' } }))
+    mount()
+    paste(REQUEST)
+    expect(await screen.findByRole('heading', { name: R.DATA_TO_SIGN_TITLE })).toBeTruthy()
+    expect(screen.getByText('Signer list').nextElementSibling?.textContent).toBe('Unknown. The app cannot read this value.')
+    expect(screen.getByText(R.SHIPPED_KEYS.masterKeyOn)).toBeTruthy()
   })
 })

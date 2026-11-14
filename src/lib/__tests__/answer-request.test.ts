@@ -19,6 +19,7 @@ const h = vi.hoisted(() => ({
   destinationReads: 0,
   reserveReads: 0,
   lines: [] as Array<{ account: string; currency: string }>,
+  signers: null as null | { signers: number; quorum: number } | Error,
 }))
 
 vi.mock('@/lib/xrpl/reads', async (importOriginal) => {
@@ -35,6 +36,10 @@ vi.mock('@/lib/xrpl/reads', async (importOriginal) => {
     fetchAccountLines: async () => {
       if (h.fail.lines) throw new Error('down')
       return h.lines.map((l) => ({ ...l, balance: '0', limit: '1', limitPeer: '0', noRipple: true, freeze: false, freezePeer: false }))
+    },
+    fetchSignerList: async () => {
+      if (h.signers instanceof Error) throw h.signers
+      return h.signers
     },
     fetchServerReserves: async () => {
       h.reserveReads += 1
@@ -71,6 +76,7 @@ beforeEach(() => {
   h.destinationReads = 0
   h.reserveReads = 0
   h.lines = []
+  h.signers = null
   autofill = { Sequence: 8, Fee: '12' }
   validated = 5000
   setXrplClientFactory(
@@ -240,16 +246,16 @@ describe('the Transmitter answers a key change with the key state, warning and n
   it('the Data to Sign carries the key state as read, exactly', async () => {
     h.accounts[ACCOUNT] = acct(ACCOUNT, { regularKey: DEST })
     const r = await answer(setKey)
-    expect(r).toMatchObject({ status: 'answered', checks: { type: 'key' }, keyState: { regular_key: DEST, master_key: 'on' } })
+    expect(r).toMatchObject({ status: 'answered', checks: { type: 'key' }, keyState: { regular_key: DEST, master_key: 'on', signer_list: null } })
     expect(decodeDataToSign(r.status === 'answered' ? r.text : '')).toEqual({
       ok: true,
       value: {
         v: 1, network_id: 1, network: 'testnet', request_id: requestId, build_hash: buildHashOf(setKey), sequence: 8, fee: '12', ledger_index: 5000,
-        key_state: { regular_key: DEST, master_key: 'on' },
+        key_state: { regular_key: DEST, master_key: 'on', signer_list: null },
       },
     })
     h.accounts[ACCOUNT] = acct(ACCOUNT, { disableMasterKey: true })
-    expect(await answer(on)).toMatchObject({ keyState: { regular_key: null, master_key: 'off' } })
+    expect(await answer(on)).toMatchObject({ keyState: { regular_key: null, master_key: 'off', signer_list: null } })
   })
 
   it('never refuses what the ledger may accept: master key off with no Regular Key, off when already off, removing the only key', async () => {
@@ -283,3 +289,23 @@ describe('the Transmitter answers a key change with the key state, warning and n
     expect((await answerRequest(unsynced, request(off, 'mainnet'), { queryClient: qc() })).status).toBe('refused')
   })
 })
+
+describe('story 8 review round two: the signer list and hex codes', () => {
+  const setKey: OfflineBuild = { type: 'regular-key', account: ACCOUNT, regularKey: OTHER }
+  it('carries the signer list in the key state; a failed read of it is "unknown" and still answers', async () => {
+    h.signers = { signers: 3, quorum: 2 }
+    const r = await answer(setKey)
+    const d = decodeDataToSign(r.status === 'answered' ? r.text : '')
+    expect(d.ok && d.value.key_state).toEqual({ regular_key: null, master_key: 'on', signer_list: { signers: 3, quorum: 2 } })
+    h.signers = new Error('down')
+    const u = await answer(setKey)
+    expect(u).toMatchObject({ status: 'answered', keyState: { signer_list: 'unknown' } })
+  })
+  it('a hex currency matches the ledger\'s line whatever its case; a 3-character code only in its own case', async () => {
+    const hex = '0158415500000000C1F76FF6ECB0BAC600000000'
+    h.lines = [{ account: DEST, currency: hex }, { account: DEST, currency: 'USD' }]
+    expect(await answer({ type: 'trust-line', account: ACCOUNT, currency: hex.toLowerCase(), issuer: DEST, limit: '5' })).toMatchObject({ checks: { spendable: false } })
+    expect(await answer({ type: 'trust-line', account: ACCOUNT, currency: 'usd', issuer: DEST, limit: '5' })).toMatchObject({ checks: { spendable: true } })
+  })
+})
+

@@ -14,12 +14,14 @@ const h = vi.hoisted(() => ({
   lines: vi.fn(),
   reserves: vi.fn(),
   delegates: vi.fn(),
+  signers: vi.fn(),
 }))
 vi.mock('@/lib/xrpl/reads', () => ({
   fetchAccountState: (...a: unknown[]) => h.account(...a),
   fetchAccountLines: (...a: unknown[]) => h.lines(...a),
   fetchServerReserves: (...a: unknown[]) => h.reserves(...a),
   fetchAccountDelegates: (...a: unknown[]) => h.delegates(...a),
+  fetchSignerList: (...a: unknown[]) => h.signers(...a),
 }))
 
 import { TransmitterAccount } from '../TransmitterAccount'
@@ -60,6 +62,7 @@ beforeEach(() => {
   h.lines.mockResolvedValue([])
   h.reserves.mockResolvedValue({ baseReserveDrops: '1000000', ownerReserveDrops: '200000' })
   h.delegates.mockResolvedValue([])
+  h.signers.mockResolvedValue(null)
 })
 afterEach(() => {
   cleanup()
@@ -71,8 +74,8 @@ describe('Account on a Synced Transmitter (OS-FR-4)', () => {
     mount()
     expect(await screen.findByText('25')).toBeTruthy()
     expect(screen.getByText('Master key on')).toBeTruthy()
-    // No Regular Key: "None."; no trust lines: "None."; no delegates: "None.".
-    await waitFor(() => expect(screen.getAllByText(NONE)).toHaveLength(3))
+    // No Regular Key, no signer list, no trust lines, no delegates: "None." each.
+    await waitFor(() => expect(screen.getAllByText(NONE)).toHaveLength(4))
     expect(within(delegatesSection()).getByText(NONE)).toBeTruthy()
     for (const read of [h.account, h.lines, h.delegates]) expect(read).toHaveBeenCalledWith('testnet', ADDR, undefined)
     expect(screen.queryByRole('button', { name: /sign|fund|send/i })).toBeNull()
@@ -125,7 +128,8 @@ describe('Account on a Synced Transmitter (OS-FR-4)', () => {
     h.lines.mockRejectedValue(new Error('down'))
     mount()
     expect(await screen.findByText('Token balances unavailable')).toBeTruthy()
-    await waitFor(() => expect(screen.getAllByText(NONE)).toHaveLength(2))
+    // Regular Key, signer list and delegates: "None."; the trust lines: not.
+    await waitFor(() => expect(screen.getAllByText(NONE)).toHaveLength(3))
   })
 
   it('an account not on the ledger is said as not activated, with no key state', async () => {
@@ -133,5 +137,22 @@ describe('Account on a Synced Transmitter (OS-FR-4)', () => {
     mount()
     expect(await screen.findByText('Account not activated yet')).toBeTruthy()
     expect(screen.queryByText('Master key on')).toBeNull()
+  })
+
+  // Story 8 review round two: "Key state" and the signer list (approved 2026-11-14).
+  it('the key state has its heading and a Signer list row: "{n} signers, quorum {q}"', async () => {
+    h.signers.mockResolvedValue({ signers: 3, quorum: 2 })
+    mount()
+    const heading = await screen.findByRole('heading', { name: 'Key state' })
+    expect(heading.tagName).toBe('H2')
+    expect(await screen.findByText('3 signers, quorum 2')).toBeTruthy()
+    expect(screen.getByText('Signer list')).toBeTruthy()
+    expect(h.signers).toHaveBeenCalledWith('testnet', ADDR, undefined)
+  })
+
+  it('a failed signer-list read is P-29, never "None."', async () => {
+    h.signers.mockRejectedValue(new Error('down'))
+    mount()
+    await waitFor(() => expect(screen.getByText('Signer list').nextElementSibling?.textContent).toBe(VALUE_UNKNOWN))
   })
 })

@@ -617,6 +617,7 @@ Item 8 shipped as a refactor that preserves behaviour (`spec-sendtab-split.md`).
 - source_spec: `_bmad-output/specs/spec-offline-signing/stories/4-transmitter-wallet-sync-to-an-address-delegates-shown.md`
   summary: The Synced Transmitter's Account shows the Regular Key and the master key but not the signer list, which EXPERIENCE "Screens by type" puts in the key state. An unmet spine element.
   evidence: No approved words exist for the signer list row (its term and its values: none, a list, quorum). The read itself is one `account_objects` of type `signer_list`. Needs an approved P-n, then a row beside Regular Key and Master key (P-29 on a failed read).
+  resolution: (2026-11-14, story 8 review round two) resolved. The owner approved "Signer list", "{n} signers, quorum {q}" and "Key state"; the Account screen shows a "Key state" heading and the Signer list row ("None.", the count and quorum, or P-29), read through the key factory (`signerList`).
 
 - source_spec: `_bmad-output/specs/spec-offline-signing/stories/4-transmitter-wallet-sync-to-an-address-delegates-shown.md`
   summary: The Sync step and the Synced address plate take the address typed or pasted only; Flow 2 says the address is scanned from the offline phone.
@@ -666,7 +667,17 @@ Item 8 shipped as a refactor that preserves behaviour (`spec-sendtab-split.md`).
 - source_spec: `_bmad-output/specs/spec-offline-signing/stories/8-offline-builds-route-for-trust-lines-and-key-actions.md`
   summary: Story 8 reuses words whose only source is a screen story 12 retires, and words outside the approved lists that need the owner's eye: "Regular Key address" (TwoDeviceSign's field label) and "Review" (the quizzes' step title, used as the review key of Trust line, Regular Key and Master key; the mockup also says "Review"). The signer list has no approved row name, so it is neither read nor shown on the Transmitter answer or the offline review (as on story 4's Account screen).
   evidence: `offline-round-words.test.ts` pins "Regular Key address" against `TwoDeviceSign.tsx`; when story 12 deletes that file, pin it as a literal (or the owner approves a P-n). The signer-list row needs a word such as the mock's "Signer list".
+  resolution: (2026-11-14, story 8 review round two) partly settled. "Review", "Signer list", "{n} signers, quorum {q}" and "Key state" approved and built (signer list read by the Transmitter, carried in the Data to Sign's key state, shown on the answer, the offline review and the Account screen). Still open: "Regular Key address" is pinned against `TwoDeviceSign.tsx`, which story 12 deletes.
 
 - source_spec: `_bmad-output/specs/spec-offline-signing/stories/8-offline-builds-route-for-trust-lines-and-key-actions.md`
   summary: W1, W2 and P-30 are not on the offline Regular Key and Master key Builds (EXPERIENCE Flow 7 step 2 puts them there); story 11 owns W1 to W5 for every kind.
   evidence: route-checks' "Offline Wallet, Offline-builds route" rows require none of them; the brief for story 8 left them to story 11 unless route-checks required them. Until story 11 an offline user can set a black-hole or unknown Regular Key with no W1/W2 caution (W4 and W5 do show).
+
+- source_spec: `_bmad-output/specs/spec-offline-signing/stories/8-offline-builds-route-for-trust-lines-and-key-actions.md`
+  summary: A Close (limit "0") for a trust line that is not on the ledger is still answered by the Transmitter; the ledger likely answers `tecNO_LINE_REDUNDANT` and the fee is spent.
+  evidence: The online screen offers Close only on a line it lists, so no shipped or approved sentence says "this line is not on the ledger". Refusing needs owner-approved words (story 8 review round two). `answer-request.ts` `answerTrustSet`.
+
+- source_spec: `_bmad-output/specs/spec-offline-signing/stories/8-offline-builds-route-for-trust-lines-and-key-actions.md`
+  summary: Notes from story 8 review round two, not built: a trust line to the Account's own address is not refused (the same as the online screen; the ledger refuses it); key-action ledger refusals other than today's mapping (`temBAD_REGKEY`, `tecNO_ALTERNATIVE_KEY`, `tecNEED_MASTER_KEY`, P-31) belong to story 11; "This is a new payment" (approved fixed string) reads oddly on a retried trust line or key change: a wording question for the owner.
+  evidence: Coordinator review, 2026-11-14.
+

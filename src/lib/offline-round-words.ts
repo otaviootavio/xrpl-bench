@@ -225,3 +225,14 @@ export const SHIPPED_KEYS = {
   /** The create and Add Transmitter quizzes' review step title: the review key of the types other than Payment. */
   review: 'Review',
 } as const
+
+/**
+ * Approved by the owner on 2026-11-14 (story 8, review round two), exactly as written:
+ * the signer list's row name and value, and the heading over the key state. "Review" as
+ * the review key of Trust line, Regular Key and Master key was approved the same day
+ * (`SHIPPED_KEYS.review`). No source file, so `offline-round-words.test.ts` pins them.
+ * The empty signer list reads "None." (P-32's word, `transmitter-words.ts` `NONE`).
+ */
+export const SIGNER_LIST = 'Signer list'
+export const SIGNER_LIST_VALUE = '{n} signers, quorum {q}'
+export const KEY_STATE = 'Key state'

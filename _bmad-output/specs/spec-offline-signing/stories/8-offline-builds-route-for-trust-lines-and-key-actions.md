@@ -33,14 +33,14 @@ context:
 | Scenario | Input / State | Expected Output / Behavior | Error Handling |
 |----------|--------------|---------------------------|----------------|
 | Type list | New transaction | "Type of transaction": Payment, Trust line, Regular Key, Master key (P-62) | — |
-| Trust line Build | Add / Edit limit / Close; issuer, currency, limit | "Trust Lines" with P-1 (P-56); Owner reserve and Network fee P-1; TrustSet `LimitAmount{currency (upper), issuer, limit (canonical)}`, `Flags: tfSetNoRipple`; Close = limit "0" | shipped address and currency errors; Review held while invalid |
+| Trust line Build | Add / Edit limit / Close; issuer, currency, limit | "Trust Lines" with P-1 (P-56); Owner reserve and Network fee P-1; TrustSet `LimitAmount{currency (as typed; no 40-hex 00…), issuer, limit (canonical)}`, `Flags: tfSetNoRipple`; Close = limit "0" | shipped address and currency errors; Review held while invalid |
 | Regular Key Build | Set (typed or scanned address) / Remove | Regular Key and Master key rows P-1; SetRegularKey with `RegularKey` / without it | shipped invalid-address error; a scan that is not an address leaves the field as it was |
 | Master key Build | Turn off / Turn on | rows P-1; off: "Test the Regular Key" → P-50, then W4's sentence; AccountSet `SetFlag` / `ClearFlag` = `asfDisableMaster` | — |
 | Request | any new type | request carries the exact tx key set; codec refuses any other key or value as malformed | — |
 | Transmitter, trust line add | line not on the ledger, limit > 0 | online add guard order: reserve read, account, fee cap, spendable covers owner reserve + fee; checks "Spendable sufficient", "Fee less than the fee limit" | read fails: P-28; not activated / not enough: TrustLinesTab words |
 | Transmitter, trust line change or close | line on the ledger, or limit "0" | fee guard only | lines read fails: P-28 |
-| Transmitter, key change | Regular Key or Master key | key state rows (Regular Key: address or "None."; Master key on/off); W5 when set and replaced; W4 when turning off; Data to Sign with `key_state` | account read fails: P-28; not on the ledger: online words |
-| Key state unknown | a Data to Sign whose `key_state` is "unknown" | rows P-29 on the signing review; no W5 | — |
+| Transmitter, key change | Regular Key or Master key | "Key state": Regular Key (address or "None."), Master key on/off, Signer list ("None.", "{n} signers, quorum {q}", or P-29 when its own read fails); W5 when set and replaced; W4 when turning off; Data to Sign with `key_state` | account read fails: P-28; not on the ledger: online words |
+| Key state unknown | a Data to Sign whose `key_state` (or its `signer_list`) is "unknown" | those rows P-29 on the signing review; no W5 when the Regular Key is unknown | — |
 | Data to Sign shape | key change without `key_state`, or payment / trust line with one | P-16 + P-17 malformed | — |
 | Signing review, key change | Regular Key set to Y, state says X set | rows, W5; blob `RegularKey: Y` whatever X is | — |
 | Signing review, master key off | Mainnet / other Network | W4's sentence above the typed confirm; Mainnet: Sign held until "turn off" is typed | — |
@@ -85,14 +85,29 @@ context:
 
 ## Spec Change Log
 
+- 2026-11-14, review round two (owner approval, relayed by the coordinator): approved exactly — row name "Signer list" with values "None." (P-32's word) or "{n} signers, quorum {q}"; the heading "Key state" over the key state; "Review" as the review key of Trust line, Regular Key and Master key. In `offline-round-words.ts`, pinned as literals. The signer list is now read by the Transmitter (`account_objects` type `signer_list`, fresh, key factory `signerList`) and carried in the Data to Sign's key state (exact set `{regular_key, master_key, signer_list}`; `signer_list` is `null`, `{signers, quorum}` or `"unknown"` for a failed read of it, P-29), and shown under "Key state" on the Transmitter answer, the offline signing review and story 4's Account screen. The I/O rows "Transmitter, key change" and "Key state unknown" now include the signer list; "Trust line Build" keeps the currency as typed and refuses 40-hex codes starting 00.
+
 ## Review Triage Log
+
+Round two (coordinator review, 2026-11-14). Smallest change each; only the edited files' tests run.
+
+| # | Finding | Verdict | Fix |
+|---|---|---|---|
+| 1 | Review rows shortened a 40-hex currency (`XXXX…XXXX`) or showed its decoded name, so two currencies could look alike | real | `tx-fields.ts` shows the code exactly as carried, never shortened or decoded. Tests (unit, screen) |
+| 2 | 40-hex codes starting 00 accepted (all-zero = XRP; standard-form USD hex) | real | `isCurrencyCode` (codec) refuses them; the offline form uses the same check (shipped currency error). Tests |
+| 3 | Currency forced to upper case; 3-character codes are case-sensitive | real | kept as typed; the codec takes lower case; the Build hash uses the code as typed; the Transmitter matches hex lines by value, 3-character lines exactly. Tests |
+| 4 | A Close for a line not on the ledger is answered (fee likely spent, `tecNO_LINE_REDUNDANT`) | deferred | no shipped or approved words for "this line is not on the ledger" (the online screen only closes listed lines); `deferred-work.md` |
+| 5 | Notes: a trust line to the own Account not refused (as online); unmapped key refusal codes; "This is a new payment" on non-payments | recorded | Design Notes and `deferred-work.md` |
+| 6 | Signer list and "Key state" (owner approval) | built | see Spec Change Log |
 
 ## Design Notes
 
 - **Key actions never refused by the app.** The brief asked for the Transmitter's refusals to equal the online screens'. For key actions the online FR-75/FR-77 guards are exactly what OS-FR-21 removes (SPEC Constraints: "the app warns, never refuses"), so only the refusals the Data to Sign itself needs stay. Story 11 will bring the online Keys plate in line.
 - **Typed confirm on Mainnet only**, as today's master-key confirm and story 5's P-39. On Testnet and Devnet master key off is W4 plus Sign plus the Signing Check.
 - **Shipped words reused**, each tested against its source: TrustLinesTab's labels, actions, errors, add line and refusals; `control.ts` / `master-key.ts` "not on the ledger" words; MasterKeyControl's "Master key on/off" and typed phrase; QrScanner's camera failure; TwoDeviceSign's "Regular Key address"; the quizzes' "Review". The last two need an owner look (deferred-work).
-- **Left out:** W1, W2, P-30 (story 11); a signer-list row (no approved words; not read); a "Key state" heading (unapproved).
+- **Left out:** W1, W2, P-30 (story 11). The signer list and "Key state" heading were built in round two (owner approval 2026-11-14).
+- **Signer list unknown, not a refusal.** It is its own read and display only: a failed read is `"unknown"` (P-29) in the key state and the Transmitter still answers. The account read stays P-28 on failure.
+- **Not refused, recorded (round two):** a Close for a line not on the ledger (no words); a trust line to the Account's own address (the online screen does not refuse it either; the ledger does); key-action ledger refusals beyond P-31's three codes are story 11's; "This is a new payment" reads oddly for a retried trust line or key change (approved string; wording question for the owner).
 - Words used: P-1, P-29, P-47, P-50, P-56, P-57 (address scan, Stop the camera), P-62 types; fixed "Test the Regular Key"; W4's sentence and W5 verbatim; plus story 6/7's.
 
 ## Verification
@@ -116,3 +131,17 @@ context:
 | 320 dark / 390 light / 1280 light; 320 at 200% text | Met for the trust-line form, Regular Key form, master-off form, T answers (W5, W4), O reviews (W5, master off), T outcome: no side scroll, no element past the viewport (measured). Full-page captures show the top of the page only (fixed shell), as in story 7; lower content checked by text and measurement. |
 
 Screenshots in the session scratchpad `s8/`; opened: `O-review-master-off-320-dark`, `O-trust-form-390-light`, `T-answer-w5-320-dark`, `O-master-off-form-320-zoom200`. Not driven in the browser (unit-tested): the Mainnet typed phrase, an unknown key state, the address camera scan (no camera in headless), the trust-line refusals and failed reads. The dev server was stopped.
+
+**Review round two (2026-11-14).** Tests of the edited files: `src/lib/__tests__` and `src/pages/kind` (42 files, 646 tests), `src/lib/xrpl`, `src/hooks`, `src/lib/crypto` (51 files, 907 tests): green; `tsc -b` and `bun run lint` green. Browser: `bun run dev -- --port 5228 --strictPort`, `.playwright-mcp/s8-r2.js`, three fresh contexts. Throwaway Testnet accounts: S `rEvLfSQPRoWe6pXfDy8U6ufroECJ5Ag6HG` with a SignerListSet (2 signers, quorum 2) submitted by a Node script (`9D55C139…C3C16B`, tesSUCCESS), and N `rp6LYAwVw7Zox5S6yx8BaP5xxCbcQmewKW` with none.
+
+| Check | Result |
+|---|---|
+| Account screen, Synced to S | Met: "Key state" heading; Regular Key None., Master key on, Signer list "2 signers, quorum 2" (`r2-T-account-signers-320-dark`). |
+| Account screen, Synced to N | Met: Signer list "None.". |
+| Transmitter answer to a Regular Key request from S (Offline import of S) | Met: "Key state" with "2 signers, quorum 2" inside the Data to sign plate (`r2-T-answer-signers-1280-dark`). Not signed. |
+| Offline signing review | Met: "Key state", Signer list "2 signers, quorum 2". |
+| 40-hex currency on the offline review | Met: LimitAmount "1,000,000,000 0158415500000000C1F76FF6ECB0BAC600000000 rp6L…" in full (`r2-O-hex-review-1280-light`). |
+| 320 and 1280, light and dark | Met for all five screens: no side scroll, nothing past the viewport (measured). 0 ledger sockets on the offline context. |
+
+Screenshots opened: `r2-T-account-signers-320-dark`, `r2-O-hex-review-1280-light`, `r2-T-answer-signers-1280-dark`. The dev server was stopped.
+

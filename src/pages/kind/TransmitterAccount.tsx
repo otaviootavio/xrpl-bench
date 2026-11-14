@@ -9,6 +9,9 @@ import { TrustLineRow } from '@/components/wallet/TrustLineRow'
 import { WarningSentence } from '@/components/wallet/WarningSentence'
 import { useAccountState } from '@/hooks/useAccountState'
 import { useDelegates } from '@/hooks/useDelegates'
+import { useSignerList } from '@/hooks/useSignerList'
+import { signerListWords } from '@/lib/offline-round'
+import { KEY_STATE, SIGNER_LIST } from '@/lib/offline-round-words'
 import { useServerReserves } from '@/hooks/useServerReserves'
 import { useSpendableBalance } from '@/hooks/useSpendableBalance'
 import { useTrustLines } from '@/hooks/useTrustLines'
@@ -25,8 +28,8 @@ import { KindScreenPlate } from './KindScreenPlate'
  * this Wallet's Network and Synced address. A failed read is said as unavailable
  * or as P-29, never as empty or zero, and `isError` wins over retained data.
  * Nothing here offers to sign, fund or change anything. The words are the shipped
- * Balances words and the approved P-n; the signer list has no approved words yet,
- * so it is not shown (story 4 record).
+ * Balances words and the approved P-n; "Key state", "Signer list" and its value were
+ * approved on 2026-11-14 (story 8 review round two).
  */
 export function TransmitterAccount({ wallet, address }: { wallet: TransmitterMeta; address: string }) {
   const { network, node } = wallet
@@ -35,6 +38,7 @@ export function TransmitterAccount({ wallet, address }: { wallet: TransmitterMet
   const lines = useTrustLines(network, address, node)
   const reserves = useServerReserves(network, node)
   const delegates = useDelegates(network, address, node)
+  const signerList = useSignerList(network, address, node)
 
   const marks: ScaleMark[] = spendable.reserveFailed
     ? [
@@ -92,6 +96,10 @@ export function TransmitterAccount({ wallet, address }: { wallet: TransmitterMet
       {/* Key state (OS-FR-21 display): a failed read is P-29, never "safe". An
           account that is not on the ledger has no key state to show. */}
       {(account.isError || state?.exists) && (
+        <section aria-labelledby={`${wallet.id}-key-state`} className="flex flex-col gap-2">
+        <h2 id={`${wallet.id}-key-state`} className="panel-legend">
+          {KEY_STATE}
+        </h2>
         <dl className="flex flex-col gap-2 text-sm">
           <div className="min-w-0">
             <dt className="panel-legend">{REGULAR_KEY}</dt>
@@ -103,7 +111,13 @@ export function TransmitterAccount({ wallet, address }: { wallet: TransmitterMet
             <dt className="panel-legend">{MASTER_KEY}</dt>
             <dd className="mt-0.5">{!state ? VALUE_UNKNOWN : state.disableMasterKey ? 'Master key off' : 'Master key on'}</dd>
           </div>
+          <div className="min-w-0">
+            <dt className="panel-legend">{SIGNER_LIST}</dt>
+            {/* A failed read is P-29; while it loads, nothing is claimed. */}
+            <dd className="mt-0.5">{signerList.isError ? VALUE_UNKNOWN : signerList.data !== undefined ? signerListWords(signerList.data) : ''}</dd>
+          </div>
         </dl>
+        </section>
       )}
 
       <section aria-label="Tokens and trust lines" className="flex flex-col gap-2">

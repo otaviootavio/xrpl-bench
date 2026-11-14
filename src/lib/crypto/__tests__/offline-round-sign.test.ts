@@ -228,7 +228,7 @@ describe('Offline Wallet signs trust lines and key actions (OS-FR-16, OS-FR-21, 
     const lock = await makePinLock('2468')
     const { meta } = await offlineWallet(lock)
     const newKey = Wallet.generate().address
-    const withState = { ...data, key_state: { regular_key: DESTINATION, master_key: 'on' as const } }
+    const withState = { ...data, key_state: { regular_key: DESTINATION, master_key: 'on' as const, signer_list: null } }
     // The Data to Sign as received, key state and all: only Sequence, Fee and the index are used.
     expect(assembleTransaction({ type: 'regular-key', account: meta.address, regularKey: newKey }, withState)).toEqual({
       TransactionType: 'SetRegularKey', Account: meta.address, RegularKey: newKey, Sequence: 77, Fee: '12', LastLedgerSequence: 9_000_150,

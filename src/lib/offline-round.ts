@@ -4,10 +4,11 @@ import { NETWORKS, type NetworkId } from '@/lib/xrpl/networks'
 import { feeWithinCap } from '@/lib/xrpl/money'
 import { signPrepared } from '@/lib/xrpl/writes'
 import { offlineSigningHandleFor, type SigningContext } from '@/lib/crypto/keystore'
-import { ASF_DISABLE_MASTER, decodeDataToSign, encodeRequest, encodeSigned, isCanonicalLimit, payloadKindOf, TF_SET_NO_RIPPLE, type DataToSignPayload, type KeyState, type PayloadKind, type RequestTx } from '@/lib/qr-codec'
+import { ASF_DISABLE_MASTER, decodeDataToSign, encodeRequest, encodeSigned, isCanonicalLimit, payloadKindOf, TF_SET_NO_RIPPLE, type DataToSignPayload, type KeyState, type PayloadKind, type SignerListState, type RequestTx } from '@/lib/qr-codec'
 import { LEDGER_FLOORS, MAX_RECEIVED_LEDGER_INDEX, OFFLINE_LEDGER_WINDOW } from '@/lib/offline-window'
 import { WRONG_KIND } from '@/lib/transmitter-words'
-import { DATA_REFUSAL } from '@/lib/offline-round-words'
+import { DATA_REFUSAL, SIGNER_LIST_VALUE } from '@/lib/offline-round-words'
+import { NONE, VALUE_UNKNOWN } from '@/lib/transmitter-words'
 import { fill } from '@/lib/transmit-words'
 import type { SignedRecord } from '@/lib/signed-list'
 
@@ -43,7 +44,7 @@ export interface PaymentBuild {
 export interface TrustLineBuild {
   type: 'trust-line'
   account: string
-  /** Upper case: a 3-character code or 40 hex digits. */
+  /** As typed (codes are case-sensitive): a 3-character code or 40 hex digits (not 00…). */
   currency: string
   issuer: string
   /** `canonicalLimit`'s form; "0" closes the line. */
@@ -151,6 +152,13 @@ export function buildHashOf(build: OfflineBuild): string {
 export function replacesRegularKey(newKey: string | null | undefined, keyState: KeyState | undefined): boolean {
   if (!newKey || !keyState || keyState === 'unknown') return false
   return keyState.regular_key !== null && keyState.regular_key !== newKey
+}
+
+/** A signer list's value: "None.", "{n} signers, quorum {q}", or P-29 when unread. */
+export function signerListWords(list: SignerListState): string {
+  if (list === 'unknown') return VALUE_UNKNOWN
+  if (list === null) return NONE
+  return fill(SIGNER_LIST_VALUE, list.signers, list.quorum)
 }
 
 /** A new request ID: 16 random bytes. A new one for every request shown. */

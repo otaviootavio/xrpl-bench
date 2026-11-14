@@ -1,5 +1,5 @@
 import { AccountSetAsfFlags, AccountSetTfFlags, PaymentFlags, TrustSetFlags } from 'xrpl'
-import { displayCurrencyCode, formatAmountString, formatXrp } from '@/lib/xrpl/money'
+import { formatAmountString, formatXrp } from '@/lib/xrpl/money'
 
 /** Ledger fields that carry an amount: drops as XRP, an object as value, code and issuer. */
 const AMOUNT_FIELDS = new Set(['Amount', 'Fee', 'SendMax', 'DeliverMin', 'LimitAmount'])
@@ -39,7 +39,9 @@ export function fieldValue(name: string, value: unknown, txType?: unknown): stri
     if (value && typeof value === 'object') {
       const { value: v, currency, issuer } = value as { value?: unknown; currency?: unknown; issuer?: unknown }
       if (typeof v === 'string' && typeof currency === 'string' && typeof issuer === 'string') {
-        return `${formatAmountString(v)} ${displayCurrencyCode(currency)} ${issuer}`
+        // The code exactly as the transaction carries it: a 40-hex code in full, never
+        // shortened or replaced by a decoded name, so two codes never look alike (story 8 review).
+        return `${formatAmountString(v)} ${currency} ${issuer}`
       }
     }
   }

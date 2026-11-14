@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { encode, isValidClassicAddress } from 'xrpl'
+import { isCurrencyCode } from '@/lib/qr-codec'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogFooter, DialogTitle } from '@/components/ui/dialog'
@@ -271,9 +272,9 @@ function ReviewKey({ disabled, onReview }: { disabled: boolean; onReview: () => 
   )
 }
 
-/** A currency code as the online screen accepts it (3 characters or 40 hex digits), upper
- * case, and never XRP, which no trust line holds. */
-const currencyValid = (c: string) => (/^[A-Z0-9]{3}$/.test(c) && c !== 'XRP') || /^[0-9A-F]{40}$/.test(c)
+/** A currency code as the codec carries it (`isCurrencyCode`): case kept as typed, never XRP,
+ * and no 40-hex code starting with 00 (story 8 review). */
+const currencyValid = isCurrencyCode
 
 type TrustAction = 'add' | 'edit' | 'close'
 
@@ -337,9 +338,9 @@ function TrustLineForm({ wallet, initial, onReview }: { wallet: KeyWalletMeta; i
         <Input
           id="off-currency"
           value={currency}
-          onChange={(e) => setCurrency(e.target.value.trim().toUpperCase())}
+          onChange={(e) => setCurrency(e.target.value.trim())}
           placeholder="USD"
-          autoCapitalize="characters"
+          autoCapitalize="off"
           autoCorrect="off"
           spellCheck={false}
           aria-invalid={currency.length > 0 && !codeValid}

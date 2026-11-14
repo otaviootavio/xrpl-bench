@@ -276,9 +276,11 @@ export const ASF_DISABLE_MASTER = 4
 /**
  * The Account's key state, for display only (route-checks "What travels by QR": "For a key
  * change only: the Account's key state, for display"). `regular_key` is the set Regular Key
- * or `null` for none; `unknown` when the Transmitter could not read it (P-29).
+ * or `null` for none; `signer_list` its signer list (`null`: none; `unknown`: its own read
+ * failed, P-29, owner approval 2026-11-14); `unknown` when the Transmitter could not read it (P-29).
  */
-export type KeyState = { regular_key: string | null; master_key: 'on' | 'off' } | 'unknown'
+export type SignerListState = { signers: number; quorum: number } | null | 'unknown'
+export type KeyState = { regular_key: string | null; master_key: 'on' | 'off'; signer_list: SignerListState } | 'unknown'
 
 /** A Data-to-Sign Request: the Signs-for Account, the Built transaction, request ID, Build hash, Network. */
 export interface RequestPayload {
@@ -343,8 +345,13 @@ export function encodeDataToSign(input: {
 const malformed = <T>(): Decoded<T> => ({ ok: false, kind: 'malformed', reason: CODE_UNREADABLE })
 const unknownNetwork = <T>(): Decoded<T> => ({ ok: false, kind: 'bad-network', reason: 'That code names a network this wallet does not know.' })
 
-/** A 3-character code (not XRP) or 40 hex digits, in upper case, as the online screen writes it. */
-const isCurrencyCode = (v: unknown): v is string => typeof v === 'string' && ((/^[A-Z0-9]{3}$/.test(v) && v !== 'XRP') || /^[0-9A-F]{40}$/.test(v))
+/**
+ * A currency code as typed (story 8 review: codes are case-sensitive): 3 letters or digits,
+ * not "XRP", or 40 hex digits not starting with 00 (that prefix is the standard form, whose
+ * all-zero code is XRP; a standard code travels as its 3 characters).
+ */
+export const isCurrencyCode = (v: unknown): v is string =>
+  typeof v === 'string' && ((/^[A-Za-z0-9]{3}$/.test(v) && v !== 'XRP') || (/^[0-9A-Fa-f]{40}$/.test(v) && !v.startsWith('00')))
 /** A trust-line limit in its canonical form (`offline-round.ts` `canonicalLimit`): "0", or a
  * positive decimal with no leading zero and no trailing fractional zero, of at most 15
  * significant digits (an issued-currency amount holds 15) and 40 characters. String checks only. */
@@ -401,10 +408,19 @@ function requestTxOf(tx: unknown, account: string): RequestTx | null {
 /** The key state's exact shape, or `null` when it is not one. */
 function keyStateOf(v: unknown): KeyState | null {
   if (v === 'unknown') return 'unknown'
-  if (!isPlainObject(v) || !exactKeys(v, ['regular_key', 'master_key'])) return null
+  if (!isPlainObject(v) || !exactKeys(v, ['regular_key', 'master_key', 'signer_list'])) return null
   if (v.regular_key !== null && !isClassicAddress(v.regular_key)) return null
   if (v.master_key !== 'on' && v.master_key !== 'off') return null
-  return { regular_key: v.regular_key, master_key: v.master_key }
+  const sl = v.signer_list
+  let signerList: SignerListState
+  if (sl === null || sl === 'unknown') signerList = sl
+  else {
+    // At most 32 signers (XRPL); a quorum of at least 1.
+    if (!isPlainObject(sl) || !exactKeys(sl, ['signers', 'quorum'])) return null
+    if (!isUint32(sl.signers) || sl.signers < 1 || sl.signers > 32 || !isUint32(sl.quorum) || sl.quorum < 1) return null
+    signerList = { signers: sl.signers, quorum: sl.quorum }
+  }
+  return { regular_key: v.regular_key, master_key: v.master_key, signer_list: signerList }
 }
 
 export function decodeRequest(text: unknown): Decoded<RequestPayload> {

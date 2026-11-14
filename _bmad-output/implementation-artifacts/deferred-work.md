@@ -662,3 +662,11 @@ Item 8 shipped as a refactor that preserves behaviour (`spec-sendtab-split.md`).
   summary: A `tefPAST_SEQ` at the Transmit step for a blob that is NOT a retry (its Sequence used by some other transaction) still shows P-23 "Probably sent before".
   evidence: The Transmitter cannot know a blob is a retry. An `account_tx` read comparing the transaction that used the Sequence with this blob's Destination and Amount could tell the two apart; left out by the coordinator's decision (review round two, 2026-11-14).
 
+
+- source_spec: `_bmad-output/specs/spec-offline-signing/stories/8-offline-builds-route-for-trust-lines-and-key-actions.md`
+  summary: Story 8 reuses words whose only source is a screen story 12 retires, and words outside the approved lists that need the owner's eye: "Regular Key address" (TwoDeviceSign's field label) and "Review" (the quizzes' step title, used as the review key of Trust line, Regular Key and Master key; the mockup also says "Review"). The signer list has no approved row name, so it is neither read nor shown on the Transmitter answer or the offline review (as on story 4's Account screen).
+  evidence: `offline-round-words.test.ts` pins "Regular Key address" against `TwoDeviceSign.tsx`; when story 12 deletes that file, pin it as a literal (or the owner approves a P-n). The signer-list row needs a word such as the mock's "Signer list".
+
+- source_spec: `_bmad-output/specs/spec-offline-signing/stories/8-offline-builds-route-for-trust-lines-and-key-actions.md`
+  summary: W1, W2 and P-30 are not on the offline Regular Key and Master key Builds (EXPERIENCE Flow 7 step 2 puts them there); story 11 owns W1 to W5 for every kind.
+  evidence: route-checks' "Offline Wallet, Offline-builds route" rows require none of them; the brief for story 8 left them to story 11 unless route-checks required them. Until story 11 an offline user can set a black-hole or unknown Regular Key with no W1/W2 caution (W4 and W5 do show).

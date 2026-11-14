@@ -189,7 +189,8 @@ describe('a Transmitter Wallet (OS-FR-1, OS-FR-4)', () => {
     await waitFor(() => expect(h.hookArgs).toHaveBeenCalledWith('live', 'testnet', 'rSYNCEDaddressXXXXXXXXXXXXXX', undefined))
     fireEvent.mouseDown(screen.getByRole('tab', { name: 'Account' }))
     await waitFor(() => expect(screen.getByText('Balance unavailable')).toBeTruthy(), { timeout: 15_000 })
-    await waitFor(() => expect(screen.getAllByText(VALUE_UNKNOWN).length).toBe(3), { timeout: 15_000 })
+    // Regular Key, Master key, Signer list (story 8 round two) and the delegates: each P-29.
+    await waitFor(() => expect(screen.getAllByText(VALUE_UNKNOWN).length).toBe(4), { timeout: 15_000 })
     expect(screen.queryByText(NONE)).toBeNull()
     expect(screen.queryByRole('button', { name: /sign/i })).toBeNull()
     fireEvent.mouseDown(screen.getByRole('tab', { name: 'New transaction' }))

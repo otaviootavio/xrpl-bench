@@ -116,7 +116,9 @@ There is no other write, so P-62's "Other transactions" would open nothing: it i
 
 ## Verification
 
-**Gates (2026-11-14, tree of `91f9e7b` plus the Asset fix):** `bun run lint` · `bun run build` · `bun run test` (174 files, 2744 tests; baseline 169 / 2631) · `bun run check:contrast`. All green. After the Asset fix: lint, `tsc -b` and `src/pages/kind` tests green.
+**Gates (2026-11-14, final tree, the commit that adds this line):** `bun run lint` · `bun run build` · `bun run test` (174 files, 2748 tests; baseline 169 / 2631) · `bun run check:contrast`. All green.
+
+**Self-review fixes after the browser pass (unit-tested, not driven in the browser):** the Transmitter's Payment form now says a failed trust-lines read ("Token balances could not be read", never an XRP-only list), a failed or aged-out destination check ("Destination check failed"; "Destination check is out of date" with "Check again"), and a failed fee read, all in online Send's words, where before the Make key was held with nothing said. The key state shows no rows while the signer list loads (pending is not P-29). The Offline Sign review withholds Sign when the signed list cannot be read (P-16 alone, story 7's rule). A Transmit refusal after Send drops the Send key, as on Transmit.
 
 **Browser pass (2026-11-14, code at `91f9e7b`; the Asset fix re-measured on the same server).** `bun run dev -- --port 5229 --strictPort`; `.playwright-mcp/s9-run1.js` then `s9-run2.js` (git-ignored) through the Playwright MCP: headless Chromium, two fresh contexts per run, O (offline device) and T (online device), CDP virtual authenticators. Throwaway Testnet accounts funded by the faucet from a Node script: A `rJeGdeSB4PEwS8LQV4nc1L3wnJKMjin6df` (imported in O as Offline "Savings"; T is a Transmitter Synced to A), and B `rMfTYEtBZaedwVKfJtL741KrofrzwPTn9V` (issuer). Every payload was moved by decoding the plate's QR pixels with jsQR and pasting the text. Harness only: visibility pinned to visible. Between runs, B issued 100 USD to A from a Node script (`3021C0B5…773619`, tesSUCCESS). That is setup, not a step under test.
 

@@ -38,6 +38,7 @@ import { TRANSMITTER_SCREENS } from '@/lib/wallet-kind-words'
 import { checkFunds, heldTokenLines, selectedTokenLine, spendableReadState, tokenAssetKey } from '@/lib/xrpl/funds-check'
 import { displayCurrencyCode, dropsToXrpString, formatXrp, xrpToDropsString } from '@/lib/xrpl/money'
 import { NETWORKS } from '@/lib/xrpl/networks'
+import { DESTINATION_CHECK_FRESHNESS_MS } from '@/lib/xrpl/query-reads'
 import { KindScreenPlate } from './KindScreenPlate'
 
 const MAX_DESTINATION_TAG = 4294967295
@@ -109,7 +110,7 @@ export function TransmitterNewTransaction({ wallet, address }: { wallet: Transmi
   async function send(made: Made, ready: Ready) {
     setPhase({ name: 'unsigned', made, ready, sending: true })
     const result = await sendReady({ ...wallet, address }, ready, { prompts, queryClient })
-    setPhase(result.kind === 'refused' ? { name: 'unsigned', made, ready, refusal: result.text } : { name: 'unsigned', made, result })
+    setPhase(result.kind === 'refused' ? { name: 'unsigned', made, refusal: result.text } : { name: 'unsigned', made, result })
   }
 
   return (
@@ -347,6 +348,21 @@ function PaymentForm({ wallet, address, busy, onMake, initial }: FormProps & { i
         {isSelfSend && <p className="text-sm text-text-destructive">{W.SHIPPED.selfSend}</p>}
         {(destCheck.pending || destCheck.query.isFetching) && <p className="text-xs text-muted-foreground">{W.SHIPPED_SEND.checkingDestination}</p>}
       </div>
+      {/* A failed or aged-out check is said, never a silently held key (online Send's words). */}
+      {destCheck.query.isError && (
+        <QueryErrorState title={W.SHIPPED_SEND.destFailedTitle} description={W.SHIPPED_SEND.destFailedLine} onRetry={() => destCheck.query.refetch()} />
+      )}
+      {destCheck.stale && (
+        <Alert variant="warning">
+          <AlertTitle>{W.SHIPPED_SEND.destStaleTitle}</AlertTitle>
+          <AlertDescription className="flex flex-col items-start gap-2">
+            <span>{fill(W.SHIPPED_SEND.destStaleLine, Math.round(DESTINATION_CHECK_FRESHNESS_MS / 1000))}</span>
+            <Button size="sm" variant="outline" onClick={() => void destCheck.query.refetch()}>
+              {W.SHIPPED_SEND.checkAgain}
+            </Button>
+          </AlertDescription>
+        </Alert>
+      )}
       {destCheck.ok && destInfo && !destInfo.exists && <SendWarning title={W.SHIPPED_SEND.notActivatedTitle} line={W.SHIPPED_SEND.notActivatedLine} />}
       {destCheck.ok && destInfo?.hasTrustLine === false && <SendWarning title={W.SHIPPED_SEND.noTrustLineTitle} line={W.SHIPPED_SEND.noTrustLineLine} />}
       <div className="grid gap-1.5">
@@ -388,6 +404,10 @@ function PaymentForm({ wallet, address, busy, onMake, initial }: FormProps & { i
           </SelectContent>
         </Select>
       </div>
+      {/* Where the token list would be: a failed read is never an XRP-only list. */}
+      {trustLinesState.status === 'failed' && (
+        <QueryErrorState title={W.SHIPPED_SEND.linesFailedTitle} description={W.SHIPPED_SEND.linesFailedLine} onRetry={() => trustLines.refetch()} />
+      )}
       <AmountInput
         id="tx-amount"
         label={W.SHIPPED.amount}
@@ -410,6 +430,7 @@ function PaymentForm({ wallet, address, busy, onMake, initial }: FormProps & { i
           </div>
         )}
       </dl>
+      {feeState.status === 'failed' && <QueryErrorState title={W.SHIPPED_SEND.feeFailedTitle} description={W.SHIPPED_SEND.feeFailedLine} onRetry={() => fee.refetch()} />}
       <MakeKey disabled={!canMake} busy={busy} onMake={onMakeClick} />
     </div>
   )
@@ -540,13 +561,15 @@ function KeyForm({ wallet, address, busy, onMake, type, initial }: FormProps & {
   const [testShown, setTestShown] = useState(false)
   const valid = isValidClassicAddress(key)
   const state = account.isError ? null : account.data
+  // While a read is in flight nothing is claimed: no rows until both have answered (a pending read is not a failed one).
+  const signersSettled = signers.isError || signers.data !== undefined
   const keyState: KeyState | null = account.isError
     ? 'unknown'
-    : state?.exists
+    : state?.exists && signersSettled
       ? {
           regular_key: state.regularKey ?? null,
           master_key: state.disableMasterKey ? 'off' : 'on',
-          signer_list: signers.isError ? 'unknown' : signers.data !== undefined ? signers.data : 'unknown',
+          signer_list: signers.isError ? 'unknown' : (signers.data ?? null),
         }
       : null
   return (

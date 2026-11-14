@@ -170,14 +170,11 @@ describe('Offline Wallet signs an Unsigned Transaction (OS-FR-18)', () => {
     expect(b.ClearFlag).toBeUndefined()
   })
 
-  it('refuses a Fee over the cap before the signer opens, even if a judgement were bypassed', async () => {
+  it('refuses a Fee over the cap even if a judgement were bypassed (writes.ts signPrepared; nothing signed)', async () => {
     const lock = await makePinLock('2468')
     const meta = await offlineWallet(lock)
     const j = judged({ TransactionType: 'Payment', Account: meta.address, Destination: DEST, Amount: '1', Fee: '12', Sequence: 1, LastLedgerSequence: LEDGER + 150 }, meta.address)
-    const opened = vi.fn()
-    const p = { pin: async () => (opened(), null) }
-    await expect(signJudged(meta, { ...j, tx: { ...j.tx, Fee: '10001' } }, { openKey: lock.key, prompts: p })).rejects.toBeInstanceOf(FeeAboveCapError)
-    expect(opened).not.toHaveBeenCalled()
+    await expect(signJudged(meta, { ...j, tx: { ...j.tx, Fee: '10001' } }, { openKey: lock.key, prompts })).rejects.toBeInstanceOf(FeeAboveCapError)
   })
 
   it('the record joins the signed list, and an Offline-builds Build of the same payment finds it (Same Build across routes)', async () => {

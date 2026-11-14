@@ -158,6 +158,8 @@ function SigningReview({
   const [phrase, setPhrase] = useState('')
   const held = turningOff && wallet.network === 'mainnet' && phrase.trim().replace(/\s+/g, ' ').toLowerCase() !== W.SHIPPED_KEYS.offPhrase
   const phraseId = `sign-off-phrase-${wallet.id}`
+  // Nothing signs without a readable signed list (story 7): P-16 stands alone, with no Sign key.
+  const listUnreadable = useSignedList(wallet.id).status === 'failed'
 
   async function sign() {
     if (held) return
@@ -223,9 +225,11 @@ function SigningReview({
       )}
       <div role="alert">{failure && <p className="text-sm text-text-destructive">{failure}</p>}</div>
       <div className="flex flex-wrap gap-2">
-        <Button type="button" disabled={busy} aria-disabled={held ? true : undefined} aria-describedby={held ? phraseId : undefined} onClick={() => void sign()}>
-          {SIGN_KEY}
-        </Button>
+        {!listUnreadable && (
+          <Button type="button" disabled={busy} aria-disabled={held ? true : undefined} aria-describedby={held ? phraseId : undefined} onClick={() => void sign()}>
+            {SIGN_KEY}
+          </Button>
+        )}
         <Button type="button" variant="outline" disabled={busy} onClick={onDecline}>
           {W.DO_NOT_SIGN}
         </Button>

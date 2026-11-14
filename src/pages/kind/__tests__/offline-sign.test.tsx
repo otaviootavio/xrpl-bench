@@ -196,6 +196,14 @@ describe('Offline Sign screen: the signing review (OS-FR-18)', () => {
     await waitFor(() => expect(h.sign).toHaveBeenCalledTimes(1))
   })
 
+  it('an unreadable signed list: P-16 stands alone, no Sign key', async () => {
+    h.signed = null
+    mount()
+    paste(unsigned(payment))
+    await screen.findByRole('heading', { name: fill(W.SIGNING_FOR, 'Testnet') })
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'Sign' })).toBeNull())
+    expect(screen.getByText(W.NOT_SIGNED)).toBeTruthy()
+  })
   it('P-19 and the record when the same payment was signed before by the other route', async () => {
     h.signed = [{ buildHash: buildHashOf({ type: 'payment', account: ACCOUNT, destination: DEST, amountDrops: '3000000' }), sequence: 30, hash: 'B'.repeat(64), lastLedgerSequence: 99, ledgerIndex: 1, signedAt: 1 }]
     mount()
@@ -285,4 +293,5 @@ describe('Offline Sign screen: sign, decline, lock (OS-FR-18, OS-FR-16)', () => 
     expect(screen.queryByRole('button', { name: 'Sign' })).toBeNull()
     expect(h.written).toEqual([])
   })
+
 })

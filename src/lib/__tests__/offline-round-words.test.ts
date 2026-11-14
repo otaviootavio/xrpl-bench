@@ -240,5 +240,8 @@ describe('Offline-builds round words (OS-FR-11, OS-FR-13 to OS-FR-16)', () => {
     expect(flat).toContain(S.notActivatedLine)
     expect(SEND_TAB).toContain(`<AlertTitle>${S.noTrustLineTitle}</AlertTitle>`)
     expect(flat).toContain(S.noTrustLineLine)
+    for (const w of [S.destFailedTitle, S.destFailedLine, S.destStaleTitle, S.checkAgain, S.linesFailedTitle, S.linesFailedLine, S.feeFailedTitle, S.feeFailedLine]) expect(flat).toContain(w)
+    const [before, after] = S.destStaleLine.split('{n}')
+    expect(flat).toContain(`${before}{Math.round(DESTINATION_CHECK_FRESHNESS_MS / 1000)}${after}`)
   })
 })

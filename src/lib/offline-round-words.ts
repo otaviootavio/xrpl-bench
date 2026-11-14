@@ -304,4 +304,18 @@ export const SHIPPED_SEND = {
   notActivatedLine: "This address doesn't exist on-ledger yet. If you send less than the base reserve in XRP, this payment will fail to activate it.",
   noTrustLineTitle: "Recipient can't hold this token",
   noTrustLineLine: "They don't have a trust line to this issuer yet, so this payment will most likely fail.",
+  destFailedTitle: 'Destination check failed',
+  destFailedLine:
+    'This address could not be checked against the ledger, so the app cannot tell whether it exists or whether the recipient requires a destination tag. Sending is held until the check succeeds — an untagged payment to an address that requires one cannot be recovered from here.',
+  destStaleTitle: 'Destination check is out of date',
+  /** `{n}`: the freshness window in seconds, as online Send fills it. */
+  destStaleLine:
+    'This address was checked more than {n} seconds ago. The answer may no longer hold — an account can start requiring a destination tag at any time — so sending is held until the check is run again.',
+  checkAgain: 'Check again',
+  linesFailedTitle: 'Token balances could not be read',
+  linesFailedLine:
+    'Your trust lines could not be read from the ledger, so the tokens you hold cannot be listed and a token amount cannot be checked against your balance. Sending a token is held until this read succeeds; sending XRP does not depend on it and is not held.',
+  feeFailedTitle: 'Network fee could not be read',
+  feeFailedLine:
+    'The current network fee could not be read from the ledger, so it cannot be shown and an XRP amount cannot be checked against your spendable balance with the fee added. Sending XRP is held until this read succeeds; a token send does not depend on this figure and is not held.',
 } as const

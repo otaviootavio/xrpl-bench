@@ -15,6 +15,9 @@ const h = vi.hoisted(() => ({
   make: vi.fn(),
   transmit: vi.fn(),
   accountError: false,
+  linesError: false,
+  feeError: false,
+  destMode: 'ok' as 'ok' | 'error' | 'stale',
   dest: { exists: true, requireDestTag: false } as { exists: boolean; requireDestTag: boolean; hasTrustLine?: boolean },
 }))
 vi.mock('@/lib/transmitter-build', async (importOriginal) => {
@@ -27,8 +30,11 @@ vi.mock('@/lib/xrpl/writes', async (importOriginal) => {
 })
 vi.mock('@/hooks/usePrompts', () => ({ usePrompts: () => ({ pin: async () => null }) }))
 vi.mock('@/hooks/useSpendableBalance', () => ({ useSpendableBalance: () => ({ status: 'ok', spendableDrops: '50000000', reservedDrops: '1000000', reserveFailed: false }) }))
-vi.mock('@/hooks/useRecommendedFee', () => ({ useRecommendedFee: () => ({ data: '12', isError: false }) }))
-vi.mock('@/hooks/useTrustLines', () => ({ useTrustLines: () => ({ data: [], isError: false, isLoading: false }) }))
+vi.mock('@/hooks/useRecommendedFee', () => ({ useRecommendedFee: () => (h.feeError ? { data: undefined, isError: true, refetch: vi.fn() } : { data: '12', isError: false }) }))
+vi.mock('@/hooks/useTrustLines', () => ({
+  useTrustLines: () =>
+    h.linesError ? { data: undefined, isError: true, isLoading: false, refetch: vi.fn() } : { data: [{ account: 'rDsbeomae4FXwgQTJp9Rs64Qg9vDiTCdBv', currency: 'USD', balance: '10', freeze: false, freezePeer: false }], isError: false, isLoading: false },
+}))
 vi.mock('@/hooks/useServerReserves', () => ({ useServerReserves: () => ({ data: { baseReserveDrops: '1000000', ownerReserveDrops: '200000' }, isError: false }) }))
 vi.mock('@/hooks/useSignerList', () => ({ useSignerList: () => ({ data: null, isError: false }) }))
 vi.mock('@/hooks/useAccountState', () => ({
@@ -40,13 +46,14 @@ vi.mock('@/hooks/useAccountState', () => ({
 vi.mock('@/hooks/useDestinationCheck', () => ({
   useDestinationCheck: (network: string, destination: string, asset: string) => {
     const valid = /^r[1-9A-HJ-NP-Za-km-z]{24,34}$/.test(destination)
+    const mode = valid ? h.destMode : 'ok'
     return {
-      query: { isFetching: false, isError: false },
-      info: valid ? { network, destination, asset, ...h.dest } : undefined,
+      query: { isFetching: false, isError: mode === 'error', refetch: vi.fn() },
+      info: valid && mode !== 'error' ? { network, destination, asset, ...h.dest } : undefined,
       destinationValid: valid,
       checkedAt: 1,
-      ok: valid,
-      stale: false,
+      ok: valid && mode === 'ok',
+      stale: mode === 'stale',
       pending: false,
     }
   },
@@ -99,6 +106,9 @@ beforeEach(() => {
   h.make.mockReset()
   h.transmit.mockReset()
   h.accountError = false
+  h.linesError = false
+  h.feeError = false
+  h.destMode = 'ok'
   h.dest = { exists: true, requireDestTag: false }
 })
 afterEach(cleanup)
@@ -221,5 +231,39 @@ describe('Synced Transmitter: New transaction (OS-FR-17)', () => {
     await screen.findByRole('heading', { name: W.UNSIGNED_LINE })
     expect(screen.getByText(W.SHIPPED_SEND.notActivatedTitle)).toBeTruthy()
     expect(screen.getByText(W.SHIPPED_SEND.noTrustLineTitle)).toBeTruthy()
+  })
+
+  it('failed reads are said in online Send\'s words, never shown as empty or as a silently held key', () => {
+    h.linesError = true
+    h.feeError = true
+    h.destMode = 'error'
+    mount()
+    expect(screen.getByText(W.SHIPPED_SEND.linesFailedTitle)).toBeTruthy()
+    expect(screen.getByText(W.SHIPPED_SEND.feeFailedTitle)).toBeTruthy()
+    fillPayment()
+    expect(screen.getByText(W.SHIPPED_SEND.destFailedTitle)).toBeTruthy()
+    expect((screen.getByRole('button', { name: W.MAKE_THE_UNSIGNED }) as HTMLButtonElement).disabled).toBe(true)
+  })
+
+  it('an aged-out destination check says so, with "Check again"', () => {
+    h.destMode = 'stale'
+    mount()
+    fillPayment()
+    expect(screen.getByText(W.SHIPPED_SEND.destStaleTitle)).toBeTruthy()
+    expect(screen.getByText(fill(W.SHIPPED_SEND.destStaleLine, 30))).toBeTruthy()
+    expect(screen.getByRole('button', { name: W.SHIPPED_SEND.checkAgain })).toBeTruthy()
+  })
+
+  it('a Transmit refusal after Send drops the Send key, as on Transmit', async () => {
+    h.make.mockResolvedValue(MADE)
+    const { TransmitRefusedError } = await import('@/lib/xrpl/writes')
+    h.transmit.mockRejectedValue(new TransmitRefusedError('expired' as never, 'Expired. Nothing was sent.'))
+    mount()
+    fillPayment()
+    fireEvent.click(screen.getByRole('button', { name: W.MAKE_THE_UNSIGNED }))
+    await screen.findByRole('heading', { name: W.UNSIGNED_LINE })
+    paste(encodeSigned({ network: 'testnet', txBlob: GOOD }).text)
+    fireEvent.click(await screen.findByRole('button', { name: 'Send' }))
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'Send' })).toBeNull())
   })
 })

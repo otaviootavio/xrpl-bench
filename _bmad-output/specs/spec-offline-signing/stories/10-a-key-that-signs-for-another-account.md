@@ -2,7 +2,7 @@
 title: 'A key that Signs for another Account'
 type: 'feature'
 created: '2026-11-14'
-status: 'in-progress'
+status: 'done'
 baseline_commit: '0bd24a3'
 route: 'dispatch'
 review_loop_iteration: 0
@@ -60,18 +60,28 @@ context:
 ## Tasks & Acceptance
 
 **Execution:**
-- [ ] keystore/db -- field, resolver, writers, setter, FR-93 -- every caller coherent.
-- [ ] quiz -- step, Review row, probe -- CAP-13 set at create/import.
-- [ ] plate, card -- change in settings; card carries it.
-- [ ] signed list + post-sign assertion -- no cross-Account Same Build; signing key is this Wallet's.
-- [ ] P-54 -- offered after a validated Regular Key change.
-- [ ] tests for every matrix row; real signed blobs for the Account/key and Transmit rows.
+- [x] keystore/db -- field, resolver, writers, setter, FR-93 -- every caller coherent.
+- [x] quiz -- step, Review row, probe -- CAP-13 set at create/import.
+- [x] plate, card -- change in settings; card carries it.
+- [x] signed list + post-sign assertion -- no cross-Account Same Build; signing key is this Wallet's.
+- [x] P-54 -- offered after a validated Regular Key change.
+- [x] tests for every matrix row; real signed blobs for the Account/key and Transmit rows.
 
 **Acceptance Criteria:**
 - Given a Signs-for Offline Wallet on Testnet whose Account's Regular Key is its key, when a payment is built, answered by a Transmitter, signed and transmitted, then it validates.
 - Given the gates, all four are green.
 
 ## Implementation Notes
+
+- Commit `6faf71f`. Storage: `WalletView.signsFor` (validated as an address in `isCompleteView`: a bad value hides the record, never reads as the key). One resolver `accountOfView` (keystore) feeds `toMeta`, `accountOf`, `hasView`, `hasOtherView`, `addControlledView`'s in-transaction check and `changeToOnlineWallet`; `grep "accountAddress ??"` finds only it.
+- Writers: `signsFor` on `createStoredWallet`, `importStoredWallet`, `createDerivedWallet` (the derived writer checks FR-93 only when Signs for is set, so a passkey restore keeps today's behaviour). Equal to the key address is stored as absent; not an address is refused in the shipped `INVALID_ADDRESS`.
+- `setSignsFor(walletId, account | null)` with `SignsForRefusedError` (`transmitter`, `shared-record`, `duplicate` = P-35, `invalid`), re-checked inside the transaction.
+- Import: the probe gets the Signs-for Account; a Signs-for collision shows on the Review (not beside the Seed); the master-key pre-check of the key's own Account is skipped when the key signs for another Account (that Account's master key says nothing about it); P-8's Transmitter check compares the Signs-for Account.
+- Offline signing handle wraps the one-use Signer: after signing, `assertSignedFor` decodes the blob and requires `Account` = Signs for and `deriveAddress(SigningPubKey)` = this Wallet's key; otherwise no blob returns. The Transmit step was confirmed to compare only `tx.Account` with the expected Account (story 2's `checkSignedBlob`), so master or Regular Key signatures pass and the ledger judges the key; pinned with a real blob.
+- Signed list: `SignedRecord.account` (absent on old records = the key address); `latestSameBuild(list, hash, { account, keyAddress })` never matches a record for another Account, so a Signs-for change cannot reuse another Account's Sequence.
+- A Signs-for change on an Online Wallet forgets the old Account's cached reads (`forgetSyncedAddress`); on an Offline Wallet the kept round is kept (it may hold a signed transaction still in its window) and any answer for it is refused by P-17, its Build being for the old Account.
+- P-54: `sendReady` returns `regularKeySet` for a validated SetRegularKey that sets a key; `ResultView` renders `SignsForOffer` (both Transmit step screens). Target: a key Wallet here with that key on that Network; `'done'` when one already signs for the Account. The Online Keys plate does not exist (story 11; deferred entry).
+- Card: the address row is the key address; P-17's sentence with the Signs-for Account when it differs (locked and open: a record field).
 
 ## Spec Change Log
 
@@ -90,4 +100,20 @@ context:
 **Commands:**
 - `bun run lint` · `bun run build` · `bun run test` · `bun run check:contrast` -- all green.
 
-**Manual checks:** real-browser pass on Testnet, two contexts (below, filled after the pass).
+**Gates (2026-11-14, commit `6faf71f`):** lint, build, test (2821 tests), check:contrast: all green.
+
+**Browser pass (2026-11-14, code at `6faf71f`).** `bun run dev -- --port 5310 --strictPort`; `.playwright-mcp/s10-run.js`, `s10-p54.js`, `s10-zoom.js` (git-ignored) through the Playwright MCP: headless Chromium, fresh contexts O (offline device) and T (online device), CDP virtual authenticators; payloads moved by decoding the plate QR pixels (jsQR) and pasting. **Forced state (named):** `.playwright-mcp/s10-fund.mjs` funded throwaway Testnet X `rE25Dpy1AB8gE4oJc6V32AHbHvPxCBtTMT` and destination C `rrnXMe9VkKMrPMhfTasN98AG9jDvx7Lrcw`, generated key K `rhxWLZS1tTiCScabkvgXqdbx2ZqW56H6fU`, and set X's Regular Key to K with X's master key outside the app (`F18090F6…4A3360`, tesSUCCESS).
+
+| Criterion | Result |
+|---|---|
+| Import K as Offline with "This key signs for another account" = X | Met: step 4 of 5, title and box the fixed string, Address with P-40 under it; "rNOTANADDRESS" shows the shipped words and Next `aria-disabled`; Review row "This key signs for another account · rE25…TMT · Change". |
+| Card | Met: `[Offline] TESTNET`, address row K (`rhxWLZ…H6fU`), "This wallet signs for rE25Dpy1AB8gE4oJc6V32AHbHvPxCBtTMT." |
+| Signs for plate (Offline) | Met: fixed-string title, P-17 state line, Address, P-40, Set it, Remove the address. |
+| Offline-builds payment from X, signed by K, validated | Met: T a Transmitter Synced to X; O review "You are signing for Testnet", Account X, Signing key K; T checks "Account: rE25…, correct"; **VALIDATED `A3C91BFE34310D49DF318B63EA461B0283A77B5173AD1A641D15D88C22EBDCBC`** (1 XRP X → C). |
+| P-54 second form | Met: an Offline Regular Key round (X's key set to K again, signed by K) validated `0E62ACC5…42BD5C`; T, with no Wallet for K, shows "In the wallet that has this key, set the key to sign for this account." |
+| P-54 first form, Set it | Met (fresh contexts; forced: K also imported on T as Online "Hot key"): round validated `99445F5E…1ACE28`; T shows "Set the wallet Hot key to sign for this account?" Set it · Not now; Set it closes it; T's chooser card for Hot key: row K, "This wallet signs for rE25…TMT." |
+| Same Build after a key round | Seen: a third identical SetRegularKey in the first run showed story 7's retry case (a) (P-20), as designed. |
+| No ledger connection on O | Met: 0 non-local WebSockets. |
+| Widths/themes | 320 dark/light, 1280 dark/light for the quiz step, bad address, Review, card, plate, signing review, T outcomes, P-54 both forms, T chooser: no side scroll, 0 elements past the viewport. 200% text at 320 for the quiz step, card and plate: 0 past the viewport; the plate wraps the address (`z-zoom-plate`). |
+
+Screenshots in the session scratchpad `s10/`; opened: `O-quiz-signs-for-320-dark`, `O-chooser-card-1280-light`, `p54-T-p54-here-320-dark`, `z-zoom-plate`, `z-zoom-thiswallet`. **Pre-existing, not this story:** at 320 with 200% text, the This wallet plate's `AddressDisplay` (unchanged since #29) sets the address one character per line (~2000 px tall plate); recorded in `deferred-work.md`. 390 was not shot this pass (the harness viewport between shots is 390). Not driven in the browser (unit-tested): the Online Signs for plate's cache drop, P-35 refusals, the shared-record read-only plate, create (vs import) with Signs for, the Transmitter-builds route for a Signs-for Wallet. The dev server was stopped.

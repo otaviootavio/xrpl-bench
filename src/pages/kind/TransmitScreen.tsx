@@ -11,6 +11,8 @@ import type { TransmitterMeta } from '@/lib/crypto/keystore'
 import { decodeRequest, decodeSigned, payloadKindOf, type RequestPayload } from '@/lib/qr-codec'
 import { answerRequest, type AnswerResult } from '@/lib/answer-request'
 import { HandoffPlate } from '@/components/wallet/HandoffPlate'
+import { KeyStateRows, KeyWarning } from '@/components/wallet/KeyStateRows'
+import { replacesRegularKey } from '@/lib/offline-round'
 import { WRAPPING_KEYS } from '@/components/wallet/wrapping-keys'
 import { useWakeLock } from '@/hooks/useWakeLock'
 import * as R from '@/lib/offline-round-words'
@@ -260,6 +262,7 @@ function Answered({
   headingRef: React.RefObject<HTMLHeadingElement | null>
 }) {
   const label = NETWORKS[network].label
+  const { checks, tx } = answer
   return (
     <div className="flex min-w-0 flex-col gap-3 border-t border-border pt-3">
       <HandoffPlate heading={R.DATA_TO_SIGN_TITLE} headingRef={headingRef} network={network} text={answer.text} scan={2}>
@@ -269,12 +272,19 @@ function Answered({
             {fill(R.CHECKED_ON, label)}
           </h3>
           <dl className="grid min-w-0 gap-1 text-sm">
-            {answer.checks.destinationExists && <CheckRow term={R.FIELD.destination} value={R.CHECK_RESULT.found} />}
-            {answer.checks.tagSupplied && <CheckRow term={R.FIELD.destinationTag} value={R.CHECK_RESULT.supplied} />}
-            <CheckRow term={R.SHIPPED.spendable} value={R.CHECK_RESULT.sufficient} />
+            {checks.type === 'payment' && checks.destinationExists && <CheckRow term={R.FIELD.destination} value={R.CHECK_RESULT.found} />}
+            {checks.type === 'payment' && checks.tagSupplied && <CheckRow term={R.FIELD.destinationTag} value={R.CHECK_RESULT.supplied} />}
+            {(checks.type === 'payment' || (checks.type === 'trust-line' && checks.spendable)) && (
+              <CheckRow term={R.SHIPPED.spendable} value={R.CHECK_RESULT.sufficient} />
+            )}
             <CheckRow term={R.FIELD.fee} value={R.CHECK_RESULT.underFeeLimit} />
           </dl>
         </section>
+        {/* Before a key change (OS-FR-15, OS-FR-21): the key state it read, then W5 when a set
+            Regular Key is replaced, W4's sentence when the master key goes off. Warnings only. */}
+        {answer.keyState !== undefined && <KeyStateRows keyState={answer.keyState} />}
+        {tx.TransactionType === 'SetRegularKey' && replacesRegularKey(tx.RegularKey, answer.keyState) && <KeyWarning words={R.W5_SENTENCE} />}
+        {tx.TransactionType === 'AccountSet' && 'SetFlag' in tx && <KeyWarning words={R.W4_SENTENCE} />}
       </HandoffPlate>
     </div>
   )

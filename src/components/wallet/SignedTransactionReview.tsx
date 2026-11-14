@@ -1,9 +1,9 @@
 import { useRef, useState } from 'react'
 import { decode } from 'xrpl'
+import { fieldValue } from '@/lib/tx-fields'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogFooter, DialogTitle } from '@/components/ui/dialog'
-import { displayCurrencyCode, formatAmountString, formatXrp } from '@/lib/xrpl/money'
 import type { SignedForReview } from '@/lib/xrpl/writes'
 import {
   COPY_KEY,
@@ -15,27 +15,11 @@ import {
   fill,
 } from '@/lib/transmit-words'
 
-/** Ledger fields that carry an amount: drops as XRP, an object as value, code and issuer. */
-const AMOUNT_FIELDS = new Set(['Amount', 'Fee', 'SendMax', 'DeliverMin', 'LimitAmount'])
-
-function fieldValue(name: string, value: unknown): string {
-  if (AMOUNT_FIELDS.has(name)) {
-    if (typeof value === 'string' && /^\d+$/.test(value)) return formatXrp(value)
-    if (value && typeof value === 'object') {
-      const { value: v, currency, issuer } = value as { value?: unknown; currency?: unknown; issuer?: unknown }
-      if (typeof v === 'string' && typeof currency === 'string' && typeof issuer === 'string') {
-        return `${formatAmountString(v)} ${displayCurrencyCode(currency)} ${issuer}`
-      }
-    }
-  }
-  if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') return String(value)
-  return JSON.stringify(value)
-}
-
 /** The decoded blob, one row per field, in the ledger's own field names (P-52). */
 function decodedFields(txBlob: string): Array<[string, string]> {
   try {
-    return Object.entries(decode(txBlob)).map(([name, value]) => [name, fieldValue(name, value)])
+    const tx = decode(txBlob)
+    return Object.entries(tx).map(([name, value]) => [name, fieldValue(name, value, tx.TransactionType)])
   } catch {
     return []
   }

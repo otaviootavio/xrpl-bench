@@ -145,6 +145,12 @@ export const SHIPPED = {
   belowReserve: 'The destination is not on the ledger yet and needs at least {amount} to be created. Nothing was built.',
   accountNotActivated: "This account isn't activated yet, so there is no spendable balance to check this against.",
   overSpendable: "That's more than your spendable balance ({amount}) once the network fee is included.",
+  /** The online trust-line screen's add refusals (`TrustLinesTab`). */
+  trustLineNotActivated: 'This account is not activated on the ledger, so it has no spendable XRP to cover the reserve and fee.',
+  trustLineNotEnough: "You don't have enough spendable XRP to cover the reserve and fee.",
+  /** The online key screens' words for an Account not on the ledger (`control.ts`, `master-key.ts`). */
+  noKeysToChange: 'This account is not on the ledger yet, so it has no keys to change.',
+  noMasterKeySetting: 'This account is not on the ledger yet, so it has no master key setting to change.',
 } as const
 
 /** Check-list and field terms are the ledger's own field names (P-52 keeps them as the ledger names them). */
@@ -162,3 +168,60 @@ export const CHECKING = 'Checking {address} on {Network}'
 export const TYPE_OF_TRANSACTION = 'Type of transaction'
 export const SIGNING_KEY = 'Signing key'
 export const QR_ALT = 'QR code: {payload} for {Network}'
+
+// ---------------------------------------------------------------------------
+// Story 8: trust lines and key actions on the Offline-builds route.
+// ---------------------------------------------------------------------------
+
+/** P-62: the other type words of the Offline type list. */
+export const TRUST_LINE = 'Trust line'
+export const REGULAR_KEY_TYPE = 'Regular Key'
+export const MASTER_KEY_TYPE = 'Master key'
+
+/** P-47: the Regular Key and Master key types' actions in New transaction. */
+export const SET_A_REGULAR_KEY = 'Set a Regular Key'
+export const REMOVE_THE_REGULAR_KEY = 'Remove the Regular Key'
+export const TURN_OFF_THE_MASTER_KEY = 'Turn off the master key'
+export const TURN_ON_THE_MASTER_KEY = 'Turn on the master key'
+
+/** Fixed string (OS-FR-21 W4), and P-50: the test on an Offline Wallet points elsewhere. */
+export const TEST_THE_REGULAR_KEY = 'Test the Regular Key'
+export const TEST_ELSEWHERE = 'The test is optional. If the Regular Key is a wallet on this device, do the test with that wallet. If not, do the test in the wallet that has the key.'
+
+/** P-57: the address scan key, and today's scanner word to stop it. */
+export const SCAN_AN_ADDRESS = 'Scan an address with the camera'
+export const STOP_THE_CAMERA = 'Stop the camera'
+
+/** W4's sentence and W5 (`consequence-texts.md`, OS-FR-21), verbatim. */
+export const W4_SENTENCE = 'After this, the master key cannot sign for this account. Only the Regular Key or a signer list can turn on the master key again.'
+export const W5_SENTENCE = 'The old Regular Key stops working.'
+
+/**
+ * Shipped words of the online trust-line and key screens, reused for the same facts.
+ * The test finds each in the file that ships it.
+ */
+export const SHIPPED_KEYS = {
+  /** TrustLinesTab: the card title (P-56 puts P-1 in place of its list), the three actions, the fields. */
+  trustLines: 'Trust Lines',
+  addTrustLine: 'Add trust line',
+  editTrustLineLimit: 'Edit trust line limit',
+  closeTrustLine: 'Close trust line',
+  issuerAddress: 'Issuer address',
+  currencyCode: 'Currency code',
+  trustLimit: 'Trust limit',
+  newLimit: 'New limit',
+  ownerReserve: 'Owner reserve',
+  currencyError: 'Use a 3-character code (like USD) or a 40-character hex code.',
+  addLine: 'A trust line locks one more owner reserve while it is open, refunded when you close it. Creating it also spends the network fee.',
+  /** TwoDeviceSign: the Regular Key address field. */
+  regularKeyAddress: 'Regular Key address',
+  /** MasterKeyControl: the state words and the Mainnet typed confirm. */
+  masterKeyOn: 'Master key on',
+  masterKeyOff: 'Master key off',
+  offPhrase: 'turn off',
+  offPhraseLabel: 'Type “turn off” to confirm',
+  /** QrScanner: a camera that does not open (the address field takes a paste). */
+  cameraFailed: 'The camera could not be opened. Paste the text instead.',
+  /** The create and Add Transmitter quizzes' review step title: the review key of the types other than Payment. */
+  review: 'Review',
+} as const

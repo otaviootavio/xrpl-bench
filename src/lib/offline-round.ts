@@ -1,10 +1,10 @@
 import { sha256 } from '@noble/hashes/sha2.js'
-import type { Payment } from 'xrpl'
+import type { SubmittableTransaction } from 'xrpl'
 import { NETWORKS, type NetworkId } from '@/lib/xrpl/networks'
 import { feeWithinCap } from '@/lib/xrpl/money'
 import { signPrepared } from '@/lib/xrpl/writes'
 import { offlineSigningHandleFor, type SigningContext } from '@/lib/crypto/keystore'
-import { decodeDataToSign, encodeRequest, encodeSigned, payloadKindOf, type DataToSignPayload, type PayloadKind, type RequestTx } from '@/lib/qr-codec'
+import { ASF_DISABLE_MASTER, decodeDataToSign, encodeRequest, encodeSigned, isCanonicalLimit, payloadKindOf, TF_SET_NO_RIPPLE, type DataToSignPayload, type KeyState, type PayloadKind, type RequestTx } from '@/lib/qr-codec'
 import { LEDGER_FLOORS, MAX_RECEIVED_LEDGER_INDEX, OFFLINE_LEDGER_WINDOW } from '@/lib/offline-window'
 import { WRONG_KIND } from '@/lib/transmitter-words'
 import { DATA_REFUSAL } from '@/lib/offline-round-words'
@@ -31,38 +31,126 @@ export { OFFLINE_LEDGER_WINDOW } from '@/lib/offline-window'
 export const LEDGER_JUMP_SECONDS_PER_LEDGER = 3
 export const LEDGER_JUMP_MARGIN = 30
 
-/** What the user Built: in this build, an XRP Payment (story 6). */
+/** What the user Built. Every Build names the Account the Wallet Signs for: the transaction's `Account`. */
 export interface PaymentBuild {
   type: 'payment'
-  /** The Account the Wallet Signs for: the transaction's `Account`. */
   account: string
   destination: string
   amountDrops: string
   destinationTag?: number
 }
-export type OfflineBuild = PaymentBuild
+/** A TrustSet with the online screen's fields (story 8): add or change with a limit, close with "0". */
+export interface TrustLineBuild {
+  type: 'trust-line'
+  account: string
+  /** Upper case: a 3-character code or 40 hex digits. */
+  currency: string
+  issuer: string
+  /** `canonicalLimit`'s form; "0" closes the line. */
+  limit: string
+}
+/** Set (an address typed or scanned on this device, OS-FR-21) or remove (`null`) the Regular Key. */
+export interface RegularKeyBuild {
+  type: 'regular-key'
+  account: string
+  regularKey: string | null
+}
+/** Turn the master key off (`enable: false`, `SetFlag`) or on (`ClearFlag`). */
+export interface MasterKeyBuild {
+  type: 'master-key'
+  account: string
+  enable: boolean
+}
+export type OfflineBuild = PaymentBuild | TrustLineBuild | RegularKeyBuild | MasterKeyBuild
+
+/** A key change: its Data to Sign carries the Account's key state, for display (route-checks). */
+export function isKeyChange(build: OfflineBuild): build is RegularKeyBuild | MasterKeyBuild {
+  return build.type === 'regular-key' || build.type === 'master-key'
+}
+
+/**
+ * A typed trust-line limit in one canonical form, or `null` when it is not a plain
+ * non-negative decimal an issued-currency amount can hold: leading zeros and trailing
+ * fractional zeros dropped, "0" for zero. String operations only (money rule). The
+ * same limit typed as "100" or "100.00" is one Build and one Build hash.
+ */
+export function canonicalLimit(typed: string): string | null {
+  const t = typed.trim()
+  if (!/^[0-9]*\.?[0-9]*$/.test(t) || !/[0-9]/.test(t)) return null
+  let [int, frac = ''] = t.split('.')
+  int = int.replace(/^0+/, '') || '0'
+  frac = frac.replace(/0+$/, '')
+  const out = frac ? `${int}.${frac}` : int
+  if (!/[1-9]/.test(out)) return '0'
+  return isCanonicalLimit(out) ? out : null
+}
 
 /** The Built transaction the request carries: the Build's fields only. */
 export function builtTransaction(build: OfflineBuild): RequestTx {
-  return {
-    TransactionType: 'Payment',
-    Account: build.account,
-    Destination: build.destination,
-    Amount: build.amountDrops,
-    ...(build.destinationTag !== undefined ? { DestinationTag: build.destinationTag } : {}),
+  switch (build.type) {
+    case 'payment':
+      return {
+        TransactionType: 'Payment',
+        Account: build.account,
+        Destination: build.destination,
+        Amount: build.amountDrops,
+        ...(build.destinationTag !== undefined ? { DestinationTag: build.destinationTag } : {}),
+      }
+    case 'trust-line':
+      // The online TrustSet (`writes.ts` `submitTrustSet`): a holder's line with NoRipple.
+      return {
+        TransactionType: 'TrustSet',
+        Account: build.account,
+        LimitAmount: { currency: build.currency, issuer: build.issuer, value: build.limit },
+        Flags: TF_SET_NO_RIPPLE,
+      }
+    case 'regular-key':
+      return { TransactionType: 'SetRegularKey', Account: build.account, ...(build.regularKey !== null ? { RegularKey: build.regularKey } : {}) }
+    case 'master-key':
+      return build.enable
+        ? { TransactionType: 'AccountSet', Account: build.account, ClearFlag: ASF_DISABLE_MASTER }
+        : { TransactionType: 'AccountSet', Account: build.account, SetFlag: ASF_DISABLE_MASTER }
   }
 }
 
 const toHex = (bytes: Uint8Array) => Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('')
 
 /**
- * The Build hash: SHA-256 of the Same Build content (type, destination, amount,
- * token, tag, flags; glossary "Same Build"), in one fixed order. The same Build
- * typed again after a lock has the same hash (story 7 compares it).
+ * The Build hash: SHA-256 of the Same Build content in one fixed order (glossary "Same
+ * Build": type, destination, amount, token, tag, flags). The same Build typed again after
+ * a lock has the same hash (story 7 compares it). A Payment's content is unchanged from
+ * story 6, so records signed before story 8 still match. Each other type leads with its
+ * own transaction type, so no two types share content, and carries every field it signs:
+ * the trust line's currency, issuer, limit and flag; the new Regular Key (or none); which
+ * master key flag. These are what make two Builds the same transaction (story 8).
  */
 export function buildHashOf(build: OfflineBuild): string {
-  const content = JSON.stringify(['Payment', build.destination, build.amountDrops, null, build.destinationTag ?? null, 0])
-  return toHex(sha256(new TextEncoder().encode(content)))
+  let content: unknown[]
+  switch (build.type) {
+    case 'payment':
+      content = ['Payment', build.destination, build.amountDrops, null, build.destinationTag ?? null, 0]
+      break
+    case 'trust-line':
+      content = ['TrustSet', build.currency, build.issuer, build.limit, TF_SET_NO_RIPPLE]
+      break
+    case 'regular-key':
+      content = ['SetRegularKey', build.regularKey]
+      break
+    case 'master-key':
+      content = ['AccountSet', build.enable ? 'ClearFlag' : 'SetFlag', ASF_DISABLE_MASTER]
+      break
+  }
+  return toHex(sha256(new TextEncoder().encode(JSON.stringify(content))))
+}
+
+/**
+ * Whether W5 applies (EXPERIENCE "Approved strings": a Regular Key is set and the
+ * transaction replaces it): a SetRegularKey that sets a key, when the key state says
+ * another key is set. An unknown state shows P-29 and no W5: the app cannot say.
+ */
+export function replacesRegularKey(newKey: string | null | undefined, keyState: KeyState | undefined): boolean {
+  if (!newKey || !keyState || keyState === 'unknown') return false
+  return keyState.regular_key !== null && keyState.regular_key !== newKey
 }
 
 /** A new request ID: 16 random bytes. A new one for every request shown. */
@@ -111,6 +199,10 @@ export function judgeDataToSign(
   const decoded = decodeDataToSign(text)
   if (!decoded.ok) return { ok: false, reason: DATA_REFUSAL.malformed }
   const data = decoded.value
+  // The exact set depends on the Build: a key change's Data to Sign carries the key state,
+  // any other has none (route-checks "What travels by QR"). After a lock there is no Build,
+  // and the request refusal below says so.
+  if (build && (data.key_state !== undefined) !== isKeyChange(build)) return { ok: false, reason: DATA_REFUSAL.malformed }
   if (data.network !== wallet.network) {
     return { ok: false, reason: fill(DATA_REFUSAL.network, NETWORKS[data.network].label, NETWORKS[wallet.network].label) }
   }
@@ -127,17 +219,18 @@ export function judgeDataToSign(
  * from the Data to Sign, and LastLedgerSequence set here from the received index
  * (OS-FR-16). No `NetworkID`: Mainnet, Testnet and Devnet omit it.
  */
-export function assembleTransaction(build: OfflineBuild, data: Pick<DataToSignPayload, 'sequence' | 'fee' | 'ledger_index'>): Payment {
+export function assembleTransaction(build: OfflineBuild, data: Pick<DataToSignPayload, 'sequence' | 'fee' | 'ledger_index'>): SubmittableTransaction {
   // Bound again here: a LastLedgerSequence past UInt32 cannot be encoded (story 6 review).
   if (!Number.isInteger(data.ledger_index) || data.ledger_index < 1 || data.ledger_index > MAX_RECEIVED_LEDGER_INDEX) {
     throw new RangeError('The ledger index is out of range. Nothing was signed.')
   }
+  // The key state, if any, is display only: it is never a value of the transaction.
   return {
     ...builtTransaction(build),
     Sequence: data.sequence,
     Fee: data.fee,
     LastLedgerSequence: data.ledger_index + OFFLINE_LEDGER_WINDOW,
-  }
+  } as SubmittableTransaction
 }
 
 /**

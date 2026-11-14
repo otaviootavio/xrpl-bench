@@ -73,11 +73,11 @@ vi.mock('idb', () => ({
   },
 }))
 
-import { decode, verifySignature, Wallet } from 'xrpl'
+import { AccountSetAsfFlags, decode, deriveAddress, TrustSetFlags, verifySignature, Wallet } from 'xrpl'
 import { mutateStoredWallet, type StoredWallet } from '../db'
 import { ledgerSeenOf, noteLedgerSeen, NotAnOfflineWalletError, offlineSigningHandleFor, signingHandleFor, NotAnOnlineWalletError, type Prompts } from '../keystore'
 import { makePinLock, storeSeedWallet, type FixtureLock } from './fixtures'
-import { assembleTransaction, OFFLINE_LEDGER_WINDOW, signRound, type PaymentBuild } from '@/lib/offline-round'
+import { assembleTransaction, OFFLINE_LEDGER_WINDOW, signRound, type OfflineBuild, type PaymentBuild } from '@/lib/offline-round'
 import { decodeSigned } from '@/lib/qr-codec'
 import { FeeAboveCapError } from '@/lib/xrpl/writes'
 import { MAX_FEE_DROPS } from '@/lib/xrpl/money'
@@ -190,5 +190,81 @@ describe('highest-seen ledger on the record (OS-FR-16, P-14)', () => {
     const { meta } = await storeSeedWallet('Daily', lock)
     await noteLedgerSeen(meta.id, 100, 1000)
     expect(await ledgerSeenOf(meta.id)).toBeNull()
+  })
+})
+
+/** The decoded, verified blob of a signed round. */
+function blobOf(text: string): Record<string, unknown> {
+  const envelope = decodeSigned(text)
+  if (!envelope.ok) throw new Error('bad envelope')
+  expect(verifySignature(envelope.value.tx_blob)).toBe(true)
+  return decode(envelope.value.tx_blob)
+}
+const BASE = ['Account', 'Fee', 'Flags', 'LastLedgerSequence', 'Sequence', 'SigningPubKey', 'TransactionType', 'TxnSignature']
+const extraKeys = (tx: Record<string, unknown>, own: string[]) => Object.keys(tx).filter((k) => !BASE.includes(k) && !own.includes(k))
+
+describe('Offline Wallet signs trust lines and key actions (OS-FR-16, OS-FR-21, story 8)', () => {
+  const data = { sequence: 77, fee: '12', ledger_index: 9_000_000 }
+
+  it('a TrustSet: the online fields and tfSetNoRipple, nothing else from the online device', async () => {
+    const lock = await makePinLock('2468')
+    const { meta } = await offlineWallet(lock)
+    const build: OfflineBuild = { type: 'trust-line', account: meta.address, currency: 'USD', issuer: DESTINATION, limit: '100.5' }
+    const tx = blobOf((await signRound(meta, build, data, { openKey: lock.key, prompts })).text)
+    expect(tx).toMatchObject({
+      TransactionType: 'TrustSet',
+      Account: meta.address,
+      LimitAmount: { currency: 'USD', issuer: DESTINATION, value: '100.5' },
+      Flags: TrustSetFlags.tfSetNoRipple,
+      Sequence: 77,
+      Fee: '12',
+      LastLedgerSequence: 9_000_000 + OFFLINE_LEDGER_WINDOW,
+    })
+    expect(extraKeys(tx, ['LimitAmount'])).toEqual([])
+    expect(tx.NetworkID).toBeUndefined()
+  })
+
+  it('a SetRegularKey sets the address typed here; the key state never enters the blob; remove has no RegularKey', async () => {
+    const lock = await makePinLock('2468')
+    const { meta } = await offlineWallet(lock)
+    const newKey = Wallet.generate().address
+    const withState = { ...data, key_state: { regular_key: DESTINATION, master_key: 'on' as const } }
+    // The Data to Sign as received, key state and all: only Sequence, Fee and the index are used.
+    expect(assembleTransaction({ type: 'regular-key', account: meta.address, regularKey: newKey }, withState)).toEqual({
+      TransactionType: 'SetRegularKey', Account: meta.address, RegularKey: newKey, Sequence: 77, Fee: '12', LastLedgerSequence: 9_000_150,
+    })
+    const set = blobOf((await signRound(meta, { type: 'regular-key', account: meta.address, regularKey: newKey }, data, { openKey: lock.key, prompts })).text)
+    expect(set).toMatchObject({ TransactionType: 'SetRegularKey', RegularKey: newKey, Sequence: 77 })
+    expect(extraKeys(set, ['RegularKey'])).toEqual([])
+    const removed = blobOf((await signRound(meta, { type: 'regular-key', account: meta.address, regularKey: null }, data, { openKey: lock.key, prompts })).text)
+    expect(removed.TransactionType).toBe('SetRegularKey')
+    expect(removed.RegularKey).toBeUndefined()
+    expect(extraKeys(removed, [])).toEqual([])
+  })
+
+  it('master key off is SetFlag asfDisableMaster, on is ClearFlag, and nothing else', async () => {
+    const lock = await makePinLock('2468')
+    const { meta } = await offlineWallet(lock)
+    const off = blobOf((await signRound(meta, { type: 'master-key', account: meta.address, enable: false }, data, { openKey: lock.key, prompts })).text)
+    expect(off).toMatchObject({ TransactionType: 'AccountSet', SetFlag: AccountSetAsfFlags.asfDisableMaster })
+    expect(AccountSetAsfFlags.asfDisableMaster).toBe(4)
+    expect(extraKeys(off, ['SetFlag'])).toEqual([])
+    const on = blobOf((await signRound(meta, { type: 'master-key', account: meta.address, enable: true }, data, { openKey: lock.key, prompts })).text)
+    expect(on).toMatchObject({ TransactionType: 'AccountSet', ClearFlag: AccountSetAsfFlags.asfDisableMaster })
+    expect(extraKeys(on, ['ClearFlag'])).toEqual([])
+  })
+
+  it('a view that signs for another Account (its Regular Key) signs the turn-on for that Account with its own key', async () => {
+    const lock = await makePinLock('2468')
+    const { meta, seed } = await offlineWallet(lock)
+    const account = Wallet.generate().address
+    // The Signs-for state story 10 records; forced here on the stored view.
+    await mutateStoredWallet(meta.seedId, (r: StoredWallet) => ({ ...r, views: r.views.map((v) => ({ ...v, accountAddress: account })) }))
+    expect((await offlineSigningHandleFor(meta.id, { openKey: lock.key, prompts })).address).toBe(account)
+    const tx = blobOf((await signRound(meta, { type: 'master-key', account, enable: true }, data, { openKey: lock.key, prompts })).text)
+    expect(tx).toMatchObject({ TransactionType: 'AccountSet', Account: account, ClearFlag: 4 })
+    // Signed by the Regular Key's own key pair, not the Account's.
+    expect(deriveAddress(String(tx.SigningPubKey))).toBe(Wallet.fromSeed(seed).address)
+    expect(deriveAddress(String(tx.SigningPubKey))).not.toBe(account)
   })
 })

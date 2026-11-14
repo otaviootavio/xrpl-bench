@@ -44,7 +44,8 @@ const answered = (over: Record<string, unknown> = {}) => ({
   text: DATA,
   account: master,
   values: { sequence: 3, fee: '12', ledgerIndex: 4000 },
-  checks: { tagSupplied: false, destinationExists: true },
+  checks: { type: 'payment', tagSupplied: false, destinationExists: true },
+  tx: { TransactionType: 'Payment', Account: master, Destination: DEST, Amount: '1000000' },
   ...over,
 })
 
@@ -85,7 +86,7 @@ describe('Transmit answers a Data-to-Sign Request (OS-FR-15)', () => {
   })
 
   it('a destination not on the ledger: no "found" row; the tag row when one was supplied', async () => {
-    h.answer.mockResolvedValue(answered({ checks: { tagSupplied: true, destinationExists: false } }))
+    h.answer.mockResolvedValue(answered({ checks: { type: 'payment', tagSupplied: true, destinationExists: false } }))
     mount()
     paste(REQUEST)
     expect(await screen.findByRole('heading', { name: R.DATA_TO_SIGN_TITLE })).toBeTruthy()
@@ -194,5 +195,70 @@ describe('after an answer, the Transmit step expects the request\'s Account (OS-
     mount(unsynced, client)
     paste(encodeSigned({ network: 'testnet', txBlob: GOOD }).text)
     expect(await screen.findByText(CONFIRM_ACCOUNT.replace('{address}', master))).toBeTruthy()
+  })
+
+  // Story 8: trust lines and key changes (OS-FR-15, OS-FR-21).
+  it('a trust-line change: only the fee row (no spendable check ran); a new line adds "Spendable sufficient"', async () => {
+    const tx = { TransactionType: 'TrustSet', Account: master, LimitAmount: { currency: 'USD', issuer: DEST, value: '5' }, Flags: 131072 }
+    h.answer.mockResolvedValueOnce(answered({ checks: { type: 'trust-line', spendable: false }, tx }))
+    mount()
+    paste(REQUEST)
+    expect(await screen.findByRole('heading', { name: R.DATA_TO_SIGN_TITLE })).toBeTruthy()
+    expect(screen.getByText(R.CHECK_RESULT.underFeeLimit)).toBeTruthy()
+    expect(screen.queryByText(R.CHECK_RESULT.sufficient)).toBeNull()
+    expect(screen.queryByText(R.CHECK_RESULT.found)).toBeNull()
+    cleanup()
+    h.answer.mockResolvedValueOnce(answered({ checks: { type: 'trust-line', spendable: true }, tx }))
+    mount()
+    paste(REQUEST)
+    expect(await screen.findByRole('heading', { name: R.DATA_TO_SIGN_TITLE })).toBeTruthy()
+    expect(screen.getByText(R.CHECK_RESULT.sufficient)).toBeTruthy()
+  })
+
+  it('a Regular Key replaced: the key state inside the plate after its heading, then W5', async () => {
+    const tx = { TransactionType: 'SetRegularKey', Account: master, RegularKey: other }
+    h.answer.mockResolvedValue(answered({ checks: { type: 'key' }, tx, keyState: { regular_key: DEST, master_key: 'on' } }))
+    mount()
+    paste(REQUEST)
+    const heading = await screen.findByRole('heading', { name: R.DATA_TO_SIGN_TITLE })
+    const plate = heading.closest('section')!
+    expect(plate.textContent).toContain(R.REGULAR_KEY_TYPE)
+    expect(plate.textContent).toContain(DEST)
+    expect(plate.textContent).toContain(R.SHIPPED_KEYS.masterKeyOn)
+    expect(plate.textContent).toContain(R.W5_SENTENCE)
+    expect(plate.textContent).not.toContain(R.W4_SENTENCE)
+    // Heading first: the warnings come after it in the plate (story 6 review #8).
+    expect(heading.compareDocumentPosition(screen.getByText(R.W5_SENTENCE)) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(screen.queryByText(R.CHECK_RESULT.sufficient)).toBeNull()
+  })
+
+  it('no W5 when no Regular Key is set ("None."), or when the same key is set again', async () => {
+    h.answer.mockResolvedValueOnce(answered({ checks: { type: 'key' }, tx: { TransactionType: 'SetRegularKey', Account: master, RegularKey: other }, keyState: { regular_key: null, master_key: 'on' } }))
+    mount()
+    paste(REQUEST)
+    expect(await screen.findByRole('heading', { name: R.DATA_TO_SIGN_TITLE })).toBeTruthy()
+    expect(screen.getByText('None.')).toBeTruthy()
+    expect(screen.queryByText(R.W5_SENTENCE)).toBeNull()
+    cleanup()
+    h.answer.mockResolvedValueOnce(answered({ checks: { type: 'key' }, tx: { TransactionType: 'SetRegularKey', Account: master, RegularKey: other }, keyState: { regular_key: other, master_key: 'on' } }))
+    mount()
+    paste(REQUEST)
+    expect(await screen.findByRole('heading', { name: R.DATA_TO_SIGN_TITLE })).toBeTruthy()
+    expect(screen.queryByText(R.W5_SENTENCE)).toBeNull()
+  })
+
+  it('master key off: W4\'s sentence on the answer; on: no W4; an unknown key state is P-29, never safe', async () => {
+    h.answer.mockResolvedValueOnce(answered({ checks: { type: 'key' }, tx: { TransactionType: 'AccountSet', Account: master, SetFlag: 4 }, keyState: { regular_key: other, master_key: 'on' } }))
+    mount()
+    paste(REQUEST)
+    expect(await screen.findByRole('heading', { name: R.DATA_TO_SIGN_TITLE })).toBeTruthy()
+    expect(screen.getByText(R.W4_SENTENCE)).toBeTruthy()
+    cleanup()
+    h.answer.mockResolvedValueOnce(answered({ checks: { type: 'key' }, tx: { TransactionType: 'AccountSet', Account: master, ClearFlag: 4 }, keyState: 'unknown' }))
+    mount()
+    paste(REQUEST)
+    expect(await screen.findByRole('heading', { name: R.DATA_TO_SIGN_TITLE })).toBeTruthy()
+    expect(screen.queryByText(R.W4_SENTENCE)).toBeNull()
+    expect(screen.getAllByText('Unknown. The app cannot read this value.')).toHaveLength(2)
   })
 })

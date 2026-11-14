@@ -241,14 +241,44 @@ const isDrops = (v: unknown): v is string => typeof v === 'string' && /^[1-9][0-
 const exactKeys = (o: Record<string, unknown>, required: readonly string[], optional: readonly string[] = []) =>
   required.every((k) => Object.prototype.hasOwnProperty.call(o, k)) && Object.keys(o).every((k) => required.includes(k) || optional.includes(k))
 
-/** The Built transaction a request carries: in this build, an XRP Payment only (story 6). */
-export interface RequestTx {
+/** The Built transaction a request carries (route-checks "What travels by QR"): the Build's
+ * fields only, as an exact key set per type. An XRP Payment (story 6); a TrustSet with the
+ * online screen's `tfSetNoRipple`; a SetRegularKey (no `RegularKey`: removes it); an AccountSet
+ * that turns the master key off (`SetFlag`) or on (`ClearFlag`) and nothing else (story 8). */
+export interface PaymentRequestTx {
   TransactionType: 'Payment'
   Account: string
   Destination: string
   Amount: string
   DestinationTag?: number
 }
+export interface TrustSetRequestTx {
+  TransactionType: 'TrustSet'
+  Account: string
+  LimitAmount: { currency: string; issuer: string; value: string }
+  Flags: typeof TF_SET_NO_RIPPLE
+}
+export interface SetRegularKeyRequestTx {
+  TransactionType: 'SetRegularKey'
+  Account: string
+  RegularKey?: string
+}
+export type AccountSetRequestTx =
+  | { TransactionType: 'AccountSet'; Account: string; SetFlag: typeof ASF_DISABLE_MASTER }
+  | { TransactionType: 'AccountSet'; Account: string; ClearFlag: typeof ASF_DISABLE_MASTER }
+export type RequestTx = PaymentRequestTx | TrustSetRequestTx | SetRegularKeyRequestTx | AccountSetRequestTx
+
+/** `TrustSetFlags.tfSetNoRipple` and `AccountSetAsfFlags.asfDisableMaster`, as the ledger
+ * defines them (pinned against xrpl.js in the codec test; this leaf imports no enum). */
+export const TF_SET_NO_RIPPLE = 0x00020000
+export const ASF_DISABLE_MASTER = 4
+
+/**
+ * The Account's key state, for display only (route-checks "What travels by QR": "For a key
+ * change only: the Account's key state, for display"). `regular_key` is the set Regular Key
+ * or `null` for none; `unknown` when the Transmitter could not read it (P-29).
+ */
+export type KeyState = { regular_key: string | null; master_key: 'on' | 'off' } | 'unknown'
 
 /** A Data-to-Sign Request: the Signs-for Account, the Built transaction, request ID, Build hash, Network. */
 export interface RequestPayload {
@@ -271,6 +301,8 @@ export interface DataToSignPayload {
   sequence: number
   fee: string
   ledger_index: number
+  /** For a key change only (story 8): display, never a value of the transaction. */
+  key_state?: KeyState
 }
 
 const REQUEST_KEYS = ['v', 'network_id', 'request_id', 'build_hash', 'account', 'tx'] as const
@@ -294,6 +326,7 @@ export function encodeDataToSign(input: {
   sequence: number
   fee: string
   ledgerIndex: number
+  keyState?: KeyState
 }): Encoded {
   return finish('d', {
     v: QR_VERSION,
@@ -303,25 +336,75 @@ export function encodeDataToSign(input: {
     sequence: input.sequence,
     fee: input.fee,
     ledger_index: input.ledgerIndex,
+    ...(input.keyState !== undefined ? { key_state: input.keyState } : {}),
   })
 }
 
 const malformed = <T>(): Decoded<T> => ({ ok: false, kind: 'malformed', reason: CODE_UNREADABLE })
 const unknownNetwork = <T>(): Decoded<T> => ({ ok: false, kind: 'bad-network', reason: 'That code names a network this wallet does not know.' })
 
+/** A 3-character code (not XRP) or 40 hex digits, in upper case, as the online screen writes it. */
+const isCurrencyCode = (v: unknown): v is string => typeof v === 'string' && ((/^[A-Z0-9]{3}$/.test(v) && v !== 'XRP') || /^[0-9A-F]{40}$/.test(v))
+/** A trust-line limit in its canonical form (`offline-round.ts` `canonicalLimit`): "0", or a
+ * positive decimal with no leading zero and no trailing fractional zero, of at most 15
+ * significant digits (an issued-currency amount holds 15) and 40 characters. String checks only. */
+export function isCanonicalLimit(v: unknown): v is string {
+  if (typeof v !== 'string' || v.length > 40) return false
+  if (v === '0') return true
+  if (!/^(0|[1-9][0-9]*)(\.[0-9]*[1-9])?$/.test(v) || !/[1-9]/.test(v)) return false
+  const digits = v.replace('.', '').replace(/^0+/, '').replace(/0+$/, '')
+  return digits.length <= 15
+}
+
 function requestTxOf(tx: unknown, account: string): RequestTx | null {
-  if (!isPlainObject(tx)) return null
-  if (!exactKeys(tx, ['TransactionType', 'Account', 'Destination', 'Amount'], ['DestinationTag'])) return null
-  if (tx.TransactionType !== 'Payment' || tx.Account !== account) return null
-  if (!isClassicAddress(tx.Destination) || !isDrops(tx.Amount)) return null
-  if (tx.DestinationTag !== undefined && !isUint32(tx.DestinationTag)) return null
-  return {
-    TransactionType: 'Payment',
-    Account: account,
-    Destination: tx.Destination,
-    Amount: tx.Amount,
-    ...(tx.DestinationTag !== undefined ? { DestinationTag: tx.DestinationTag } : {}),
+  if (!isPlainObject(tx) || tx.Account !== account) return null
+  switch (tx.TransactionType) {
+    case 'Payment': {
+      if (!exactKeys(tx, ['TransactionType', 'Account', 'Destination', 'Amount'], ['DestinationTag'])) return null
+      if (!isClassicAddress(tx.Destination) || !isDrops(tx.Amount)) return null
+      if (tx.DestinationTag !== undefined && !isUint32(tx.DestinationTag)) return null
+      return {
+        TransactionType: 'Payment',
+        Account: account,
+        Destination: tx.Destination,
+        Amount: tx.Amount,
+        ...(tx.DestinationTag !== undefined ? { DestinationTag: tx.DestinationTag } : {}),
+      }
+    }
+    case 'TrustSet': {
+      if (!exactKeys(tx, ['TransactionType', 'Account', 'LimitAmount', 'Flags'])) return null
+      if (tx.Flags !== TF_SET_NO_RIPPLE) return null
+      const limit = tx.LimitAmount
+      if (!isPlainObject(limit) || !exactKeys(limit, ['currency', 'issuer', 'value'])) return null
+      if (!isCurrencyCode(limit.currency) || !isClassicAddress(limit.issuer) || !isCanonicalLimit(limit.value)) return null
+      return { TransactionType: 'TrustSet', Account: account, LimitAmount: { currency: limit.currency, issuer: limit.issuer, value: limit.value }, Flags: TF_SET_NO_RIPPLE }
+    }
+    case 'SetRegularKey': {
+      if (!exactKeys(tx, ['TransactionType', 'Account'], ['RegularKey'])) return null
+      if (tx.RegularKey !== undefined && !isClassicAddress(tx.RegularKey)) return null
+      return { TransactionType: 'SetRegularKey', Account: account, ...(tx.RegularKey !== undefined ? { RegularKey: tx.RegularKey } : {}) }
+    }
+    case 'AccountSet': {
+      if (exactKeys(tx, ['TransactionType', 'Account', 'SetFlag']) && tx.SetFlag === ASF_DISABLE_MASTER) {
+        return { TransactionType: 'AccountSet', Account: account, SetFlag: ASF_DISABLE_MASTER }
+      }
+      if (exactKeys(tx, ['TransactionType', 'Account', 'ClearFlag']) && tx.ClearFlag === ASF_DISABLE_MASTER) {
+        return { TransactionType: 'AccountSet', Account: account, ClearFlag: ASF_DISABLE_MASTER }
+      }
+      return null
+    }
+    default:
+      return null
   }
+}
+
+/** The key state's exact shape, or `null` when it is not one. */
+function keyStateOf(v: unknown): KeyState | null {
+  if (v === 'unknown') return 'unknown'
+  if (!isPlainObject(v) || !exactKeys(v, ['regular_key', 'master_key'])) return null
+  if (v.regular_key !== null && !isClassicAddress(v.regular_key)) return null
+  if (v.master_key !== 'on' && v.master_key !== 'off') return null
+  return { regular_key: v.regular_key, master_key: v.master_key }
 }
 
 export function decodeRequest(text: unknown): Decoded<RequestPayload> {
@@ -352,7 +435,9 @@ export function decodeDataToSign(text: unknown): Decoded<DataToSignPayload> {
   const opened = open(text, 'd')
   if (!opened.ok) return opened
   const body = opened.value
-  if (!exactKeys(body, DATA_TO_SIGN_KEYS)) return malformed()
+  // `key_state` is optional here; whether it must be there is the Offline Wallet's
+  // judgement, from its kept Build's type (`offline-round.ts`, story 8).
+  if (!exactKeys(body, DATA_TO_SIGN_KEYS, ['key_state'])) return malformed()
   if (typeof body.request_id !== 'string' || !REQUEST_ID.test(body.request_id)) return malformed()
   if (typeof body.build_hash !== 'string' || !BUILD_HASH.test(body.build_hash)) return malformed()
   // Sequence 0 never signs anything; a ledger index is never 0 either.
@@ -360,6 +445,12 @@ export function decodeDataToSign(text: unknown): Decoded<DataToSignPayload> {
   // Its LastLedgerSequence (index + window) must still be a UInt32: a higher index is malformed.
   if (!isUint32(body.ledger_index) || body.ledger_index === 0 || body.ledger_index > MAX_RECEIVED_LEDGER_INDEX) return malformed()
   if (!isDrops(body.fee)) return malformed()
+  let keyState: KeyState | undefined
+  if (Object.prototype.hasOwnProperty.call(body, 'key_state')) {
+    const k = keyStateOf(body.key_state)
+    if (k === null) return malformed()
+    keyState = k
+  }
   const network = networkOfId(body.network_id)
   if (network === null) return unknownNetwork()
   return {
@@ -373,6 +464,7 @@ export function decodeDataToSign(text: unknown): Decoded<DataToSignPayload> {
       sequence: body.sequence,
       fee: body.fee,
       ledger_index: body.ledger_index,
+      ...(keyState !== undefined ? { key_state: keyState } : {}),
     },
   }
 }

@@ -13,6 +13,13 @@ const FIXED = readFileSync('_bmad-output/specs/spec-offline-signing/consequence-
 const SEND_TAB = readFileSync('src/pages/tabs/SendTab.tsx', 'utf8')
 const FUNDS = readFileSync('src/lib/xrpl/funds-check.ts', 'utf8')
 const TWO_DEVICE = readFileSync('src/lib/two-device.ts', 'utf8')
+const TRUST_TAB = readFileSync('src/pages/tabs/TrustLinesTab.tsx', 'utf8').replace(/\s+/g, ' ')
+const TWO_DEVICE_SIGN = readFileSync('src/components/wallet/TwoDeviceSign.tsx', 'utf8')
+const MASTER_KEY_CONTROL = readFileSync('src/components/wallet/MasterKeyControl.tsx', 'utf8')
+const CONTROL = readFileSync('src/lib/control.ts', 'utf8')
+const MASTER_KEY = readFileSync('src/lib/master-key.ts', 'utf8')
+const QR_SCANNER = readFileSync('src/components/wallet/QrScanner.tsx', 'utf8')
+const CREATE_FLOW = readFileSync('src/components/wallet/CreateWalletFlow.tsx', 'utf8')
 
 function row(id: string): string {
   const found = SPINE.split('\n').filter((l) => l.startsWith(`| ${id} |`))
@@ -125,5 +132,56 @@ describe('Offline-builds round words (OS-FR-11, OS-FR-13 to OS-FR-16)', () => {
     expect(W.TYPE_OF_TRANSACTION).toBe('Type of transaction')
     expect(W.SIGNING_KEY).toBe('Signing key')
     expect(W.QR_ALT).toBe('QR code: {payload} for {Network}')
+  })
+
+  // Story 8.
+  it.each([
+    ['P-62', W.TRUST_LINE],
+    ['P-62', W.REGULAR_KEY_TYPE],
+    ['P-62', W.MASTER_KEY_TYPE],
+    ['P-47', W.SET_A_REGULAR_KEY],
+    ['P-47', W.REMOVE_THE_REGULAR_KEY],
+    ['P-47', W.TURN_OFF_THE_MASTER_KEY],
+    ['P-47', W.TURN_ON_THE_MASTER_KEY],
+    ['P-50', W.TEST_ELSEWHERE],
+    ['P-57', W.SCAN_AN_ADDRESS],
+    ['P-57', W.STOP_THE_CAMERA],
+  ])('story 8: %s holds %s', (id, words) => {
+    expect(row(id)).toContain(quoted(words))
+  })
+
+  it('P-56 puts P-1 in place of the current trust lines', () => {
+    expect(row('P-56')).toContain('Offline Trust line type, in the place of the current trust lines: P-1')
+  })
+
+  it('"Test the Regular Key", W4\'s sentence and W5 are the spec\'s words, verbatim', () => {
+    expect(FIXED).toContain(`| Before master key off | ${quoted(W.TEST_THE_REGULAR_KEY)} | OS-FR-21 W4 |`)
+    const flat = FIXED.replace(/\s+/g, ' ')
+    expect(flat).toContain(quoted(W.W4_SENTENCE))
+    expect(flat).toContain(`**W5. Replacing a Regular Key that is set.** ${quoted(W.W5_SENTENCE)}`)
+  })
+
+  it('story 8\'s shipped words are still shipped by their own screens', () => {
+    const K = W.SHIPPED_KEYS
+    for (const words of [K.issuerAddress, K.currencyCode, K.trustLimit, K.newLimit, K.currencyError, K.addLine, K.ownerReserve]) {
+      expect(TRUST_TAB).toContain(words)
+    }
+    expect(TRUST_TAB).toContain(`<CardTitle>${K.trustLines}</CardTitle>`)
+    expect(TRUST_TAB).toContain(`<Button>${K.addTrustLine}</Button>`)
+    expect(TRUST_TAB).toContain(`<DialogTitle>${K.editTrustLineLimit}</DialogTitle>`)
+    expect(TRUST_TAB).toContain(`'${K.closeTrustLine}'`)
+    expect(TRUST_TAB).toContain(W.SHIPPED.trustLineNotActivated)
+    expect(TRUST_TAB).toContain(`"${W.SHIPPED.trustLineNotEnough}"`)
+    expect(CONTROL).toContain(W.SHIPPED.noKeysToChange)
+    expect(MASTER_KEY).toContain(W.SHIPPED.noMasterKeySetting)
+    // Story 12 retires TwoDeviceSign: pin this as a literal then.
+    expect(TWO_DEVICE_SIGN).toContain(`>${K.regularKeyAddress}</Label>`)
+    expect(MASTER_KEY_CONTROL).toContain(`text: '${K.masterKeyOn}'`)
+    expect(MASTER_KEY_CONTROL).toContain(`text: '${K.masterKeyOff}'`)
+    expect(MASTER_KEY_CONTROL).toContain(`const OFF_PHRASE = '${K.offPhrase}'`)
+    expect(MASTER_KEY_CONTROL).toContain('Type “{OFF_PHRASE}” to confirm')
+    expect(K.offPhraseLabel).toBe(`Type “${K.offPhrase}” to confirm`)
+    expect(QR_SCANNER).toContain(`'${K.cameraFailed}'`)
+    expect(CREATE_FLOW).toContain(`title: '${K.review}'`)
   })
 })

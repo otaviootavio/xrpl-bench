@@ -10,6 +10,9 @@ import { AmountInput, validateAmountString } from '@/components/wallet/AmountInp
 import { HandoffPlate } from '@/components/wallet/HandoffPlate'
 import { QrScanner } from '@/components/wallet/QrScanner'
 import { SignedFieldList } from '@/components/wallet/SignedTransactionReview'
+import { fieldValue } from '@/lib/tx-fields'
+import { AddressScan } from '@/components/wallet/AddressScan'
+import { KeyStateRows, KeyWarning } from '@/components/wallet/KeyStateRows'
 import { useOfflineRound } from '@/hooks/useOfflineRound'
 import { usePrompts } from '@/hooks/usePrompts'
 import { useWakeLock } from '@/hooks/useWakeLock'
@@ -21,7 +24,10 @@ import {
   assembleTransaction,
   buildHashOf,
   builtTransaction,
+  canonicalLimit,
   clearRound,
+  isKeyChange,
+  replacesRegularKey,
   judgeDataToSign,
   ledgerJumpWarning,
   newRequestId,
@@ -30,9 +36,13 @@ import {
   setRound,
   signedRecordOf,
   signRound,
+  type MasterKeyBuild,
   type OfflineBuild,
+  type PaymentBuild,
+  type RegularKeyBuild,
   type Round,
   type SignedRound,
+  type TrustLineBuild,
 } from '@/lib/offline-round'
 import * as W from '@/lib/offline-round-words'
 import { SIGN_KEY, fill } from '@/lib/transmit-words'
@@ -107,6 +117,22 @@ function FromTransmitter({ legend }: { legend: string }) {
   )
 }
 
+type BuildType = OfflineBuild['type']
+
+/** P-62's type words, in the type list's order. */
+const TYPE_WORDS: Record<BuildType, string> = {
+  payment: W.PAYMENT,
+  'trust-line': W.TRUST_LINE,
+  'regular-key': W.REGULAR_KEY_TYPE,
+  'master-key': W.MASTER_KEY_TYPE,
+}
+const TYPES = Object.keys(TYPE_WORDS) as BuildType[]
+
+/**
+ * Building (EXPERIENCE "Offline round"): "Type of transaction" over P-62's four types,
+ * then the chosen type's online fields with P-1 in each reading's slot. The Built
+ * values come back on "Change the transaction" (P-10).
+ */
 function BuildForm({
   wallet,
   initial,
@@ -118,6 +144,29 @@ function BuildForm({
   headingRef: HeadingRef
   onReview: (build: OfflineBuild) => void
 }) {
+  const [type, setType] = useState<BuildType>(initial?.type ?? 'payment')
+  return (
+    <div className="flex min-w-0 flex-col gap-4">
+      <fieldset className="grid gap-1.5">
+        <legend ref={headingRef as unknown as React.RefObject<HTMLLegendElement | null>} tabIndex={-1} className="panel-legend mb-1">
+          {W.TYPE_OF_TRANSACTION}
+        </legend>
+        {TYPES.map((t) => (
+          <label key={t} className="flex items-center gap-2 text-sm">
+            <Radio name="off-type" value={t} checked={type === t} onChange={() => setType(t)} />
+            {TYPE_WORDS[t]}
+          </label>
+        ))}
+      </fieldset>
+      {type === 'payment' && <PaymentForm wallet={wallet} initial={initial?.type === 'payment' ? initial : undefined} onReview={onReview} />}
+      {type === 'trust-line' && <TrustLineForm wallet={wallet} initial={initial?.type === 'trust-line' ? initial : undefined} onReview={onReview} />}
+      {type === 'regular-key' && <RegularKeyForm wallet={wallet} initial={initial?.type === 'regular-key' ? initial : undefined} onReview={onReview} />}
+      {type === 'master-key' && <MasterKeyForm wallet={wallet} initial={initial?.type === 'master-key' ? initial : undefined} onReview={onReview} />}
+    </div>
+  )
+}
+
+function PaymentForm({ wallet, initial, onReview }: { wallet: KeyWalletMeta; initial?: PaymentBuild; onReview: (build: OfflineBuild) => void }) {
   const [destination, setDestination] = useState(initial?.destination ?? '')
   const [destTag, setDestTag] = useState(initial?.destinationTag !== undefined ? String(initial.destinationTag) : '')
   const [amount, setAmount] = useState(initial ? dropsToXrpString(initial.amountDrops) : '')
@@ -130,16 +179,6 @@ function BuildForm({
 
   return (
     <div className="flex min-w-0 flex-col gap-4">
-      <fieldset className="grid gap-1.5">
-        <legend ref={headingRef as unknown as React.RefObject<HTMLLegendElement | null>} tabIndex={-1} className="panel-legend mb-1">
-          {W.TYPE_OF_TRANSACTION}
-        </legend>
-        {/* This build has the Payment type only (story 6); trust lines and key actions are story 8's. */}
-        <label className="flex items-center gap-2 text-sm">
-          <Radio name="off-type" value="payment" checked readOnly />
-          {W.PAYMENT}
-        </label>
-      </fieldset>
       <div className="grid gap-1.5">
         <Label htmlFor="off-dest">{W.SHIPPED.destinationAddress}</Label>
         <Input
@@ -213,6 +252,227 @@ function BuildForm({
   )
 }
 
+/** One radio of a type's actions. */
+function ActionRadio({ name, checked, onSelect, children }: { name: string; checked: boolean; onSelect: () => void; children: React.ReactNode }) {
+  return (
+    <label className="flex items-center gap-2 text-sm">
+      <Radio name={name} checked={checked} onChange={onSelect} />
+      {children}
+    </label>
+  )
+}
+
+/** The review key of the types after Payment (the quizzes' shipped "Review"). */
+function ReviewKey({ disabled, onReview }: { disabled: boolean; onReview: () => void }) {
+  return (
+    <Button type="button" className="w-fit" disabled={disabled} onClick={onReview}>
+      {W.SHIPPED_KEYS.review}
+    </Button>
+  )
+}
+
+/** A currency code as the online screen accepts it (3 characters or 40 hex digits), upper
+ * case, and never XRP, which no trust line holds. */
+const currencyValid = (c: string) => (/^[A-Z0-9]{3}$/.test(c) && c !== 'XRP') || /^[0-9A-F]{40}$/.test(c)
+
+type TrustAction = 'add' | 'edit' | 'close'
+
+/**
+ * Trust line (story 8): the online trust-line screen's three actions and fields. The
+ * current lines are a reading (P-56: P-1 in their place), so the user names the action;
+ * the Transmitter reads whether the line is there and applies the online guard for it.
+ * Each builds the online TrustSet (`tfSetNoRipple`); Close sets the limit to zero.
+ */
+function TrustLineForm({ wallet, initial, onReview }: { wallet: KeyWalletMeta; initial?: TrustLineBuild; onReview: (build: OfflineBuild) => void }) {
+  const [action, setAction] = useState<TrustAction>(initial?.limit === '0' ? 'close' : 'add')
+  const [issuer, setIssuer] = useState(initial?.issuer ?? '')
+  const [currency, setCurrency] = useState(initial?.currency ?? '')
+  const [limit, setLimit] = useState(initial && initial.limit !== '0' ? initial.limit : '1000000000')
+  const issuerValid = isValidClassicAddress(issuer)
+  const codeValid = currencyValid(currency)
+  const canonical = action === 'close' ? '0' : canonicalLimit(limit)
+  const limitValid = canonical !== null && (action === 'close' || canonical !== '0')
+  const canReview = issuerValid && codeValid && limitValid
+  const K = W.SHIPPED_KEYS
+  return (
+    <div className="flex min-w-0 flex-col gap-4">
+      <dl className="grid gap-0.5">
+        <dt className="panel-legend">{K.trustLines}</dt>
+        <dd className="text-sm">{W.FROM_TRANSMITTER}</dd>
+      </dl>
+      <fieldset className="grid gap-1.5">
+        <legend className="panel-legend mb-1">{W.TRUST_LINE}</legend>
+        <ActionRadio name="off-trust" checked={action === 'add'} onSelect={() => setAction('add')}>
+          {K.addTrustLine}
+        </ActionRadio>
+        <ActionRadio name="off-trust" checked={action === 'edit'} onSelect={() => setAction('edit')}>
+          {K.editTrustLineLimit}
+        </ActionRadio>
+        <ActionRadio name="off-trust" checked={action === 'close'} onSelect={() => setAction('close')}>
+          {K.closeTrustLine}
+        </ActionRadio>
+      </fieldset>
+      {action === 'add' && <p className="text-sm">{K.addLine}</p>}
+      <div className="grid gap-1.5">
+        <Label htmlFor="off-issuer">{K.issuerAddress}</Label>
+        <Input
+          id="off-issuer"
+          value={issuer}
+          onChange={(e) => setIssuer(e.target.value.trim())}
+          placeholder="r..."
+          autoCapitalize="off"
+          autoCorrect="off"
+          spellCheck={false}
+          aria-invalid={issuer.length > 0 && !issuerValid}
+          aria-describedby={issuer.length > 0 && !issuerValid ? 'off-issuer-error' : undefined}
+        />
+        {issuer.length > 0 && !issuerValid && (
+          <p id="off-issuer-error" className="text-sm text-text-destructive">
+            {W.SHIPPED.invalidAddress}
+          </p>
+        )}
+      </div>
+      <div className="grid gap-1.5">
+        <Label htmlFor="off-currency">{K.currencyCode}</Label>
+        <Input
+          id="off-currency"
+          value={currency}
+          onChange={(e) => setCurrency(e.target.value.trim().toUpperCase())}
+          placeholder="USD"
+          autoCapitalize="characters"
+          autoCorrect="off"
+          spellCheck={false}
+          aria-invalid={currency.length > 0 && !codeValid}
+          aria-describedby={currency.length > 0 && !codeValid ? 'off-currency-error' : undefined}
+        />
+        {currency.length > 0 && !codeValid && (
+          <p id="off-currency-error" className="text-sm text-text-destructive">
+            {K.currencyError}
+          </p>
+        )}
+      </div>
+      {action !== 'close' && (
+        <div className="grid gap-1.5">
+          <Label htmlFor="off-limit">{action === 'add' ? K.trustLimit : K.newLimit}</Label>
+          <Input id="off-limit" inputMode="decimal" value={limit} onChange={(e) => setLimit(e.target.value.trim())} aria-invalid={limit.length > 0 && !limitValid} />
+        </div>
+      )}
+      <dl className="panel-well flex flex-wrap gap-x-8 gap-y-2 rounded-md px-3 py-2.5">
+        {action === 'add' && <FromTransmitter legend={K.ownerReserve} />}
+        <FromTransmitter legend={W.SHIPPED.networkFee} />
+      </dl>
+      <ReviewKey
+        disabled={!canReview}
+        onReview={() => canonical !== null && onReview({ type: 'trust-line', account: wallet.address, currency, issuer, limit: canonical })}
+      />
+    </div>
+  )
+}
+
+/** The key state's two rows on a key-change Build: both are readings the Transmitter gives (P-1). */
+function KeyReadings() {
+  return (
+    <dl className="grid gap-2">
+      <div className="grid gap-0.5">
+        <dt className="panel-legend">{W.REGULAR_KEY_TYPE}</dt>
+        <dd className="text-sm">{W.FROM_TRANSMITTER}</dd>
+      </div>
+      <div className="grid gap-0.5">
+        <dt className="panel-legend">{W.MASTER_KEY_TYPE}</dt>
+        <dd className="text-sm">{W.FROM_TRANSMITTER}</dd>
+      </div>
+    </dl>
+  )
+}
+
+/**
+ * Regular Key (story 8, P-47): set one, typed or scanned on this device (OS-FR-21: never
+ * taken from the Transmitter), or remove it. The app takes any valid address; whether a
+ * key is set now is the Transmitter's reading, so no W5 here (EXPERIENCE: "Never on the
+ * Offline Build, which cannot know the key state"). W1, W2 and P-30 are story 11's.
+ */
+function RegularKeyForm({ wallet, initial, onReview }: { wallet: KeyWalletMeta; initial?: RegularKeyBuild; onReview: (build: OfflineBuild) => void }) {
+  const [remove, setRemove] = useState(initial ? initial.regularKey === null : false)
+  const [address, setAddress] = useState(initial?.regularKey ?? '')
+  const valid = isValidClassicAddress(address)
+  return (
+    <div className="flex min-w-0 flex-col gap-4">
+      <KeyReadings />
+      <fieldset className="grid gap-1.5">
+        <legend className="panel-legend mb-1">{W.REGULAR_KEY_TYPE}</legend>
+        <ActionRadio name="off-regular" checked={!remove} onSelect={() => setRemove(false)}>
+          {W.SET_A_REGULAR_KEY}
+        </ActionRadio>
+        <ActionRadio name="off-regular" checked={remove} onSelect={() => setRemove(true)}>
+          {W.REMOVE_THE_REGULAR_KEY}
+        </ActionRadio>
+      </fieldset>
+      {!remove && (
+        <div className="grid gap-1.5">
+          <Label htmlFor="off-regular-key">{W.SHIPPED_KEYS.regularKeyAddress}</Label>
+          <Input
+            id="off-regular-key"
+            value={address}
+            onChange={(e) => setAddress(e.target.value.trim())}
+            placeholder="r..."
+            autoCapitalize="off"
+            autoCorrect="off"
+            spellCheck={false}
+            aria-invalid={address.length > 0 && !valid}
+            aria-describedby={address.length > 0 && !valid ? 'off-regular-key-error' : undefined}
+          />
+          {address.length > 0 && !valid && (
+            <p id="off-regular-key-error" className="text-sm text-text-destructive">
+              {W.SHIPPED.invalidAddress}
+            </p>
+          )}
+          <AddressScan onAddress={setAddress} />
+        </div>
+      )}
+      <ReviewKey
+        disabled={!remove && !valid}
+        onReview={() => onReview({ type: 'regular-key', account: wallet.address, regularKey: remove ? null : address })}
+      />
+    </div>
+  )
+}
+
+/**
+ * Master key (story 8, P-47): turn it off or on. Before off: "Test the Regular Key",
+ * which this device cannot run in place, so it says where to run it (P-50), then W4's
+ * sentence (EXPERIENCE "Approved strings", W4). Offered, never required; nothing refuses.
+ */
+function MasterKeyForm({ wallet, initial, onReview }: { wallet: KeyWalletMeta; initial?: MasterKeyBuild; onReview: (build: OfflineBuild) => void }) {
+  const [enable, setEnable] = useState(initial?.enable ?? false)
+  const [testShown, setTestShown] = useState(false)
+  return (
+    <div className="flex min-w-0 flex-col gap-4">
+      <KeyReadings />
+      <fieldset className="grid gap-1.5">
+        <legend className="panel-legend mb-1">{W.MASTER_KEY_TYPE}</legend>
+        <ActionRadio name="off-master" checked={!enable} onSelect={() => setEnable(false)}>
+          {W.TURN_OFF_THE_MASTER_KEY}
+        </ActionRadio>
+        <ActionRadio name="off-master" checked={enable} onSelect={() => setEnable(true)}>
+          {W.TURN_ON_THE_MASTER_KEY}
+        </ActionRadio>
+      </fieldset>
+      {!enable && (
+        <div className="flex min-w-0 flex-col items-start gap-2">
+          <Button type="button" variant="outline" size="sm" aria-expanded={testShown} onClick={() => setTestShown(true)}>
+            {W.TEST_THE_REGULAR_KEY}
+          </Button>
+          <p role="status" className="text-sm">
+            {testShown ? W.TEST_ELSEWHERE : ''}
+          </p>
+          <KeyWarning words={W.W4_SENTENCE} />
+        </div>
+      )}
+      <ReviewKey disabled={false} onReview={() => onReview({ type: 'master-key', account: wallet.address, enable })} />
+    </div>
+  )
+}
+
 /** The Built transaction in the ledger's own field names (P-52). Before signing the Fee is a
  * reading (P-1); after it, the signed Fee and Sequence are shown. */
 function BuiltFields({ build, signedWith }: { build: OfflineBuild; signedWith?: { fee: string; sequence: number } }) {
@@ -222,9 +482,7 @@ function BuiltFields({ build, signedWith }: { build: OfflineBuild; signedWith?: 
       {Object.entries(tx).map(([name, value]) => (
         <div key={name} className="grid min-w-0 gap-0.5">
           <dt className="panel-legend [overflow-wrap:anywhere]">{name}</dt>
-          <dd className="font-data text-[0.8125rem] leading-relaxed tracking-tight [overflow-wrap:anywhere]">
-            {name === 'Amount' ? formatXrp(String(value)) : String(value)}
-          </dd>
+          <dd className="font-data text-[0.8125rem] leading-relaxed tracking-tight [overflow-wrap:anywhere]">{fieldValue(name, value, tx.TransactionType)}</dd>
         </div>
       ))}
       {signedWith ? (
@@ -288,7 +546,7 @@ function Reviewed({ wallet, round, headingRef }: { wallet: KeyWalletMeta; round:
   return (
     <div className="flex min-w-0 flex-col gap-3">
       <h2 ref={headingRef} tabIndex={-1} className="text-sm font-semibold">
-        {W.PAYMENT}
+        {TYPE_WORDS[round.build.type]}
       </h2>
       <SameBuildNotice walletId={wallet.id} build={round.build} />
       <BuiltFields build={round.build} />
@@ -446,8 +704,17 @@ function SigningReview({ wallet, round, headingRef }: { wallet: KeyWalletMeta; r
   const signWith = { ...phase.data, sequence: phase.sequence }
   const tx = assembleTransaction(round.build, signWith)
   const label = NETWORKS[wallet.network].label
+  const build = round.build
+  // Master key off is irreversible-class (SPEC Constraints): W4's sentence above the typed
+  // confirm, and on Mainnet Sign is held until the phrase is typed (today's master-key
+  // pattern, P-39's "same pattern as today's 'turn off'"). The Signing Check follows.
+  const turningOff = build.type === 'master-key' && !build.enable
+  const [phrase, setPhrase] = useState('')
+  const held = turningOff && wallet.network === 'mainnet' && phrase.trim().replace(/\s+/g, ' ').toLowerCase() !== W.SHIPPED_KEYS.offPhrase
+  const phraseId = `off-phrase-${wallet.id}`
 
   async function sign() {
+    if (held) return
     setBusy(true)
     setFailure(null)
     const current = () => {
@@ -495,6 +762,9 @@ function SigningReview({ wallet, round, headingRef }: { wallet: KeyWalletMeta; r
         <dt className="panel-legend">{W.SIGNING_KEY}</dt>
         <dd className="font-data text-[0.8125rem] leading-relaxed tracking-tight [overflow-wrap:anywhere]">{wallet.keyAddress}</dd>
       </dl>
+      {/* The key state the Transmitter read, for display only: it changes nothing signed. */}
+      {isKeyChange(build) && phase.data.key_state !== undefined && <KeyStateRows keyState={phase.data.key_state} />}
+      {build.type === 'regular-key' && replacesRegularKey(build.regularKey, phase.data.key_state) && <KeyWarning words={W.W5_SENTENCE} />}
       {phase.retry && (
         <Alert role="none">
           <AlertDescription>{phase.retry === 'passed' ? W.RETRY_PASSED : W.RETRY_SAME_SEQUENCE}</AlertDescription>
@@ -508,9 +778,30 @@ function SigningReview({ wallet, round, headingRef }: { wallet: KeyWalletMeta; r
           </AlertDescription>
         </Alert>
       )}
+      {turningOff && <KeyWarning words={W.W4_SENTENCE} />}
+      {turningOff && wallet.network === 'mainnet' && (
+        <div className="grid gap-1.5">
+          <Label htmlFor={phraseId}>{W.SHIPPED_KEYS.offPhraseLabel}</Label>
+          <Input
+            id={phraseId}
+            value={phrase}
+            onChange={(e) => setPhrase(e.target.value)}
+            autoComplete="off"
+            autoCapitalize="off"
+            autoCorrect="off"
+            spellCheck={false}
+          />
+        </div>
+      )}
       <div role="alert">{failure && <p className="text-sm text-text-destructive">{failure}</p>}</div>
       <div className="flex flex-wrap gap-2">
-        <Button type="button" disabled={busy} onClick={() => void sign()}>
+        <Button
+          type="button"
+          disabled={busy}
+          aria-disabled={held ? true : undefined}
+          aria-describedby={held ? phraseId : undefined}
+          onClick={() => void sign()}
+        >
           {SIGN_KEY}
         </Button>
         <Button

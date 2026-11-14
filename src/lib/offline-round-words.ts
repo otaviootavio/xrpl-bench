@@ -236,3 +236,57 @@ export const SHIPPED_KEYS = {
 export const SIGNER_LIST = 'Signer list'
 export const SIGNER_LIST_VALUE = '{n} signers, quorum {q}'
 export const KEY_STATE = 'Key state'
+
+// ---------------------------------------------------------------------------
+// Story 9: the Transmitter-builds route (OS-FR-17, OS-FR-18, OS-FR-21).
+// ---------------------------------------------------------------------------
+
+/** P-13 (Transmitter-builds): the well's scale mark, the window in ledgers. */
+export const TIME_LIMIT_LEDGERS = 'Time limit: {n} ledgers'
+/** P-15: a window longer than the usual one (150 ledgers, story 6's window). */
+export const LONGER_THAN_USUAL = 'This transaction is valid for more time than usual: {n} ledgers. During this time, a person who has the transaction can send it.'
+/** P-17: the refusal reasons of this route, besides story 6's. `{name}` is the field, flag or type. */
+export const SIGN_REFUSAL = {
+  cannotShow: 'The app cannot show {name} in words.',
+  presigned: 'This transaction has a signature already.',
+  partialPayment: 'This is a partial payment. The app does not sign partial payments.',
+} as const
+/** P-33: the Unsigned QR plate line. No plate title is approved, so it heads the plate. */
+export const UNSIGNED_LINE = 'Scan this code with the offline wallet. Then scan the signed code from the offline wallet.'
+/** P-38: the Synced Transmitter's review key. */
+export const MAKE_THE_UNSIGNED = 'Make the unsigned transaction'
+/** P-48, second line: the Transmitter's key types in New transaction. */
+export const KEY_CHANGE_UNSIGNED = 'When you change a key here, the app makes an unsigned transaction for the offline wallet.'
+/** P-57: the signed-QR scan plate title. */
+export const SCAN_SIGNED_TITLE = 'Scan the signed transaction'
+
+/**
+ * P-53: one caution under each risky row of the offline signing review. `{memo text}` and
+ * `{flag in words}` are slots with a space, filled by `fillRisky`; `{flag in words}` takes the
+ * ledger's own flag name (P-52 keeps the ledger's names).
+ */
+export const RISKY = {
+  sendMax: 'Not more than {amount} can leave your account. This is more than the amount above.',
+  paths: 'The ledger can send this payment through other currencies. Thus the amount that leaves your account can change.',
+  deliverMin: 'The destination can receive less than the amount above. The minimum is {amount}.',
+  memo: 'This transaction has a memo. All persons can read the memo on the ledger: {memo text}.',
+  delegate: 'A delegate sends this transaction for the account {address}.',
+  ticket: 'This transaction uses a Ticket, not a Sequence. It can stay valid for a longer time.',
+  irreversible: '{flag in words}. You cannot undo this.',
+} as const
+
+/** Fills P-53's one slot, whatever its name. */
+export function fillRisky(template: string, value: string): string {
+  return template.replace(/\{[A-Za-z ]+\}/, () => value)
+}
+
+/** W1 and W3 (`consequence-texts.md`, OS-FR-21), verbatim; P-30 when the new key is a Wallet here. */
+export const W1_SENTENCE = 'This app cannot sign with this key. Make sure that you hold the key in a different wallet.'
+export const W3_SENTENCE = 'This transaction gives control of your account to the key below. Sign it only if you hold that key. Scammers use this to take accounts.'
+export const KEY_IS_WALLET_HERE = 'This key is the wallet {name} on this device.'
+
+/** P-12's `{duration}` on this route: the window in minutes at about 4 s a ledger ("10 minutes" for 150). */
+export function windowMinutes(ledgers: number): string {
+  const minutes = Math.max(1, Math.round((ledgers * 4) / 60))
+  return minutes === 1 ? '1 minute' : `${minutes} minutes`
+}

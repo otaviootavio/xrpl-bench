@@ -191,4 +191,40 @@ describe('Offline-builds round words (OS-FR-11, OS-FR-13 to OS-FR-16)', () => {
     expect(W.KEY_STATE).toBe('Key state')
     expect(W.SHIPPED_KEYS.review).toBe('Review')
   })
+
+  it.each([
+    ['P-13', W.TIME_LIMIT_LEDGERS],
+    ['P-15', W.LONGER_THAN_USUAL],
+    ['P-17', W.SIGN_REFUSAL.cannotShow],
+    ['P-17', W.SIGN_REFUSAL.presigned],
+    ['P-17', W.SIGN_REFUSAL.partialPayment],
+    ['P-33', W.UNSIGNED_LINE],
+    ['P-38', W.MAKE_THE_UNSIGNED],
+    ['P-48', W.KEY_CHANGE_UNSIGNED],
+    ['P-57', W.SCAN_SIGNED_TITLE],
+    ['P-30', W.KEY_IS_WALLET_HERE],
+    ['P-53', W.RISKY.sendMax],
+    ['P-53', W.RISKY.paths],
+    ['P-53', W.RISKY.deliverMin],
+    ['P-53', W.RISKY.memo],
+    ['P-53', W.RISKY.delegate],
+    ['P-53', W.RISKY.ticket],
+    ['P-53', W.RISKY.irreversible],
+  ])('story 9: %s holds %s', (id, words) => {
+    expect(row(id)).toContain(quoted(words))
+  })
+
+  it('story 9: W1 and W3 are the spec\'s words, verbatim', () => {
+    const flat = FIXED.replace(/\s+/g, ' ')
+    expect(flat).toContain(quoted(W.W1_SENTENCE))
+    expect(flat).toContain(quoted(W.W3_SENTENCE))
+  })
+
+  it('story 9: P-53\'s slots with a space are filled whole; P-12\'s duration is the window in minutes', () => {
+    expect(W.fillRisky(W.RISKY.memo, 'hi')).toBe('This transaction has a memo. All persons can read the memo on the ledger: hi.')
+    expect(W.fillRisky(W.RISKY.irreversible, 'asfNoFreeze')).toBe('asfNoFreeze. You cannot undo this.')
+    expect(W.windowMinutes(150)).toBe(W.TEN_MINUTES)
+    expect(W.windowMinutes(10)).toBe('1 minute')
+    expect(W.windowMinutes(400)).toBe('27 minutes')
+  })
 })

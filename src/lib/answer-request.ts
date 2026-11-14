@@ -4,6 +4,7 @@ import { queryKeys } from '@/lib/xrpl/query-keys'
 import { fetchAccountStateFresh, fetchDestinationInfoOnce } from '@/lib/xrpl/query-reads'
 import { fetchAccountLines, fetchServerReserves, fetchSignerList, type AccountState, type TrustLine } from '@/lib/xrpl/reads'
 import { amountPlusFeeFits, coversOwnerReserveAndFee, formatXrp, reserveRequirementDrops, spendableAfterReserve } from '@/lib/xrpl/money'
+import { checkFunds, tokenAssetKey } from '@/lib/xrpl/funds-check'
 import { FeeAboveCapError, prepareDataToSign, type DataToSignValues } from '@/lib/xrpl/writes'
 import type { SubmittableTransaction } from 'xrpl'
 import {
@@ -32,6 +33,8 @@ import { fill } from '@/lib/transmit-words'
 /** What passed, shown as the "Checked on {Network}" list (P-57), per type. */
 export type AnswerChecks =
   | { type: 'payment'; tagSupplied: boolean; destinationExists: boolean }
+  /** A token Payment (Transmitter-builds only, story 9): online Send's checks; `warnings` are its warnings, which never block. */
+  | { type: 'token-payment'; tagSupplied: boolean; destinationExists: boolean; warnings: readonly TokenWarning[] }
   /** `spendable`: the add guard ran (a new line takes an owner reserve). */
   | { type: 'trust-line'; spendable: boolean }
   | { type: 'key' }
@@ -58,6 +61,26 @@ export type AnswerResult =
 type Ctx = { queryClient: QueryClient }
 type Answered = Extract<AnswerResult, { status: 'answered' }>
 
+/** A token Payment's Built fields (Transmitter-builds only): online Send's issued Payment. */
+export interface TokenPaymentTx {
+  TransactionType: 'Payment'
+  Account: string
+  Destination: string
+  Amount: { currency: string; issuer: string; value: string }
+  DestinationTag?: number
+}
+/** What the online pre-flight checks: every type a request carries, plus the token Payment. */
+export type CheckedTx = RequestTx | TokenPaymentTx
+
+/** Online Send's two warnings that never block a token Payment (`SendTab`): their title and line. */
+export type TokenWarning = 'destination-not-activated' | 'no-trust-line'
+
+/** The online pre-flight passed: the Data to Sign values (Sequence, Fee, validated index) and what was checked. */
+export type Preflight =
+  | { status: 'ok'; values: DataToSignValues; checks: AnswerChecks; keyState?: KeyState }
+  | Extract<AnswerResult, { status: 'refused' | 'read-failed' }>
+type Ok = Extract<Preflight, { status: 'ok' }>
+
 export async function answerRequest(wallet: TransmitterMeta, request: RequestPayload, ctx: Ctx): Promise<AnswerResult> {
   const { network } = wallet
   // Its own Network only (OS-FR-15), and only its Synced address when it has one.
@@ -67,20 +90,32 @@ export async function answerRequest(wallet: TransmitterMeta, request: RequestPay
   if (wallet.address !== null && wallet.address !== request.account) {
     return { status: 'refused', reason: fill(ANSWER_REFUSAL.address, request.account, wallet.address) }
   }
-  const { tx } = request
+  const checked = await preflight(wallet, request.account, request.tx, ctx)
+  if (checked.status !== 'ok') return checked
+  return answered(wallet, request, checked.values, checked.checks, checked.keyState)
+}
+
+/**
+ * The online pre-flight for one Built transaction of `account`, on this Wallet's own
+ * Network (route-checks "Transmitter Wallet"): the answer to a request runs it, and
+ * so does a Synced Transmitter making an Unsigned Transaction (story 9), so both
+ * refuse the same things in the same words. Every read is fresh, through the key
+ * factory; a failed read is `read-failed`, never values (FR-59).
+ */
+export async function preflight(wallet: TransmitterMeta, account: string, tx: CheckedTx, ctx: Ctx): Promise<Preflight> {
   switch (tx.TransactionType) {
     case 'Payment':
-      return answerPayment(wallet, request, tx, ctx)
+      return typeof tx.Amount === 'string' ? answerPayment(wallet, account, tx as PaymentRequestTx, ctx) : checkTokenPayment(wallet, account, tx as TokenPaymentTx, ctx)
     case 'TrustSet':
-      return answerTrustSet(wallet, request, tx, ctx)
+      return answerTrustSet(wallet, account, tx, ctx)
     case 'SetRegularKey':
     case 'AccountSet':
-      return answerKeyChange(wallet, request, tx, ctx)
+      return answerKeyChange(wallet, account, tx, ctx)
   }
 }
 
 /** The Data to Sign values, or the refusal: the fee cap in the choke point's own words, any other failure a failed read. */
-async function dataToSign(wallet: TransmitterMeta, tx: RequestTx): Promise<{ values: DataToSignValues } | AnswerResult> {
+async function dataToSign(wallet: TransmitterMeta, tx: CheckedTx): Promise<{ values: DataToSignValues } | Exclude<Preflight, Ok>> {
   try {
     return { values: await prepareDataToSign(wallet.network, { ...tx } as SubmittableTransaction, wallet.node) }
   } catch (err) {
@@ -111,16 +146,18 @@ function serverReserves(wallet: TransmitterMeta, ctx: Ctx) {
   })
 }
 
+const ok = (values: DataToSignValues, checks: AnswerChecks, keyState?: KeyState): Ok => ({ status: 'ok', values, checks, ...(keyState !== undefined ? { keyState } : {}) })
+
 /** Online Send's pre-flight (story 6), unchanged. */
-async function answerPayment(wallet: TransmitterMeta, request: RequestPayload, tx: PaymentRequestTx, ctx: Ctx): Promise<AnswerResult> {
+async function answerPayment(wallet: TransmitterMeta, account: string, tx: PaymentRequestTx, ctx: Ctx): Promise<Preflight> {
   const { network, node } = wallet
-  if (tx.Destination === request.account) return { status: 'refused', reason: SHIPPED.selfSend }
+  if (tx.Destination === account) return { status: 'refused', reason: SHIPPED.selfSend }
 
   let state: AccountState
   let spendable: string
   let baseReserve: string
   try {
-    state = await fetchAccountStateFresh(ctx.queryClient, network, request.account, node)
+    state = await fetchAccountStateFresh(ctx.queryClient, network, account, node)
     if (!state.exists) return { status: 'refused', reason: SHIPPED.accountNotActivated }
     const reserves = await serverReserves(wallet, ctx)
     baseReserve = reserves.baseReserveDrops
@@ -148,7 +185,52 @@ async function answerPayment(wallet: TransmitterMeta, request: RequestPayload, t
   if (!amountPlusFeeFits(tx.Amount, values.fee, spendable)) {
     return { status: 'refused', reason: fill(SHIPPED.overSpendable, formatXrp(spendable)) }
   }
-  return answered(wallet, request, values, { type: 'payment', tagSupplied: tx.DestinationTag !== undefined, destinationExists: destination.exists })
+  return ok(values, { type: 'payment', tagSupplied: tx.DestinationTag !== undefined, destinationExists: destination.exists })
+}
+
+/**
+ * Online Send's checks for a token Payment (`SendTab`, `checkFunds`), on fresh reads:
+ * self-send, the account on the ledger, the destination check (a required tag refuses;
+ * not activated and no trust line warn in online Send's words and never block, as
+ * online), the fee cap, then the funds check against the line this account holds
+ * (a positive balance, frozen by neither side). Its refusals are online Send's words.
+ */
+async function checkTokenPayment(wallet: TransmitterMeta, account: string, tx: TokenPaymentTx, ctx: Ctx): Promise<Preflight> {
+  const { network, node } = wallet
+  if (tx.Destination === account) return { status: 'refused', reason: SHIPPED.selfSend }
+  const asset = tokenAssetKey({ currency: tx.Amount.currency, account: tx.Amount.issuer })
+  let lines: TrustLine[]
+  let destination
+  try {
+    const state = await fetchAccountStateFresh(ctx.queryClient, network, account, node)
+    if (!state.exists) return { status: 'refused', reason: SHIPPED.accountNotActivated }
+    lines = await ctx.queryClient.fetchQuery({
+      queryKey: queryKeys.trustLines(network, account),
+      queryFn: () => fetchAccountLines(network, account, node),
+      staleTime: 0,
+      networkMode: 'always',
+    })
+    destination = await fetchDestinationInfoOnce(ctx.queryClient, network, tx.Destination, asset, node)
+  } catch {
+    return { status: 'read-failed' }
+  }
+  if (destination.requireDestTag && tx.DestinationTag === undefined) return { status: 'refused', reason: SHIPPED.tagRequired }
+  const prepared = await dataToSign(wallet, tx)
+  if (!('values' in prepared)) return prepared
+  const { values } = prepared
+  const refusal = checkFunds({
+    amount: tx.Amount.value,
+    amountValid: true,
+    asset,
+    spendable: { status: 'pending' },
+    fee: { status: 'ok', value: values.fee },
+    trustLines: { status: 'ok', value: lines },
+  })
+  if (refusal) return { status: 'refused', reason: refusal.reason }
+  const warnings: TokenWarning[] = []
+  if (!destination.exists) warnings.push('destination-not-activated')
+  if (destination.hasTrustLine === false) warnings.push('no-trust-line')
+  return ok(values, { type: 'token-payment', tagSupplied: tx.DestinationTag !== undefined, destinationExists: destination.exists, warnings })
 }
 
 /**
@@ -160,17 +242,17 @@ async function answerPayment(wallet: TransmitterMeta, request: RequestPayload, t
  * guard only, as the edit and close dialogs do. Every read is fresh; any failed read
  * is P-28, never an answer (FR-59).
  */
-async function answerTrustSet(wallet: TransmitterMeta, request: RequestPayload, tx: TrustSetRequestTx, ctx: Ctx): Promise<AnswerResult> {
+async function answerTrustSet(wallet: TransmitterMeta, account: string, tx: TrustSetRequestTx, ctx: Ctx): Promise<Preflight> {
   const { network, node } = wallet
   let state: AccountState
   let lines: TrustLine[]
   try {
-    state = await fetchAccountStateFresh(ctx.queryClient, network, request.account, node)
+    state = await fetchAccountStateFresh(ctx.queryClient, network, account, node)
     if (!state.exists) return { status: 'refused', reason: SHIPPED.trustLineNotActivated }
     lines = await ctx.queryClient.fetchQuery({
-      queryKey: queryKeys.trustLines(network, request.account),
+      queryKey: queryKeys.trustLines(network, account),
       // Every page (`marker` followed to the end): a list cut short would read as "no line".
-      queryFn: () => fetchAccountLines(network, request.account, node),
+      queryFn: () => fetchAccountLines(network, account, node),
       staleTime: 0,
       networkMode: 'always',
     })
@@ -198,7 +280,7 @@ async function answerTrustSet(wallet: TransmitterMeta, request: RequestPayload, 
   if (!('values' in prepared)) return prepared
   const { values } = prepared
   if (adds && !coversOwnerReserveAndFee(spendable, ownerReserve, values.fee)) return { status: 'refused', reason: SHIPPED.trustLineNotEnough }
-  return answered(wallet, request, values, { type: 'trust-line', spendable: adds })
+  return ok(values, { type: 'trust-line', spendable: adds })
 }
 
 /**
@@ -211,10 +293,10 @@ async function answerTrustSet(wallet: TransmitterMeta, request: RequestPayload, 
  * fresh account read that proves the Account exists, so a failed read is P-28, never a
  * Data to Sign with an unknown state (story 8 record).
  */
-async function answerKeyChange(wallet: TransmitterMeta, request: RequestPayload, tx: SetRegularKeyRequestTx | AccountSetRequestTx, ctx: Ctx): Promise<AnswerResult> {
+async function answerKeyChange(wallet: TransmitterMeta, account: string, tx: SetRegularKeyRequestTx | AccountSetRequestTx, ctx: Ctx): Promise<Preflight> {
   let state: AccountState
   try {
-    state = await fetchAccountStateFresh(ctx.queryClient, wallet.network, request.account, wallet.node)
+    state = await fetchAccountStateFresh(ctx.queryClient, wallet.network, account, wallet.node)
   } catch {
     return { status: 'read-failed' }
   }
@@ -226,8 +308,8 @@ async function answerKeyChange(wallet: TransmitterMeta, request: RequestPayload,
   let signerList: SignerListState
   try {
     signerList = await ctx.queryClient.fetchQuery({
-      queryKey: queryKeys.signerList(wallet.network, request.account),
-      queryFn: () => fetchSignerList(wallet.network, request.account, wallet.node),
+      queryKey: queryKeys.signerList(wallet.network, account),
+      queryFn: () => fetchSignerList(wallet.network, account, wallet.node),
       staleTime: 0,
       networkMode: 'always',
     })
@@ -237,5 +319,5 @@ async function answerKeyChange(wallet: TransmitterMeta, request: RequestPayload,
   const keyState: KeyState = { regular_key: state.regularKey ?? null, master_key: state.disableMasterKey ? 'off' : 'on', signer_list: signerList }
   const prepared = await dataToSign(wallet, tx)
   if (!('values' in prepared)) return prepared
-  return answered(wallet, request, prepared.values, { type: 'key' }, keyState)
+  return ok(prepared.values, { type: 'key' }, keyState)
 }

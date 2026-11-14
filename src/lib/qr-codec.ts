@@ -104,9 +104,19 @@ function finish(kind: PayloadKind, payload: unknown): Encoded {
   return { ok: true, text: encodeSinglePart({ type: PAYLOAD_UR_TYPES[kind], cbor: encodeBytes(json) }) }
 }
 
-/** The whole unsigned payload, as one single-part UR. */
-export function encodeUnsigned(input: { network: NetworkId; tx: Record<string, unknown> }): Encoded {
-  return finish('u', { v: QR_VERSION, network_id: networkIdOf(input.network), tx: input.tx })
+/**
+ * The whole unsigned payload, as one single-part UR. With `ledgerIndex` (the
+ * Transmitter-builds route, story 9) the envelope also carries the validated ledger
+ * index the transaction was built on (route-checks "What travels by QR"); two-device
+ * signing (FR-78, until story 12) writes none.
+ */
+export function encodeUnsigned(input: { network: NetworkId; tx: Record<string, unknown>; ledgerIndex?: number }): Encoded {
+  return finish('u', {
+    v: QR_VERSION,
+    network_id: networkIdOf(input.network),
+    ...(input.ledgerIndex !== undefined ? { ledger_index: input.ledgerIndex } : {}),
+    tx: input.tx,
+  })
 }
 
 /** The whole signed payload, as one single-part UR. */
@@ -483,4 +493,36 @@ export function decodeDataToSign(text: unknown): Decoded<DataToSignPayload> {
       ...(keyState !== undefined ? { key_state: keyState } : {}),
     },
   }
+}
+
+// ---------------------------------------------------------------------------
+// The Transmitter-builds route (OS-FR-17, OS-FR-18, story 9). The Unsigned
+// Transaction's envelope carries exactly `{v, network_id, ledger_index, tx}`: a
+// key outside it, or one missing, is malformed. Two-device signing's code (no
+// `ledger_index`) is therefore malformed here; `decodeUnsigned` above still reads
+// it for two-device until story 12 removes that screen. Whether every field of
+// `tx` can be shown in words is the Offline Wallet's judgement (`unsigned-judge.ts`).
+// ---------------------------------------------------------------------------
+
+export interface UnsignedForSigning {
+  v: typeof QR_VERSION
+  network_id: number
+  network: NetworkId
+  /** The validated ledger index the Transmitter built on: P-13's window and P-14's reference. */
+  ledger_index: number
+  tx: Record<string, unknown>
+}
+
+const UNSIGNED_KEYS = ['v', 'network_id', 'ledger_index', 'tx'] as const
+
+export function decodeUnsignedForSigning(text: unknown): Decoded<UnsignedForSigning> {
+  const opened = open(text, 'u')
+  if (!opened.ok) return opened
+  const body = opened.value
+  if (!exactKeys(body, UNSIGNED_KEYS)) return malformed()
+  if (!isUint32(body.ledger_index) || body.ledger_index === 0) return malformed()
+  if (!isPlainObject(body.tx)) return malformed()
+  const network = networkOfId(body.network_id)
+  if (network === null) return unknownNetwork()
+  return { ok: true, value: { v: QR_VERSION, network_id: body.network_id as number, network, ledger_index: body.ledger_index, tx: body.tx } }
 }

@@ -93,6 +93,24 @@ context:
 
 ## Review Triage Log
 
+Round two (coordinator review, 2026-11-14). The smallest change for each; only the tests of the edited files were run (`unsigned-judge`, `transmitter-build`, `transmitter-builds-sign`, `offline-round-words`, `src/pages/kind`: green; `tsc -b` and lint green).
+
+| # | Finding | Verdict | Fix |
+|---|---|---|---|
+| 1 | The signed blob was never compared with the Unsigned Transaction made: after "Change the transaction" an older signed code could be sent while the plate showed the new one | real | `signedIsMade` (decoded blob less SigningPubKey/TxnSignature equals `made.tx`, canonical, missing Flags as 0); on mismatch the P-26 heading + P-17's "This data is for a different request.", no Send. Test |
+| 2 | The shown window and P-15 used the Transmitter's own index, so a shifted index + LLS hid a long window behind "150 ledgers" | real, with a different estimate | The window counts from min(envelope index, this device's upper bound for the current ledger: highest seen or floor + elapsed / 3 s + 30, story 6's P-14 allowance); P-15 when it exceeds 150. **Not ~4.5 s:** the browser pass showed Testnet at ~3.3 s a ledger since the floor, so a 4.5 s low estimate from a 4-day-old floor read a correct round as 29,436 ledgers with P-15 and "1962 minutes". The upper bound never warns on a correct round. Residual: a shift inside P-14's allowance stays hidden (deferred). Story 6's 3 s / 30 allowance is unchanged; 3 s rather than ~4 s is kept so fast closes never warn. Tests including a fresh wallet with a shifted index |
+| 3 | `noteLedgerSeen` recorded an index that tripped too-high; a failed `ledgerSeenOf` skipped P-14 | real | not recorded when P-14 says too-high; a failed read compares with `LEDGER_FLOORS`. Tests |
+| 4 | MemoType/MemoFormat signed but not shown | real | each memo part is its own row under its ledger name, each with P-53's memo caution. Test |
+| 5 | Memo text could carry new lines, bidi overrides, zero-width and control characters | real | refused as "cannot show Memos in words" (Unicode Cc, Cf, Zl, Zp); never joined with new lines. Tests |
+| 6 | DeliverMin passed review but `validate()` throws at signing | real | DeliverMin out of Payment's fields; `validate(shown)` inside `judgeUnsigned` (malformed on throw). Tests |
+| 7 | Token values went in as typed ("5.10", ".5", "05") and the judge refused them | real | `transmitterTx` canonicalises with `canonicalLimit`. Test; browser: "5.10" built as 5.1 and validated |
+| 8 | A SetRegularKey that removes the key had no warning | real | W5 for a removal this device did not build. Test |
+| 9 | Sign showed while the signed list was loading | real | Sign only when the read is ok. Test |
+| 10 | SendMax caution said "more than the amount above" when false | real | only when SendMax is in the same asset and more than Amount; otherwise the row alone. Test |
+| 11 | Delegate | refused | A delegated transaction is signed by the delegate's key, never this Wallet's, so it could not apply as signed here; now "cannot show Delegate in words". Test |
+| 12 | Paths shown as JSON, QualityIn/QualityOut as integers | deferred | no approved words; `deferred-work.md` |
+| — | Test harness | note | the old lock test left React's act queue open, so a later mount rendered empty; its clicks now run inside `act` |
+
 ## Design Notes
 
 **OS-SM-2: every online write and its route.** The online app builds exactly these writes (grep of `TransactionType:` literals and `autofill(` callers, 2026-11-14: `SendTab` via `submitXrpPayment` / `submitIssuedPayment`, `TrustLinesTab` via `submitTrustSet`, `control.ts` via `submitSetRegularKey`, `master-key.ts` via `submitMasterKeyFlag`; two-device builds a subset):
@@ -117,6 +135,8 @@ There is no other write, so P-62's "Other transactions" would open nothing: it i
 ## Verification
 
 **Gates (2026-11-14, final tree, the commit that adds this line):** `bun run lint` · `bun run build` · `bun run test` (174 files, 2748 tests; baseline 169 / 2631) · `bun run check:contrast`. All green.
+
+**Round two browser re-check (2026-11-14).** Same server and harness (`.playwright-mcp/s9-r2.js`), two fresh contexts, accounts A and B as above. Token Payment typed "5.10": built as 5.1 USD, signed offline, VALIDATED `48A3F1939D021B248069BCCC70D46248144C8324A44A98BA79C63D7513DF7103`; review "Time limit: 150 ledgers", P-12 "approximately 10 minutes", no P-15. Forced state: the real Unsigned code re-encoded with envelope index and LastLedgerSequence both +200,000: review "Time limit: 186019 ledgers", P-15 and P-14 too-high (`r2-O-shifted-320-dark` opened), then Do not sign. 320 and 1280, light and dark: no side scroll, nothing past the viewport. 0 ledger sockets on O. A first try with the ~4.5 s estimate validated `F1AD9445…966BC8` but showed the false P-15 that finding 2 records. The dev server was stopped.
 
 **Self-review fixes after the browser pass (unit-tested, not driven in the browser):** the Transmitter's Payment form now says a failed trust-lines read ("Token balances could not be read", never an XRP-only list), a failed or aged-out destination check ("Destination check failed"; "Destination check is out of date" with "Check again"), and a failed fee read, all in online Send's words, where before the Make key was held with nothing said. The key state shows no rows while the signer list loads (pending is not P-29). The Offline Sign review withholds Sign when the signed list cannot be read (P-16 alone, story 7's rule). A Transmit refusal after Send drops the Send key, as on Transmit.
 

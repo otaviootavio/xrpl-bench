@@ -159,4 +159,12 @@ describe('a Synced Transmitter makes an Unsigned Transaction (OS-FR-17)', () => 
     const r = await made({ type: 'payment', destination: DEST, amountDrops: '1000000' })
     expect(r.status).toBe('refused')
   })
+
+  it('a token value typed as "5.10", ".5" or "05" is built in its canonical form, which the Offline Wallet accepts (round two)', async () => {
+    for (const [typed, canonical] of [['5.10', '5.1'], ['.5', '0.5'], ['05', '5']]) {
+      const r = await made({ type: 'token-payment', destination: DEST, currency: 'USD', issuer: ISSUER, value: typed })
+      expect(r.status === 'made' && (r.tx.Amount as { value: string }).value).toBe(canonical)
+      if (r.status === 'made') expect(judgeUnsigned(r.text, { network: 'testnet', address: ACCOUNT }).ok).toBe(true)
+    }
+  })
 })

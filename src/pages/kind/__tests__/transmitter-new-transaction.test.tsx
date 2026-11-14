@@ -266,4 +266,17 @@ describe('Synced Transmitter: New transaction (OS-FR-17)', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Send' }))
     await waitFor(() => expect(screen.queryByRole('button', { name: 'Send' })).toBeNull())
   })
+
+  it('a signed code that is not the transaction this plate made is refused, never sent (round two)', async () => {
+    // The plate now shows 2 XRP; the scanned code is the 1 XRP one signed for an earlier Build.
+    h.make.mockResolvedValue({ ...MADE, tx: { ...tx, Amount: '2000000' } })
+    mount()
+    fillPayment()
+    fireEvent.click(screen.getByRole('button', { name: W.MAKE_THE_UNSIGNED }))
+    await screen.findByRole('heading', { name: W.UNSIGNED_LINE })
+    paste(encodeSigned({ network: 'testnet', txBlob: GOOD }).text)
+    await waitFor(() => expect(alertText()).toContain(`The app did not send the transaction. ${W.DATA_REFUSAL.request}`))
+    expect(screen.queryByRole('button', { name: 'Send' })).toBeNull()
+    expect(h.transmit).not.toHaveBeenCalled()
+  })
 })

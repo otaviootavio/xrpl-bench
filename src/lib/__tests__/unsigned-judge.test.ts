@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest'
-import { AccountSetAsfFlags, PaymentFlags, TrustSetFlags, Wallet } from 'xrpl'
+import { AccountSetAsfFlags, PaymentFlags, TrustSetFlags, validate, Wallet } from 'xrpl'
 import { encodeRequest, encodeSigned, encodeUnsigned } from '@/lib/qr-codec'
-import { judgeUnsigned, sameBuildHashOf, USUAL_WINDOW } from '@/lib/unsigned-judge'
+import { judgeUnsigned, sameBuildHashOf, USUAL_WINDOW, windowOf } from '@/lib/unsigned-judge'
+import { LEDGER_FLOORS } from '@/lib/offline-window'
 import { buildHashOf } from '@/lib/offline-round'
 import * as W from '@/lib/offline-round-words'
 import { fill } from '@/lib/transmit-words'
@@ -75,30 +76,76 @@ describe('judgeUnsigned accepts what it can show in words (OS-FR-18)', () => {
   })
 })
 
+describe('nothing xrpl.js refuses at signing reaches the review (round two)', () => {
+  it('every accepted shape passes validate()', () => {
+    for (const tx of [xrpPayment, tokenPayment, trustSet, { ...xrpPayment, SendMax: '3000000', Paths: [[{ currency: 'XRP' }]] }, { ...xrpPayment, Sequence: 0, TicketSequence: 5 }]) {
+      const j = judge(tx)
+      expect(j.ok).toBe(true)
+      if (j.ok) expect(() => validate(j.tx)).not.toThrow()
+    }
+  })
+})
+
+describe('the window against this device own upper bound for the current ledger (P-13, P-15, round two)', () => {
+  const now = LEDGER_FLOORS.testnet.at + 3600_000
+  const upper = LEDGER_FLOORS.testnet.index + Math.ceil(3600 / 3) + 30
+  const at = (ledgerIndex: number, lls: number) => {
+    const j = judge({ ...xrpPayment, LastLedgerSequence: lls }, 'testnet', ledgerIndex)
+    if (!j.ok) throw new Error(j.reason)
+    return j
+  }
+
+  it('a plausible index: the window the Transmitter set, no P-15 (a correct round never warns)', () => {
+    expect(windowOf(at(upper - 2000, upper - 1850), null, now, 'testnet')).toEqual({ ledgers: 150, longer: false })
+    expect(windowOf(at(upper, upper + 150), null, now, 'testnet')).toEqual({ ledgers: 150, longer: false })
+  })
+
+  it('a fresh wallet and a shifted index: counted from the bound, said in ledgers and warned, never "150"', () => {
+    const shifted = upper + 100_000
+    expect(windowOf(at(shifted, shifted + 150), null, now, 'testnet')).toEqual({ ledgers: 100_150, longer: true })
+  })
+
+  it('from the highest seen when there is one', () => {
+    const seen = { index: 30_000_000, at: now }
+    expect(windowOf(at(30_000_030, 30_000_180), seen, now, 'testnet')).toEqual({ ledgers: 150, longer: false })
+    expect(windowOf(at(30_000_031, 30_000_181), seen, now, 'testnet')).toEqual({ ledgers: 151, longer: true })
+  })
+
+  it('a long window the Transmitter states plainly is P-15 too', () => {
+    expect(windowOf(at(upper - 10, upper + 390), null, now, 'testnet')).toEqual({ ledgers: 400, longer: true })
+  })
+})
+
 describe('P-53: a caution under each risky row', () => {
-  it('SendMax, Paths, Memos, Delegate', () => {
+  it('SendMax above an Amount in the same asset, Paths, and each memo part as its own row', () => {
     const j = judge({
-      ...tokenPayment,
+      ...xrpPayment,
       SendMax: '3000000',
       Paths: [[{ currency: 'XRP' }]],
-      Memos: [{ Memo: { MemoData: hex('rent for may') } }],
-      Delegate: DEST,
+      Memos: [{ Memo: { MemoType: hex('note'), MemoData: hex('rent for may') } }],
     })
     expect(j.ok).toBe(true)
     if (!j.ok) return
     const row = (n: string) => j.rows.find((r) => r.name === n)!
     expect(row('SendMax').cautions).toEqual([fill(W.RISKY.sendMax, '3 XRP')])
     expect(row('Paths').cautions).toEqual([W.RISKY.paths])
-    expect(row('Memos').value).toBe('rent for may')
-    expect(row('Memos').cautions).toEqual(['This transaction has a memo. All persons can read the memo on the ledger: rent for may.'])
-    expect(row('Delegate').cautions).toEqual([fill(W.RISKY.delegate, ACCOUNT)])
+    expect(row('MemoType')).toEqual({ name: 'MemoType', value: 'note', cautions: ['This transaction has a memo. All persons can read the memo on the ledger: note.'] })
+    expect(row('MemoData').value).toBe('rent for may')
+    expect(row('MemoData').cautions).toEqual(['This transaction has a memo. All persons can read the memo on the ledger: rent for may.'])
+    expect(j.rows.find((r) => r.name === 'Memos')).toBeUndefined()
   })
 
-  it('DeliverMin and TicketSequence (Sequence 0)', () => {
-    const j = judge({ ...xrpPayment, DeliverMin: '1000000', Sequence: 0, TicketSequence: 55 })
+  it('SendMax in another asset, or not above the Amount, has no "more than" sentence', () => {
+    const other = judge({ ...tokenPayment, SendMax: '3000000' })
+    expect(other.ok && other.rows.find((r) => r.name === 'SendMax')?.cautions).toEqual([])
+    const equal = judge({ ...xrpPayment, SendMax: '2000000' })
+    expect(equal.ok && equal.rows.find((r) => r.name === 'SendMax')?.cautions).toEqual([])
+  })
+
+  it('TicketSequence (Sequence 0)', () => {
+    const j = judge({ ...xrpPayment, Sequence: 0, TicketSequence: 55 })
     expect(j.ok).toBe(true)
     if (!j.ok) return
-    expect(j.rows.find((r) => r.name === 'DeliverMin')?.cautions).toEqual([fill(W.RISKY.deliverMin, '1 XRP')])
     expect(j.rows.find((r) => r.name === 'TicketSequence')?.cautions).toEqual([W.RISKY.ticket])
   })
 
@@ -131,6 +178,12 @@ describe('judgeUnsigned refuses in P-17 words (OS-FR-18)', () => {
     ['a flag bit with no name here', () => judge({ ...xrpPayment, Flags: 0x00000001 }), fill(W.SIGN_REFUSAL.cannotShow, 'Flags')],
     ['an MPT amount', () => judge({ ...xrpPayment, Amount: { mpt_issuance_id: '00'.repeat(24), value: '1' } }), fill(W.SIGN_REFUSAL.cannotShow, 'Amount')],
     ['a memo that is not text', () => judge({ ...xrpPayment, Memos: [{ Memo: { MemoData: 'FF' } }] }), fill(W.SIGN_REFUSAL.cannotShow, 'Memos')],
+    ['a memo with a new line', () => judge({ ...xrpPayment, Memos: [{ Memo: { MemoData: hex('rent\nAmount: 1 XRP') } }] }), fill(W.SIGN_REFUSAL.cannotShow, 'Memos')],
+    ['a memo with a bidi override', () => judge({ ...xrpPayment, Memos: [{ Memo: { MemoData: hex('abc\u202Edef') } }] }), fill(W.SIGN_REFUSAL.cannotShow, 'Memos')],
+    ['a memo with a zero-width character', () => judge({ ...xrpPayment, Memos: [{ Memo: { MemoType: hex('a\u200Bb') } }] }), fill(W.SIGN_REFUSAL.cannotShow, 'Memos')],
+    ['a memo with a control character', () => judge({ ...xrpPayment, Memos: [{ Memo: { MemoFormat: hex('a\u0007') } }] }), fill(W.SIGN_REFUSAL.cannotShow, 'Memos')],
+    ['DeliverMin (valid only with a partial payment)', () => judge({ ...xrpPayment, DeliverMin: '1000000' }), fill(W.SIGN_REFUSAL.cannotShow, 'DeliverMin')],
+    ['Delegate (signed by the delegate key, never this Wallet)', () => judge({ ...xrpPayment, Delegate: DEST }), fill(W.SIGN_REFUSAL.cannotShow, 'Delegate')],
     ['an AccountSet flag with no name', () => judge({ TransactionType: 'AccountSet', ...base, SetFlag: 11 }), fill(W.SIGN_REFUSAL.cannotShow, 'SetFlag')],
     ['no Sequence', () => judge({ ...xrpPayment, Sequence: undefined }), W.DATA_REFUSAL.malformed],
     ['Sequence 0 without a Ticket', () => judge({ ...xrpPayment, Sequence: 0 }), W.DATA_REFUSAL.malformed],

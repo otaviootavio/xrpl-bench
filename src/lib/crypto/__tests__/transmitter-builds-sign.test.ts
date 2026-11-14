@@ -149,7 +149,7 @@ describe('Offline Wallet signs an Unsigned Transaction (OS-FR-18)', () => {
 
     const memo = await signJudged(
       meta,
-      judged({ TransactionType: 'Payment', Account: meta.address, Destination: DEST, Amount: '1000000', SendMax: '2000000', Memos: [{ Memo: { MemoData: '6869' } }], Fee: '12', Sequence: 6, LastLedgerSequence: LEDGER + 400 }, meta.address),
+      judged({ TransactionType: 'Payment', Account: meta.address, Destination: DEST, Amount: '1000000', SendMax: '2000000', Paths: undefined, Memos: [{ Memo: { MemoData: '6869' } }], Fee: '12', Sequence: 6, LastLedgerSequence: LEDGER + 400 }, meta.address),
       { openKey: lock.key, prompts },
     )
     const b = blobOf(memo.text)

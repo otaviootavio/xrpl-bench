@@ -1,14 +1,14 @@
 import { sha256 } from '@noble/hashes/sha2.js'
-import { AccountSetAsfFlags, decode, encode, isValidClassicAddress, type SubmittableTransaction } from 'xrpl'
+import { AccountSetAsfFlags, decode, encode, isValidClassicAddress, validate, type SubmittableTransaction } from 'xrpl'
 import { NETWORKS, type NetworkId } from '@/lib/xrpl/networks'
-import { feeWithinCap, isCanonicalPositiveDrops } from '@/lib/xrpl/money'
+import { compareDecimalStrings, feeWithinCap, isCanonicalPositiveDrops } from '@/lib/xrpl/money'
 import { fieldValue } from '@/lib/tx-fields'
 import { ASF_DISABLE_MASTER, decodeUnsignedForSigning, encodeSigned, isCurrencyCode, payloadKindOf, TF_SET_NO_RIPPLE } from '@/lib/qr-codec'
 import { offlineSigningHandleFor, type SigningContext } from '@/lib/crypto/keystore'
 import { signPrepared } from '@/lib/xrpl/writes'
 import type { SignedRecord } from '@/lib/signed-list'
-import { MAX_RECEIVED_LEDGER_INDEX, OFFLINE_LEDGER_WINDOW } from '@/lib/offline-window'
-import { buildHashOf, PAYLOAD_NAMES } from '@/lib/offline-round'
+import { LEDGER_FLOORS, MAX_RECEIVED_LEDGER_INDEX, OFFLINE_LEDGER_WINDOW } from '@/lib/offline-window'
+import { buildHashOf, LEDGER_JUMP_MARGIN, LEDGER_JUMP_SECONDS_PER_LEDGER, PAYLOAD_NAMES } from '@/lib/offline-round'
 import { DATA_REFUSAL, RISKY, SIGN_REFUSAL, fillRisky } from '@/lib/offline-round-words'
 import { WRONG_KIND } from '@/lib/transmitter-words'
 import { fill } from '@/lib/transmit-words'
@@ -29,11 +29,16 @@ import { fill } from '@/lib/transmit-words'
 export const USUAL_WINDOW = OFFLINE_LEDGER_WINDOW
 
 /** Fields every accepted type may carry. `Flags` is judged per type. */
-const COMMON = ['TransactionType', 'Account', 'Fee', 'Sequence', 'LastLedgerSequence', 'Flags', 'Memos', 'Delegate', 'TicketSequence', 'SourceTag'] as const
+/**
+ * `Delegate` is not here (round two): a delegated transaction is signed by the delegate's key,
+ * never this Wallet's, so this route refuses it as one it cannot show in words.
+ */
+const COMMON = ['TransactionType', 'Account', 'Fee', 'Sequence', 'LastLedgerSequence', 'Flags', 'Memos', 'TicketSequence', 'SourceTag'] as const
 
 /** The types it can show in words, and their own fields: every write the app builds, and the risky fields route-checks names. */
 const TYPE_FIELDS: Record<string, readonly string[]> = {
-  Payment: ['Destination', 'Amount', 'DestinationTag', 'SendMax', 'DeliverMin', 'Paths', 'InvoiceID'],
+  // No DeliverMin: it is valid only with tfPartialPayment, which is refused (round two).
+  Payment: ['Destination', 'Amount', 'DestinationTag', 'SendMax', 'Paths', 'InvoiceID'],
   TrustSet: ['LimitAmount', 'QualityIn', 'QualityOut'],
   SetRegularKey: ['RegularKey'],
   AccountSet: ['SetFlag', 'ClearFlag'],
@@ -96,23 +101,34 @@ function hexText(hex: string): string | null {
   }
 }
 
-/** Each memo's text: its MemoData, else its MemoType, else its MemoFormat. `null` when any part cannot be read. */
-function memoTexts(memos: unknown): string[] | null {
+/**
+ * Characters that can make a memo look like another review line or hide text: control
+ * characters (new lines included), format characters (bidi overrides, zero-width), and line or
+ * paragraph separators. A memo with any of them cannot be shown in words (round two).
+ */
+const SPOOFING = /[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/u
+
+/** The memo field names, as the ledger names them, in its order. */
+const MEMO_PARTS = ['MemoType', 'MemoData', 'MemoFormat'] as const
+
+/** Each memo's parts as text, `[field name, text]`, or `null` when any part cannot be read or shown. */
+function memoParts(memos: unknown): Array<Array<[string, string]>> | null {
   if (!Array.isArray(memos) || memos.length === 0) return null
-  const out: string[] = []
+  const out: Array<Array<[string, string]>> = []
   for (const m of memos) {
     if (!isPlainObject(m) || Object.keys(m).length !== 1 || !isPlainObject(m.Memo)) return null
     const memo = m.Memo
     const keys = Object.keys(memo)
-    if (keys.length === 0 || !keys.every((k) => k === 'MemoData' || k === 'MemoType' || k === 'MemoFormat')) return null
-    const parts: Record<string, string> = {}
-    for (const k of keys) {
+    if (keys.length === 0 || !keys.every((k) => (MEMO_PARTS as readonly string[]).includes(k))) return null
+    const parts: Array<[string, string]> = []
+    for (const k of MEMO_PARTS) {
+      if (memo[k] === undefined) continue
       if (!isHex(memo[k])) return null
       const t = hexText(memo[k] as string)
-      if (t === null) return null
-      parts[k] = t
+      if (t === null || SPOOFING.test(t)) return null
+      parts.push([k, t])
     }
-    out.push(parts.MemoData ?? parts.MemoType ?? parts.MemoFormat)
+    out.push(parts)
   }
   return out
 }
@@ -138,11 +154,9 @@ function fieldShowable(name: string, value: unknown): boolean {
   switch (name) {
     case 'Destination':
     case 'RegularKey':
-    case 'Delegate':
       return isAddress(value)
     case 'Amount':
     case 'SendMax':
-    case 'DeliverMin':
       return isPaymentAmount(value)
     case 'LimitAmount':
       return isIssued(value)
@@ -158,7 +172,7 @@ function fieldShowable(name: string, value: unknown): boolean {
     case 'Paths':
       return isPaths(value)
     case 'Memos':
-      return memoTexts(value) !== null
+      return memoParts(value) !== null
     case 'SetFlag':
     case 'ClearFlag':
       return isUint32(value) && typeof (AccountSetAsfFlags as unknown as Record<number, unknown>)[value] === 'string'
@@ -266,6 +280,12 @@ export function judgeUnsigned(text: string, wallet: { network: NetworkId; addres
   // Letter case aside (the codec writes hex in upper case), the reading must be the same
   // object: a field dropped, added or changed in value is refused, never signed.
   if (JSON.stringify(canonical(shown)).toUpperCase() !== JSON.stringify(canonical(tx)).toUpperCase()) return refuse(DATA_REFUSAL.malformed)
+  // What xrpl.js would refuse at signing never reaches the review (round two).
+  try {
+    validate(shown)
+  } catch {
+    return refuse(DATA_REFUSAL.malformed)
+  }
 
   const rows = rowsOf(shown)
   return {
@@ -279,30 +299,26 @@ export function judgeUnsigned(text: string, wallet: { network: NetworkId; addres
   }
 }
 
-/** The rows in the codec's field order, each with its P-53 cautions. */
+/** The rows in the codec's field order, each with its P-53 cautions. Each memo part is its own row. */
 function rowsOf(tx: Record<string, unknown>): FieldRow[] {
   const type = tx.TransactionType as string
-  return Object.entries(tx).map(([name, value]) => {
+  const rows: FieldRow[] = []
+  for (const [name, value] of Object.entries(tx)) {
+    if (name === 'Memos') {
+      for (const parts of memoParts(value) ?? []) {
+        for (const [part, text] of parts) rows.push({ name: part, value: text, cautions: [fillRisky(RISKY.memo, text)] })
+      }
+      continue
+    }
     const cautions: string[] = []
-    let shown = fieldValue(name, value, type)
+    const shown = fieldValue(name, value, type)
     switch (name) {
       case 'SendMax':
-        cautions.push(fillRisky(RISKY.sendMax, fieldValue(name, value, type)))
+        // P-53's words say "more than the amount above": only when that is true.
+        if (sendMaxAbove(value, tx.Amount)) cautions.push(fillRisky(RISKY.sendMax, shown))
         break
       case 'Paths':
         cautions.push(RISKY.paths)
-        break
-      case 'DeliverMin':
-        cautions.push(fillRisky(RISKY.deliverMin, fieldValue(name, value, type)))
-        break
-      case 'Memos': {
-        const texts = memoTexts(value) ?? []
-        shown = texts.join('\n')
-        for (const t of texts) cautions.push(fillRisky(RISKY.memo, t))
-        break
-      }
-      case 'Delegate':
-        cautions.push(fill(RISKY.delegate, tx.Account as string))
         break
       case 'TicketSequence':
         cautions.push(RISKY.ticket)
@@ -316,8 +332,44 @@ function rowsOf(tx: Record<string, unknown>): FieldRow[] {
         }
         break
     }
-    return { name, value: shown, cautions }
-  })
+    rows.push({ name, value: shown, cautions })
+  }
+  return rows
+}
+
+/** SendMax in the same asset as Amount and more than it. */
+function sendMaxAbove(sendMax: unknown, amount: unknown): boolean {
+  if (typeof sendMax === 'string' && typeof amount === 'string') return BigInt(sendMax) > BigInt(amount)
+  if (isIssued(sendMax) && isIssued(amount)) {
+    return sendMax.currency === amount.currency && sendMax.issuer === amount.issuer && compareDecimalStrings(sendMax.value, amount.value) > 0
+  }
+  return false
+}
+
+/**
+ * The window as this device can state it (round two). The envelope's index is the Transmitter's
+ * word: shifted up together with the LastLedgerSequence, it would hide a long window behind
+ * "150 ledgers". So the window counts from the lower of that index and this device's own upper
+ * bound for the current ledger: its highest seen index, else the Network's floor, plus the time
+ * since at 3 s a ledger plus 30 (story 6's ledger-jump allowance, the bound P-14 already uses).
+ * `longer` is P-15: more than the usual window.
+ *
+ * Why the upper bound, not a low estimate at ~4.5 s a ledger: Testnet closed a ledger every
+ * ~3.3 s between the floor (2026-11-10) and the round-two browser pass (2026-11-14), so a low
+ * estimate from a floor four days old was ~29,000 ledgers behind and showed P-15 and "1962
+ * minutes" on a correct round. The upper bound never warns on a correct round; a shift the
+ * Transmitter keeps inside P-14's allowance stays hidden (recorded in the story).
+ */
+export function windowOf(
+  judged: Pick<JudgedUnsigned, 'tx' | 'ledgerIndex'>,
+  seen: { index: number; at: number } | null,
+  now: number,
+  network: NetworkId,
+): { ledgers: number; longer: boolean } {
+  const reference = seen ?? LEDGER_FLOORS[network]
+  const upper = reference.index + Math.ceil(Math.max(0, now - reference.at) / 1000 / LEDGER_JUMP_SECONDS_PER_LEDGER) + LEDGER_JUMP_MARGIN
+  const ledgers = (judged.tx.LastLedgerSequence as number) - Math.min(upper, judged.ledgerIndex)
+  return { ledgers, longer: ledgers > USUAL_WINDOW }
 }
 
 /** Keys sorted at every level, so two readings of one object compare equal. */

@@ -13,6 +13,8 @@ import type { SignedRecord } from '@/lib/signed-list'
 const h = vi.hoisted(() => ({
   sign: vi.fn(),
   seen: null as null | { index: number; at: number },
+  seenFails: false,
+  listGate: null as null | Promise<SignedRecord[]>,
   noted: [] as Array<[string, number]>,
   signed: [] as SignedRecord[] | null,
   written: [] as SignedRecord[],
@@ -25,9 +27,13 @@ vi.mock('@/lib/crypto/keystore', async (importOriginal) => {
   const real = await importOriginal<typeof import('@/lib/crypto/keystore')>()
   return {
     ...real,
-    ledgerSeenOf: async () => h.seen,
+    ledgerSeenOf: async () => {
+      if (h.seenFails) throw new Error('unreadable')
+      return h.seen
+    },
     noteLedgerSeen: async (id: string, index: number) => void h.noted.push([id, index]),
     signedListOf: async () => {
+      if (h.listGate) return h.listGate
       if (h.signed === null) throw new Error('unreadable')
       return [...h.signed]
     },
@@ -106,6 +112,8 @@ const signedResult = (over: Partial<{ sequence: number; lastLedgerSequence: numb
 beforeEach(() => {
   h.sign.mockReset()
   h.seen = null
+  h.seenFails = false
+  h.listGate = null
   h.noted = []
   h.signed = []
   h.written = []
@@ -159,6 +167,7 @@ describe('Offline Sign screen: the signing review (OS-FR-18)', () => {
     mount()
     paste(unsigned({ ...payment, Memos: [{ Memo: { MemoData: '72656E74' } }] }))
     await screen.findByRole('heading', { name: fill(W.SIGNING_FOR, 'Testnet') })
+    expect(screen.getByText('MemoData')).toBeTruthy()
     expect(screen.getByText('This transaction has a memo. All persons can read the memo on the ledger: rent.')).toBeTruthy()
   })
 
@@ -187,7 +196,7 @@ describe('Offline Sign screen: the signing review (OS-FR-18)', () => {
     paste(unsigned({ TransactionType: 'AccountSet', ...base, LastLedgerSequence: LEDGER_FLOORS.mainnet.index + 160, SetFlag: AccountSetAsfFlags.asfDisableMaster }, { network: 'mainnet', ledgerIndex: LEDGER_FLOORS.mainnet.index + 10 }))
     await screen.findByRole('heading', { name: fill(W.SIGNING_FOR, 'Mainnet') })
     expect(screen.getByText(W.W4_SENTENCE)).toBeTruthy()
-    const sign = screen.getByRole('button', { name: 'Sign' })
+    const sign = await screen.findByRole('button', { name: 'Sign' })
     expect(sign.getAttribute('aria-disabled')).toBe('true')
     fireEvent.click(sign)
     expect(h.sign).not.toHaveBeenCalled()
@@ -286,12 +295,58 @@ describe('Offline Sign screen: sign, decline, lock (OS-FR-18, OS-FR-16)', () => 
     h.sign.mockReturnValue(new Promise((r) => (resolve = r)))
     mount()
     paste(unsigned(payment))
-    fireEvent.click(await screen.findByRole('button', { name: 'Sign' }))
-    act(() => useAppStore.setState({ openLocks: {} } as never))
+    const sign = await screen.findByRole('button', { name: 'Sign' })
+    await act(async () => fireEvent.click(sign))
+    await act(async () => useAppStore.setState({ openLocks: {} } as never))
     await act(async () => resolve(signedResult()))
     expect(screen.queryByRole('heading', { name: W.SIGNED_TRANSACTION_TITLE })).toBeNull()
     expect(screen.queryByRole('button', { name: 'Sign' })).toBeNull()
     expect(h.written).toEqual([])
   })
 
+  it('a shifted index on a fresh wallet: the window from this device\'s estimate and P-15, never "150 ledgers" (round two)', async () => {
+    const shifted = INDEX + 10_000_000
+    mount()
+    paste(unsigned({ ...payment, LastLedgerSequence: shifted + 150 }, { ledgerIndex: shifted }))
+    await screen.findByRole('heading', { name: fill(W.SIGNING_FOR, 'Testnet') })
+    expect(screen.queryByText(fill(W.TIME_LIMIT_LEDGERS, 150))).toBeNull()
+    expect(screen.getByText(/more time than usual/)).toBeTruthy()
+    // The index also trips P-14 "too high", and is never recorded as the highest seen.
+    expect(screen.getByText(W.LEDGER_TOO_HIGH)).toBeTruthy()
+    h.sign.mockResolvedValue(signedResult({ lastLedgerSequence: shifted + 150 }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Sign' }))
+    await screen.findByRole('heading', { name: W.SIGNED_TRANSACTION_TITLE })
+    await new Promise((r) => setTimeout(r, 20))
+    expect(h.noted).toEqual([])
+  })
+
+  it('a failed read of the highest seen compares with the floor: P-14 still shows', async () => {
+    h.seenFails = true
+    mount()
+    paste(unsigned({ ...payment, LastLedgerSequence: 150 }, { ledgerIndex: 1 }))
+    await screen.findByRole('heading', { name: fill(W.SIGNING_FOR, 'Testnet') })
+    expect(screen.getByText(W.LEDGER_LOWER)).toBeTruthy()
+  })
+
+  it('a removal of the Regular Key it did not build shows W5', async () => {
+    mount()
+    paste(unsigned({ TransactionType: 'SetRegularKey', ...base }))
+    await screen.findByRole('heading', { name: fill(W.SIGNING_FOR, 'Testnet') })
+    expect(screen.getByText(W.W5_SENTENCE)).toBeTruthy()
+    expect(screen.queryByText(W.W3_SENTENCE)).toBeNull()
+  })
+
+  it('Sign shows only once the signed list was read', async () => {
+    let release!: () => void
+    const gate = new Promise<void>((r) => (release = r))
+    const list = h.signed
+    h.signed = null
+    h.listGate = gate.then(() => list as SignedRecord[])
+    mount()
+    paste(unsigned(payment))
+    await screen.findByRole('heading', { name: fill(W.SIGNING_FOR, 'Testnet') })
+    expect(screen.queryByRole('button', { name: 'Sign' })).toBeNull()
+    await act(async () => release())
+    expect(await screen.findByRole('button', { name: 'Sign' })).toBeTruthy()
+  })
 })

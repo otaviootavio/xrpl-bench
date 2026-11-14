@@ -13,7 +13,7 @@ import { usePrompts } from '@/hooks/usePrompts'
 import { useWakeLock } from '@/hooks/useWakeLock'
 import { ledgerSeenOf, noteLedgerSeen, noteSigned, SigningCheckError, type KeyWalletMeta } from '@/lib/crypto/keystore'
 import { ledgerJumpWarning } from '@/lib/offline-round'
-import { judgeUnsigned, recordOfJudged, signJudged, USUAL_WINDOW, type FieldRow, type JudgedUnsigned, type SignedUnsigned } from '@/lib/unsigned-judge'
+import { judgeUnsigned, recordOfJudged, signJudged, windowOf, type FieldRow, type JudgedUnsigned, type SignedUnsigned } from '@/lib/unsigned-judge'
 import { latestSameBuild } from '@/lib/signed-list'
 import { ASF_DISABLE_MASTER } from '@/lib/qr-codec'
 import * as W from '@/lib/offline-round-words'
@@ -28,7 +28,7 @@ type HeadingRef = React.RefObject<HTMLHeadingElement | null>
 
 type State =
   | { kind: 'scanning'; refusal?: string; notSigned?: boolean }
-  | { kind: 'review'; judged: JudgedUnsigned; warning: 'lower' | 'too-high' | null }
+  | { kind: 'review'; judged: JudgedUnsigned; warning: 'lower' | 'too-high' | null; window: { ledgers: number; longer: boolean } }
   | { kind: 'signed'; signed: SignedUnsigned; window: number }
 
 /**
@@ -75,14 +75,18 @@ export function OfflineSign({ wallet }: { wallet: KeyWalletMeta }) {
     const judged = judgeUnsigned(text, wallet)
     if (!judged.ok) return setState({ kind: 'scanning', refusal: judged.reason })
     const mine = generation.current
-    let warning: 'lower' | 'too-high' | null = null
+    let seen: { index: number; at: number } | null = null
     try {
-      // The same highest-seen check as the other route, from the envelope's index (P-14).
-      warning = ledgerJumpWarning(judged.ledgerIndex, await ledgerSeenOf(wallet.id), Date.now(), wallet.network)
+      seen = await ledgerSeenOf(wallet.id)
     } catch {
-      // A failed read of it skips the comparison that time, never refuses (story 6).
+      // A failed read compares with the Network's floor, never skips the check (round two).
     }
-    if (generation.current === mine) setState({ kind: 'review', judged, warning })
+    const now = Date.now()
+    // The same highest-seen check as the other route, from the envelope's index (P-14), and the
+    // window against this device's own estimate of the current ledger (P-13, P-15).
+    const warning = ledgerJumpWarning(judged.ledgerIndex, seen, now, wallet.network)
+    const window = windowOf(judged, seen, now, wallet.network)
+    if (generation.current === mine) setState({ kind: 'review', judged, warning, window })
   }
 
   return (
@@ -111,10 +115,11 @@ export function OfflineSign({ wallet }: { wallet: KeyWalletMeta }) {
             wallet={wallet}
             judged={state.judged}
             warning={state.warning}
+            window={state.window}
             headingRef={headingRef}
             generation={generation}
             onDecline={() => setState({ kind: 'scanning', notSigned: true })}
-            onSigned={(signed) => setState({ kind: 'signed', signed, window: state.judged.window })}
+            onSigned={(signed) => setState({ kind: 'signed', signed, window: state.window.ledgers })}
           />
         )}
         {state.kind === 'signed' && <Signed wallet={wallet} signed={state.signed} window={state.window} headingRef={headingRef} />}
@@ -135,6 +140,7 @@ function SigningReview({
   wallet,
   judged,
   warning,
+  window,
   headingRef,
   generation,
   onDecline,
@@ -143,6 +149,7 @@ function SigningReview({
   wallet: KeyWalletMeta
   judged: JudgedUnsigned
   warning: 'lower' | 'too-high' | null
+  window: { ledgers: number; longer: boolean }
   headingRef: HeadingRef
   generation: React.RefObject<number>
   onDecline: () => void
@@ -158,8 +165,8 @@ function SigningReview({
   const [phrase, setPhrase] = useState('')
   const held = turningOff && wallet.network === 'mainnet' && phrase.trim().replace(/\s+/g, ' ').toLowerCase() !== W.SHIPPED_KEYS.offPhrase
   const phraseId = `sign-off-phrase-${wallet.id}`
-  // Nothing signs without a readable signed list (story 7): P-16 stands alone, with no Sign key.
-  const listUnreadable = useSignedList(wallet.id).status === 'failed'
+  // Nothing signs without a readable signed list (story 7): Sign only once it was read; P-16 stands alone when it cannot be.
+  const listRead = useSignedList(wallet.id).status === 'ok'
 
   async function sign() {
     if (held) return
@@ -181,8 +188,9 @@ function SigningReview({
       }
       if (!stillOpen()) return
       onSigned(signed)
-      // Only an index actually signed with becomes the highest seen (P-14).
-      await noteLedgerSeen(wallet.id, judged.ledgerIndex, signed.signedAt).catch(() => {})
+      // Only an index actually signed with becomes the highest seen (P-14), and never one that
+      // tripped "too high": it would make the next correct index read as lower (round two).
+      if (warning !== 'too-high') await noteLedgerSeen(wallet.id, judged.ledgerIndex, signed.signedAt).catch(() => {})
     } catch (err) {
       setFailure(err instanceof SigningCheckError ? err.message : W.NOT_SIGNED)
       setBusy(false)
@@ -197,17 +205,19 @@ function SigningReview({
           {fill(W.SIGNING_FOR, label)}
         </h2>
         <div className="flex flex-col gap-0.5 border-t border-white/15 pt-2 text-xs text-readout-muted">
-          <span>{fill(W.TIME_LIMIT_LEDGERS, judged.window)}</span>
+          <span>{fill(W.TIME_LIMIT_LEDGERS, window.ledgers)}</span>
           <span className="font-data">{fill(W.VALID_UNTIL_LEDGER, judged.tx.LastLedgerSequence as number)}</span>
         </div>
       </section>
       <SameBuild walletId={wallet.id} buildHash={judged.buildHash} />
       <FieldRows rows={judged.rows} txType={tx.TransactionType as string} />
+      {/* A removal of the Regular Key this device did not build: W5 (round two). */}
+      {tx.TransactionType === 'SetRegularKey' && tx.RegularKey === undefined && <KeyWarning words={W.W5_SENTENCE} />}
       <dl className="grid min-w-0 gap-0.5">
         <dt className="panel-legend">{W.SIGNING_KEY}</dt>
         <dd className="font-data text-[0.8125rem] leading-relaxed tracking-tight [overflow-wrap:anywhere]">{wallet.keyAddress}</dd>
       </dl>
-      {judged.window > USUAL_WINDOW && <KeyWarning words={fill(W.LONGER_THAN_USUAL, judged.window)} />}
+      {window.longer && <KeyWarning words={fill(W.LONGER_THAN_USUAL, window.ledgers)} />}
       {warning && (
         <Alert variant="warning" role="none">
           <AlertDescription className="flex flex-col gap-1">
@@ -225,7 +235,7 @@ function SigningReview({
       )}
       <div role="alert">{failure && <p className="text-sm text-text-destructive">{failure}</p>}</div>
       <div className="flex flex-wrap gap-2">
-        {!listUnreadable && (
+        {listRead && (
           <Button type="button" disabled={busy} aria-disabled={held ? true : undefined} aria-describedby={held ? phraseId : undefined} onClick={() => void sign()}>
             {SIGN_KEY}
           </Button>
@@ -247,15 +257,15 @@ function FieldRows({ rows, txType }: { rows: FieldRow[]; txType: string }) {
   const wallets = useAppStore((s) => s.wallets)
   return (
     <dl className="grid min-w-0 gap-2">
-      {rows.map((row) => {
+      {rows.map((row, i) => {
         const newKey = txType === 'SetRegularKey' && row.name === 'RegularKey'
         const here = newKey ? wallets.filter(isKeyWallet).find((w) => w.keyAddress === row.value) : undefined
         return (
-          <div key={row.name} className="grid min-w-0 gap-1.5">
+          <div key={`${row.name}-${i}`} className="grid min-w-0 gap-1.5">
             {newKey && <KeyWarning words={W.W3_SENTENCE} />}
             <div className="grid min-w-0 gap-0.5">
               <dt className="panel-legend [overflow-wrap:anywhere]">{row.name}</dt>
-              <dd className="whitespace-pre-line font-data text-[0.8125rem] leading-relaxed tracking-tight [overflow-wrap:anywhere]">{row.value}</dd>
+              <dd className="font-data text-[0.8125rem] leading-relaxed tracking-tight [overflow-wrap:anywhere]">{row.value}</dd>
             </div>
             {row.cautions.map((c, i) => (
               <KeyWarning key={i} words={c} />

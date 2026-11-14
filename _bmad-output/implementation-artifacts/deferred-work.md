@@ -696,4 +696,13 @@ Item 8 shipped as a refactor that preserves behaviour (`spec-sendtab-split.md`).
 - source_spec: `_bmad-output/specs/spec-offline-signing/stories/9-transmitter-builds-route-for-every-write.md`
   summary: The Transmit step on the Synced Transmitter's New transaction does not compare the returned blob with the Unsigned Transaction it made (two-device's `verifySigned` does). It checks the signature, the expected Account (the Synced address), the Network and the window, as every Transmit step does.
   evidence: route-checks "Transmit step" does not ask for it, and a refusal would need words.
+  resolution: (2026-11-14, story 9 review round two) resolved. `signedIsMade` compares them; a mismatch is refused with the P-26 heading and P-17's "This data is for a different request.".
+
+- source_spec: `_bmad-output/specs/spec-offline-signing/stories/9-transmitter-builds-route-for-every-write.md`
+  summary: On the Offline Sign review, Paths are shown as JSON and QualityIn / QualityOut as raw integers.
+  evidence: No approved words for a path step or a quality ratio (review round two, 2026-11-14).
+
+- source_spec: `_bmad-output/specs/spec-offline-signing/stories/9-transmitter-builds-route-for-every-write.md`
+  summary: The window on the Transmitter-builds review counts from this device's upper bound for the current ledger (highest seen or floor, + elapsed / 3 s + 30). A Transmitter that shifts the index and LastLedgerSequence inside that allowance still hides up to that many extra ledgers (about elapsed x (1/3 - 1/real rate) + 30; small right after a signing, hours from an old floor).
+  evidence: A low estimate at ~4.5 s a ledger read a correct first round as 29,436 ledgers on Testnet (real rate ~3.3 s since the 2026-11-10 floor). A fresher floor at each release, or a per-Network measured rate, narrows it.
 

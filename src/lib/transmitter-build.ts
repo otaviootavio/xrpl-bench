@@ -1,7 +1,8 @@
 import type { QueryClient } from '@tanstack/react-query'
 import type { TransmitterMeta } from '@/lib/crypto/keystore'
+import { decode } from 'xrpl'
 import { encodeUnsigned, type KeyState } from '@/lib/qr-codec'
-import { builtTransaction, type MasterKeyBuild, type RegularKeyBuild, type TrustLineBuild } from '@/lib/offline-round'
+import { builtTransaction, canonicalLimit, type MasterKeyBuild, type RegularKeyBuild, type TrustLineBuild } from '@/lib/offline-round'
 import { OFFLINE_LEDGER_WINDOW } from '@/lib/offline-window'
 import { preflight, type AnswerChecks, type CheckedTx } from '@/lib/answer-request'
 
@@ -32,7 +33,9 @@ export function transmitterTx(account: string, build: TransmitterBuild): Checked
         TransactionType: 'Payment',
         Account: account,
         Destination: build.destination,
-        Amount: { currency: build.currency, issuer: build.issuer, value: build.value },
+        // The value in one canonical form ("5.10", ".5" and "05" as the codec writes them), so the
+        // Offline Wallet, which refuses a value the codec would rewrite, can show it (round two).
+        Amount: { currency: build.currency, issuer: build.issuer, value: canonicalLimit(build.value) ?? build.value },
         ...(build.destinationTag !== undefined ? { DestinationTag: build.destinationTag } : {}),
       }
     default:
@@ -79,4 +82,29 @@ export async function makeUnsigned(wallet: TransmitterMeta, build: TransmitterBu
   }
   const text = encodeUnsigned({ network: wallet.network, tx, ledgerIndex: values.ledgerIndex }).text
   return { status: 'made', text, tx, ledgerIndex: values.ledgerIndex, checks: checked.checks, ...(checked.keyState !== undefined ? { keyState: checked.keyState } : {}) }
+}
+
+/** Keys sorted at every level, a missing `Flags` read as 0, hex letter case aside. */
+function canonicalText(tx: Record<string, unknown>): string {
+  const sort = (v: unknown): unknown =>
+    Array.isArray(v)
+      ? v.map(sort)
+      : v && typeof v === 'object'
+        ? Object.fromEntries(Object.keys(v).filter((k) => (v as Record<string, unknown>)[k] !== undefined).sort().map((k) => [k, sort((v as Record<string, unknown>)[k])]))
+        : v
+  return JSON.stringify(sort({ Flags: 0, ...tx })).toUpperCase()
+}
+
+/**
+ * Whether a scanned signed blob is the Unsigned Transaction this screen made (round two): the
+ * decoded blob less `SigningPubKey` and `TxnSignature` equals it. A signed code from an earlier
+ * Build (before "Change the transaction") is not, and is never sent from this plate.
+ */
+export function signedIsMade(txBlob: string, made: Record<string, unknown>): boolean {
+  try {
+    const { SigningPubKey: _k, TxnSignature: _s, ...rest } = decode(txBlob) as Record<string, unknown>
+    return canonicalText(rest) === canonicalText(made)
+  } catch {
+    return false
+  }
 }

@@ -29,10 +29,10 @@ import type { TransmitterMeta } from '@/lib/crypto/keystore'
 import { canonicalLimit, PAYLOAD_NAMES, replacesRegularKey } from '@/lib/offline-round'
 import { isCurrencyCode, payloadKindOf, type KeyState } from '@/lib/qr-codec'
 import { readStateOf } from '@/lib/read-state'
-import { makeUnsigned, type MakeResult, type TransmitterBuild } from '@/lib/transmitter-build'
+import { makeUnsigned, signedIsMade, type MakeResult, type TransmitterBuild } from '@/lib/transmitter-build'
 import { fieldValue } from '@/lib/tx-fields'
 import * as W from '@/lib/offline-round-words'
-import { LEDGER_UNREAD, fill } from '@/lib/transmit-words'
+import { LEDGER_UNREAD, NOT_SENT, fill } from '@/lib/transmit-words'
 import { NONE, UNSIGNED_ON_TRANSMIT, WRONG_KIND } from '@/lib/transmitter-words'
 import { TRANSMITTER_SCREENS } from '@/lib/wallet-kind-words'
 import { checkFunds, heldTokenLines, selectedTokenLine, spendableReadState, tokenAssetKey } from '@/lib/xrpl/funds-check'
@@ -104,7 +104,10 @@ export function TransmitterNewTransaction({ wallet, address }: { wallet: Transmi
     if (kind === 'u') return setPhase({ name: 'unsigned', made, refusal: UNSIGNED_ON_TRANSMIT })
     if (kind !== null && kind !== 's') return setPhase({ name: 'unsigned', made, refusal: fill(WRONG_KIND, PAYLOAD_NAMES[kind], PAYLOAD_NAMES.s) })
     const r = readySigned({ ...wallet, address }, text)
-    setPhase(r.kind === 'ready' ? { name: 'unsigned', made, ready: r.ready } : { name: 'unsigned', made, refusal: r.text })
+    if (r.kind !== 'ready') return setPhase({ name: 'unsigned', made, refusal: r.text })
+    // Only the transaction this plate made is sent from here (round two): P-26's heading and P-17's request reason.
+    if (!signedIsMade(r.ready.txBlob, made.tx)) return setPhase({ name: 'unsigned', made, refusal: `${NOT_SENT} ${W.DATA_REFUSAL.request}` })
+    setPhase({ name: 'unsigned', made, ready: r.ready })
   }
 
   async function send(made: Made, ready: Ready) {

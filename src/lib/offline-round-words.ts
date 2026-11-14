@@ -290,3 +290,18 @@ export function windowMinutes(ledgers: number): string {
   const minutes = Math.max(1, Math.round((ledgers * 4) / 60))
   return minutes === 1 ? '1 minute' : `${minutes} minutes`
 }
+
+/**
+ * Online Send's shipped words the Synced Transmitter's Payment form reuses for the same
+ * facts (story 9: "the online fields and reads"). The test finds each in `SendTab.tsx`.
+ */
+export const SHIPPED_SEND = {
+  asset: 'Asset',
+  xrp: 'XRP',
+  tagOptional: 'Destination tag (optional)',
+  checkingDestination: 'Checking destination…',
+  notActivatedTitle: 'Destination not activated',
+  notActivatedLine: "This address doesn't exist on-ledger yet. If you send less than the base reserve in XRP, this payment will fail to activate it.",
+  noTrustLineTitle: "Recipient can't hold this token",
+  noTrustLineLine: "They don't have a trust line to this issuer yet, so this payment will most likely fail.",
+} as const

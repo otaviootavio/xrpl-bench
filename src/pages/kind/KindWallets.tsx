@@ -12,10 +12,11 @@ import { useAccountLiveUpdates } from '@/hooks/useAccountLiveUpdates'
 import { TransmitScreen } from './TransmitScreen'
 import { TransmitterAccount } from './TransmitterAccount'
 import { OFFLINE_SCREENS, TRANSMITTER_SCREENS } from '@/lib/wallet-kind-words'
-import { KindScreenPlate } from './KindScreenPlate'
 import { OfflineReceive } from './OfflineReceive'
 import { OfflineNewTransaction } from './OfflineNewTransaction'
 import { OfflineSigned } from './OfflineSigned'
+import { OfflineSign } from './OfflineSign'
+import { TransmitterNewTransaction } from './TransmitterNewTransaction'
 
 const SETTINGS = { value: 'wallet', label: 'Local settings' } as const
 
@@ -74,8 +75,8 @@ function KindShell({
 /**
  * An Offline Wallet, a signer (OS-FR-1): New transaction, Sign, Receive, Signed and
  * Local settings, with no balance or history. It never reads from or sends to the
- * ledger. New transaction (the Offline-builds round, story 6), Receive and Signed
- * (the signed list, story 7) are built; Sign shows its approved title.
+ * ledger. New transaction (the Offline-builds round, stories 6 to 8), Sign (the
+ * Transmitter-builds route, story 9), Receive and Signed (the signed list, story 7).
  */
 export function OfflineWallet({ wallet }: { wallet: KeyWalletMeta }) {
   const s = OFFLINE_SCREENS
@@ -93,7 +94,7 @@ export function OfflineWallet({ wallet }: { wallet: KeyWalletMeta }) {
         {
           value: 'sign',
           label: s.signFromTransmitter.label,
-          render: () => <KindScreenPlate title={s.signFromTransmitter.title} />,
+          render: () => <OfflineSign wallet={wallet} />,
         },
         {
           value: 'receive',
@@ -114,8 +115,8 @@ export function OfflineWallet({ wallet }: { wallet: KeyWalletMeta }) {
  * A Transmitter Wallet, a carrier (OS-FR-1, OS-FR-3, OS-FR-4). Unsynced: Transmit
  * and Local settings. Synced: Transmit, Account, History, New transaction and Local
  * settings; the screens change on the next render after a Sync change. Account and
- * History are read-only views of the Synced address. New transaction shows its
- * title only: building an Unsigned Transaction is story 9. Nothing here signs.
+ * History are read-only views of the Synced address. New transaction Builds an
+ * Unsigned Transaction for the offline wallet (story 9). Nothing here signs.
  */
 export function TransmitterWallet({ wallet }: { wallet: TransmitterMeta }) {
   const s = TRANSMITTER_SCREENS
@@ -155,7 +156,7 @@ export function TransmitterWallet({ wallet }: { wallet: TransmitterMeta }) {
                 {
                   value: 'new-transaction',
                   label: s.newTransaction.label,
-                  render: () => <KindScreenPlate title={s.newTransaction.title} />,
+                  render: () => <TransmitterNewTransaction wallet={wallet} address={address} />,
                 },
               ]
             : [transmit]

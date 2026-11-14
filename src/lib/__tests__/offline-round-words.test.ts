@@ -227,4 +227,18 @@ describe('Offline-builds round words (OS-FR-11, OS-FR-13 to OS-FR-16)', () => {
     expect(W.windowMinutes(10)).toBe('1 minute')
     expect(W.windowMinutes(400)).toBe('27 minutes')
   })
+
+  it('story 9: online Send\'s words on the Transmitter\'s Payment form are still shipped by SendTab', () => {
+    const flat = SEND_TAB.replace(/\s+/g, ' ')
+    const S = W.SHIPPED_SEND
+    expect(SEND_TAB).toContain(`<Label>${S.asset}</Label>`)
+    expect(SEND_TAB).toContain(`<SelectItem value="XRP">${S.xrp}</SelectItem>`)
+    expect(SEND_TAB).toContain('(balance {l.balance})')
+    expect(SEND_TAB).toContain(`'${S.tagOptional}'`)
+    expect(SEND_TAB).toContain(S.checkingDestination)
+    expect(SEND_TAB).toContain(`<AlertTitle>${S.notActivatedTitle}</AlertTitle>`)
+    expect(flat).toContain(S.notActivatedLine)
+    expect(SEND_TAB).toContain(`<AlertTitle>${S.noTrustLineTitle}</AlertTitle>`)
+    expect(flat).toContain(S.noTrustLineLine)
+  })
 })

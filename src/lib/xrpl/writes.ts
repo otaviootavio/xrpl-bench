@@ -582,7 +582,9 @@ async function transmit(
     // tx's own LastLedgerSequence) rather than by matching on error-message
     // text, which silently reclassifies whenever xrpl.js rewords it.
     if (await isExpiry(err, network, lastLedgerSequence, node)) {
-      return { status: 'expired', hash: signed.hash }
+      // Past the window: one last read of the hash decides (story 7 review). A
+      // payment validated while the app slept is its real outcome, never "expired".
+      return finalReadAfterWindow(network, signed.hash, lastLedgerSequence, node)
     }
     throw err
   }
@@ -631,10 +633,11 @@ async function submitOnceAndWait(client: HeldClient, signed: { tx_blob: string; 
       // Not found, or not readable: the Sequence is used and this blob is not known to be on the ledger.
     }
     // Only a validated read of this very hash is an outcome. rippled answers `tx` for
-    // a hash it rejected with `validated: false` (seen on Testnet, story 7), so a
-    // read that is not validated is not waited for: the Sequence is used.
+    // a hash it rejected with `validated: false` and no ledger (seen on Testnet,
+    // story 7): the Sequence is used. An answer IN a ledger not yet validated is
+    // this same blob on its way: it is waited for as any other.
     if (found?.result.validated) return found
-    throw new SequenceUsedSignal()
+    if (!found || typeof found.result.ledger_index !== 'number') throw new SequenceUsedSignal()
   }
   for (;;) {
     await new Promise((resolve) => setTimeout(resolve, pollMs))
@@ -662,6 +665,41 @@ async function assertMasterKeyOn(network: NetworkId, account: string, node?: str
     throw new Error('The account could not be read to confirm its master key is on, so nothing was signed. Try again.', { cause: err })
   }
   if (state.exists && state.disableMasterKey) throw new MasterKeyOffError()
+}
+
+/** rippled's widest `tx` ledger range. */
+const TX_RANGE_MAX = 1000
+
+/**
+ * The outcome of a write whose window has passed, from one last `tx` read of its
+ * hash over the ledgers that end at its LastLedgerSequence (story 7 review;
+ * decisions §16). Validated: its real outcome (a sleep or a dropped socket can
+ * hide a validation). `expired` only when the ledger says the hash can no
+ * longer apply: not found with `searched_all` over the range, or known to the
+ * server in no ledger (a rejected or dropped blob; rippled answers it from its
+ * cache, never `txnNotFound`). Anything else, or a failed read, is `unknown`:
+ * never "expired", which would invite a resend that pays twice.
+ */
+async function finalReadAfterWindow(network: NetworkId, hash: string, lastLedgerSequence: number | undefined, node?: string): Promise<SubmitOutcome> {
+  const range =
+    lastLedgerSequence === undefined ? {} : { min_ledger: Math.max(1, lastLedgerSequence - TX_RANGE_MAX + 1), max_ledger: lastLedgerSequence }
+  let read: TxRead
+  try {
+    const client = await getXrplClient(network, node)
+    read = (await client.request({ command: 'tx', transaction: hash, ...range })) as TxRead
+  } catch (error) {
+    const data = isRecord(error) && isRecord(error.data) ? error.data : {}
+    if (lastLedgerSequence !== undefined && data.error === 'txnNotFound' && data.searched_all === true) return { status: 'expired', hash }
+    return { status: 'unknown', hash }
+  }
+  if (read.result.validated) {
+    const meta: unknown = read.result.meta
+    if (!isRecord(meta) || typeof meta.TransactionResult !== 'string' || meta.TransactionResult === '') return { status: 'unknown', hash }
+    const resultCode = meta.TransactionResult
+    const status = classify(resultCode)
+    return status === 'failed' ? { status, hash, resultCode } : { status, hash, resultCode, ledgerIndex: read.result.ledger_index }
+  }
+  return typeof read.result.ledger_index === 'number' ? { status: 'unknown', hash } : { status: 'expired', hash }
 }
 
 async function isExpiry(err: unknown, network: NetworkId, lastLedgerSequence?: number, node?: string): Promise<boolean> {

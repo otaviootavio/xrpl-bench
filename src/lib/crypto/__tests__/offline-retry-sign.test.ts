@@ -76,7 +76,7 @@ vi.mock('idb', () => ({
 
 import { decode, Wallet } from 'xrpl'
 import { listStoredWallets, mutateStoredWallet, type StoredWallet } from '../db'
-import { NotAnOfflineWalletError, noteSigned, signedListOf, subscribeSignedList, type Prompts } from '../keystore'
+import { NotAnOfflineWalletError, noteSigned, SignedListCorruptError, signedListOf, subscribeSignedList, type Prompts } from '../keystore'
 import { makePinLock, storeSeedWallet, type FixtureLock } from './fixtures'
 import { buildHashOf, OFFLINE_LEDGER_WINDOW, signedRecordOf, signRound, type PaymentBuild } from '@/lib/offline-round'
 import { decodeSigned } from '@/lib/qr-codec'
@@ -142,12 +142,18 @@ describe('the signed list on the Offline Wallet\'s record (OS-FR-16)', () => {
     expect(await signedListOf(meta.id)).toEqual([])
   })
 
-  it('drops a stored entry that is not a well-formed record on read', async () => {
+  it('a malformed stored list is never read as empty and never rewritten (story 7 review)', async () => {
     const lock = await makePinLock('2468')
     const meta = await offlineWallet(lock)
     const good: SignedRecord = { buildHash: 'b'.repeat(64), sequence: 2, hash: 'B'.repeat(64), lastLedgerSequence: 20, ledgerIndex: 2, signedAt: 2 }
-    await mutateStoredWallet(meta.seedId, (r: StoredWallet) => ({ ...r, views: r.views.map((v) => ({ ...v, signed: [good, { sequence: 'x' } as never] })) }))
-    expect(await signedListOf(meta.id)).toEqual([good])
+    const next: SignedRecord = { ...good, sequence: 3, hash: 'C'.repeat(64) }
+    for (const damaged of [[good, { sequence: 'x' }], { not: 'a list' }]) {
+      await mutateStoredWallet(meta.seedId, (r: StoredWallet) => ({ ...r, views: r.views.map((v) => ({ ...v, signed: damaged as never })) }))
+      await expect(signedListOf(meta.id)).rejects.toBeInstanceOf(SignedListCorruptError)
+      await expect(noteSigned(meta.id, next)).rejects.toBeInstanceOf(SignedListCorruptError)
+      // The write aborted: the stored list is exactly as it was, nothing dropped.
+      expect((await listStoredWallets())[0].views[0].signed).toEqual(damaged)
+    }
   })
 })
 
@@ -196,13 +202,12 @@ describe('each retry case signs with the Sequence the table decides; read off th
     expect((await signAgain(data, data.sequence)).Sequence).toBe(41)
   })
 
-  it('a lower Sequence (not in the table): window open → the earlier Sequence; window reached → the received one', async () => {
+  it('a lower Sequence (not in the table) always signs with the earlier Sequence, whatever index came with it', async () => {
     const { earlier, signAgain } = await firstSigning()
-    const open = retryCaseOf(earlier, { sequence: 39, ledger_index: 1100 })
-    expect(open).toEqual({ case: 'same-sequence', sequence: 40 })
-    expect((await signAgain({ sequence: 39, fee: '12', ledger_index: 1100 }, 40)).Sequence).toBe(40)
-    const passed = retryCaseOf(earlier, { sequence: 39, ledger_index: 1200 })
-    expect(passed).toEqual({ case: 'passed', sequence: 39 })
-    expect((await signAgain({ sequence: 39, fee: '12', ledger_index: 1200 }, 39)).Sequence).toBe(39)
+    for (const ledger_index of [1100, 1200, 5_000_000]) {
+      const retry = retryCaseOf(earlier, { sequence: 39, ledger_index })
+      expect(retry).toEqual({ case: 'same-sequence', sequence: 40 })
+      expect((await signAgain({ sequence: 39, fee: '12', ledger_index }, retry.case === 'same-sequence' ? retry.sequence : -1)).Sequence).toBe(40)
+    }
   })
 })

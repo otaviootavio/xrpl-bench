@@ -570,15 +570,31 @@ export async function noteLedgerSeen(walletId: string, index: number, at: number
   }))
 }
 
-/** This Offline Wallet's signed list (OS-FR-16), oldest first; malformed entries are
- * left out. Throws when the record cannot be read: the caller must not read a
- * failed read as an empty list, because the list is the guard against paying twice. */
+/** Refused: the stored signed list is not a list of well-formed records. Never shown. */
+export class SignedListCorruptError extends Error {
+  constructor() {
+    super('The signed list of this wallet cannot be read.')
+    this.name = 'SignedListCorruptError'
+  }
+}
+
+/** The stored list as it is: absent is empty; anything malformed throws, so a
+ * damaged record is never read as "no earlier signing" (story 7 review). */
+function storedSignedList(view: WalletView): SignedRecord[] {
+  const list: unknown = (view as { signed?: unknown }).signed
+  if (list === undefined) return []
+  if (!Array.isArray(list) || !list.every(isSignedRecord)) throw new SignedListCorruptError()
+  return list
+}
+
+/** This Offline Wallet's signed list (OS-FR-16), oldest first. Throws when the record
+ * cannot be read or the list is malformed: the caller must not read either as an
+ * empty list, because the list is the guard against paying twice. */
 export async function signedListOf(walletId: string): Promise<SignedRecord[]> {
   const stored = findSeedRecord(await listStoredWallets(), walletId)
   const view = stored && viewsOf(stored).find((v) => v.walletId === walletId)
   if (!view || kindOfView(view) !== 'offline') throw new NotAnOfflineWalletError()
-  const list: unknown = (view as { signed?: unknown }).signed
-  return Array.isArray(list) ? list.filter(isSignedRecord) : []
+  return storedSignedList(view)
 }
 
 const signedListeners = new Set<(walletId: string) => void>()
@@ -600,9 +616,10 @@ export async function noteSigned(walletId: string, record: SignedRecord): Promis
     ...current,
     views: viewsOf(current).map((v) => {
       if (v.walletId !== walletId || kindOfView(v) !== 'offline') return v
+      // A malformed list throws here, aborting the write: no entry is ever dropped.
+      const before = storedSignedList(v)
       wrote = true
-      const before: unknown = (v as { signed?: unknown }).signed
-      return { ...v, signed: [...(Array.isArray(before) ? before.filter(isSignedRecord) : []), record] }
+      return { ...v, signed: [...before, record] }
     }),
   }))
   if (!wrote) throw new NotAnOfflineWalletError()

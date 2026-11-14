@@ -291,12 +291,12 @@ function CheckRow({ term, value }: { term: string; value: string }) {
 
 function Outcome({ outcome, headingRef }: { outcome: TransmitOutcome; headingRef: React.RefObject<HTMLHeadingElement | null> }) {
   // P-23: the ledger used this Sequence; never "Failed", and nothing offers to send again.
+  // No link to this blob's hash: it is never on the ledger, and "not found" would read as "not sent".
   if (outcome.status === 'sent-before') {
     return (
       <div className="panel-plate flex min-w-0 flex-col gap-2 rounded-md p-3">
         <h2 ref={headingRef} tabIndex={-1} className="flex min-w-0 flex-wrap items-center gap-2">
           <StatusLegend tone="caution">{R.PROBABLY_SENT_BEFORE}</StatusLegend>
-          <TxLink hash={outcome.hash} />
         </h2>
         <p className="text-sm">{R.PROBABLY_SENT_BEFORE_LINE}</p>
       </div>

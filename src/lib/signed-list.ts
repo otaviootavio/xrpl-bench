@@ -71,10 +71,8 @@ export function latestSameBuild(list: readonly SignedRecord[], buildHash: string
  *   offered (owner, 2026-11-08).
  *
  * A received Sequence LOWER than the earlier one is not in the table (it cannot
- * happen on a correct ledger). It is judged by the window alone: passed, the
- * earlier one can never apply and the received Sequence is safe; not passed,
- * the earlier Sequence is used, so the two still share one Sequence (build
- * choice, story 7).
+ * happen on a correct ledger). The earlier Sequence is always used (P-22), so
+ * the two share one Sequence whatever ledger index came with it (story 7 review).
  */
 export type RetryCase =
   | { case: 'higher' }
@@ -83,6 +81,10 @@ export type RetryCase =
 
 export function retryCaseOf(earlier: SignedRecord, received: { sequence: number; ledger_index: number }): RetryCase {
   if (received.sequence > earlier.sequence) return { case: 'higher' }
+  // Lower: always the earlier Sequence. The ledger index comes from the same
+  // Transmitter that gave the impossible Sequence, so it cannot prove the earlier
+  // window passed (story 7 review).
+  if (received.sequence < earlier.sequence) return { case: 'same-sequence', sequence: earlier.sequence }
   if (received.ledger_index >= earlier.lastLedgerSequence) return { case: 'passed', sequence: received.sequence }
   return { case: 'same-sequence', sequence: earlier.sequence }
 }

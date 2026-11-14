@@ -28,6 +28,12 @@ import {
  * the inversion did not weaken the choke point.
  */
 
+/** The ledger's answer for a hash in no ledger of the searched range: what makes
+ * an expiry an expiry once the final `tx` read runs (story 7 review). */
+function notFoundAnywhere(): never {
+  throw Object.assign(new Error('Transaction not found.'), { data: { error: 'txnNotFound', searched_all: true } })
+}
+
 // A shared ordered log: the reporter and the fake client both push into it,
 // so the assertions are about ORDER, not merely about the calls happening.
 let log: string[] = []
@@ -45,6 +51,8 @@ function installFakeClient(
     /** What autofill attaches as `Fee` when the transaction carries none.
      * `'absent'` attaches nothing, to test a missing field. */
     autofillFee?: string | 'absent'
+    /** The final `tx` read after the window; default: not found anywhere. */
+    finalTx?: () => Promise<any>
   } = {},
 ) {
   const client = {
@@ -78,7 +86,12 @@ function installFakeClient(
     },
     // The first read is the window, taken at signing: 80 gives LastLedgerSequence
     // 100, as the old autofill fixture did. Later reads are expiry checks.
-    request: async () => {
+    request: async (req?: { command?: string }) => {
+      if (req?.command === 'tx') {
+        log.push('tx')
+        if (behaviour.finalTx) return behaviour.finalTx()
+        notFoundAnywhere()
+      }
       log.push('request')
       const first = client.windowRead
       client.windowRead = false
@@ -303,9 +316,79 @@ describe('the write choke point raises and clears the in-flight flag', () => {
     })
 
     expect(outcome.status).toBe('expired')
-    // Only the window read; the expiry check never asked the ledger again.
+    // Only the window read; the expiry check never asked for the validated index
+    // again. The one final read is of the hash (story 7 review).
     expect(log.filter((e) => e === 'request')).toHaveLength(1)
+    expect(log.filter((e) => e === 'tx')).toHaveLength(1)
     expect(log.at(-1)).toBe('in-flight:false')
+  })
+
+  it('past the window, a payment validated while the app slept is its real outcome, never "expired" (story 7 review)', async () => {
+    installFakeClient({
+      submit: async () => {
+        throw new Error('connection dropped while waiting')
+      },
+      validatedLedgerIndex: 140,
+      finalTx: async () => ({ result: { validated: true, meta: { TransactionResult: 'tesSUCCESS' }, ledger_index: 95 } }),
+    })
+    const outcome = await submitXrpPayment('testnet', wallet, { destination: 'rPT1Sjq2YGrBMTttX4GZHjKu9dyfzbpAYe', amountDrops: '1000000' })
+    expect(outcome).toMatchObject({ status: 'validated', resultCode: 'tesSUCCESS', ledgerIndex: 95 })
+  })
+
+  it('past the window, a final read that fails is unknown, never "expired" (decisions §16)', async () => {
+    installFakeClient({
+      submit: async () => {
+        throw new Error('connection dropped while waiting')
+      },
+      validatedLedgerIndex: 140,
+      finalTx: async () => {
+        throw new Error('socket closed')
+      },
+    })
+    const outcome = await submitXrpPayment('testnet', wallet, { destination: 'rPT1Sjq2YGrBMTttX4GZHjKu9dyfzbpAYe', amountDrops: '1000000' })
+    expect(outcome.status).toBe('unknown')
+  })
+
+  it('past the window, not found without searched_all is unknown; a hash in a ledger not validated is unknown', async () => {
+    installFakeClient({
+      submit: async () => {
+        throw new Error('connection dropped while waiting')
+      },
+      validatedLedgerIndex: 140,
+      finalTx: async () => {
+        throw Object.assign(new Error('Transaction not found.'), { data: { error: 'txnNotFound', searched_all: false } })
+      },
+    })
+    expect((await submitXrpPayment('testnet', wallet, { destination: 'rPT1Sjq2YGrBMTttX4GZHjKu9dyfzbpAYe', amountDrops: '1000000' })).status).toBe('unknown')
+    resetXrplClients()
+    installFakeClient({
+      submit: async () => {
+        throw new Error('connection dropped while waiting')
+      },
+      validatedLedgerIndex: 140,
+      finalTx: async () => ({ result: { validated: false, ledger_index: 99 } }),
+    })
+    expect((await submitXrpPayment('testnet', wallet, { destination: 'rPT1Sjq2YGrBMTttX4GZHjKu9dyfzbpAYe', amountDrops: '1000000' })).status).toBe('unknown')
+  })
+
+  it('past the window, the final read covers the ledgers that end at LastLedgerSequence; a hash the server holds in no ledger is expired', async () => {
+    let asked: any = null
+    installFakeClient({
+      submit: async () => {
+        throw new Error('connection dropped while waiting')
+      },
+      validatedLedgerIndex: 140,
+      finalTx: async () => ({ result: { validated: false } }),
+    })
+    const realFactory = (await import('../client')).getXrplClient
+    const c: any = await realFactory('testnet')
+    const original = c.request
+    c.request = async (req: any) => {
+      if (req?.command === 'tx') asked = req
+      return original(req)
+    }
+    expect((await submitXrpPayment('testnet', wallet, { destination: 'rPT1Sjq2YGrBMTttX4GZHjKu9dyfzbpAYe', amountDrops: '1000000' })).status).toBe('expired')
+    expect(asked).toMatchObject({ min_ledger: 1, max_ledger: 100 })
   })
 
   it('does not call an expiry an expiry while the tx could still be included', async () => {
@@ -474,7 +557,7 @@ describe("two overlapping writes cannot clear each other's in-flight signal", ()
         new Promise((resolve, reject) => {
           parked.push({ resolve, reject })
         }),
-      request: async () => ({ result: { ledger_index: reads++ < 2 ? 80 : validatedLedgerIndex } }),
+      request: async (req?: { command?: string }) => (req?.command === 'tx' ? notFoundAnywhere() : { result: { ledger_index: reads++ < 2 ? 80 : validatedLedgerIndex } }),
     }
     setXrplClientFactory(() => client as any)
     return parked
@@ -768,7 +851,7 @@ describe('every write forwards the Wallet\'s Node', () => {
           return { result: { meta: { TransactionResult: 'tesSUCCESS' }, ledger_index: 42 } }
         },
         // 50 for the window read; past it once the socket dropped.
-        request: async () => ({ result: { ledger_index: state.connected ? 50 : 200 } }),
+        request: async (req?: { command?: string }) => (req?.command === 'tx' ? notFoundAnywhere() : { result: { ledger_index: state.connected ? 50 : 200 } }),
       } as any
     })
     return urls
@@ -797,9 +880,9 @@ describe('every write forwards the Wallet\'s Node', () => {
       NODE,
     )
     expect(outcome.status).toBe('expired')
-    // The hold built it, the dropped socket made the expiry check build another
-    // — both for the custom Node.
-    expect(urls).toEqual([NODE, NODE])
+    // The hold built it, the dropped socket made the expiry check build another,
+    // and the final hash read (story 7 review) another — every one for the custom Node.
+    expect(urls).toEqual([NODE, NODE, NODE])
   })
 })
 

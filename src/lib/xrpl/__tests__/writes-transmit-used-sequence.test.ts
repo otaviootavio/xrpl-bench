@@ -12,7 +12,7 @@ import { resetSentThisSession, setTransmitPollMsForTests, submitXrpPayment, tran
  * process is read off `submits` (anti-patterns.md §11).
  */
 
-type TxReply = { result: Record<string, unknown> } | { error: string } | Error
+type TxReply = { result: Record<string, unknown> } | { error: string; searched_all?: boolean } | Error
 
 function installRawClient(opts: { preliminary?: string; tx?: TxReply[]; ledgers?: number[] }) {
   const txReplies = [...(opts.tx ?? [])]
@@ -38,7 +38,7 @@ function installRawClient(opts: { preliminary?: string; tx?: TxReply[]; ledgers?
         client.txReads += 1
         const reply = txReplies.length > 1 ? txReplies.shift()! : txReplies[0]
         if (reply instanceof Error) throw reply
-        if ('error' in reply) throw Object.assign(new Error(reply.error), { data: { error: reply.error } })
+        if ('error' in reply) throw Object.assign(new Error(reply.error), { data: { error: reply.error, searched_all: reply.searched_all } })
         return reply
       }
       // The window read: the validated ledger.
@@ -98,6 +98,12 @@ describe('tefPAST_SEQ on a scanned blob is P-23, "Probably sent before" (OS-FR-1
     expect(client.txReads).toBe(1)
   })
 
+  it('the same blob in a closed ledger not yet validated (a ledger_index) is waited for, not sent-before (story 7 review)', async () => {
+    const client = installRawClient({ preliminary: 'tefPAST_SEQ', tx: [{ result: { validated: false, ledger_index: 90 } }, VALIDATED] })
+    expect(await send(signedPayment().tx_blob)).toMatchObject({ status: 'validated', ledgerIndex: 91 })
+    expect(client.txReads).toBe(2)
+  })
+
   it('the online write path is unchanged: it still goes through submitAndWait, never its own submit', async () => {
     const client = installRawClient({ preliminary: 'tefPAST_SEQ', tx: [{ error: 'txnNotFound' }] })
     const handle = { address: master.address, open: async () => ({ sign: (tx: never) => master.sign(tx), dispose: () => {} }) }
@@ -125,13 +131,23 @@ describe('every other result classifies as submitAndWait did (story 2 outcomes)'
     expect((await send(signedPayment().tx_blob)).status).toBe('unknown')
   })
 
-  it('past its LastLedgerSequence with no validated result: expired', async () => {
-    installRawClient({ tx: [{ error: 'txnNotFound' }], ledgers: [95, 101] })
+  it('past its LastLedgerSequence and not found anywhere in its window: expired', async () => {
+    installRawClient({ tx: [{ error: 'txnNotFound' }, { error: 'txnNotFound', searched_all: true }], ledgers: [95, 101] })
     expect((await send(signedPayment().tx_blob)).status).toBe('expired')
   })
 
+  it('past its LastLedgerSequence but validated before the first read after a sleep: its real outcome (story 7 review)', async () => {
+    installRawClient({ tx: [VALIDATED], ledgers: [140] })
+    expect(await send(signedPayment().tx_blob)).toMatchObject({ status: 'validated', ledgerIndex: 91 })
+  })
+
+  it('past its LastLedgerSequence and the final read fails: unknown, never expired', async () => {
+    installRawClient({ tx: [new Error('socket closed')], ledgers: [140] })
+    expect((await send(signedPayment().tx_blob)).status).toBe('unknown')
+  })
+
   it('another preliminary tef is waited for, not reported as sent-before', async () => {
-    installRawClient({ preliminary: 'tefMAX_LEDGER', tx: [{ error: 'txnNotFound' }], ledgers: [101] })
+    installRawClient({ preliminary: 'tefMAX_LEDGER', tx: [{ error: 'txnNotFound', searched_all: true }], ledgers: [101] })
     expect((await send(signedPayment().tx_blob)).status).toBe('expired')
   })
 

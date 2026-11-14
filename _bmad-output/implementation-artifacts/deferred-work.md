@@ -658,3 +658,7 @@ Item 8 shipped as a refactor that preserves behaviour (`spec-sendtab-split.md`).
   summary: On the online Send path (`submitAndClassify`), a `tefPAST_SEQ` race still waits out the window and ends as today's "expired" outcome.
   evidence: Story 7 reads the preliminary result on the scanned path only (`transmitSignedTransaction`), so online sending stays exactly as before (story 2). rippled answers `tx` for a rejected hash with `validated: false`, so `submitAndWait` waits until LastLedgerSequence passes. Settle by sharing the scanned path's submit-and-wait, with words for that case.
 
+- source_spec: `_bmad-output/specs/spec-offline-signing/stories/7-retry-without-paying-twice.md`
+  summary: A `tefPAST_SEQ` at the Transmit step for a blob that is NOT a retry (its Sequence used by some other transaction) still shows P-23 "Probably sent before".
+  evidence: The Transmitter cannot know a blob is a retry. An `account_tx` read comparing the transaction that used the Sequence with this blob's Destination and Amount could tell the two apart; left out by the coordinator's decision (review round two, 2026-11-14).
+

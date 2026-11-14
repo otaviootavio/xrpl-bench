@@ -32,23 +32,39 @@ context:
 | Scenario | Input / State | Expected Output / Behavior | Error Handling |
 |----------|--------------|---------------------------|----------------|
 | First signing | Build with no earlier record | as story 6; one record appended | write fails: P-16, no QR |
-| Same Build at review | record with the same Build hash (also after a lock, typed again) | P-19 + the record (Sequence, Transaction hash, Valid until ledger, Signed at) above the fields | list unreadable: no notice (nothing signs without a fresh read) |
+| Same Build at review | record with the same Build hash (also after a lock, typed again) | P-19 + the record (Sequence, Transaction hash, Valid until ledger, Signed at) above the fields | list unreadable or malformed: P-16 there (nothing signs without a fresh read) |
 | Case (a) | received Sequence > earlier | P-20 (focused) + record; nothing signed; "Check first" → request; "This is a new payment" → signing review with the received Sequence | — |
 | Case (b) | same Sequence, index ≥ earlier LastLedgerSequence | signing review with P-21; received Sequence | — |
 | Case (c) | same Sequence, index < earlier LastLedgerSequence | signing review with P-22; earlier Sequence; no "This is a new payment" | — |
-| Lower Sequence | received < earlier | index ≥ earlier LLS: as (b); else as (c) with the earlier Sequence | — |
+| Lower Sequence | received < earlier | always as (c): P-22, the earlier Sequence, whatever the index | — |
 | Several records | same Build signed more than once | compared with highest Sequence, then highest LastLedgerSequence | — |
-| List read fails | Data to Sign arrives, list cannot be read | P-16 alone, nothing signed | — |
+| List read fails | Data to Sign arrives, list cannot be read or is malformed | P-16 alone, nothing signed; a write never drops entries | — |
 | Start the request again | Kept plate after signing | request QR with a new request ID, same Build; Kept plate stays below | — |
 | Signed screen | records | P-49, then each record newest first | empty: P-56; failed read: P-49 only |
-| Transmit `tefPAST_SEQ` | scanned blob, preliminary `tefPAST_SEQ`, hash not validated on the ledger | outcome "Probably sent before" + P-23 line, caution; no resend | hash found validated: its real outcome |
-| Transmit other results | scanned blob | as today (validated, claimed, failed, expired, unknown; `tem` → unconfirmed); one `submit` | — |
+| Transmit `tefPAST_SEQ` | scanned blob, preliminary `tefPAST_SEQ`, hash in no ledger | outcome "Probably sent before" + P-23 line, caution; no resend, no hash link | hash found validated: its real outcome; in a ledger not yet validated: waited for |
+| Transmit other results | scanned blob | as today (validated, claimed, failed, unknown; `tem` → unconfirmed); one `submit` | past the window (every write kind): one final `tx` read of the hash: validated → its outcome; not found with `searched_all`, or held in no ledger → expired; anything else or a failed read → unknown |
 
 </frozen-after-approval>
 
 ## Spec Change Log
 
 - 2026-11-10, after the browser probe: the I/O row "Transmit `tefPAST_SEQ`" reads "hash not validated on the ledger" (was "not on the ledger"), because rippled answers `tx` for a hash it rejected with `validated: false` (`.playwright-mcp/s7-probe.mjs`). Nothing else in the intent changed.
+
+- 2026-11-14, review round two (coordinator): the I/O rows "Same Build at review", "Lower Sequence", "List read fails", "Transmit `tefPAST_SEQ`" and "Transmit other results" now read as the triage below decided.
+
+## Review Triage Log
+
+Review round two (coordinator, 2026-11-14). Each fixed with the smallest change; only the tests of the edited files were run (writes and Transmit tests, 430; keystore, signed-list, Transmit screen, Offline New transaction).
+
+| # | Finding | Verdict | Fix |
+|---|---|---|---|
+| 1 | Past LastLedgerSequence the outcome was `expired` without reading the hash: a payment validated during a sleep or a long dropped socket read "Expired. Nothing was sent.", and online the user might resend | real | `finalReadAfterWindow` in `writes.ts`, behind `isExpiry`, so every write path gets it: one `tx` read over `[LLS-999, LLS]`. Validated → its real outcome; `txnNotFound` with `searched_all`, or the hash held in no ledger (rippled's cache answer for a dropped or rejected blob, seen on Testnet) → expired; anything else or a failed read → unknown. Tests: validated before the first read after the window, the final read failing, `searched_all: false`, a ledger not validated, the range asked (online and scanned paths). Existing online tests kept; their fakes now answer the final read as "not found anywhere". |
+| 2 | After `tefPAST_SEQ`, an unvalidated `tx` answer WITH a ledger_index (this blob in a closed ledger) ended as sent-before | real | only no answer or no ledger_index is sent-before; a ledger_index waits as usual. Test |
+| 3 | P-23 linked to the rejected blob's hash, never on the ledger ("not found → not sent → pay again") | real | link removed on that outcome. Test |
+| 4 | A lower received Sequence with an inflated ledger index returned `passed` and signed with the lower Sequence: two payments could apply | real | lower always uses the earlier Sequence (P-22). Tests (table and real signed blob) |
+| 5 | A malformed or non-array stored list read as `[]`, and the next write dropped entries | real | `SignedListCorruptError` on read and inside the write's transaction (the write aborts; nothing dropped); the screens show P-16. Test |
+| 6 | SameBuildNotice showed nothing on a failed list read | real | shows P-16 (destructive notice). Test |
+| 7 | A `tefPAST_SEQ` on a FIRST signing could be compared with `account_tx` | deferred | not built, as asked; `deferred-work.md` |
 
 ## Code Map
 
@@ -81,13 +97,13 @@ context:
 - **Order of signing.** Sign, check the round is still current, write the record, check again, then show the signed QR. If the write fails, the blob is dropped and P-16 shows. So every signing whose QR was shown is in the list.
 - **Retry table** (`retryCaseOf`), compared against `latestSameBuild`: the record with the highest Sequence, then the highest LastLedgerSequence. Reading the Data to Sign does a fresh `signedListOf`; a failed read is P-16 alone. Round phases: `retry-higher` (P-20) and `signing.retry` (`passed`/P-21, `same-sequence`/P-22), with `signing.sequence` as the Sequence signed with.
 - **Kept transaction across phases.** `Round.kept` (in memory, erased by a lock) carries the last signing. The Kept plate shows after signing (with "Start the request again"), and also under a restarted request and under case (a), so Flow 4's "Check first" and then "I know the result" works. P-19 and the record show on Reviewed and on Request shown.
-- **Transmit step.** For the scanned path only (`transmitSignedTransaction`), `writes.ts` does its own single `submit` and waits as xrpl.js 5.1.0's `submitAndWait` does (`fail_hard` for AccountDelete, a `tem` throws, `txnNotFound` polls again, the expiry error, unknown meta). One change: a preliminary `tefPAST_SEQ` returns `sent-before` at once unless the hash reads validated. `TransmitOutcome` extends `SubmitOutcome` for that path only, so the online types and outcomes are unchanged. TransmitScreen renders P-23 (caution lamp, hash link, line) with no resend key, and the hash stays in the already-sent set.
+- **Transmit step.** For the scanned path only (`transmitSignedTransaction`), `writes.ts` does its own single `submit` and waits as xrpl.js 5.1.0's `submitAndWait` does (`fail_hard` for AccountDelete, a `tem` throws, `txnNotFound` polls again, the expiry error, unknown meta). One change: a preliminary `tefPAST_SEQ` returns `sent-before` at once unless the hash reads validated. `TransmitOutcome` extends `SubmitOutcome` for that path only, so the online types and outcomes are unchanged. TransmitScreen renders P-23 (caution lamp and line, no hash link) with no resend key, and the hash stays in the already-sent set.
 
 ## Design Notes
 
 - **Found in the browser, fixed: rippled answers `tx` for a hash it rejected.** On Testnet the rejected blob's `tx` read returns `validated: false`, not `txnNotFound` (`.playwright-mcp/s7-probe.mjs`). The first build waited for that hash and would have run out the window, ending in "Expired". Now anything short of a validated read after `tefPAST_SEQ` is P-23. A same blob still in the open ledger also gets P-23. That is true, because it was sent before; its hash link shows the outcome.
 - **"Past" read as `>=`.** The validated ledger that equals the earlier LastLedgerSequence holds no earlier transaction, so the earlier one can never apply. This matches story 2's window rule.
-- **Lower received Sequence (not in the table).** If the window has passed, it is handled as (b) with the received Sequence. If not, it is handled as (c) with the earlier Sequence, so the two signings share one Sequence.
+- **Lower received Sequence (not in the table).** Always (c): the earlier Sequence. The index comes from the same Transmitter that gave the impossible Sequence, so it proves nothing (review round two).
 - **Every `tefPAST_SEQ` on a scanned blob is P-23.** The Transmitter cannot know whether a blob is a same-Sequence retry, and the Sequence is used either way. The online Send path is unchanged: a `tefPAST_SEQ` race there still ends as today's expired after the window (reported, not changed).
 - **Notices without legends.** The mockup's "Notice" and "Caution" legends are not approved. P-19, P-21 and P-22 are default Alerts with no title. P-20 is a warning Alert whose own sentence is the focused h2.
 - **Words missing (not built, need owner approval):** the mockup's "Sequence received" row on case (a); "(same as before)" beside the Sequence in case (c); "Ledger result" with `tefPAST_SEQ` on the P-23 outcome; a reason line under P-16 when the signed list cannot be read or written (P-16 shows alone); and a line on the Signed screen when its list cannot be read (P-49 shows alone, never P-56).

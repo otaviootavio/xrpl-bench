@@ -36,7 +36,7 @@ describe('retryCaseOf', () => {
     ['(b) same Sequence, index equal to the earlier LastLedgerSequence', { sequence: 10, ledger_index: 1150 }, { case: 'passed', sequence: 10 }],
     ['(c) same Sequence, index below', { sequence: 10, ledger_index: 1149 }, { case: 'same-sequence', sequence: 10 }],
     ['lower Sequence, window open → the earlier Sequence', { sequence: 9, ledger_index: 1100 }, { case: 'same-sequence', sequence: 10 }],
-    ['lower Sequence, window passed → the received Sequence', { sequence: 9, ledger_index: 1150 }, { case: 'passed', sequence: 9 }],
+    ['lower Sequence, an inflated index → still the earlier Sequence', { sequence: 9, ledger_index: 99_999_999 }, { case: 'same-sequence', sequence: 10 }],
   ])('%s', (_name, received, expected) => {
     expect(retryCaseOf(earlier, received)).toEqual(expected)
   })

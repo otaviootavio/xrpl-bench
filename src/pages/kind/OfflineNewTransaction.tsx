@@ -252,10 +252,18 @@ function BuiltFields({ build, signedWith }: { build: OfflineBuild; signedWith?: 
  * P-19 and the earlier-signing record, when this Wallet signed a Same Build
  * before (by content hash, so also after a lock and a Build typed again). For
  * display: the signing path reads the list fresh. A list that cannot be read
- * shows nothing here, and the Data to Sign is then refused (no signing without it).
+ * shows P-16 here (never silence, which would read as "no earlier signing"),
+ * and the Data to Sign is then refused.
  */
 function SameBuildNotice({ walletId, build }: { walletId: string; build: OfflineBuild }) {
   const signed = useSignedList(walletId)
+  if (signed.status === 'failed') {
+    return (
+      <Alert variant="destructive" role="none">
+        <AlertDescription>{W.NOT_SIGNED}</AlertDescription>
+      </Alert>
+    )
+  }
   const earlier = signed.status === 'ok' ? latestSameBuild(signed.list, buildHashOf(build)) : null
   if (!earlier) return null
   return (

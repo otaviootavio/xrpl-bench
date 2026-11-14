@@ -201,6 +201,8 @@ describe('Transmit on a Synced Transmitter (OS-FR-9)', () => {
     expect(screen.getByText('The ledger probably applied the earlier transaction. Look at the history before you pay again.')).toBeTruthy()
     expect(screen.queryByText(/Failed/)).toBeNull()
     expect(screen.queryByRole('button', { name: 'Send' })).toBeNull()
+    // No explorer link to a hash that is never on the ledger.
+    expect(screen.queryByRole('link')).toBeNull()
   })
 })
 

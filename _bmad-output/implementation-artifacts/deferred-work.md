@@ -768,3 +768,7 @@ Item 8 shipped as a refactor that preserves behaviour (`spec-sendtab-split.md`).
 - source_spec: `_bmad-output/specs/spec-offline-signing/stories/12-retire-operating-another-account-and-two-device-signing.md`
   summary: Address Book entries stored under a dropped controlled view's Wallet id stay in storage (nothing lists or removes them except Remove all).
   evidence: Review round one, 2026-11-15. Not secret: addresses and labels only.
+
+- source_spec: `_bmad-output/specs/spec-offline-signing/stories/12-retire-operating-another-account-and-two-device-signing.md`
+  summary: On first run with an unlisted Seed record (only dropped FR-75 views) left on the device, the Remove all plate says "An App PIN or its failed-attempt count is still stored on this device, left over from a wallet that was removed." and "No wallet is stored here.", while an encrypted Seed is stored.
+  evidence: Browser pass on `e44d328`, `s12/r3-first-run-dark.png`. Existing words reused; a sentence for this case needs the owner.

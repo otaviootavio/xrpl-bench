@@ -1,5 +1,5 @@
 import { RegularKeyNotes } from '@/components/wallet/KeyWarnings'
-import { masterOffToBlackHole } from '@/lib/key-warnings'
+import { blackHoleLockout, masterOffToBlackHole } from '@/lib/key-warnings'
 import { useEffect, useRef, useState } from 'react'
 import { encode, isValidClassicAddress } from 'xrpl'
 import { isCurrencyCode } from '@/lib/qr-codec'
@@ -715,7 +715,10 @@ function SigningReview({ wallet, round, headingRef }: { wallet: KeyWalletMeta; r
   // pattern, P-39's "same pattern as today's 'turn off'"). The Signing Check follows.
   const turningOff = build.type === 'master-key' && !build.enable
   const [phrase, setPhrase] = useState('')
-  const held = turningOff && wallet.network === 'mainnet' && phrase.trim().replace(/\s+/g, ' ').toLowerCase() !== W.SHIPPED_KEYS.offPhrase
+  // Owner 2026-11-15: a black-hole Regular Key while the key state shows the master key off and
+  // no signer list (or an unread one) is irreversible-class too: the same typed phrase on Mainnet.
+  const irreversible = turningOff || (build.type === 'regular-key' && blackHoleLockout(build.regularKey, phase.data.key_state))
+  const held = irreversible && wallet.network === 'mainnet' && phrase.trim().replace(/\s+/g, ' ').toLowerCase() !== W.SHIPPED_KEYS.offPhrase
   const phraseId = `off-phrase-${wallet.id}`
 
   async function sign() {
@@ -787,7 +790,7 @@ function SigningReview({ wallet, round, headingRef }: { wallet: KeyWalletMeta; r
       {/* W2 (story 11): the key state the Transmitter read names a black-hole Regular Key. */}
       {turningOff && masterOffToBlackHole(phase.data.key_state) && <KeyWarning words={W.W2_SENTENCE} />}
       {turningOff && <KeyWarning words={W.W4_SENTENCE} />}
-      {turningOff && wallet.network === 'mainnet' && (
+      {irreversible && wallet.network === 'mainnet' && (
         <div className="grid gap-1.5">
           <Label htmlFor={phraseId}>{W.SHIPPED_KEYS.offPhraseLabel}</Label>
           <Input

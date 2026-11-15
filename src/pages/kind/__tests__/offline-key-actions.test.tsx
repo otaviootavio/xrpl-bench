@@ -473,3 +473,32 @@ describe('story 11: W1, P-30 and W2 on the Offline route (OS-FR-21, EXPERIENCE F
     expect(screen.queryByText(W.W2_SENTENCE)).toBeNull()
   })
 })
+
+describe('owner 2026-11-15: black-hole Regular Key with the master key off, on the Offline signing review', () => {
+  const HOLE = 'rrrrrrrrrrrrrrrrrrrrBZbvji'
+  it('Mainnet with the key state showing master key off and no signer list: Sign held until "turn off" is typed', async () => {
+    const main = { ...wallet, network: 'mainnet' as const }
+    mount(main)
+    pick(W.REGULAR_KEY_TYPE)
+    fireEvent.change(screen.getByLabelText(W.SHIPPED_KEYS.regularKeyAddress), { target: { value: HOLE } })
+    review()
+    showRequest()
+    paste(dataFor(keptRequest(), { network: 'mainnet', keyState: { regular_key: OTHER, master_key: 'off', signer_list: null } }))
+    const sign = await screen.findByRole('button', { name: 'Sign' })
+    expect(sign.getAttribute('aria-disabled')).toBe('true')
+    fireEvent.change(screen.getByLabelText(/Type “turn off”/), { target: { value: 'turn off' } })
+    expect(screen.getByRole('button', { name: 'Sign' }).hasAttribute('aria-disabled')).toBe(false)
+  })
+
+  it('with a signer list on the ledger: no phrase', async () => {
+    const main = { ...wallet, network: 'mainnet' as const }
+    mount(main)
+    pick(W.REGULAR_KEY_TYPE)
+    fireEvent.change(screen.getByLabelText(W.SHIPPED_KEYS.regularKeyAddress), { target: { value: HOLE } })
+    review()
+    showRequest()
+    paste(dataFor(keptRequest(), { network: 'mainnet', keyState: { regular_key: OTHER, master_key: 'off', signer_list: { signers: 2, quorum: 2 } } }))
+    await screen.findByRole('button', { name: 'Sign' })
+    expect(screen.queryByLabelText(/Type “turn off”/)).toBeNull()
+  })
+})

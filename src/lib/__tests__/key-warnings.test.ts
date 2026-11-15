@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
-import { BLACK_HOLES, endsSetRegularKey, isBlackHole, keyWalletHere, masterOffToBlackHole, regularKeyTester } from '../key-warnings'
+import { BLACK_HOLES, blackHoleLockout, endsSetRegularKey, isBlackHole, keyWalletHere, masterOffToBlackHole, regularKeyTester } from '../key-warnings'
 
 /** Story 11 (OS-FR-21): which key warning applies. Warnings only: nothing here refuses. */
 const FIXED = readFileSync('_bmad-output/specs/spec-offline-signing/consequence-texts.md', 'utf8').replace(/\s+/g, ' ')
@@ -66,5 +66,21 @@ describe('the in-place "Test the Regular Key" Wallet', () => {
   it('none without a Regular Key (none set, or an unknown state)', () => {
     expect(regularKeyTester([MASTER, HOLDER], MASTER, null, OPEN)).toBeNull()
     expect(regularKeyTester([MASTER, HOLDER], MASTER, undefined, OPEN)).toBeNull()
+  })
+})
+
+describe('owner 2026-11-15: a black-hole Regular Key with the master key known off is irreversible-class', () => {
+  const off = { regular_key: KEY, master_key: 'off', signer_list: null } as const
+  it.each([
+    [BLACK_HOLES[0], off, true],
+    [BLACK_HOLES[1], { ...off, signer_list: 'unknown' }, true],
+    [BLACK_HOLES[1], { ...off, signer_list: { signers: 2, quorum: 2 } }, false],
+    [BLACK_HOLES[1], { ...off, master_key: 'on' }, false],
+    [BLACK_HOLES[1], 'unknown', false],
+    [BLACK_HOLES[1], null, false],
+    [KEY, off, false],
+    [null, off, false],
+  ] as const)('key %s, state %j: %s', (k, state, expected) => {
+    expect(blackHoleLockout(k, state as never)).toBe(expected)
   })
 })

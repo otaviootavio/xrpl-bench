@@ -1,6 +1,6 @@
 import { ASF_DISABLE_MASTER } from '@/lib/qr-codec'
 import { RegularKeyNotes } from '@/components/wallet/KeyWarnings'
-import { masterOffToBlackHole } from '@/lib/key-warnings'
+import { blackHoleLockout, masterOffToBlackHole } from '@/lib/key-warnings'
 import { useEffect, useRef, useState } from 'react'
 import { isValidClassicAddress } from 'xrpl'
 import { useQueryClient } from '@tanstack/react-query'
@@ -567,6 +567,7 @@ function KeyForm({ wallet, address, busy, onMake, type, initial }: FormProps & {
   const [key, setKey] = useState(initial?.type === 'regular-key' ? (initial.regularKey ?? '') : '')
   const [enable, setEnable] = useState(initial?.type === 'master-key' ? initial.enable : false)
   const [testShown, setTestShown] = useState(false)
+  const [phrase, setPhrase] = useState('')
   const valid = isValidClassicAddress(key)
   const state = account.isError ? null : account.data
   // While a read is in flight nothing is claimed: no rows until both have answered (a pending read is not a failed one).
@@ -621,7 +622,18 @@ function KeyForm({ wallet, address, busy, onMake, type, initial }: FormProps & {
           {/* Story 11: P-30 or W1 and W2 under the address; W5 also when the set key is removed. */}
           {!remove && valid && <RegularKeyNotes address={key} />}
           {(remove || valid) && replacesRegularKey(remove ? null : key, keyState) && <KeyWarning words={W.W5_SENTENCE} />}
-          <MakeKey disabled={!remove && !valid} busy={busy} onMake={() => onMake({ type: 'regular-key', regularKey: remove ? null : key })} />
+          {/* Owner 2026-11-15: a black-hole key while the master key is known off and no signer list is irreversible-class: on Mainnet the typed phrase holds the Make key. */}
+          {!remove && valid && network === 'mainnet' && blackHoleLockout(key, keyState) && (
+            <div className="grid gap-1.5">
+              <Label htmlFor="tx-lockout-phrase">{W.SHIPPED_KEYS.offPhraseLabel}</Label>
+              <Input id="tx-lockout-phrase" value={phrase} onChange={(e) => setPhrase(e.target.value)} autoComplete="off" autoCapitalize="off" autoCorrect="off" spellCheck={false} />
+            </div>
+          )}
+          <MakeKey
+            disabled={(!remove && !valid) || (!remove && network === 'mainnet' && blackHoleLockout(key, keyState) && phrase.trim().replace(/\s+/g, ' ').toLowerCase() !== W.SHIPPED_KEYS.offPhrase)}
+            busy={busy}
+            onMake={() => onMake({ type: 'regular-key', regularKey: remove ? null : key })}
+          />
         </>
       ) : (
         <>

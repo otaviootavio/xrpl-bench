@@ -13,7 +13,7 @@ import { useLiveKeyState, useWarningKeyState } from '@/hooks/useLiveKeyState'
 import { usePrompts } from '@/hooks/usePrompts'
 import type { KeyWalletMeta } from '@/lib/crypto/keystore'
 import { runKeyAction, testRegularKey, type KeyAction, type KeyActionResult } from '@/lib/key-actions'
-import { endsSetRegularKey, masterOffToBlackHole, regularKeyTester } from '@/lib/key-warnings'
+import { blackHoleLockout, endsSetRegularKey, masterOffToBlackHole, regularKeyTester } from '@/lib/key-warnings'
 import * as W from '@/lib/offline-round-words'
 import { useAppStore, useWalletOpenKey } from '@/store/app-store'
 
@@ -62,7 +62,11 @@ export function KeysPlate({ wallet }: { wallet: KeyWalletMeta }) {
   const id = useId()
   const valid = isValidClassicAddress(address)
   const mainnet = wallet.network === 'mainnet'
-  const held = section === 'off' && mainnet && normalise(phrase) !== W.SHIPPED_KEYS.offPhrase
+  // Owner 2026-11-15: a black-hole Regular Key while the master key is known off and no signer
+  // list is irreversible-class. The full key state when read (it has the signer list), else the
+  // account read alone, whose unread signer list counts as none (the safe side).
+  const lockout = section === 'set' && valid && blackHoleLockout(address, keyState !== null && keyState !== 'unknown' ? keyState : warn.keyState)
+  const held = (section === 'off' || lockout) && mainnet && normalise(phrase) !== W.SHIPPED_KEYS.offPhrase
 
   useEffect(() => {
     if (result && result.kind !== 'refused') resultRef.current?.focus()
@@ -156,12 +160,18 @@ export function KeysPlate({ wallet }: { wallet: KeyWalletMeta }) {
           </div>
           {valid && <RegularKeyNotes address={address} />}
           {valid && endsSetRegularKey(address, warn.keyState) && <KeyWarning words={W.W5_SENTENCE} />}
+          {lockout && mainnet && (
+            <div className="grid gap-1.5">
+              <Label htmlFor={`${id}-phrase`}>{W.SHIPPED_KEYS.offPhraseLabel}</Label>
+              <Input id={`${id}-phrase`} value={phrase} onChange={(e) => setPhrase(e.target.value)} autoComplete="off" autoCapitalize="off" autoCorrect="off" spellCheck={false} />
+            </div>
+          )}
           <Button
             type="button"
             className="w-fit"
             disabled={busy}
-            aria-disabled={!valid || !warn.settled ? true : undefined}
-            aria-describedby={address.length > 0 && !valid ? `${id}-key-error` : undefined}
+            aria-disabled={!valid || !warn.settled || held ? true : undefined}
+            aria-describedby={address.length > 0 && !valid ? `${id}-key-error` : held ? `${id}-phrase` : undefined}
             onClick={() => valid && void run({ type: 'set', regularKey: address })}
           >
             {W.SET_A_REGULAR_KEY}

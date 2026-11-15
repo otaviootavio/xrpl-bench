@@ -86,6 +86,8 @@ context:
 
 ## Spec Change Log
 
+- 2026-11-15, owner decision (relayed by the coordinator): a SetRegularKey to a black-hole address (`rrrrrrrrrrrrrrrrrrrrrhoLvTp`, `rrrrrrrrrrrrrrrrrrrrBZbvji`) while the master key is known off and there is no signer list is irreversible-class, the same as master key off: on Mainnet the signing key is held until the existing typed phrase "turn off" is typed, then the Signing Check. No new words. Built as `blackHoleLockout` (`key-warnings.ts`). Safe side chosen and recorded: a signer list whose read is unknown counts as none; a master key state that is unknown does not trigger it (the decision says "known off"; W2 and P-29 still show). Applied on the Online key plate (Set; the full key state when read, else the account read with the signer list as unknown), the Synced Transmitter's Regular Key Build (holds "Make the unsigned transaction"), and the Offline-builds signing review when the Data to Sign's key state shows master key off. The Offline Sign review (Transmitter-builds) carries no key state, so there the Transmitter's Build holds it. The Offline Regular Key Build cannot know the key state, so its phrase sits on the signing review, as for master key off. Adds an I/O case: "Set to a black hole, master key off, no signer list → Mainnet typed phrase". Tests: `key-warnings.test.ts`, `configure-keys-plate.test.tsx`, `offline-key-actions.test.tsx`, `transmitter-new-transaction.test.tsx`.
+
 ## Review Triage Log
 
 Round one (coordinator review, 2026-11-15). Smallest change each; only the edited files' tests run (7 files, 91 tests) plus `tsc -b` and lint on the edited files.
@@ -107,6 +109,7 @@ Round one (coordinator review, 2026-11-15). Smallest change each; only the edite
 - **Left to story 12:** two-device's online refusals (FR-75/FR-77), `master-key.ts`/`control.ts` flows, the FR-75 plate.
 - **Deviation from W4's condition (owner to see).** W4 runs the test "if the Regular Key is a Wallet in this app". The in-place test needs more: an Online Wallet, its lock open, and already Signing for this Account (the only signing path for another Account; no new keystore path was added). A Wallet here that holds the key but does not sign for this Account (for example after "Not now" on P-54) gets P-50, which then tells the user to test with that wallet — it can, once its Signs for is set.
 - **`tem` reaches every online write.** SendTab, TrustLinesTab, two-device's submit, `control.ts` and `master-key.ts` now receive a `failed` outcome for a `tem` preliminary result where they used to receive a throw; each already handles `failed` (all suites pass).
+- **SPEC deviation (owner, 2026-11-15).** SPEC CAP-14 and Constraints name only master key off (and offline to online) as irreversible-class. A black-hole Regular Key with the master key known off and no signer list is now irreversible-class too (Spec Change Log): it has the same effect, an Account nobody can sign for again. SPEC.md itself is not edited here.
 - **Ledger fact seen:** turning the master key off while it is already off, signed by the Regular Key, validated `tesSUCCESS` (a no-op), not `tecNEED_MASTER_KEY`; that code came only while the master key was on.
 
 ## Verification

@@ -267,3 +267,31 @@ describe('story 11 review: no key changes before the warnings can show', () => {
     expect(within(plate()).getByText(W.W2_SENTENCE)).toBeTruthy()
   })
 })
+
+describe('owner 2026-11-15: black-hole Regular Key with the master key off', () => {
+  const HOLE = 'rrrrrrrrrrrrrrrrrrrrBZbvji'
+  it('Mainnet: the typed phrase holds Set; off Mainnet, or with the master key on, no phrase', async () => {
+    h.account = { isError: false, data: state({ regularKey: KEY, disableMasterKey: true }) }
+    h.run.mockResolvedValue({ kind: 'outcome', outcome: { status: 'validated', hash: 'AB', resultCode: 'tesSUCCESS' } })
+    mount(MAINNET)
+    await click(opener(W.SET_A_REGULAR_KEY))
+    type(W.SHIPPED_KEYS.regularKeyAddress, HOLE)
+    expect(confirm(W.SET_A_REGULAR_KEY).getAttribute('aria-disabled')).toBe('true')
+    await click(confirm(W.SET_A_REGULAR_KEY))
+    expect(h.run).not.toHaveBeenCalled()
+    type(/Type “turn off”/, 'turn off')
+    await click(confirm(W.SET_A_REGULAR_KEY))
+    await waitFor(() => expect(h.run).toHaveBeenCalledTimes(1))
+    cleanup()
+    mount(MASTER)
+    await click(opener(W.SET_A_REGULAR_KEY))
+    type(W.SHIPPED_KEYS.regularKeyAddress, HOLE)
+    expect(within(plate()).queryByLabelText(/Type “turn off”/)).toBeNull()
+    cleanup()
+    h.account = { isError: false, data: state({ regularKey: KEY }) }
+    mount(MAINNET)
+    await click(opener(W.SET_A_REGULAR_KEY))
+    type(W.SHIPPED_KEYS.regularKeyAddress, HOLE)
+    expect(within(plate()).queryByLabelText(/Type “turn off”/)).toBeNull()
+  })
+})

@@ -67,3 +67,15 @@ export function regularKeyTester(
     )
   return able.find((w) => w.id !== account.id) ?? able[0] ?? null
 }
+
+/**
+ * Owner decision 2026-11-15: a SetRegularKey to a black-hole address while the master key is
+ * known off, with no signer list, is irreversible-class like master key off (nobody can ever
+ * sign again): on Mainnet the signing key is held until "turn off" is typed. A signer list
+ * whose read is unknown counts as none (the safe side). A master key state that is unknown
+ * does not trigger it: the decision names "known off" (the warnings W2 and P-29 still show).
+ */
+export function blackHoleLockout(newKey: string | null | undefined, keyState: KeyState | null | undefined): boolean {
+  if (!isBlackHole(newKey) || !keyState || keyState === 'unknown') return false
+  return keyState.master_key === 'off' && (keyState.signer_list === null || keyState.signer_list === 'unknown')
+}

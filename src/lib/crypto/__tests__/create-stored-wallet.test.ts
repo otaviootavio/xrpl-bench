@@ -386,6 +386,22 @@ describe('a dropped FR-75 controlled view on a created Wallet (OS-FR-19, story 1
   })
 })
 
+describe('a Seed record holding only a dropped FR-75 controlled view (an older build could leave one; story 12)', () => {
+  it('lists nothing; removing the last listed Wallet empties the device: that record, every lock and the App PIN go', async () => {
+    const { meta } = ok(await createStoredWallet(base, { pin: PIN }))
+    const other = ok(await createStoredWallet(base, { pin: PIN })).meta
+    const rec = recordOf(other.id)
+    // The key's own Wallet was removed by an older build, leaving its controlled view alone on the record.
+    await putStoredWallet({ ...rec, views: [{ walletId: 'c', network: 'testnet', accountAddress: 'rControlledAccount1111111111111111' }] })
+    expect((await listWallets()).map((m) => m.id)).toEqual([meta.id])
+    const result = await removeWallet(meta.id)
+    expect(result).toEqual({ emptied: true, appPin: 'discarded' })
+    expect(h.state.stores.wallets.size).toBe(0)
+    expect(lockRecords()).toEqual([])
+    expect(h.state.stores.vault.get('vault')?.pinVerifier).toBeUndefined()
+  })
+})
+
 describe('removing the last Wallet on a created lock', () => {
   it('deletes its record and session and leaves other locks', async () => {
     const created = ok(await createStoredWallet(base, { pin: PIN }))

@@ -941,11 +941,23 @@ export function removeWallet(walletId: string): Promise<RemoveWalletResult> {
   return exclusiveVaultWrite(() => removeWalletUnguarded(walletId))
 }
 
-/** Nothing of any kind is stored: Seed records and Transmitter records alike. A
- * Transmitter left on the device keeps its lock and the App PIN it may use. */
+/** A Wallet the app lists is left: a Seed record with a view the app knows
+ * (`viewsOf`), or a Transmitter record. A Transmitter left on the device keeps its
+ * lock and the App PIN it may use. A Seed record whose views are all dropped FR-75
+ * controlled views (story 12) lists no Wallet, so it does not count: the Remove
+ * dialog's "last wallet" sentence is then true, and the record goes with the rest. */
 async function deviceHoldsWallets(): Promise<boolean> {
   const [wallets, transmitters] = await Promise.all([listStoredWallets(), listTransmitterRecords()])
-  return wallets.length + transmitters.length > 0
+  return wallets.some((w) => viewsOf(w).length > 0) || transmitters.length > 0
+}
+
+/** Deletes every Seed record left that lists no Wallet: only dropped FR-75 controlled
+ * views (an older build could leave a record holding nothing else). Called when no
+ * listed Wallet is left, so no encrypted Seed stays on a device the app calls empty. */
+async function deleteUnlistedSeedRecords(): Promise<void> {
+  for (const w of await listStoredWallets()) {
+    if (viewsOf(w).length === 0) await mutateStoredWallet(w.id, (current) => (viewsOf(current).length === 0 ? null : current))
+  }
 }
 
 async function removeWalletUnguarded(walletId: string): Promise<RemoveWalletResult> {
@@ -967,6 +979,12 @@ async function removeWalletUnguarded(walletId: string): Promise<RemoveWalletResu
     }
   }
   if (await deviceHoldsWallets()) return { emptied: false, appPin: 'kept' }
+  // No listed Wallet is left: a record of dropped controlled views only goes too.
+  try {
+    await deleteUnlistedSeedRecords()
+  } catch {
+    // reported below only through the PIN result; the listed Wallet is already gone
+  }
   // Nothing is stored: every lock record left is an orphan.
   // The PIN discard never depends on the lock-record cleanup: a failed cleanup there leaves only
   // lock records no wallet points at, while a skipped discard would leave a PIN on an empty device.

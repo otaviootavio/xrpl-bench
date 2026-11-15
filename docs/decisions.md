@@ -1601,8 +1601,9 @@ Not verified against a real ledger: a Testnet disable and re-enable remains to b
 
 **Retired (offline signing story 12; OS-FR-19).** `lib/two-device.ts`,
 `TwoDeviceSign.tsx`, `prepareUnsigned`, `submitSignedBlob` and the
-`xrplbench:1:<u|s>:` form are gone; such a code is answered as from a version this one
-does not understand. The offline routes and the Transmit step replace it. Kept below
+`xrplbench:1:<u|s>:` form are gone; at the Transmit step such a code is answered as
+from a version this one does not understand, and the offline screens answer P-17's
+malformed reason. The offline routes and the Transmit step replace it. Kept below
 as the record.
 
 `lib/qr-codec.ts` is the only definition of either payload: `xrplbench:1:u:<base64url

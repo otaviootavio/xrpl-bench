@@ -1,4 +1,4 @@
-import { isPayloadUrType } from '@/lib/qr-codec'
+import { isOlderBuildCode, isPayloadUrType } from '@/lib/qr-codec'
 import { URDecoder, encodeSinglePart, looksLikeUr } from '@/lib/ur/ur'
 
 /**
@@ -34,7 +34,7 @@ export type ScanStep =
  * form (handed up so the screen says why it is not read, never ignored). */
 export function isPayloadText(text: string): boolean {
   const t = text.trim()
-  if (t.startsWith('xrplbench:')) return true
+  if (isOlderBuildCode(t)) return true
   const m = /^ur:([a-z0-9-]+)\//i.exec(t)
   return m !== null && isPayloadUrType(m[1].toLowerCase())
 }

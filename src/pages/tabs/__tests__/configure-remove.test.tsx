@@ -11,6 +11,7 @@ const h = vi.hoisted(() => ({
   success: vi.fn(),
   error: vi.fn(),
   order: [] as string[],
+  unlisted: false,
 }))
 
 vi.mock('idb-keyval', () => ({ get: async () => undefined, set: async () => {}, del: async () => {} }))
@@ -32,6 +33,7 @@ vi.mock('@/lib/crypto/keystore', () => ({
   addressFromSeed: () => '',
   listWallets: (...a: unknown[]) => h.list(...a),
   removeWallet: (id: string) => h.remove(id),
+  holdsUnlistedSeedRecords: async () => h.unlisted,
   unavailablePrompts: { pin: async () => null },
   describeCheckFailure: () => 'locked',
   renameWallet: async () => ({ ok: true, metas: [] }),
@@ -74,6 +76,7 @@ const confirm = () => within(dialog()).getByRole('button', { name: 'Remove walle
 const vaultWithout = (...ids: string[]) => h.list.mockImplementation(async () => state().wallets.filter((w) => !ids.includes(w.id)))
 
 beforeEach(() => {
+  h.unlisted = false
   h.remove.mockReset().mockResolvedValue({ emptied: false, appPin: 'kept' })
   h.list.mockReset()
   h.success.mockReset()
@@ -116,6 +119,16 @@ describe('Configure Remove plate', () => {
     mount()
     fireEvent.click(key())
     expect(dialog().textContent).toMatch(/App PIN/)
+  })
+
+  it('the only listed wallet on a device that also stores an unlisted Seed record (story 12): the Seed sentence, not "last wallet"', async () => {
+    h.unlisted = true
+    seed([W])
+    mount()
+    await act(async () => {})
+    fireEvent.click(key())
+    expect(dialog().textContent).toContain([REMOVE_SOLE, REMOVE_BACKUP].join(' '))
+    expect(dialog().textContent).not.toContain(REMOVE_LAST)
   })
 
   it('a wallet that shares the lock: removes this one only, leaves before the store write, keeps the lock open', async () => {

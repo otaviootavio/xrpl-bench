@@ -39,7 +39,7 @@ import { AUTO_LOCK_CHOICES } from '@/lib/crypto/policy'
 import { minutesLabel } from '@/lib/minutes-label'
 import { useAppStore } from '@/store/app-store'
 import { getLockInfo } from '@/lib/crypto/lock'
-import { confirmRemoveWallet, openWalletNow } from '@/lib/remove-wallet'
+import { confirmRemoveWallet, openWalletNow, readHoldsUnlisted } from '@/lib/remove-wallet'
 import { leaveToChooser, walletScreenPath } from '@/lib/route'
 import { NETWORKS } from '@/lib/xrpl/networks'
 import { queryKeys } from '@/lib/xrpl/query-keys'
@@ -343,10 +343,20 @@ function RemovePlate({ wallet }: { wallet: WalletMeta }) {
   const network = NETWORKS[wallet.network].label
 
   // The key's own state stops nothing a keyboard can do, so the guard is here, at call time.
+  // A Seed record that lists no Wallet stays on the device (story 12): then this is not the last
+  // wallet. Read on mount; confirm reads it again and refuses if the shown sentence no longer holds.
+  const [holdsUnlisted, setHoldsUnlisted] = useState(false)
+  useEffect(() => {
+    let live = true
+    void readHoldsUnlisted().then((found) => live && setHoldsUnlisted(found))
+    return () => {
+      live = false
+    }
+  }, [])
   function press() {
     const now = openWalletNow(wallet.id)
     if (!now) return
-    setRemoving({ walletId: wallet.id, name: now.label, body: removeBodyFor(useAppStore.getState().wallets, wallet.id) })
+    setRemoving({ walletId: wallet.id, name: now.label, body: removeBodyFor(useAppStore.getState().wallets, wallet.id, holdsUnlisted) })
   }
 
   const confirm = (walletId: string, shownBody: RemoveBody) =>

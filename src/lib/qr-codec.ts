@@ -157,8 +157,9 @@ export function payloadKindOf(text: unknown): PayloadKind | null {
   return null
 }
 
-/** The single-code form of builds before story 13 (FR-78's two-device codes). */
-const isOlderBuildCode = (trimmed: string): boolean => /^xrplbench:/i.test(trimmed)
+/** The single-code form of builds before story 13 (FR-78's two-device codes): any
+ * case, whitespace stripped. `qr-scan-session.ts` uses the same test. */
+export const isOlderBuildCode = (text: string): boolean => /^xrplbench:/i.test(text.replace(/\s+/g, ''))
 
 function open(text: unknown, kind: PayloadKind): Decoded<Record<string, unknown>> {
   if (typeof text !== 'string') return { ok: false, kind: 'malformed', reason: NOT_A_CODE }

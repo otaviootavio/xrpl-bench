@@ -15,11 +15,14 @@ export type RemoveBody = 'sole' | 'last' | 'transmitter' | 'transmitter-last'
 /** Which consequence the dialog states, read from the Wallets as they are now:
  * the last Wallet on the device, else the Seed's only Wallet. A Seed record holds one
  * Wallet the app lists (FR-75's controlled views were dropped by story 12), so its
- * Seed always goes with it. */
-export function removeBodyFor(wallets: readonly WalletMeta[], walletId: string): RemoveBody {
+ * Seed always goes with it. `holdsUnlisted`: the device also stores a Seed record that
+ * lists no Wallet; it stays, so removing the last listed Wallet does not empty the
+ * device and the "last wallet" sentence is not said. */
+export function removeBodyFor(wallets: readonly WalletMeta[], walletId: string, holdsUnlisted = false): RemoveBody {
   const target = wallets.find((w) => w.id === walletId)
-  if (target?.kind === 'transmitter') return wallets.length <= 1 ? 'transmitter-last' : 'transmitter'
-  return wallets.length <= 1 ? 'last' : 'sole'
+  const last = wallets.length <= 1 && !holdsUnlisted
+  if (target?.kind === 'transmitter') return last ? 'transmitter-last' : 'transmitter'
+  return last ? 'last' : 'sole'
 }
 
 /** The dialog's sentences, in order. Exactly one of the two bodies, then the backup line. */

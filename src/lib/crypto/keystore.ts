@@ -206,10 +206,20 @@ export async function listKeyWallets(): Promise<KeyWalletMeta[]> {
   return (await listWallets()).filter(isKeyWallet)
 }
 
-/** Every Wallet name on the device, one per record (AD-42), Transmitters included. */
+/** A Seed record lists a Wallet unless every view on it is a dropped FR-75
+ * controlled view (story 12): such a record stays stored, unlisted, until Remove all. */
+const isListed = (w: StoredWallet): boolean => viewsOf(w).length > 0
+
+/** Every Wallet name on the device, one per listed record (AD-42), Transmitters included. */
 async function allRecordLabels(exceptId?: string): Promise<string[]> {
   const [wallets, transmitters] = await Promise.all([listStoredWallets(), listTransmitterRecords()])
-  return [...wallets, ...transmitters].filter((w) => w.id !== exceptId).map((w) => w.label)
+  return [...wallets.filter(isListed), ...transmitters].filter((w) => w.id !== exceptId).map((w) => w.label)
+}
+
+/** True when the device stores a Seed record that lists no Wallet (only dropped FR-75
+ * controlled views). Removing the last listed Wallet then does not empty the device. */
+export async function holdsUnlistedSeedRecords(): Promise<boolean> {
+  return (await listStoredWallets()).some((w) => !isListed(w))
 }
 
 /** The algorithm a Seed's own encoding names. */
@@ -917,6 +927,8 @@ async function nameForNewWallet(raw: string): Promise<string> {
  * never reads vault meta itself. */
 export async function appPinResidue(): Promise<boolean> {
   if (await hasAppPin()) return true
+  // A Seed record that lists no Wallet (story 12) is residue too: Remove all is the one way to remove it.
+  if (await holdsUnlistedSeedRecords()) return true
   return (await getVaultMeta()).failedAttempts > 0
 }
 
@@ -929,7 +941,9 @@ export interface RemoveWalletResult {
 }
 
 /** Removes one Wallet. Its Seed record goes with its last view the app knows
- * (`viewsOf`): a dropped FR-75 controlled view does not keep the Seed on the device. The whole removal runs
+ * (`viewsOf`). A record that lists no Wallet (only dropped FR-75 controlled views) is
+ * never deleted here: its Seed may be the only key of an Account, so it stays, with its
+ * lock and the App PIN, until Remove all. The whole removal runs
  * under `exclusiveVaultWrite`, so a create or import in flight finishes first and
  * the emptiness check below sees what it wrote (AD-46).
  *
@@ -941,23 +955,12 @@ export function removeWallet(walletId: string): Promise<RemoveWalletResult> {
   return exclusiveVaultWrite(() => removeWalletUnguarded(walletId))
 }
 
-/** A Wallet the app lists is left: a Seed record with a view the app knows
- * (`viewsOf`), or a Transmitter record. A Transmitter left on the device keeps its
- * lock and the App PIN it may use. A Seed record whose views are all dropped FR-75
- * controlled views (story 12) lists no Wallet, so it does not count: the Remove
- * dialog's "last wallet" sentence is then true, and the record goes with the rest. */
+/** Nothing of any kind is stored: Seed records (listed or not) and Transmitter
+ * records alike. A Transmitter, or a Seed record that lists no Wallet, left on the
+ * device keeps its lock and the App PIN. */
 async function deviceHoldsWallets(): Promise<boolean> {
   const [wallets, transmitters] = await Promise.all([listStoredWallets(), listTransmitterRecords()])
-  return wallets.some((w) => viewsOf(w).length > 0) || transmitters.length > 0
-}
-
-/** Deletes every Seed record left that lists no Wallet: only dropped FR-75 controlled
- * views (an older build could leave a record holding nothing else). Called when no
- * listed Wallet is left, so no encrypted Seed stays on a device the app calls empty. */
-async function deleteUnlistedSeedRecords(): Promise<void> {
-  for (const w of await listStoredWallets()) {
-    if (viewsOf(w).length === 0) await mutateStoredWallet(w.id, (current) => (viewsOf(current).length === 0 ? null : current))
-  }
+  return wallets.length + transmitters.length > 0
 }
 
 async function removeWalletUnguarded(walletId: string): Promise<RemoveWalletResult> {
@@ -979,12 +982,6 @@ async function removeWalletUnguarded(walletId: string): Promise<RemoveWalletResu
     }
   }
   if (await deviceHoldsWallets()) return { emptied: false, appPin: 'kept' }
-  // No listed Wallet is left: a record of dropped controlled views only goes too.
-  try {
-    await deleteUnlistedSeedRecords()
-  } catch {
-    // reported below only through the PIN result; the listed Wallet is already gone
-  }
   // Nothing is stored: every lock record left is an orphan.
   // The PIN discard never depends on the lock-record cleanup: a failed cleanup there leaves only
   // lock records no wallet points at, while a skipped discard would leave a PIN on an empty device.
@@ -1549,7 +1546,8 @@ async function createDerivedWalletUnguarded(requested: CreateDerivedWalletInput,
     // Signs for, this writer's duplicate rule is the passkey triple below, as before.
     const duplicate = signsFor ? await duplicateReasonFor(address, input.network, signsFor) : null
     if (duplicate) return await abandon(hadAppPin, { status: 'refused' as const, reason: duplicate })
-    const taken = (await listStoredWallets()).some(
+    // An unlisted record (only dropped FR-75 views) does not count: it stays stored beside the new one until Remove all.
+    const taken = (await listStoredWallets()).filter(isListed).some(
       (w) =>
         w.derived?.credentialIdB64 === credentialIdB64 &&
         w.derived.ordinal === ordinal &&
@@ -2167,7 +2165,7 @@ async function editChecksUnguarded(walletId: string, request: CheckEditRequest, 
  * on that lock — a Mainnet Wallet's lock may not go under one minute (FR-65). A refusal
  * carries its plain reason and writes nothing. */
 export async function setLockAutoLock(lockId: string, minutes: number, ctx: { prompts: Prompts } = { prompts: unavailablePrompts }): Promise<PolicyVerdict> {
-  const onLock = (await listStoredWallets()).filter((w) => w.lockId === lockId)
+  const onLock = (await listStoredWallets()).filter((w) => w.lockId === lockId && isListed(w))
   const first = onLock[0]
   const transmitters = (await listTransmitterRecords()).filter((t) => t.lockId === lockId)
   if (!first && transmitters.length > 0) {

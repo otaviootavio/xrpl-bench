@@ -387,18 +387,38 @@ describe('a dropped FR-75 controlled view on a created Wallet (OS-FR-19, story 1
 })
 
 describe('a Seed record holding only a dropped FR-75 controlled view (an older build could leave one; story 12)', () => {
-  it('lists nothing; removing the last listed Wallet empties the device: that record, every lock and the App PIN go', async () => {
+  async function withUnlisted() {
     const { meta } = ok(await createStoredWallet(base, { pin: PIN }))
     const other = ok(await createStoredWallet(base, { pin: PIN })).meta
     const rec = recordOf(other.id)
     // The key's own Wallet was removed by an older build, leaving its controlled view alone on the record.
     await putStoredWallet({ ...rec, views: [{ walletId: 'c', network: 'testnet', accountAddress: 'rControlledAccount1111111111111111' }] })
+    return { meta, other, rec }
+  }
+
+  it('lists nothing; removing the last listed Wallet keeps that record, its lock and the App PIN (never deleted automatically)', async () => {
+    const { meta, other, rec } = await withUnlisted()
     expect((await listWallets()).map((m) => m.id)).toEqual([meta.id])
-    const result = await removeWallet(meta.id)
-    expect(result).toEqual({ emptied: true, appPin: 'discarded' })
-    expect(h.state.stores.wallets.size).toBe(0)
-    expect(lockRecords()).toEqual([])
-    expect(h.state.stores.vault.get('vault')?.pinVerifier).toBeUndefined()
+    expect(await keystore.holdsUnlistedSeedRecords()).toBe(true)
+    expect(await removeWallet(meta.id)).toEqual({ emptied: false, appPin: 'kept' })
+    expect(h.state.stores.wallets.get(rec.id)).toEqual({ ...rec, views: [{ walletId: 'c', network: 'testnet', accountAddress: 'rControlledAccount1111111111111111' }] })
+    expect(h.state.stores.vault.get(`lock:${other.lockId}`)).toBeDefined()
+    expect(h.state.stores.vault.get('vault')?.pinVerifier).toBeDefined()
+    expect(await keystore.appPinResidue()).toBe(true)
+  })
+
+  it('is residue even with no App PIN, so first run offers Remove all', async () => {
+    const { meta } = await withUnlisted()
+    await mutateStoredWallet(recordOf(meta.id).id, () => null)
+    h.state.stores.vault.set('vault', { key: 'vault', failedAttempts: 0 })
+    expect(await keystore.appPinResidue()).toBe(true)
+  })
+
+  it('its name does not block a name, and setLockAutoLock skips it', async () => {
+    const { meta, other } = await withUnlisted()
+    const named = await keystore.renameWallet(meta.id, recordOf(other.id).label)
+    expect(named.ok).toBe(true)
+    expect(await keystore.setLockAutoLock(other.lockId, 15)).toMatchObject({ ok: true })
   })
 })
 

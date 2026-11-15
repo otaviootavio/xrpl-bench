@@ -1,5 +1,5 @@
 /** @vitest-environment jsdom */
-import { cleanup, render, screen, waitFor, within } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -15,7 +15,9 @@ const h = vi.hoisted(() => ({
   reserves: vi.fn(),
   delegates: vi.fn(),
   signers: vi.fn(),
+  faucet: vi.fn(),
 }))
+vi.mock('@/lib/xrpl/faucet', () => ({ requestFaucetFunds: (...a: unknown[]) => h.faucet(...a) }))
 vi.mock('@/lib/xrpl/reads', () => ({
   fetchAccountState: (...a: unknown[]) => h.account(...a),
   fetchAccountLines: (...a: unknown[]) => h.lines(...a),
@@ -32,7 +34,7 @@ import { DELEGATE_WARNING, NONE, VALUE_UNKNOWN } from '@/lib/transmitter-words'
 
 const ADDR = 'rPT1Sjq2YGrBMTttX4GZHjKu9dyfzbpAYe'
 const DELEGATE = 'rHb9CJAWyB4rj91VRWn96DkukG4bwdtyTh'
-const wallet: TransmitterMeta = { id: 't', seedId: 't', lockId: 'L', label: 'Send', createdAt: 1, network: 'testnet', openCheck: 'pin', kind: 'transmitter', address: ADDR }
+const testnetWallet: TransmitterMeta = { id: 't', seedId: 't', lockId: 'L', label: 'Send', createdAt: 1, network: 'testnet', openCheck: 'pin', kind: 'transmitter', address: ADDR }
 const state = (over: Record<string, unknown> = {}) => ({
   exists: true,
   address: ADDR,
@@ -44,7 +46,7 @@ const state = (over: Record<string, unknown> = {}) => ({
   ...over,
 })
 
-function mount(client = new QueryClient({ defaultOptions: { queries: { retry: false } } })) {
+function mount(client = new QueryClient({ defaultOptions: { queries: { retry: false } } }), wallet: TransmitterMeta = testnetWallet) {
   render(
     <QueryClientProvider client={client}>
       <TooltipProvider>
@@ -78,7 +80,7 @@ describe('Account on a Synced Transmitter (OS-FR-4)', () => {
     await waitFor(() => expect(screen.getAllByText(NONE)).toHaveLength(4))
     expect(within(delegatesSection()).getByText(NONE)).toBeTruthy()
     for (const read of [h.account, h.lines, h.delegates]) expect(read).toHaveBeenCalledWith('testnet', ADDR, undefined)
-    expect(screen.queryByRole('button', { name: /sign|fund|send/i })).toBeNull()
+    expect(screen.queryByRole('button', { name: /sign|send/i })).toBeNull()
   })
 
   it('shows a set Regular Key and the master key off', async () => {
@@ -154,5 +156,50 @@ describe('Account on a Synced Transmitter (OS-FR-4)', () => {
     h.signers.mockRejectedValue(new Error('down'))
     mount()
     await waitFor(() => expect(screen.getByText('Signer list').nextElementSibling?.textContent).toBe(VALUE_UNKNOWN))
+  })
+})
+
+/**
+ * Issue #71: an Offline Wallet never goes online, so on Testnet and Devnet the
+ * Transmitter offers Balances' faucet for the Synced address, in Balances' words
+ * and places. Mainnet has no faucet and keeps the shipped sentence.
+ */
+describe('Faucet on a Synced Transmitter (issue #71)', () => {
+  const mainnetWallet: TransmitterMeta = { ...testnetWallet, network: 'mainnet' }
+  const devnetWallet: TransmitterMeta = { ...testnetWallet, network: 'devnet' }
+  const client = () => new QueryClient({ defaultOptions: { queries: { retry: false } } })
+
+  it('not activated on Testnet: the faucet funds the Synced address and every account read is fetched again', async () => {
+    h.account.mockResolvedValue(state({ exists: false, balanceDrops: '0' }))
+    h.faucet.mockResolvedValue({ amountXrp: '100' })
+    mount()
+    const key = await screen.findByRole('button', { name: 'Fund with Testnet XRP' })
+    const before = h.account.mock.calls.length
+    h.account.mockResolvedValue(state({ balanceDrops: '100000000' }))
+    fireEvent.click(key)
+    await waitFor(() => expect(h.faucet).toHaveBeenCalledWith('testnet', ADDR))
+    await waitFor(() => expect(h.account.mock.calls.length).toBeGreaterThan(before))
+    expect(await screen.findByText('100')).toBeTruthy()
+  })
+
+  it('an activated account on Devnet shows the faucet under the balance', async () => {
+    mount(client(), devnetWallet)
+    expect(await screen.findByText('25')).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Fund with Devnet XRP' })).toBeTruthy()
+  })
+
+  it('Mainnet has no faucet: the not-activated alert says the shipped sentence', async () => {
+    h.account.mockResolvedValue(state({ exists: false, balanceDrops: '0' }))
+    mount(client(), mainnetWallet)
+    expect(await screen.findByText('Account not activated yet')).toBeTruthy()
+    expect(screen.getByText('Fund it with real XRP from an exchange or another wallet — there is no faucet on Mainnet.')).toBeTruthy()
+    expect(screen.queryByRole('button', { name: /fund/i })).toBeNull()
+  })
+
+  it('a failed balance read offers no faucet', async () => {
+    h.account.mockRejectedValue(new Error('down'))
+    mount()
+    expect(await screen.findByText('Balance unavailable')).toBeTruthy()
+    expect(screen.queryByRole('button', { name: /fund/i })).toBeNull()
   })
 })

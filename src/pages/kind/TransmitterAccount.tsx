@@ -19,6 +19,8 @@ import type { TransmitterMeta } from '@/lib/crypto/keystore'
 import { DELEGATE_WARNING, NONE, VALUE_UNKNOWN } from '@/lib/transmitter-words'
 import { MASTER_KEY, REGULAR_KEY, TRANSMITTER_SCREENS } from '@/lib/wallet-kind-words'
 import { formatXrp, formatXrpValue } from '@/lib/xrpl/money'
+import { NETWORKS } from '@/lib/xrpl/networks'
+import { FaucetButton } from '@/components/wallet/FaucetButton'
 import { KindScreenPlate } from './KindScreenPlate'
 
 /**
@@ -27,7 +29,8 @@ import { KindScreenPlate } from './KindScreenPlate'
  * and the delegates. Every read goes through the account-scoped key factory for
  * this Wallet's Network and Synced address. A failed read is said as unavailable
  * or as P-29, never as empty or zero, and `isError` wins over retained data.
- * Nothing here offers to sign, fund or change anything. The words are the shipped
+ * Nothing here signs or changes anything; on Testnet and Devnet it offers Balances'
+ * faucet for the Synced address (issue #71). The words are the shipped
  * Balances words and the approved P-n; "Key state", "Signer list" and its value were
  * approved on 2026-11-14 (story 8 review round two).
  */
@@ -67,8 +70,16 @@ export function TransmitterAccount({ wallet, address }: { wallet: TransmitterMet
       {state && !state.exists && (
         <Alert variant="warning">
           <AlertTitle>Account not activated yet</AlertTitle>
-          <AlertDescription>
-            This address needs to receive at least {reserves.data && !reserves.isError ? formatXrp(reserves.data.baseReserveDrops) : 'the base reserve'} to become an account on-ledger.
+          <AlertDescription className="flex flex-col items-start gap-2">
+            <span>
+              This address needs to receive at least {reserves.data && !reserves.isError ? formatXrp(reserves.data.baseReserveDrops) : 'the base reserve'} to become an account on-ledger.
+            </span>
+            {/* Issue #71: the online device funds the address an Offline Wallet holds. */}
+            {NETWORKS[network].faucetUrl ? (
+              <FaucetButton network={network} address={address} />
+            ) : (
+              <span>Fund it with real XRP from an exchange or another wallet — there is no faucet on Mainnet.</span>
+            )}
           </AlertDescription>
         </Alert>
       )}
@@ -83,6 +94,7 @@ export function TransmitterAccount({ wallet, address }: { wallet: TransmitterMet
               Live
             </StatusLegend>
           }
+          footer={NETWORKS[network].faucetUrl && <FaucetButton network={network} address={address} variant="outline" />}
         />
       )}
       {spendable.reserveFailed && (account.isError || state?.exists) && (

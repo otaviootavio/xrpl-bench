@@ -738,6 +738,7 @@ Item 8 shipped as a refactor that preserves behaviour (`spec-sendtab-split.md`).
 - source_spec: `_bmad-output/specs/spec-offline-signing/stories/11-regular-key-and-master-key-warnings.md`
   summary: At 320 px with 200% text, a claimed outcome's bracketed code (for example "(tecNO_ALTERNATIVE_KEY)") runs past the edge of the Online key plate: the code is unbreakable by a recorded decision (`history-error.test.tsx` pins `whitespace-nowrap`).
   evidence: Browser pass 2026-11-15, `s11/no-alternative-key-320-zoom200.png` (2 elements past the viewport). Letting the code break only when it cannot fit (`[overflow-wrap:anywhere]` plus `min-w-0`) measured 0, but changes the History rule, so it was reverted. Settle with the owner: break inside a code only when the code alone is wider than its box.
+  resolution: (2026-11-15, story 11 `dbc23fe`) resolved on this plate only: `breakableCode` lets the code break inside itself when it alone is wider than its box; History and the other outcomes keep the unbreakable code. Re-measured 0 at 320/200%.
 
 - source_spec: `_bmad-output/specs/spec-offline-signing/stories/11-regular-key-and-master-key-warnings.md`
   summary: What story 11 leaves to story 12: two-device signing (FR-78) keeps its FR-75/FR-77 refusals on the online side (`twoDeviceBlockedReason`); `master-key.ts` `setMasterKey`/`masterKeyAction` and `control.ts` `setRegularKey` keep their refusals but no screen of the Online key actions uses them now (the FR-75 plate's "Let another wallet sign" still runs `setRegularKey`).

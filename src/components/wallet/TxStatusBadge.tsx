@@ -22,15 +22,15 @@ import { StatusLegend, type LampTone } from '@/components/ui/lamp'
  * legend's `inline-flex` would each become a flex item and could not wrap onto
  * a line below one another.
  */
-function Status({ tone, code, children }: { tone: LampTone; code?: string; children: React.ReactNode }) {
+function Status({ tone, code, breakableCode, children }: { tone: LampTone; code?: string; breakableCode?: boolean; children: React.ReactNode }) {
   return (
     <StatusLegend tone={tone}>
-      <span>
+      <span className={breakableCode ? 'min-w-0' : undefined}>
         {children}
         {code !== undefined && (
           <>
             {' '}
-            <span className="whitespace-nowrap">({code})</span>
+            <span className={breakableCode ? '[overflow-wrap:anywhere]' : 'whitespace-nowrap'}>({code})</span>
           </>
         )}
       </span>
@@ -38,13 +38,19 @@ function Status({ tone, code, children }: { tone: LampTone; code?: string; child
   )
 }
 
-export function TxStatusBadge({ resultCode, validated }: { resultCode?: string; validated: boolean }) {
+/**
+ * `breakableCode` (offline signing story 11): inside a narrow plate (the Online key plate,
+ * 320 px at 200% text) the code may break inside itself, and only when it alone is wider than
+ * its box; it still moves to its own line as a unit first. Off by default: History keeps the
+ * unbreakable code.
+ */
+export function TxStatusBadge({ resultCode, validated, breakableCode }: { resultCode?: string; validated: boolean; breakableCode?: boolean }) {
   if (!validated) return <Status tone="neutral">Pending</Status>
   if (resultCode === 'tesSUCCESS') return <Status tone="live">Validated</Status>
   if (resultCode === 'expired') return <Status tone="caution">Expired — not applied</Status>
   // Validated, but the ledger's answer carried no readable result: never
   // "Failed", which would invite a resend that pays twice.
   if (resultCode === 'unknown') return <Status tone="caution">Result not read</Status>
-  if (resultCode?.startsWith('tec')) return <Status tone="caution" code={resultCode}>Failed — fee charged</Status>
-  return <Status tone="alert" code={resultCode ?? ''}>Failed</Status>
+  if (resultCode?.startsWith('tec')) return <Status tone="caution" code={resultCode} breakableCode={breakableCode}>Failed — fee charged</Status>
+  return <Status tone="alert" code={resultCode ?? ''} breakableCode={breakableCode}>Failed</Status>
 }

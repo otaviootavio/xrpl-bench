@@ -192,7 +192,7 @@ export function KeysPlate({ wallet }: { wallet: KeyWalletMeta }) {
             )}
             {test && test !== 'elsewhere' && test.kind !== 'refused' && (
               <div className="min-w-0 self-stretch">
-                <ResultView result={test} headingRef={testRef} />
+                <ResultView result={test} headingRef={testRef} breakableCode />
               </div>
             )}
           </div>
@@ -241,7 +241,7 @@ export function KeysPlate({ wallet }: { wallet: KeyWalletMeta }) {
       )}
       {result && result.kind !== 'refused' && (
         <div className="min-w-0">
-          <ResultView result={result} headingRef={resultRef} />
+          <ResultView result={result} headingRef={resultRef} breakableCode />
         </div>
       )}
     </ConfigPlate>

@@ -29,3 +29,15 @@ describe('TxStatusBadge', () => {
     expect(screen.getByText(words, { exact: false })).toBeTruthy()
   })
 })
+
+describe('breakableCode (offline signing story 11, the Online key plate)', () => {
+  it('lets the code break inside itself only when asked; by default it stays unbreakable', () => {
+    const { unmount } = render(<TxStatusBadge resultCode="tecNO_ALTERNATIVE_KEY" validated />)
+    expect(screen.getByText('(tecNO_ALTERNATIVE_KEY)').className).toBe('whitespace-nowrap')
+    unmount()
+    render(<TxStatusBadge resultCode="tecNO_ALTERNATIVE_KEY" validated breakableCode />)
+    const code = screen.getByText('(tecNO_ALTERNATIVE_KEY)')
+    expect(code.className).toBe('[overflow-wrap:anywhere]')
+    expect(code.parentElement?.className).toBe('min-w-0')
+  })
+})

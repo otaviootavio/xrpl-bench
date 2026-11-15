@@ -66,7 +66,16 @@ export function ReadyView({
 }
 
 /** After Send: a decline (P-24 caution), the expiry, an unconfirmed submit, or the outcome. A refusal is the caller's alert. */
-export function ResultView({ result, headingRef }: { result: StepResult; headingRef: React.RefObject<HTMLHeadingElement | null> }) {
+export function ResultView({
+  result,
+  headingRef,
+  breakableCode,
+}: {
+  result: StepResult
+  headingRef: React.RefObject<HTMLHeadingElement | null>
+  /** A narrow place (the Online key plate): the result code may break inside itself (`TxStatusBadge`). */
+  breakableCode?: boolean
+}) {
   switch (result.kind) {
     case 'declined':
       return (
@@ -91,7 +100,7 @@ export function ResultView({ result, headingRef }: { result: StepResult; heading
     case 'outcome':
       return (
         <>
-          <Outcome outcome={result.outcome} headingRef={headingRef} />
+          <Outcome outcome={result.outcome} headingRef={headingRef} breakableCode={breakableCode} />
           {/* P-54 (OS-FR-20): after a validated Regular Key change. */}
           {result.regularKeySet && <SignsForOffer set={result.regularKeySet} />}
         </>
@@ -101,7 +110,7 @@ export function ResultView({ result, headingRef }: { result: StepResult; heading
   }
 }
 
-function Outcome({ outcome, headingRef }: { outcome: TransmitOutcome; headingRef: React.RefObject<HTMLHeadingElement | null> }) {
+function Outcome({ outcome, headingRef, breakableCode }: { outcome: TransmitOutcome; headingRef: React.RefObject<HTMLHeadingElement | null>; breakableCode?: boolean }) {
   // P-23: the ledger used this Sequence; never "Failed", and nothing offers to send again.
   // No link to this blob's hash: it is never on the ledger, and "not found" would read as "not sent".
   if (outcome.status === 'sent-before') {
@@ -117,7 +126,7 @@ function Outcome({ outcome, headingRef }: { outcome: TransmitOutcome; headingRef
   return (
     <div className="panel-plate flex min-w-0 flex-col gap-2 rounded-md p-3">
       <h2 ref={headingRef} tabIndex={-1} className="flex min-w-0 flex-wrap items-center gap-2">
-        <TxStatusBadge resultCode={outcome.status === 'unknown' || outcome.status === 'expired' ? outcome.status : outcome.resultCode} validated />
+        <TxStatusBadge resultCode={outcome.status === 'unknown' || outcome.status === 'expired' ? outcome.status : outcome.resultCode} validated breakableCode={breakableCode} />
         <TxLink hash={outcome.hash} />
       </h2>
       {outcome.status === 'unknown' && <p className="text-sm">{UNKNOWN_OUTCOME_WORDS}</p>}

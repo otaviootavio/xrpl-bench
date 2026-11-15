@@ -1,3 +1,6 @@
+import { KeyWarning } from '@/components/wallet/KeyStateRows'
+import { RegularKeyNotes } from '@/components/wallet/KeyWarnings'
+import { W3_SENTENCE } from '@/lib/offline-round-words'
 import { useRef, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { Button } from '@/components/ui/button'
@@ -361,7 +364,15 @@ function OfflinePanel({ wallet, onBusy }: { wallet: KeyWalletMeta; onBusy: (busy
             {r.destination && <Field label="Destination" value={r.destination} />}
             {r.destinationTag !== undefined && <Field label="Destination tag" value={String(r.destinationTag)} />}
             {r.amountXrp && <Field label="Amount" value={r.amountXrp} mono={false} />}
-            {r.regularKey && <Field label="New Regular Key" value={r.regularKey} />}
+            {/* W3 (story 11, OS-FR-21): a "set Regular Key" this device did not build, directly
+                above the key it names; then P-30 or W1, and W2. Cautions only, until story 12. */}
+            {r.regularKey && (
+              <div className="flex min-w-0 flex-col gap-1.5">
+                <KeyWarning words={W3_SENTENCE} />
+                <Field label="New Regular Key" value={r.regularKey} />
+                <RegularKeyNotes address={r.regularKey} />
+              </div>
+            )}
             <Field label="Network fee" value={r.feeXrp} mono={false} />
             <Field label="Last ledger" value={String(r.lastLedgerSequence)} />
             <Field label="Network" value={r.mainnet ? `${r.networkLabel} — real funds` : r.networkLabel} mono={false} />

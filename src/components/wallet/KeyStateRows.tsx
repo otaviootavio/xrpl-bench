@@ -11,12 +11,13 @@ import { NONE, VALUE_UNKNOWN } from '@/lib/transmitter-words'
  * ("None.", "{n} signers, quorum {q}" or P-29). Unknown is said as unknown, never as
  * safe (OS-FR-21). The row terms are P-62's type words and the approved "Signer list".
  */
-export function KeyStateRows({ keyState, headingLevel = 3 }: { keyState: KeyState; headingLevel?: 2 | 3 }) {
+/** `headingLevel` `null`: no heading, inside a plate whose own title is "Key state" (story 11). */
+export function KeyStateRows({ keyState, headingLevel = 3 }: { keyState: KeyState; headingLevel?: 2 | 3 | null }) {
   const known = keyState === 'unknown' ? null : keyState
   const Heading = headingLevel === 2 ? 'h2' : 'h3'
   return (
-    <section aria-label={KEY_STATE} className="flex min-w-0 flex-col gap-2">
-      <Heading className="panel-legend">{KEY_STATE}</Heading>
+    <section aria-label={headingLevel === null ? undefined : KEY_STATE} className="flex min-w-0 flex-col gap-2">
+      {headingLevel !== null && <Heading className="panel-legend">{KEY_STATE}</Heading>}
       <dl className="grid min-w-0 gap-2 text-sm">
         <div className="grid min-w-0 gap-0.5">
           <dt className="panel-legend">{REGULAR_KEY_TYPE}</dt>

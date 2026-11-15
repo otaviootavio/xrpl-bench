@@ -22,7 +22,7 @@ import { useAppStore } from '@/store/app-store'
 
 /** The fixed plate order of the Wallet tab. `Account` is the h2 inside the identity plate's address plate. */
 // The Wallet kind plate (offline signing story 5).
-const PLATE_ORDER = ['This wallet', 'Account', 'Wallet kind', 'Name', 'Address Book', 'Checks', 'Seed', 'This key signs for another account', 'Operating another account', 'Node', 'Before sending', 'Two-device signing', 'Remove this wallet']
+const PLATE_ORDER = ['This wallet', 'Account', 'Wallet kind', 'Name', 'Address Book', 'Checks', 'Seed', 'This key signs for another account', 'Key state', 'Operating another account', 'Node', 'Before sending', 'Two-device signing', 'Remove this wallet']
 
 const W = (id: string, lockId: string, extra = {}) =>
   ({ id, seedId: id, lockId, label: id, address: `r${id}`, keyAddress: `r${id}`, createdAt: 1, network: 'testnet', algorithm: 'ed25519', seedMethod: 'stored', openCheck: 'pin', signingCheck: 'standard', kind: 'online', ...extra }) as never
@@ -50,7 +50,7 @@ afterEach(() => {
 })
 
 describe('the Wallet tab', () => {
-  it('h1 holds the fixed label Local settings and the name as its own span, with the Network words; then the eleven headings (Account and ten plates) in the fixed order', async () => {
+  it('h1 holds the fixed label Local settings and the name as its own span, with the Network words; then the twelve headings (Account and eleven plates) in the fixed order', async () => {
     mount()
     const h1 = screen.getByRole('heading', { level: 1, name: 'Local settings a' })
     expect(h1.querySelectorAll('span')).toHaveLength(2)

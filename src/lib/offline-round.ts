@@ -1,10 +1,11 @@
+import { endsSetRegularKey } from '@/lib/key-warnings'
 import { sha256 } from '@noble/hashes/sha2.js'
 import type { SubmittableTransaction } from 'xrpl'
 import { NETWORKS, type NetworkId } from '@/lib/xrpl/networks'
 import { feeWithinCap } from '@/lib/xrpl/money'
 import { signPrepared } from '@/lib/xrpl/writes'
 import { offlineSigningHandleFor, type SigningContext } from '@/lib/crypto/keystore'
-import { ASF_DISABLE_MASTER, decodeDataToSign, encodeRequest, encodeSigned, isCanonicalLimit, payloadKindOf, TF_SET_NO_RIPPLE, type DataToSignPayload, type KeyState, type PayloadKind, type SignerListState, type RequestTx } from '@/lib/qr-codec'
+import { ASF_DISABLE_MASTER, decodeDataToSign, encodeRequest, encodeSigned, isCanonicalLimit, payloadKindOf, TF_SET_NO_RIPPLE, type DataToSignPayload, type PayloadKind, type SignerListState, type RequestTx } from '@/lib/qr-codec'
 import { LEDGER_FLOORS, MAX_RECEIVED_LEDGER_INDEX, OFFLINE_LEDGER_WINDOW } from '@/lib/offline-window'
 import { WRONG_KIND } from '@/lib/transmitter-words'
 import { DATA_REFUSAL, SIGNER_LIST_VALUE } from '@/lib/offline-round-words'
@@ -146,13 +147,11 @@ export function buildHashOf(build: OfflineBuild): string {
 
 /**
  * Whether W5 applies (EXPERIENCE "Approved strings": a Regular Key is set and the
- * transaction replaces it): a SetRegularKey that sets a key, when the key state says
- * another key is set. An unknown state shows P-29 and no W5: the app cannot say.
+ * transaction replaces it). Story 11: a removal ends the set key as well, so it warns
+ * too (story 9 already warned on a removal it did not build). An unknown state shows
+ * P-29 and no W5: the app cannot say. One rule for every screen: `key-warnings.ts`.
  */
-export function replacesRegularKey(newKey: string | null | undefined, keyState: KeyState | undefined): boolean {
-  if (!newKey || !keyState || keyState === 'unknown') return false
-  return keyState.regular_key !== null && keyState.regular_key !== newKey
-}
+export const replacesRegularKey = endsSetRegularKey
 
 /** A signer list's value: "None.", "{n} signers, quorum {q}", or P-29 when unread. */
 export function signerListWords(list: SignerListState): string {

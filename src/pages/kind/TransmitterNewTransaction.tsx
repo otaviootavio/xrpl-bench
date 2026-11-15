@@ -1,3 +1,5 @@
+import { RegularKeyNotes } from '@/components/wallet/KeyWarnings'
+import { masterOffToBlackHole } from '@/lib/key-warnings'
 import { useEffect, useRef, useState } from 'react'
 import { isValidClassicAddress } from 'xrpl'
 import { useQueryClient } from '@tanstack/react-query'
@@ -209,7 +211,9 @@ function UnsignedPlate({ made, wallet, headingRef }: { made: Made; wallet: Trans
       )}
       {checks.type === 'token-payment' && checks.warnings.includes('no-trust-line') && <SendWarning title={W.SHIPPED_SEND.noTrustLineTitle} line={W.SHIPPED_SEND.noTrustLineLine} />}
       {made.keyState !== undefined && <KeyStateRows keyState={made.keyState} />}
+      {tx.TransactionType === 'SetRegularKey' && typeof tx.RegularKey === 'string' && <RegularKeyNotes address={tx.RegularKey} />}
       {tx.TransactionType === 'SetRegularKey' && replacesRegularKey(tx.RegularKey as string | undefined, made.keyState) && <KeyWarning words={W.W5_SENTENCE} />}
+      {tx.TransactionType === 'AccountSet' && tx.SetFlag !== undefined && masterOffToBlackHole(made.keyState) && <KeyWarning words={W.W2_SENTENCE} />}
       {tx.TransactionType === 'AccountSet' && tx.SetFlag !== undefined && <KeyWarning words={W.W4_SENTENCE} />}
     </HandoffPlate>
   )
@@ -613,7 +617,9 @@ function KeyForm({ wallet, address, busy, onMake, type, initial }: FormProps & {
               )}
             </div>
           )}
-          {!remove && valid && keyState !== null && replacesRegularKey(key, keyState) && <KeyWarning words={W.W5_SENTENCE} />}
+          {/* Story 11: P-30 or W1 and W2 under the address; W5 also when the set key is removed. */}
+          {!remove && valid && <RegularKeyNotes address={key} />}
+          {(remove || valid) && replacesRegularKey(remove ? null : key, keyState) && <KeyWarning words={W.W5_SENTENCE} />}
           <MakeKey disabled={!remove && !valid} busy={busy} onMake={() => onMake({ type: 'regular-key', regularKey: remove ? null : key })} />
         </>
       ) : (
@@ -637,6 +643,7 @@ function KeyForm({ wallet, address, busy, onMake, type, initial }: FormProps & {
               <p role="status" className="text-sm">
                 {testShown ? W.TEST_ELSEWHERE : ''}
               </p>
+              {masterOffToBlackHole(keyState) && <KeyWarning words={W.W2_SENTENCE} />}
               <KeyWarning words={W.W4_SENTENCE} />
             </div>
           )}

@@ -278,4 +278,17 @@ describe('after an answer, the Transmit step expects the request\'s Account (OS-
     expect(screen.getByText('Signer list').nextElementSibling?.textContent).toBe('Unknown. The app cannot read this value.')
     expect(screen.getByText(R.SHIPPED_KEYS.masterKeyOn)).toBeTruthy()
   })
+
+  it('story 11: a removal of the set key shows W5; master key off with a black-hole Regular Key shows W2 before W4', async () => {
+    h.answer.mockResolvedValueOnce(answered({ checks: { type: 'key' }, tx: { TransactionType: 'SetRegularKey', Account: master }, keyState: { regular_key: DEST, master_key: 'on', signer_list: null } }))
+    mount()
+    paste(REQUEST)
+    expect(await screen.findByText(R.W5_SENTENCE)).toBeTruthy()
+    cleanup()
+    h.answer.mockResolvedValueOnce(answered({ checks: { type: 'key' }, tx: { TransactionType: 'AccountSet', Account: master, SetFlag: 4 }, keyState: { regular_key: 'rrrrrrrrrrrrrrrrrrrrrhoLvTp', master_key: 'on', signer_list: null } }))
+    mount()
+    paste(REQUEST)
+    const w2 = await screen.findByText(R.W2_SENTENCE)
+    expect(w2.compareDocumentPosition(screen.getByText(R.W4_SENTENCE)) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
 })

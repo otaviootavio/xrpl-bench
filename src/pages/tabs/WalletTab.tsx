@@ -13,7 +13,7 @@ import { RemoveDialog, type RemoveTarget } from '@/components/wallet/RemoveDialo
 import { removeBodyFor, type RemoveBody } from '@/components/wallet/remove-copy'
 import { RenameDialog } from '@/components/wallet/RenameDialog'
 import { ControlledNote } from '@/components/wallet/ControlledNote'
-import { MasterKeyControl } from '@/components/wallet/MasterKeyControl'
+import { KeysPlate } from '@/components/wallet/KeysPlate'
 import { TwoDeviceSign } from '@/components/wallet/TwoDeviceSign'
 import { WalletNodeSection } from '@/components/wallet/WalletNodeSection'
 import { RevealSeedControl } from '@/components/wallet/RevealSeedControl'
@@ -253,6 +253,11 @@ function SeedPlate({ wallet }: { wallet: KeyWalletMeta }) {
 const CONTROL_KEY = 'let-another-wallet-sign'
 const TWO_DEVICE_KEY = 'two-device'
 
+/**
+ * Today's FR-75 plate, until story 12 removes it: the controlled-view note and "Let another
+ * wallet sign". Its master key control moved to the Keys plate (story 11), which refuses
+ * nothing the ledger allows, so one screen never holds two master key controls.
+ */
 function ControlPlate({ wallet }: { wallet: KeyWalletMeta }) {
   return (
     <ConfigPlate title="Operating another account">
@@ -269,7 +274,6 @@ function ControlPlate({ wallet }: { wallet: KeyWalletMeta }) {
           Let another wallet sign
         </Button>
       )}
-      <MasterKeyControl wallet={wallet} />
     </ConfigPlate>
   )
 }
@@ -678,7 +682,9 @@ function KindPlates({ wallet }: { wallet: WalletMeta }) {
           <ChecksPlate wallet={wallet} />
           <SeedPlate wallet={wallet} />
           <SignsForPlate wallet={wallet} />
-          {/* A wallet either operates another account or holds the Account Master Key, so this plate always has something to say. */}
+          {/* The Keys plate (story 11), in the spine's place; titled with the approved "Key state". */}
+          <KeysPlate wallet={wallet} />
+          {/* FR-75 until story 12: a wallet either operates another account or holds the Account Master Key, so this plate always has something to say. */}
           <ControlPlate wallet={wallet} />
           <ConfigPlate title="Node">
             <WalletNodeSection wallet={wallet} />

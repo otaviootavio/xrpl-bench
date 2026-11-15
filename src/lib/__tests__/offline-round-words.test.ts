@@ -15,7 +15,6 @@ const FUNDS = readFileSync('src/lib/xrpl/funds-check.ts', 'utf8')
 const TWO_DEVICE = readFileSync('src/lib/two-device.ts', 'utf8')
 const TRUST_TAB = readFileSync('src/pages/tabs/TrustLinesTab.tsx', 'utf8').replace(/\s+/g, ' ')
 const TWO_DEVICE_SIGN = readFileSync('src/components/wallet/TwoDeviceSign.tsx', 'utf8')
-const MASTER_KEY_CONTROL = readFileSync('src/components/wallet/MasterKeyControl.tsx', 'utf8')
 const CONTROL = readFileSync('src/lib/control.ts', 'utf8')
 const MASTER_KEY = readFileSync('src/lib/master-key.ts', 'utf8')
 const QR_SCANNER = readFileSync('src/components/wallet/QrScanner.tsx', 'utf8')
@@ -176,10 +175,11 @@ describe('Offline-builds round words (OS-FR-11, OS-FR-13 to OS-FR-16)', () => {
     expect(MASTER_KEY).toContain(W.SHIPPED.noMasterKeySetting)
     // Story 12 retires TwoDeviceSign: pin this as a literal then.
     expect(TWO_DEVICE_SIGN).toContain(`>${K.regularKeyAddress}</Label>`)
-    expect(MASTER_KEY_CONTROL).toContain(`text: '${K.masterKeyOn}'`)
-    expect(MASTER_KEY_CONTROL).toContain(`text: '${K.masterKeyOff}'`)
-    expect(MASTER_KEY_CONTROL).toContain(`const OFF_PHRASE = '${K.offPhrase}'`)
-    expect(MASTER_KEY_CONTROL).toContain('Type “{OFF_PHRASE}” to confirm')
+    // Shipped by MasterKeyControl until story 11 replaced it with the Keys plate (which
+    // uses them from here): pinned as the literals that screen shipped.
+    expect(K.masterKeyOn).toBe('Master key on')
+    expect(K.masterKeyOff).toBe('Master key off')
+    expect(K.offPhrase).toBe('turn off')
     expect(K.offPhraseLabel).toBe(`Type “${K.offPhrase}” to confirm`)
     expect(QR_SCANNER).toContain(`'${K.cameraFailed}'`)
     expect(CREATE_FLOW).toContain(`title: '${K.review}'`)
@@ -243,5 +243,25 @@ describe('Offline-builds round words (OS-FR-11, OS-FR-13 to OS-FR-16)', () => {
     for (const w of [S.destFailedTitle, S.destFailedLine, S.destStaleTitle, S.checkAgain, S.linesFailedTitle, S.linesFailedLine, S.feeFailedTitle, S.feeFailedLine]) expect(flat).toContain(w)
     const [before, after] = S.destStaleLine.split('{n}')
     expect(flat).toContain(`${before}{Math.round(DESTINATION_CHECK_FRESHNESS_MS / 1000)}${after}`)
+  })
+
+  it('story 11: W2 is the spec\'s words, verbatim; P-31\'s three refusals are in its row', () => {
+    const flat = FIXED.replace(/\s+/g, ' ')
+    expect(flat).toContain(quoted(W.W2_SENTENCE))
+    const p31 = row('P-31')
+    expect(p31).toContain('`temBAD_REGKEY` is a **failed** outcome')
+    expect(p31).toContain(`: ${quoted(W.LEDGER_REFUSAL.temBAD_REGKEY)}`)
+    expect(p31).toContain(`${quoted(W.LEDGER_REFUSAL.tecNO_ALTERNATIVE_KEY)} · ${quoted(W.LEDGER_REFUSAL.tecNEED_MASTER_KEY)}`)
+    expect(p31).toContain('`tecNO_ALTERNATIVE_KEY` and `tecNEED_MASTER_KEY` are **claimed** outcomes')
+  })
+
+  it.each([
+    ['P-47', W.SET_A_REGULAR_KEY],
+    ['P-47', W.REMOVE_THE_REGULAR_KEY],
+    ['P-47', W.TURN_OFF_THE_MASTER_KEY],
+    ['P-47', W.TURN_ON_THE_MASTER_KEY],
+    ['P-50', W.TEST_ELSEWHERE],
+  ])('story 11: the Keys plate\'s %s holds %s', (id, words) => {
+    expect(row(id)).toContain(quoted(words))
   })
 })

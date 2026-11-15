@@ -151,10 +151,11 @@ describe('every other result classifies as submitAndWait did (story 2 outcomes)'
     expect((await send(signedPayment().tx_blob)).status).toBe('expired')
   })
 
-  it('a tem preliminary result throws, as submitAndWait did (the screen shows it may have been sent)', async () => {
-    const client = installRawClient({ preliminary: 'temBAD_AMOUNT' })
-    await expect(send(signedPayment().tx_blob)).rejects.toThrow('Transaction failed, temBAD_AMOUNT')
+  it('a tem preliminary result is a failed outcome with its code, never "may have been sent" (story 11, P-31)', async () => {
+    const client = installRawClient({ preliminary: 'temBAD_REGKEY' })
+    expect(await send(signedPayment().tx_blob)).toEqual({ status: 'failed', hash: expect.any(String), resultCode: 'temBAD_REGKEY' })
     expect(client.submits).toHaveLength(1)
+    expect(client.txReads).toBe(0)
   })
 
   it('a lookup error other than txnNotFound is passed on (it may have been sent)', async () => {

@@ -140,14 +140,16 @@ describe('the Offline Wallet judges a key state by its kept Build (OS-FR-16)', (
   })
 })
 
-describe('W5 applies only when a set Regular Key is replaced (EXPERIENCE W5)', () => {
+describe('W5 applies only when a set Regular Key is replaced or removed (EXPERIENCE W5; story 11 adds the removal)', () => {
   it.each([
     [OTHER, { regular_key: DEST, master_key: 'on', signer_list: null }, true],
     [OTHER, { regular_key: OTHER, master_key: 'on', signer_list: null }, false],
     [OTHER, { regular_key: null, master_key: 'on', signer_list: null }, false],
     [OTHER, 'unknown', false],
     [OTHER, undefined, false],
-    [null, { regular_key: DEST, master_key: 'on', signer_list: null }, false],
+    [null, { regular_key: DEST, master_key: 'on', signer_list: null }, true],
+    [null, { regular_key: null, master_key: 'on', signer_list: null }, false],
+    [null, 'unknown', false],
   ] as const)('new %s, state %j: %s', (newKey, state, expected) => {
     expect(replacesRegularKey(newKey, state as never)).toBe(expected)
   })

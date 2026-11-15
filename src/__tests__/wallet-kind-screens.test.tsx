@@ -273,6 +273,7 @@ describe('an Online Wallet keeps today\'s screens', () => {
       'Checks',
       'Seed',
       'This key signs for another account',
+      'Key state',
       'Operating another account',
       'Node',
       'Before sending',

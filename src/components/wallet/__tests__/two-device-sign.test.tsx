@@ -2,6 +2,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { W1_SENTENCE, W2_SENTENCE, W3_SENTENCE } from '@/lib/offline-round-words'
 import { encodeUnsigned } from '@/lib/qr-codec'
 
 /** Story 11: the component only RENDERS what `lib/two-device.ts` decides; the flows are stubbed at their edge. */
@@ -251,6 +252,17 @@ describe('TwoDeviceSign, offline side', () => {
     await click(btn('Confirm and sign'))
     expect(h.signUnsigned).toHaveBeenCalledTimes(1)
     expect(screen.getByTestId('qr').textContent).toBe('xrplbench:1:s:BBB')
+  })
+
+  it('story 11: a SetRegularKey the other device built shows W3 above the new key, then W1 and W2; nothing blocks the confirm', async () => {
+    mount()
+    await paste(unsigned({ TransactionType: 'SetRegularKey', Destination: undefined, Amount: undefined, RegularKey: 'rrrrrrrrrrrrrrrrrrrrBZbvji' }))
+    const w3 = screen.getByText(W3_SENTENCE)
+    const key = screen.getByText('rrrrrrrrrrrrrrrrrrrrBZbvji')
+    expect(w3.compareDocumentPosition(key) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(key.compareDocumentPosition(screen.getByText(W1_SENTENCE)) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(screen.getByText(W2_SENTENCE)).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Confirm and sign' })).toBeTruthy()
   })
 
   it('says real funds on Mainnet', async () => {

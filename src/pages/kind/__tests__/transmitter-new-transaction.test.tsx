@@ -19,6 +19,7 @@ const h = vi.hoisted(() => ({
   feeError: false,
   destMode: 'ok' as 'ok' | 'error' | 'stale',
   dest: { exists: true, requireDestTag: false } as { exists: boolean; requireDestTag: boolean; hasTrustLine?: boolean },
+  regularKey: 'rDsbeomae4FXwgQTJp9Rs64Qg9vDiTCdBv' as string | undefined,
 }))
 vi.mock('@/lib/transmitter-build', async (importOriginal) => {
   const real = await importOriginal<typeof import('@/lib/transmitter-build')>()
@@ -41,7 +42,7 @@ vi.mock('@/hooks/useAccountState', () => ({
   useAccountState: (_n: string, address: string) =>
     h.accountError
       ? { data: undefined, isError: true }
-      : { data: { exists: true, address, balanceDrops: '50000000', ownerCount: 0, sequence: 3, requireDestTag: false, disableMasterKey: false, regularKey: 'rDsbeomae4FXwgQTJp9Rs64Qg9vDiTCdBv' }, isError: false },
+      : { data: { exists: true, address, balanceDrops: '50000000', ownerCount: 0, sequence: 3, requireDestTag: false, disableMasterKey: false, regularKey: h.regularKey }, isError: false },
 }))
 vi.mock('@/hooks/useDestinationCheck', () => ({
   useDestinationCheck: (network: string, destination: string, asset: string) => {
@@ -110,6 +111,7 @@ beforeEach(() => {
   h.feeError = false
   h.destMode = 'ok'
   h.dest = { exists: true, requireDestTag: false }
+  h.regularKey = 'rDsbeomae4FXwgQTJp9Rs64Qg9vDiTCdBv'
 })
 afterEach(cleanup)
 
@@ -278,5 +280,33 @@ describe('Synced Transmitter: New transaction (OS-FR-17)', () => {
     await waitFor(() => expect(alertText()).toContain(`The app did not send the transaction. ${W.DATA_REFUSAL.request}`))
     expect(screen.queryByRole('button', { name: 'Send' })).toBeNull()
     expect(h.transmit).not.toHaveBeenCalled()
+  })
+})
+
+describe('story 11: W1, P-30, W2 and W5 on the Synced Transmitter\'s key types (OS-FR-21)', () => {
+  const HOLE = 'rrrrrrrrrrrrrrrrrrrrBZbvji'
+  it('Regular Key: W1 for a key no Wallet here holds, W2 for a black hole; W5 for a removal of the set key; nothing blocks the Make key', () => {
+    mount()
+    fireEvent.click(screen.getByRole('radio', { name: W.REGULAR_KEY_TYPE }))
+    fireEvent.change(screen.getByLabelText(W.SHIPPED_KEYS.regularKeyAddress), { target: { value: HOLE } })
+    expect(screen.getByText(W.W1_SENTENCE)).toBeTruthy()
+    expect(screen.getByText(W.W2_SENTENCE)).toBeTruthy()
+    expect((screen.getByRole('button', { name: W.MAKE_THE_UNSIGNED }) as HTMLButtonElement).disabled).toBe(false)
+    fireEvent.click(screen.getByRole('radio', { name: W.REMOVE_THE_REGULAR_KEY }))
+    expect(screen.getByText(W.W5_SENTENCE)).toBeTruthy()
+    expect(screen.queryByText(W.W1_SENTENCE)).toBeNull()
+  })
+
+  it('Master key off: W2 when the live Regular Key is a black hole, before W4; not otherwise', () => {
+    h.regularKey = HOLE
+    mount()
+    fireEvent.click(screen.getByRole('radio', { name: W.MASTER_KEY_TYPE }))
+    const w2 = screen.getByText(W.W2_SENTENCE)
+    expect(w2.compareDocumentPosition(screen.getByText(W.W4_SENTENCE)) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    cleanup()
+    h.regularKey = undefined
+    mount()
+    fireEvent.click(screen.getByRole('radio', { name: W.MASTER_KEY_TYPE }))
+    expect(screen.queryByText(W.W2_SENTENCE)).toBeNull()
   })
 })

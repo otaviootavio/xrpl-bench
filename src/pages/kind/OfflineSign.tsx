@@ -1,3 +1,4 @@
+import { RegularKeyNotes } from '@/components/wallet/KeyWarnings'
 import { useEffect, useRef, useState } from 'react'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
@@ -21,7 +22,6 @@ import { SIGN_KEY, fill } from '@/lib/transmit-words'
 import { OFFLINE_SCREENS } from '@/lib/wallet-kind-words'
 import { NETWORKS } from '@/lib/xrpl/networks'
 import { useAppStore, useWalletOpenKey } from '@/store/app-store'
-import { isKeyWallet } from '@/lib/wallet-meta'
 import { KindScreenPlate } from './KindScreenPlate'
 
 type HeadingRef = React.RefObject<HTMLHeadingElement | null>
@@ -254,12 +254,10 @@ function SigningReview({
  * below"), then whether it is a Wallet on this device: P-30, or W1 (route-checks).
  */
 function FieldRows({ rows, txType }: { rows: FieldRow[]; txType: string }) {
-  const wallets = useAppStore((s) => s.wallets)
   return (
     <dl className="grid min-w-0 gap-2">
       {rows.map((row, i) => {
         const newKey = txType === 'SetRegularKey' && row.name === 'RegularKey'
-        const here = newKey ? wallets.filter(isKeyWallet).find((w) => w.keyAddress === row.value) : undefined
         return (
           <div key={`${row.name}-${i}`} className="grid min-w-0 gap-1.5">
             {newKey && <KeyWarning words={W.W3_SENTENCE} />}
@@ -270,14 +268,8 @@ function FieldRows({ rows, txType }: { rows: FieldRow[]; txType: string }) {
             {row.cautions.map((c, i) => (
               <KeyWarning key={i} words={c} />
             ))}
-            {newKey &&
-              (here ? (
-                <Alert role="none">
-                  <AlertDescription className="break-words">{fill(W.KEY_IS_WALLET_HERE, here.label)}</AlertDescription>
-                </Alert>
-              ) : (
-                <KeyWarning words={W.W1_SENTENCE} />
-              ))}
+            {/* P-30 or W1, and W2 for a black-hole address (story 11). */}
+            {newKey && <RegularKeyNotes address={row.value} />}
           </div>
         )
       })}

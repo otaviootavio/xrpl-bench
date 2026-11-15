@@ -349,4 +349,15 @@ describe('Offline Sign screen: sign, decline, lock (OS-FR-18, OS-FR-16)', () => 
     await act(async () => release())
     expect(await screen.findByRole('button', { name: 'Sign' })).toBeTruthy()
   })
+
+  it('story 11: a SetRegularKey to a black-hole address shows W3 above the row, then W1 and W2 under it', async () => {
+    mount()
+    paste(unsigned({ TransactionType: 'SetRegularKey', ...base, RegularKey: 'rrrrrrrrrrrrrrrrrrrrBZbvji' }))
+    await screen.findByRole('heading', { name: fill(W.SIGNING_FOR, 'Testnet') })
+    const keyRow = screen.getByText('RegularKey')
+    expect(screen.getByText(W.W3_SENTENCE).compareDocumentPosition(keyRow) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(keyRow.compareDocumentPosition(screen.getByText(W.W1_SENTENCE)) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(keyRow.compareDocumentPosition(screen.getByText(W.W2_SENTENCE)) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(await screen.findByRole('button', { name: 'Sign' })).toBeTruthy()
+  })
 })

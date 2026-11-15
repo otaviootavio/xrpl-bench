@@ -1,3 +1,4 @@
+import { masterOffToBlackHole } from '@/lib/key-warnings'
 import { useEffect, useRef, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { Button } from '@/components/ui/button'
@@ -189,6 +190,7 @@ function Answered({
             Regular Key is replaced, W4's sentence when the master key goes off. Warnings only. */}
         {answer.keyState !== undefined && <KeyStateRows keyState={answer.keyState} />}
         {tx.TransactionType === 'SetRegularKey' && replacesRegularKey(tx.RegularKey, answer.keyState) && <KeyWarning words={R.W5_SENTENCE} />}
+        {tx.TransactionType === 'AccountSet' && 'SetFlag' in tx && masterOffToBlackHole(answer.keyState) && <KeyWarning words={R.W2_SENTENCE} />}
         {tx.TransactionType === 'AccountSet' && 'SetFlag' in tx && <KeyWarning words={R.W4_SENTENCE} />}
       </HandoffPlate>
     </div>

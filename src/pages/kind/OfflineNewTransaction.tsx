@@ -1,3 +1,5 @@
+import { RegularKeyNotes } from '@/components/wallet/KeyWarnings'
+import { masterOffToBlackHole } from '@/lib/key-warnings'
 import { useEffect, useRef, useState } from 'react'
 import { encode, isValidClassicAddress } from 'xrpl'
 import { isCurrencyCode } from '@/lib/qr-codec'
@@ -390,7 +392,8 @@ function KeyReadings() {
  * Regular Key (story 8, P-47): set one, typed or scanned on this device (OS-FR-21: never
  * taken from the Transmitter), or remove it. The app takes any valid address; whether a
  * key is set now is the Transmitter's reading, so no W5 here (EXPERIENCE: "Never on the
- * Offline Build, which cannot know the key state"). W1, W2 and P-30 are story 11's.
+ * Offline Build, which cannot know the key state"). Story 11: P-30 or W1, and W2 for a
+ * black-hole address, under the address (EXPERIENCE Flow 7 step 2). Cautions, never refusals.
  */
 function RegularKeyForm({ wallet, initial, onReview }: { wallet: KeyWalletMeta; initial?: RegularKeyBuild; onReview: (build: OfflineBuild) => void }) {
   const [remove, setRemove] = useState(initial ? initial.regularKey === null : false)
@@ -430,6 +433,7 @@ function RegularKeyForm({ wallet, initial, onReview }: { wallet: KeyWalletMeta; 
           <AddressScan onAddress={setAddress} />
         </div>
       )}
+      {!remove && valid && <RegularKeyNotes address={address} />}
       <ReviewKey
         disabled={!remove && !valid}
         onReview={() => onReview({ type: 'regular-key', account: wallet.address, regularKey: remove ? null : address })}
@@ -765,6 +769,7 @@ function SigningReview({ wallet, round, headingRef }: { wallet: KeyWalletMeta; r
       </dl>
       {/* The key state the Transmitter read, for display only: it changes nothing signed. */}
       {isKeyChange(build) && phase.data.key_state !== undefined && <KeyStateRows keyState={phase.data.key_state} />}
+      {build.type === 'regular-key' && build.regularKey !== null && <RegularKeyNotes address={build.regularKey} />}
       {build.type === 'regular-key' && replacesRegularKey(build.regularKey, phase.data.key_state) && <KeyWarning words={W.W5_SENTENCE} />}
       {phase.retry && (
         <Alert role="none">
@@ -779,6 +784,8 @@ function SigningReview({ wallet, round, headingRef }: { wallet: KeyWalletMeta; r
           </AlertDescription>
         </Alert>
       )}
+      {/* W2 (story 11): the key state the Transmitter read names a black-hole Regular Key. */}
+      {turningOff && masterOffToBlackHole(phase.data.key_state) && <KeyWarning words={W.W2_SENTENCE} />}
       {turningOff && <KeyWarning words={W.W4_SENTENCE} />}
       {turningOff && wallet.network === 'mainnet' && (
         <div className="grid gap-1.5">

@@ -319,3 +319,22 @@ export const SHIPPED_SEND = {
   feeFailedLine:
     'The current network fee could not be read from the ledger, so it cannot be shown and an XRP amount cannot be checked against your spendable balance with the fee added. Sending XRP is held until this read succeeds; a token send does not depend on this figure and is not held.',
 } as const
+
+// ---------------------------------------------------------------------------
+// Story 11: Regular Key and master key warnings (OS-FR-21, CAP-14).
+// ---------------------------------------------------------------------------
+
+/** W2 (`consequence-texts.md`), verbatim: a black-hole Regular Key, or master key off when the Regular Key is one. */
+export const W2_SENTENCE =
+  'Nobody holds the key for this address. If you turn off the master key, nobody can use this account again. The funds are lost. A delegate can still act for the account, and old offers and escrows can still run.'
+
+/**
+ * P-31: the three key-action ledger refusals in words, as the reason inside today's
+ * outcome. `temBAD_REGKEY` is a failed outcome (nothing applied); the two `tec` codes are
+ * claimed outcomes (applied, fee taken), shown with each route's claimed fee sentence.
+ */
+export const LEDGER_REFUSAL = {
+  temBAD_REGKEY: 'The Regular Key cannot be the address of the account.',
+  tecNO_ALTERNATIVE_KEY: 'The ledger needs a Regular Key or a signer list first.',
+  tecNEED_MASTER_KEY: 'Only the master key can turn off the master key.',
+} as const

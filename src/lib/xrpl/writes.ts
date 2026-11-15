@@ -572,6 +572,11 @@ async function transmit(
       : { status, hash: signed.hash, resultCode, ledgerIndex: res.result.ledger_index }
   } catch (err: unknown) {
     if (err instanceof SequenceUsedSignal) throw err
+    // A `tem` preliminary result (story 11, P-31): the blob is malformed for the ledger
+    // and can never apply, so nothing was applied and no fee was taken. Today's `failed`
+    // outcome, on both submit paths, never "may have been sent".
+    const tem = temResultOf(err)
+    if (tem) return { status: 'failed', hash: signed.hash, resultCode: tem }
     // The "stuck/expired" case from docs/decisions.md: the network moved past
     // this transaction's LastLedgerSequence without it appearing in a
     // validated ledger. It may simply never have been included. NEVER
@@ -588,6 +593,20 @@ async function transmit(
     }
     throw err
   }
+}
+
+/**
+ * The `tem` code of a submit that threw on its preliminary result, or `null`. Both submit
+ * paths throw the same error for it: xrpl.js 5.1.0's `submitAndWait` (`XrplError`, message
+ * `Transaction failed, temX: …`) and `submitOnceAndWait` below, which copies it. Read
+ * structurally (name and the message's exact start), as `isExpiry` reads the expiry: the
+ * pin is `writes-tem-failed.test.ts`, against the real `Client.submitAndWait`.
+ */
+export function temResultOf(err: unknown): string | null {
+  const { name, message } = isRecord(err) ? err : {}
+  if (name !== 'XrplError' || typeof message !== 'string') return null
+  const m = /^Transaction failed, (tem[A-Z_]+):/.exec(message)
+  return m ? m[1] : null
 }
 
 /** Internal: the submit said `tefPAST_SEQ` and the blob's hash is not on the ledger. */
@@ -804,14 +823,22 @@ export async function submitTrustSet(
 export async function submitSetRegularKey(
   network: NetworkId,
   signing: SigningHandle,
-  params: { regularKey: string },
+  /** `null` removes the Regular Key: the transaction carries no `RegularKey` (story 11). */
+  params: { regularKey: string | null },
   node?: string,
 ): Promise<SubmitOutcome> {
   const tx: SetRegularKey = {
     TransactionType: 'SetRegularKey',
     Account: signing.address,
-    RegularKey: params.regularKey,
+    ...(params.regularKey === null ? {} : { RegularKey: params.regularKey }),
   }
+  return submitAndClassify(network, signing, tx, node)
+}
+
+/** An AccountSet with no changes (story 11, W4's "Test the Regular Key"): it proves the
+ * handle's key can sign for `signing.address`, and changes nothing but the Sequence and fee. */
+export async function submitNoChangeAccountSet(network: NetworkId, signing: SigningHandle, node?: string): Promise<SubmitOutcome> {
+  const tx: AccountSet = { TransactionType: 'AccountSet', Account: signing.address }
   return submitAndClassify(network, signing, tx, node)
 }
 

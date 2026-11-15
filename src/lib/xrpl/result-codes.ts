@@ -1,3 +1,5 @@
+import { LEDGER_REFUSAL } from '@/lib/offline-round-words'
+
 // Plain-language mapping for common transaction result codes — see
 // docs/user-stories/sending-payments.md US-6 and transaction-history.md US-2.
 // Raw codes are always still shown alongside these (advanced/debug detail).
@@ -17,6 +19,8 @@ const MESSAGES: Record<string, string> = {
   temBAD_AMOUNT: 'The amount entered is not valid.',
   temDST_IS_SRC: "You can't send a payment to your own address as the destination.",
   temREDUNDANT: 'This trust line change has no effect (limit already set to this value).',
+  // P-31 (offline signing story 11, OS-FR-21): the key-action ledger refusals, on every route.
+  ...LEDGER_REFUSAL,
 }
 
 export function describeResultCode(code: string): string {

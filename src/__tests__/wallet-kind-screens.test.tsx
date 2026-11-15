@@ -340,6 +340,19 @@ describe('a retired or another kind\'s task screen (OS-FR-1, OS-FR-19)', () => {
     }
   }
 
+  for (const segment of ['two-device', 'control']) {
+    it(`online: an in-app move to /wallets/w1/${segment} while the shell shows is replaced by /wallets/w1 (story 12)`, async () => {
+      await openApp('online')
+      await act(async () => {
+        window.history.pushState({ screen: true, depth: 1 }, '', `/wallets/w1/${segment}`)
+        window.dispatchEvent(new PopStateEvent('popstate'))
+      })
+      await waitFor(() => expect(window.location.pathname).toBe('/wallets/w1'))
+      expect(screen.getAllByRole('tab')[0].textContent).toBe('Balances')
+      expect(screen.queryByRole('button', { name: /Back to Wallet/ })).toBeNull()
+    })
+  }
+
   it('offline: Edit checks stays reachable', async () => {
     await act(async () => {
       h.wallets = [meta('offline')]

@@ -77,8 +77,10 @@ export function AppShell() {
     if (shellRoute && !shellReachable) resetToHome()
     // A path that parses as the shell but is not its own (a retired screen's segment,
     // OS-FR-19) is replaced by the shell's path, so no dead screen's location stays.
+    // `route` is a new object on every location change, so an in-app move to such a
+    // path while the shell is already showing is caught too.
     else if (shellWalletId !== null) resetToWalletShell(shellWalletId)
-  }, [shellRoute, shellReachable, shellWalletId])
+  }, [route, shellRoute, shellReachable, shellWalletId])
 
   // Leaving a wallet-side screen for the chooser (Wallets key, Back, Lock): the
   // wallet that was left sheds what it read (AD-38) and focus lands on the

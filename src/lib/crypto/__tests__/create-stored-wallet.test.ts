@@ -117,7 +117,7 @@ vi.mock('../webauthn', async (importOriginal) => {
 
 import { makePinLock, storeSeedWallet } from './fixtures'
 import { discardUnusedAppPin, getLockInfo, openLock } from '../lock'
-import { addControlledView, createStoredWallet, listWallets, openSigner, removeWallet, revealSeed, type CreateStoredWalletInput, type Prompts } from '../keystore'
+import { createStoredWallet, listWallets, openSigner, removeWallet, revealSeed, type CreateStoredWalletInput, type Prompts } from '../keystore'
 import * as keystore from '../keystore'
 import { aesDecrypt } from '../aes'
 import { putVaultMeta, getVaultMeta, putStoredWallet, mutateStoredWallet } from '../db'
@@ -370,17 +370,55 @@ describe('atomic', () => {
   })
 })
 
-describe('a controlled view of a created Wallet', () => {
-  it('removing one view keeps the lock, which still opens the Seed', async () => {
+describe('a dropped FR-75 controlled view on a created Wallet (OS-FR-19, story 12)', () => {
+  it('is not listed; removing its id removes nothing, and the own Wallet\'s removal takes the record and lock', async () => {
     const { meta, seed } = ok(await createStoredWallet(base, { pin: PIN }))
-    const second = await addControlledView(meta.id, { network: 'devnet', accountAddress: 'rControlledAccount1111111111111111' })
-    await removeWallet(second.id)
-    expect(h.state.stores.vault.get(`lock:${meta.lockId}`)).toBeDefined()
-    const opened = ok(await openLock(meta.lockId, 'pin', { pin: PIN }))
     const rec = recordOf(meta.id)
+    await putStoredWallet({ ...rec, views: [...rec.views, { walletId: 'c', network: 'devnet', accountAddress: 'rControlledAccount1111111111111111' }] })
+    expect((await listWallets()).map((m) => m.id)).toEqual([meta.id])
+    await removeWallet('c')
+    expect(recordOf(meta.id).views).toHaveLength(2)
+    const opened = ok(await openLock(meta.lockId, 'pin', { pin: PIN }))
     expect(await aesDecrypt(opened.key, rec.encryptedSeed.ivB64, rec.encryptedSeed.ciphertextB64)).toBe(seed)
     await removeWallet(meta.id)
+    expect(h.state.stores.wallets.get(rec.id)).toBeUndefined()
     expect(h.state.stores.vault.get(`lock:${meta.lockId}`)).toBeUndefined()
+  })
+})
+
+describe('a Seed record holding only a dropped FR-75 controlled view (an older build could leave one; story 12)', () => {
+  async function withUnlisted() {
+    const { meta } = ok(await createStoredWallet(base, { pin: PIN }))
+    const other = ok(await createStoredWallet(base, { pin: PIN })).meta
+    const rec = recordOf(other.id)
+    // The key's own Wallet was removed by an older build, leaving its controlled view alone on the record.
+    await putStoredWallet({ ...rec, views: [{ walletId: 'c', network: 'testnet', accountAddress: 'rControlledAccount1111111111111111' }] })
+    return { meta, other, rec }
+  }
+
+  it('lists nothing; removing the last listed Wallet keeps that record, its lock and the App PIN (never deleted automatically)', async () => {
+    const { meta, other, rec } = await withUnlisted()
+    expect((await listWallets()).map((m) => m.id)).toEqual([meta.id])
+    expect(await keystore.holdsUnlistedSeedRecords()).toBe(true)
+    expect(await removeWallet(meta.id)).toEqual({ emptied: false, appPin: 'kept' })
+    expect(h.state.stores.wallets.get(rec.id)).toEqual({ ...rec, views: [{ walletId: 'c', network: 'testnet', accountAddress: 'rControlledAccount1111111111111111' }] })
+    expect(h.state.stores.vault.get(`lock:${other.lockId}`)).toBeDefined()
+    expect(h.state.stores.vault.get('vault')?.pinVerifier).toBeDefined()
+    expect(await keystore.appPinResidue()).toBe(true)
+  })
+
+  it('is residue even with no App PIN, so first run offers Remove all', async () => {
+    const { meta } = await withUnlisted()
+    await mutateStoredWallet(recordOf(meta.id).id, () => null)
+    h.state.stores.vault.set('vault', { key: 'vault', failedAttempts: 0 })
+    expect(await keystore.appPinResidue()).toBe(true)
+  })
+
+  it('its name does not block a name, and setLockAutoLock skips it', async () => {
+    const { meta, other } = await withUnlisted()
+    const named = await keystore.renameWallet(meta.id, recordOf(other.id).label)
+    expect(named.ok).toBe(true)
+    expect(await keystore.setLockAutoLock(other.lockId, 15)).toMatchObject({ ok: true })
   })
 })
 
@@ -633,7 +671,7 @@ describe('a Wallet has one Network for life (FR-93)', () => {
     expect(JSON.stringify(recordOf(meta.id))).toBe(before)
   })
 
-  it('a plain view plus a controlled view is accepted', async () => {
+  it('a plain view plus a (dropped) controlled view is accepted by the store', async () => {
     const { meta } = ok(await createStoredWallet(base, { pin: PIN }))
     const rec = recordOf(meta.id)
     await putStoredWallet({ ...rec, views: [...rec.views, { walletId: 'c', network: 'testnet', accountAddress: 'rControlledAccount1111111111111111' }] })

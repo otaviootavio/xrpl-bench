@@ -7,6 +7,7 @@ import { Lamp } from '@/components/ui/lamp'
 import { Chooser } from '@/pages/Chooser'
 import { SettingsScreen } from '@/pages/SettingsScreen'
 import { Main } from '@/pages/Main'
+import { AddTransmitterScreen } from '@/components/wallet/AddTransmitterScreen'
 import { AddWalletScreen } from '@/components/wallet/AddWalletScreen'
 import { useRoute } from '@/hooks/useRoute'
 import { useUpdateMarker } from '@/hooks/useUpdateMarker'
@@ -15,7 +16,7 @@ import { useClearCacheOnLock } from '@/hooks/useClearCacheOnLock'
 import { useAppStore } from '@/store/app-store'
 import { leaveWallet } from '@/lib/teardown'
 import { clearAdded } from '@/lib/chooser-signals'
-import { enteredWalletId, isWalletScreen, leaveScreen, navigate, resetToHome, SETTINGS_PATH, type Route } from '@/lib/route'
+import { enteredWalletId, isWalletScreen, leaveScreen, navigate, resetToHome, resetToWalletShell, SETTINGS_PATH, type Route } from '@/lib/route'
 
 /** The wallet in view on this route: the one the user is inside, or none. */
 // oxlint-disable-next-line react/only-export-components -- pinned to this file, beside the route switch that shares it
@@ -71,9 +72,15 @@ export function AppShell() {
   const shellReachable = shellRoute && route.walletId === activeWalletId && activeExists
   const chooserSide = !isWalletScreen(route) || (shellRoute && !shellReachable)
   const walletSide = isWalletScreen(route)
+  const shellWalletId = shellRoute ? route.walletId : null
   useEffect(() => {
     if (shellRoute && !shellReachable) resetToHome()
-  }, [shellRoute, shellReachable])
+    // A path that parses as the shell but is not its own (a retired screen's segment,
+    // OS-FR-19) is replaced by the shell's path, so no dead screen's location stays.
+    // `route` is a new object on every location change, so an in-app move to such a
+    // path while the shell is already showing is caught too.
+    else if (shellWalletId !== null) resetToWalletShell(shellWalletId)
+  }, [route, shellRoute, shellReachable, shellWalletId])
 
   // Leaving a wallet-side screen for the chooser (Wallets key, Back, Lock): the
   // wallet that was left sheds what it read (AD-38) and focus lands on the
@@ -82,7 +89,7 @@ export function AppShell() {
   useEffect(() => {
     const before = previous.current
     // Add wallet is chooser-side, but when it was launched from a wallet's Settings that wallet is still the one to shed on the way out.
-    previous.current = { route, walletId: walletInView(route, activeWalletId) ?? (route.screen === 'add-wallet' ? (before?.walletId ?? null) : null) }
+    previous.current = { route, walletId: walletInView(route, activeWalletId) ?? (route.screen === 'add-wallet' || route.screen === 'add-transmitter' ? (before?.walletId ?? null) : null) }
     if (before?.walletId && route.screen === 'chooser') {
       leaveWallet(queryClient, before.walletId)
       // A new card's h2 may already hold focus (a finished add): keep it.
@@ -90,7 +97,7 @@ export function AppShell() {
     } else if (before?.route.screen === 'settings' && route.screen === 'chooser') {
       // The Wallets key on /settings unmounted with the screen: land on the h1, not on the document.
       document.getElementById('chooser-heading')?.focus()
-    } else if (before?.route.screen === 'add-wallet' && route.screen === 'chooser') {
+    } else if ((before?.route.screen === 'add-wallet' || before?.route.screen === 'add-transmitter') && route.screen === 'chooser') {
       // Back or a finished add. A new card's h2 already took focus on the Chooser's mount: keep it.
       if (!document.activeElement?.closest('[data-wallet-id]')) document.getElementById('chooser-heading')?.focus()
     } else if (before?.route.screen === 'chooser' && route.screen === 'wallet') {
@@ -101,7 +108,7 @@ export function AppShell() {
       document.getElementById('settings-heading')?.focus()
     }
     // An announced add the Chooser never saw (Add wallet was opened from a wallet's Settings) must not move focus later.
-    if (route.screen !== 'chooser' && route.screen !== 'add-wallet') clearAdded()
+    if (route.screen !== 'chooser' && route.screen !== 'add-wallet' && route.screen !== 'add-transmitter') clearAdded()
   }, [route, activeWalletId, queryClient])
 
   return (
@@ -137,6 +144,8 @@ export function AppShell() {
           <SettingsScreen />
         ) : route.screen === 'add-wallet' ? (
           <AddWalletScreen onClose={leaveScreen} />
+        ) : route.screen === 'add-transmitter' ? (
+          <AddTransmitterScreen onClose={leaveScreen} />
         ) : chooserSide ? (
           <Chooser />
         ) : (

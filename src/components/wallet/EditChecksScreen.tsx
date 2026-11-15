@@ -20,7 +20,7 @@ import { useLeaveBlocker } from '@/hooks/useRoute'
 import { minutesLabel } from '@/lib/minutes-label'
 import { WrittenSeedConfirm } from '@/components/wallet/WrittenSeedConfirm'
 import { usePrompts } from '@/hooks/usePrompts'
-import { describeCheckFailure, editChecks, type EditChecksResult, type WalletMeta } from '@/lib/crypto/keystore'
+import { describeCheckFailure, editChecks, type EditChecksResult, type KeyWalletMeta } from '@/lib/crypto/keystore'
 import { getLockInfo, hasAppPin } from '@/lib/crypto/lock'
 import { triesRemaining } from '@/lib/crypto/pin'
 import {
@@ -58,7 +58,7 @@ const MIN_PIN_HINT = 'The App PIN must be at least 6 digits.'
 
 export interface EditChecksScreenProps {
   /** The Wallet to edit; its lock is open (the route mounts this only then). */
-  wallet: WalletMeta
+  wallet: KeyWalletMeta
   /** Leaves the screen: after a committed edit, or when the user goes back. */
   onClose: () => void
   /** Called once the edit is committed. The caller swaps the lock and session. */
@@ -90,7 +90,7 @@ function EditChecksForm({
   onEdited,
   onLockedChange,
 }: {
-  wallet: WalletMeta
+  wallet: KeyWalletMeta
   onClose: () => void
   onEdited: EditChecksScreenProps['onEdited']
   onLockedChange: (locked: boolean) => void
@@ -148,7 +148,7 @@ function EditChecksBody({
   onEdited,
   onLockedChange,
 }: {
-  wallet: WalletMeta
+  wallet: KeyWalletMeta
   capability: PasskeyCapability
   lock: { openCheck: CurrentChecks['openCheck']; autoLockMinutes: number }
   onClose: () => void

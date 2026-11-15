@@ -119,7 +119,7 @@ import { readFileSync } from 'node:fs'
 import { execSync } from 'node:child_process'
 import { ECDSA, Wallet } from 'xrpl'
 import { aesDecrypt } from '../aes'
-import { createStoredWallet, importDuplicateReason, importStoredWallet, type ImportStoredWalletInput } from '../keystore'
+import { createStoredWallet, importDuplicateReason, importStoredWallet, OfflineWalletNodeError, type ImportStoredWalletInput } from '../keystore'
 import * as lockModule from '../lock'
 
 const PIN = '123456'
@@ -353,6 +353,78 @@ describe('importStoredWallet', () => {
     const a = ok(await importStoredWallet(base, { pin: PIN }))
     const b = ok(await importStoredWallet({ ...base, label: 'Two', seed: Wallet.generate().seed! }, { pin: PIN }))
     expect(a.meta.lockId).not.toBe(b.meta.lockId)
+  })
+})
+
+describe('an Offline Wallet (offline signing story 3, OS-FR-2, OS-FR-8)', () => {
+  const create = { label: 'Savings', network: 'testnet' as const, algorithm: 'ed25519' as const, openCheck: 'pin' as const, autoLockMinutes: 5, signing: 'standard' as const, passkey: 'yes' as const }
+
+  it('create: a Stored Seed record whose one view is Offline, on the chosen Network, with no Node', async () => {
+    const { meta } = ok(await createStoredWallet({ ...create, kind: 'offline' }, { pin: PIN }))
+    const rec = h.state.stores.wallets.get(meta.id)
+    expect(rec.seedMethod).toBe('stored')
+    expect(rec.views).toEqual([{ walletId: meta.id, network: 'testnet', kind: 'offline' }])
+    expect(meta.kind).toBe('offline')
+  })
+
+  it('import: the same, and the Seed is in one form only', async () => {
+    const { meta } = ok(await importStoredWallet({ ...base, kind: 'offline' }, { pin: PIN }))
+    const rec = h.state.stores.wallets.get(meta.id)
+    expect(rec.views).toEqual([{ walletId: meta.id, network: 'testnet', kind: 'offline' }])
+    expect(meta.kind).toBe('offline')
+    expect(JSON.stringify([...h.state.stores.wallets.values(), ...h.state.stores.vault.values()])).not.toContain(SEED)
+  })
+
+  it('without a kind the view stays Online, as before', async () => {
+    const { meta } = ok(await createStoredWallet(create, { pin: PIN }))
+    expect(h.state.stores.wallets.get(meta.id).views).toEqual([{ walletId: meta.id, network: 'testnet' }])
+    expect(meta.kind).toBe('online')
+  })
+
+  it('a Node with an Offline kind is a caller bug: thrown before any credential, lock or write', async () => {
+    const lockWrites = vi.spyOn(lockModule, 'createLock')
+    await expect(createStoredWallet({ ...create, kind: 'offline', node: 'wss://node.example.com' }, { pin: PIN })).rejects.toBeInstanceOf(OfflineWalletNodeError)
+    await expect(importStoredWallet({ ...base, kind: 'offline', node: 'wss://node.example.com' }, { pin: PIN })).rejects.toBeInstanceOf(OfflineWalletNodeError)
+    expect(lockWrites).not.toHaveBeenCalled()
+    nothingWritten()
+  })
+
+  it('Mainnet: the same refusals as an Online Wallet (Open Check none, the auto-lock floor, passkey-only with no written Seed)', async () => {
+    const mainnet = { ...create, network: 'mainnet' as const, kind: 'offline' as const }
+    for (const [offline, online] of [
+      [{ ...mainnet, openCheck: 'none' as const }, { ...mainnet, openCheck: 'none' as const, kind: undefined }],
+      [{ ...mainnet, autoLockMinutes: 0.5 }, { ...mainnet, autoLockMinutes: 0.5, kind: undefined }],
+      [{ ...mainnet, openCheck: 'passkey' as const }, { ...mainnet, openCheck: 'passkey' as const, kind: undefined }],
+    ]) {
+      const a = await createStoredWallet(offline, { pin: PIN })
+      const b = await createStoredWallet(online, { pin: PIN })
+      expect(a.status).toBe('refused')
+      expect(a).toEqual(b)
+    }
+    nothingWritten()
+  })
+
+  it('Mainnet passkey-only: the written-Seed confirmation runs before anything is written', async () => {
+    const no = vi.fn(async () => false)
+    expect((await createStoredWallet({ ...create, network: 'mainnet', openCheck: 'passkey', kind: 'offline' }, { confirmWrittenSeed: no })).status).toBe('cancelled')
+    expect(no).toHaveBeenCalledTimes(1)
+    nothingWritten()
+    const { meta } = ok(await createStoredWallet({ ...create, network: 'mainnet', openCheck: 'passkey', kind: 'offline' }, { confirmWrittenSeed: async () => true }))
+    expect(h.state.stores.wallets.get(meta.id).writtenSeedConfirmedAt).toBeTypeOf('number')
+  })
+
+  it('the same key on the same Network is refused whatever the kind (FR-93)', async () => {
+    ok(await importStoredWallet(base, { pin: PIN }))
+    expect((await importStoredWallet({ ...base, kind: 'offline' }, { pin: PIN })).status).toBe('refused')
+    expect(await importDuplicateReason(SEED, 'testnet')).not.toBeNull()
+  })
+
+  it('one Seed as an Online and an Offline Wallet on two Networks is two records, each of one kind', async () => {
+    const online = ok(await importStoredWallet(base, { pin: PIN })).meta
+    const offline = ok(await importStoredWallet({ ...base, network: 'mainnet', kind: 'offline' }, { pin: PIN })).meta
+    expect(offline.seedId).not.toBe(online.seedId)
+    expect(h.state.stores.wallets.get(online.id).views.map((v: { kind?: string }) => v.kind)).toEqual([undefined])
+    expect(h.state.stores.wallets.get(offline.id).views.map((v: { kind?: string }) => v.kind)).toEqual(['offline'])
   })
 })
 

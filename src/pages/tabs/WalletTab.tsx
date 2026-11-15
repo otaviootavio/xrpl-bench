@@ -1,18 +1,18 @@
 import { useEffect, useId, useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Button } from '@/components/ui/button'
+import { Checkbox } from '@/components/ui/checkbox'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { ConfigPlate } from '@/components/wallet/ConfigPlate'
 import { AddressBookPlate } from '@/components/wallet/AddressBookPlate'
 import { AddressDisplay } from '@/components/wallet/AddressDisplay'
 import { NetworkPlate } from '@/components/wallet/NetworkPlate'
+import { KindStamp } from '@/components/wallet/KindStamp'
 import { RemoveDialog, type RemoveTarget } from '@/components/wallet/RemoveDialog'
 import { removeBodyFor, type RemoveBody } from '@/components/wallet/remove-copy'
 import { RenameDialog } from '@/components/wallet/RenameDialog'
-import { ControlledNote } from '@/components/wallet/ControlledNote'
-import { MasterKeyControl } from '@/components/wallet/MasterKeyControl'
-import { TwoDeviceSign } from '@/components/wallet/TwoDeviceSign'
+import { KeysPlate } from '@/components/wallet/KeysPlate'
 import { WalletNodeSection } from '@/components/wallet/WalletNodeSection'
 import { RevealSeedControl } from '@/components/wallet/RevealSeedControl'
 import { formatAlgorithm, formatSeedMethod, QUESTION_TERMS } from '@/components/wallet/walk-questions'
@@ -26,17 +26,34 @@ import {
 import { launchFromConfigure, peekConfigureFocusReturn, clearConfigureFocusReturn } from '@/lib/configure-launch'
 import { useLockMinutesChanged } from '@/hooks/useLockMinutesChanged'
 import { usePrompts } from '@/hooks/usePrompts'
-import { renameWallet, setLockAutoLock, type WalletMeta } from '@/lib/crypto/keystore'
+import { listWallets, renameWallet, setLockAutoLock, setShowBeforeSending, setSignsFor, setTransmitterSync, SignsForRefusedError, type KeyWalletMeta, type TransmitterMeta, type WalletMeta } from '@/lib/crypto/keystore'
+import { isValidClassicAddress } from 'xrpl'
+import { Input } from '@/components/ui/input'
+import { WarningSentence } from '@/components/wallet/WarningSentence'
+import { forgetSyncedAddress } from '@/lib/teardown'
+import { INVALID_ADDRESS, offlineWalletHas, transmitterSyncedTo } from '@/lib/same-address'
+import { NO_KEY, REMOVE_THE_ADDRESS, SAME_ADDRESS_OFFLINE_HERE, SAME_ADDRESS_TRANSMITTER_HERE, SYNC_TO_AN_ADDRESS } from '@/lib/transmitter-words'
+import { BEFORE_SENDING_DESCRIPTION, BEFORE_SENDING_PLATE, SHOW_BEFORE_SENDING } from '@/lib/transmit-words'
 import { notify } from '@/lib/notify'
 import { AUTO_LOCK_CHOICES } from '@/lib/crypto/policy'
 import { minutesLabel } from '@/lib/minutes-label'
 import { useAppStore } from '@/store/app-store'
-import { holdsMasterKey } from '@/lib/control'
 import { getLockInfo } from '@/lib/crypto/lock'
-import { confirmRemoveWallet, openWalletNow } from '@/lib/remove-wallet'
+import { confirmRemoveWallet, openWalletNow, readHoldsUnlisted } from '@/lib/remove-wallet'
 import { leaveToChooser, walletScreenPath } from '@/lib/route'
 import { NETWORKS } from '@/lib/xrpl/networks'
 import { queryKeys } from '@/lib/xrpl/query-keys'
+import { NOT_SYNCED } from '@/lib/wallet-kind-words'
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
+import { WasOnlineStamp } from '@/components/wallet/WasOnlineStamp'
+import { NeverOnlineSteps } from '@/components/wallet/ChangeKindScreens'
+import { CHANGE_TO_OFFLINE, CHANGE_TO_ONLINE, NOW_OFFLINE, NOW_ONLINE, PASSKEY_SEED_NOT_OFFLINE, WALLET_KIND, WAS_ONLINE_WHY } from '@/lib/kind-change-words'
+import { clearKindChanged, peekKindChanged } from '@/lib/kind-change-result'
+import { fill } from '@/lib/transmit-words'
+import { SET_IT, SIGNS_FOR_ANOTHER_ACCOUNT, WALLET_SIGNS_FOR } from '@/lib/signs-for-words'
+import { SignsForFields } from '@/components/wallet/SignsForFields'
+import { forgetSignsFor } from '@/lib/teardown'
+import { signsForDraftState, signsForIds } from '@/lib/signs-for'
 
 /** A key that wraps its legend rather than push a plate past 320px or 200% text. */
 const KEY = 'h-auto min-h-8 w-fit max-w-full whitespace-normal py-1 pointer-coarse:min-h-11'
@@ -165,10 +182,13 @@ function NamePlate({ wallet }: { wallet: WalletMeta }) {
   )
 }
 
+/** The checks of this Wallet. A Transmitter Wallet holds no key, so it shows its
+ * Open Check and auto-lock only: no Signing Check row and no Edit checks key (OS-FR-3). */
 function ChecksPlate({ wallet }: { wallet: WalletMeta }) {
+  const signs = wallet.kind !== 'transmitter'
   // The same read Edit checks makes, from the same key: one cache entry per lock.
   const lock = useQuery({ queryKey: queryKeys.lockInfo(wallet.lockId), queryFn: () => getLockInfo(wallet.lockId) })
-  const signing = wallet.seedMethod === 'passkey-derived' ? 'passkey' : wallet.signingCheck
+  const signing = wallet.kind === 'transmitter' ? 'standard' : wallet.seedMethod === 'passkey-derived' ? 'passkey' : wallet.signingCheck
 
   return (
     <ConfigPlate title="Checks">
@@ -193,28 +213,32 @@ function ChecksPlate({ wallet }: { wallet: WalletMeta }) {
             <dd className="mt-0.5 break-words">{openCheckWords(lock.data.openCheck)}</dd>
             {lock.data.openCheck === 'none' && <dd className="text-xs text-muted-foreground">{NO_OPEN_CHECK_DETAIL}</dd>}
           </div>
-          <div className="min-w-0">
-            <dt className="panel-legend">{SIGNING_CHECK_QUESTION}</dt>
-            <dd className="mt-0.5 break-words">{signingWords(signing)}</dd>
-          </div>
+          {signs && (
+            <div className="min-w-0">
+              <dt className="panel-legend">{SIGNING_CHECK_QUESTION}</dt>
+              <dd className="mt-0.5 break-words">{signingWords(signing)}</dd>
+            </div>
+          )}
         </dl>
       )}
       <AutoLockRow key={wallet.lockId} lockId={wallet.lockId} minutes={lock.isError || !lock.data ? null : lock.data.autoLockMinutes} />
-      <Button
-        type="button"
-        variant="outline"
-        size="sm"
-        className={KEY}
-        data-configure-key={EDIT_CHECKS_KEY}
-        onClick={() => launchFromConfigure(walletScreenPath('edit-checks', wallet.id), EDIT_CHECKS_KEY)}
-      >
-        Edit checks
-      </Button>
+      {signs && (
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          className={KEY}
+          data-configure-key={EDIT_CHECKS_KEY}
+          onClick={() => launchFromConfigure(walletScreenPath('edit-checks', wallet.id), EDIT_CHECKS_KEY)}
+        >
+          Edit checks
+        </Button>
+      )}
     </ConfigPlate>
   )
 }
 
-function SeedPlate({ wallet }: { wallet: WalletMeta }) {
+function SeedPlate({ wallet }: { wallet: KeyWalletMeta }) {
   return (
     <ConfigPlate title="Seed">
       <p className="text-sm text-muted-foreground">Show this wallet's Seed so you can write it down. Anyone who sees it controls the funds.</p>
@@ -223,26 +247,85 @@ function SeedPlate({ wallet }: { wallet: WalletMeta }) {
   )
 }
 
-const CONTROL_KEY = 'let-another-wallet-sign'
-const TWO_DEVICE_KEY = 'two-device'
+/**
+ * Signs for (OS-FR-20, CAP-13; EXPERIENCE "Local settings plates, per kind"), on an
+ * Online and an Offline Wallet: the Account this key signs for, changed or removed
+ * without re-creating the Wallet. The title is the fixed string; the state line is
+ * P-17's sentence; the keys reuse P-54's "Set it" and P-46's "Remove the address"
+ * (story 10: the spine's "Signs for", "Account" and "Change" are not approved).
+ * A change forgets the old Account's cached reads (Online) or erases the kept round
+ * (Offline), so nothing for the old Account shows as current for the new one.
+ */
+function SignsForPlate({ wallet }: { wallet: KeyWalletMeta }) {
+  const queryClient = useQueryClient()
+  const allWallets = useAppStore((s) => s.wallets)
+  const setWallets = useAppStore((s) => s.setWallets)
+  const [draft, setDraft] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [refusal, setRefusal] = useState<string | null>(null)
+  const id = useId()
+  const state = signsForDraftState(draft)
+  const typed = draft.trim()
+  const signsForAnother = wallet.address !== wallet.keyAddress
+  // P-8, second form (OS-FR-3): an Offline Wallet that would sign for an Account a
+  // Transmitter here is synced to. Warned before Set it, never refused.
+  const sameAsTransmitter = wallet.kind === 'offline' && state === 'valid' && transmitterSyncedTo(allWallets, typed)
 
-function ControlPlate({ wallet }: { wallet: WalletMeta }) {
+  async function apply(next: string | null) {
+    if (busy || (next !== null && signsForDraftState(next) !== 'valid')) return
+    setBusy(true)
+    setRefusal(null)
+    const before = wallet
+    let meta: KeyWalletMeta
+    try {
+      meta = await setSignsFor(wallet.id, next)
+    } catch (err) {
+      // P-35 for FR-93's duplicate; otherwise the shipped words: nothing was written.
+      if (err instanceof SignsForRefusedError && err.refusal === 'duplicate') setRefusal(err.message)
+      else notify.error('Nothing was changed.')
+      setBusy(false)
+      return
+    }
+    try {
+      const { wallets: current } = useAppStore.getState()
+      setWallets(current.map((w) => (w.id === meta.id ? meta : w)))
+      // The old Account's state goes: an Online Wallet's cached reads, an Offline Wallet's kept round.
+      if (before.address !== meta.address) forgetSignsFor(queryClient, before)
+      setDraft('')
+    } finally {
+      setBusy(false)
+    }
+  }
+
   return (
-    <ConfigPlate title="Operating another account">
-      <ControlledNote wallet={wallet} />
-      {holdsMasterKey(wallet) && (
+    <ConfigPlate title={SIGNS_FOR_ANOTHER_ACCOUNT}>
+      {signsForAnother && <p className="text-sm [overflow-wrap:anywhere]">{fill(WALLET_SIGNS_FOR, wallet.address)}</p>}
+      <SignsForFields draft={draft} onDraft={(d) => (setDraft(d), setRefusal(null))} disabled={busy} idPrefix={id} />
+      {sameAsTransmitter && <WarningSentence words={SAME_ADDRESS_TRANSMITTER_HERE} />}
+      {refusal && (
+        <p role="alert" className="text-sm text-text-destructive">
+          {refusal}
+        </p>
+      )}
+      <div className="flex flex-wrap gap-2">
         <Button
           type="button"
           variant="outline"
           size="sm"
           className={KEY}
-          data-configure-key={CONTROL_KEY}
-          onClick={() => launchFromConfigure(walletScreenPath('control', wallet.id), CONTROL_KEY)}
+          aria-disabled={state !== 'valid' ? true : undefined}
+          aria-describedby={state === 'invalid' ? signsForIds(id).error : undefined}
+          disabled={busy}
+          onClick={() => void apply(typed)}
         >
-          Let another wallet sign
+          {SET_IT}
         </Button>
-      )}
-      <MasterKeyControl wallet={wallet} />
+        {signsForAnother && (
+          <Button type="button" variant="outline" size="sm" className={KEY} disabled={busy} onClick={() => void apply(null)}>
+            {REMOVE_THE_ADDRESS}
+          </Button>
+        )}
+      </div>
     </ConfigPlate>
   )
 }
@@ -260,10 +343,20 @@ function RemovePlate({ wallet }: { wallet: WalletMeta }) {
   const network = NETWORKS[wallet.network].label
 
   // The key's own state stops nothing a keyboard can do, so the guard is here, at call time.
+  // A Seed record that lists no Wallet stays on the device (story 12): then this is not the last
+  // wallet. Read on mount; confirm reads it again and refuses if the shown sentence no longer holds.
+  const [holdsUnlisted, setHoldsUnlisted] = useState(false)
+  useEffect(() => {
+    let live = true
+    void readHoldsUnlisted().then((found) => live && setHoldsUnlisted(found))
+    return () => {
+      live = false
+    }
+  }, [])
   function press() {
     const now = openWalletNow(wallet.id)
     if (!now) return
-    setRemoving({ walletId: wallet.id, name: now.label, body: removeBodyFor(useAppStore.getState().wallets, wallet.id) })
+    setRemoving({ walletId: wallet.id, name: now.label, body: removeBodyFor(useAppStore.getState().wallets, wallet.id, holdsUnlisted) })
   }
 
   const confirm = (walletId: string, shownBody: RemoveBody) =>
@@ -295,6 +388,96 @@ function RemovePlate({ wallet }: { wallet: WalletMeta }) {
   )
 }
 
+/**
+ * Sync to an address (OS-FR-4, EXPERIENCE "Synced address" plate): the Synced
+ * address can be changed or removed without re-creating the Wallet. A key press
+ * writes through the keystore, then the store; the old address's cached reads go
+ * unless another open Wallet holds it. The same address as an Offline Wallet here
+ * is warned (P-8), never refused.
+ */
+function SyncPlate({ wallet }: { wallet: TransmitterMeta }) {
+  const queryClient = useQueryClient()
+  const wallets = useAppStore((s) => s.wallets)
+  const setWallets = useAppStore((s) => s.setWallets)
+  const [draft, setDraft] = useState('')
+  const [busy, setBusy] = useState(false)
+  const id = useId()
+  const typed = draft.trim()
+  const invalid = typed !== '' && !isValidClassicAddress(typed)
+  const sameAsOffline = typed !== '' && !invalid && offlineWalletHas(wallets, typed)
+
+  async function apply(next: string | null) {
+    if (busy || (next !== null && (next === '' || !isValidClassicAddress(next)))) return
+    setBusy(true)
+    const old = wallet.address
+    let meta: TransmitterMeta
+    try {
+      meta = await setTransmitterSync(wallet.id, next)
+    } catch {
+      // Nothing was written: the plate keeps showing what is stored (shipped words).
+      notify.error('Nothing was changed.')
+      setBusy(false)
+      return
+    }
+    try {
+      // From the write's own result: a failed re-list must not leave the old address on screen.
+      const { wallets: current } = useAppStore.getState()
+      setWallets(current.map((w) => (w.id === meta.id ? meta : w)))
+      if (old !== next) forgetSyncedAddress(queryClient, wallet.id, wallet.network, old)
+      setDraft('')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <ConfigPlate title={SYNC_TO_AN_ADDRESS}>
+      {wallet.address ? <AddressDisplay address={wallet.address} /> : <p className="text-sm">{NOT_SYNCED}</p>}
+      <div className="grid gap-1.5">
+        <Label htmlFor={`${id}-address`}>Address</Label>
+        <Input
+          id={`${id}-address`}
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          autoComplete="off"
+          spellCheck={false}
+          className="font-data"
+          disabled={busy}
+          autoCapitalize="off"
+          autoCorrect="off"
+          aria-invalid={invalid ? true : undefined}
+          aria-describedby={invalid ? `${id}-error` : sameAsOffline ? `${id}-p8` : undefined}
+        />
+        {invalid && (
+          <p id={`${id}-error`} className="text-sm text-text-destructive">
+            {INVALID_ADDRESS}
+          </p>
+        )}
+      </div>
+      {sameAsOffline && <WarningSentence id={`${id}-p8`} words={SAME_ADDRESS_OFFLINE_HERE} />}
+      <div className="flex flex-wrap gap-2">
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          className={KEY}
+          aria-disabled={typed === '' || invalid ? true : undefined}
+          aria-describedby={invalid ? `${id}-error` : undefined}
+          disabled={busy}
+          onClick={() => void apply(typed)}
+        >
+          {SYNC_TO_AN_ADDRESS}
+        </Button>
+        {wallet.address && (
+          <Button type="button" variant="outline" size="sm" className={KEY} disabled={busy} onClick={() => void apply(null)}>
+            {REMOVE_THE_ADDRESS}
+          </Button>
+        )}
+      </div>
+    </ConfigPlate>
+  )
+}
+
 /** One read-only line of what was chosen at creation and cannot change: its legend and its words. */
 function SetupLine({ term, value }: { term: string; value: string }) {
   return (
@@ -315,6 +498,15 @@ function SetupLine({ term, value }: { term: string; value: string }) {
  * below show them. The words are the quiz's (`walk-questions`).
  */
 function IdentityPlate({ wallet }: { wallet: WalletMeta }) {
+  // A Transmitter Wallet holds no key, so it has no key rows (P-48): its Synced address, or P-5.
+  if (wallet.kind === 'transmitter') {
+    return (
+      <ConfigPlate title="This wallet">
+        {wallet.address ? <AddressDisplay address={wallet.address} /> : <p className="text-sm">{NOT_SYNCED}</p>}
+        <p className="text-sm text-muted-foreground">{NO_KEY}</p>
+      </ConfigPlate>
+    )
+  }
   return (
     <ConfigPlate title="This wallet">
       <AddressDisplay address={wallet.address} />
@@ -327,21 +519,198 @@ function IdentityPlate({ wallet }: { wallet: WalletMeta }) {
 }
 
 /**
+ * Before sending (OS-FR-10, CAP-6): "Show the signed transaction before sending",
+ * off by default, on Online and Transmitter Wallets only. The control is the
+ * Checkbox primitive with switch semantics (there is no Switch primitive in the
+ * panel vocabulary): it takes effect at once, on the next send.
+ */
+function BeforeSendingPlate({ wallet }: { wallet: WalletMeta }) {
+  const setWallets = useAppStore((s) => s.setWallets)
+  const [busy, setBusy] = useState(false)
+  const descriptionId = useId()
+
+  async function change(on: boolean) {
+    setBusy(true)
+    try {
+      await setShowBeforeSending(wallet.id, on)
+      setWallets(await listWallets())
+    } catch (err: unknown) {
+      notify.error(err instanceof Error ? err.message : String(err))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <ConfigPlate title={BEFORE_SENDING_PLATE}>
+      <label className="flex items-center gap-2 text-sm pointer-coarse:min-h-11">
+        <Checkbox
+          role="switch"
+          checked={wallet.showBeforeSending === true}
+          disabled={busy}
+          aria-describedby={descriptionId}
+          onCheckedChange={(v) => void change(v === true)}
+        />
+        {SHOW_BEFORE_SENDING}
+      </label>
+      <p id={descriptionId} className="text-sm text-muted-foreground">
+        {BEFORE_SENDING_DESCRIPTION}
+      </p>
+    </ConfigPlate>
+  )
+}
+
+/** The data-attribute of the change key, where focus lands when a change screen returns. */
+const KIND_KEY = 'change-kind'
+
+/**
+ * The Wallet kind plate (OS-FR-1, OS-FR-5 to OS-FR-7, EXPERIENCE "Local settings
+ * plates, per kind"): the kind stamp, the Was-online stamp with P-4, and the change
+ * key. A key that is not available stays, `aria-disabled`, with its reason in visible
+ * text: P-63 for a Passkey-Derived Seed (OS-FR-8). A Transmitter has no key: it
+ * never changes kind.
+ */
+function KindPlate({ wallet }: { wallet: WalletMeta }) {
+  const id = useId()
+  const marked = wallet.kind === 'offline' && wallet.wasOnline === true
+  const reasonId = `${id}-reason`
+  const reason =
+    wallet.kind === 'transmitter'
+      ? null
+      : wallet.kind === 'online' && wallet.seedMethod === 'passkey-derived'
+        ? PASSKEY_SEED_NOT_OFFLINE
+        : null
+  const to = wallet.kind === 'online' ? 'change-to-offline' : 'change-to-online'
+  return (
+    <ConfigPlate title={WALLET_KIND}>
+      <div className="flex flex-wrap items-center gap-2">
+        <KindStamp kind={wallet.kind} />
+        {marked && <WasOnlineStamp />}
+      </div>
+      {marked && <p className="text-xs text-muted-foreground">{WAS_ONLINE_WHY}</p>}
+      {wallet.kind !== 'transmitter' && (
+        <>
+          <Button
+            type="button"
+            variant={wallet.kind === 'online' ? 'outline' : 'danger'}
+            size="sm"
+            className={KEY}
+            data-configure-key={KIND_KEY}
+            aria-disabled={reason ? true : undefined}
+            aria-describedby={reason ? reasonId : undefined}
+            onClick={() => {
+              if (!reason) launchFromConfigure(walletScreenPath(to, wallet.id), KIND_KEY)
+            }}
+          >
+            {wallet.kind === 'online' ? CHANGE_TO_OFFLINE : CHANGE_TO_ONLINE}
+          </Button>
+          {reason && (
+            <p id={reasonId} className="text-sm text-muted-foreground">
+              {reason}
+            </p>
+          )}
+        </>
+      )}
+    </ConfigPlate>
+  )
+}
+
+/**
+ * The result of a change of kind (Flow 6, OS-FR-5, OS-FR-6), shown once on the
+ * Local settings the change landed on, and focused, since the screen that confirmed
+ * it is gone. To offline: P-43 with the Network, then Text C's never-online steps
+ * again. To online: the owner's sentence of 2026-11-09. The lit legend is the
+ * shipped success word.
+ */
+function KindChangedPlate({ wallet, to }: { wallet: WalletMeta; to: 'offline' | 'online' }) {
+  const id = useId()
+  const ref = useRef<HTMLElement | null>(null)
+  useEffect(() => ref.current?.focus(), [])
+  const network = NETWORKS[wallet.network].label
+  return (
+    <section ref={ref} tabIndex={-1} aria-labelledby={`${id}-now`} className="panel-plate flex min-w-0 flex-col gap-3 rounded-md px-4 pb-4 pt-3">
+      <Alert variant="success" role="none">
+        <AlertTitle>Confirmed</AlertTitle>
+        <AlertDescription id={`${id}-now`} className="break-words">
+          {fill(to === 'offline' ? NOW_OFFLINE : NOW_ONLINE, network)}
+        </AlertDescription>
+      </Alert>
+      {to === 'offline' && <NeverOnlineSteps />}
+    </section>
+  )
+}
+
+/** The plates after Name and Address Book, per kind, in the spine's fixed order (EXPERIENCE
+ * "Local settings plates, per kind"). The Online list is today's, unchanged. */
+function KindPlates({ wallet }: { wallet: WalletMeta }) {
+  switch (wallet.kind) {
+    case 'online':
+      return (
+        <>
+          <ChecksPlate wallet={wallet} />
+          <SeedPlate wallet={wallet} />
+          <SignsForPlate wallet={wallet} />
+          {/* The Keys plate (story 11), in the spine's place; titled with the approved "Key state". */}
+          <KeysPlate wallet={wallet} />
+          <ConfigPlate title="Node">
+            <WalletNodeSection wallet={wallet} />
+          </ConfigPlate>
+          <BeforeSendingPlate wallet={wallet} />
+        </>
+      )
+    case 'offline':
+      // No Node: an Offline Wallet never touches the ledger. Key changes are New transaction types, not plates.
+      return (
+        <>
+          <ChecksPlate wallet={wallet} />
+          <SeedPlate wallet={wallet} />
+          <SignsForPlate wallet={wallet} />
+        </>
+      )
+    case 'transmitter':
+      // No Seed: a Transmitter Wallet holds no key.
+      return (
+        <>
+          <ChecksPlate wallet={wallet} />
+          <ConfigPlate title="Node">
+            <WalletNodeSection wallet={wallet} />
+          </ConfigPlate>
+          <BeforeSendingPlate wallet={wallet} />
+        </>
+      )
+    default: {
+      const unknown: never = wallet
+      void unknown
+      return null
+    }
+  }
+}
+
+/**
  * The Local settings tab (FR-88, CAP-1): this wallet's own settings, a plate per concern in a fixed order,
- * in one column and with no jump list. `Main` mounts it only inside `OpenWallet`, so the lock is
- * open (AD-32); this component trusts that and reads no other Wallet. App-level plates (Remove all,
- * Version) are not here: they belong to `/settings`.
+ * in one column and with no jump list. `Main` mounts it only for an open Wallet, inside that kind's
+ * shell, so the lock is open (AD-32); this component trusts that and reads no other Wallet. The plates
+ * depend on the kind (OS-FR-1). App-level plates (Remove all, Version) are not here: they belong to `/settings`.
  */
 export function WalletTab({ wallet }: { wallet: WalletMeta }) {
+  // A change of kind just landed here (OS-FR-5, OS-FR-6): its result plate shows and takes focus.
+  // The heading row keeps the kind stamp only: the Was-online stamp must always be followed by P-4,
+  // which does not fit that row; the Wallet kind plate just below shows both.
+  const [changed] = useState(() => peekKindChanged(wallet.id))
+  // The result shows only on the kind it names (a stale marker on the other kind shows nothing).
+  const landed = changed !== null && changed.to === wallet.kind ? changed.to : null
   // Landing: only when a task screen opened from this tab has just returned, put focus on the key
   // that opened it. A plain tab selection never moves focus off the tab list. The pending return
   // is cleared on the next tick, so a dev double mount still sees it and a later visit does not.
   useEffect(() => {
-    const returnKey = peekConfigureFocusReturn()
+    const returnKey = landed ? null : peekConfigureFocusReturn()
     if (returnKey) document.querySelector<HTMLElement>(`[data-configure-key="${CSS.escape(returnKey)}"]`)?.focus()
-    const timer = setTimeout(clearConfigureFocusReturn, 0)
+    const timer = setTimeout(() => {
+      clearConfigureFocusReturn()
+      clearKindChanged()
+    }, 0)
     return () => clearTimeout(timer)
-  }, [])
+  }, [landed])
 
   return (
     <div className="mx-auto flex w-full min-w-0 max-w-lg flex-col gap-4">
@@ -351,21 +720,19 @@ export function WalletTab({ wallet }: { wallet: WalletMeta }) {
           <span className="panel-legend block">Local settings</span>{' '}
           <span className="mt-0.5 block break-words text-lg font-semibold">{wallet.label}</span>
         </h1>
-        <NetworkPlate />
+        {/* The kind first, then the Network: the chooser card's order (OS-FR-1). */}
+        <div className="flex flex-wrap items-center gap-2">
+          <KindStamp kind={wallet.kind} />
+          <NetworkPlate />
+        </div>
       </div>
+      {landed && <KindChangedPlate wallet={wallet} to={landed} />}
       <IdentityPlate wallet={wallet} />
+      <KindPlate wallet={wallet} />
+      {wallet.kind === 'transmitter' && <SyncPlate wallet={wallet} />}
       <NamePlate wallet={wallet} />
       <AddressBookPlate walletId={wallet.id} />
-      <ChecksPlate wallet={wallet} />
-      <SeedPlate wallet={wallet} />
-      {/* A wallet either operates another account or holds the Account Master Key, so this plate always has something to say. */}
-      <ControlPlate wallet={wallet} />
-      <ConfigPlate title="Node">
-        <WalletNodeSection wallet={wallet} />
-      </ConfigPlate>
-      <ConfigPlate title="Two-device signing">
-        <TwoDeviceSign wallet={wallet} configureKey={TWO_DEVICE_KEY} />
-      </ConfigPlate>
+      <KindPlates wallet={wallet} />
       <RemovePlate wallet={wallet} />
     </div>
   )

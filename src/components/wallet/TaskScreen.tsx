@@ -4,8 +4,8 @@ import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 
 /**
- * A routed task screen (mobile dialogs S2). The four multi-field tasks (Add
- * wallet, Edit checks, Sign with two devices, Let another wallet sign) are pages,
+ * A routed task screen (mobile dialogs S2). The multi-field tasks (Add wallet,
+ * Edit checks, the two changes of kind) are pages,
  * not dialogs: they own the whole content area, Back returns to Settings, and
  * the commit action lives in a `ScreenFooter` stuck to the bottom of the
  * scrolling area so it is reachable at 200% text zoom.

@@ -95,15 +95,16 @@ describe('BalancesTab — the faucet discards the whole account group', () => {
   })
 })
 
-describe('BalancesTab — a Wallet that operates another Account says so', () => {
-  it('shows the controlled note when its own key is not the Account, and none for its own Account', () => {
+describe('BalancesTab — the FR-75 controlled note is retired (story 12)', () => {
+  it('shows no controlled note, whether the key is the Account or signs for it', () => {
     keyAddress = WALLET_ADDRESS
     render(<BalancesTab />)
     expect(screen.queryByTestId('controlled-note')).toBeNull()
     cleanup()
     keyAddress = 'rKeyThatIsNotTheAccount'
     render(<BalancesTab />)
-    expect(screen.getByTestId('controlled-note').textContent).toContain('operates another account')
+    expect(screen.queryByTestId('controlled-note')).toBeNull()
+    expect(document.body.textContent).not.toContain('operates another account')
   })
 })
 

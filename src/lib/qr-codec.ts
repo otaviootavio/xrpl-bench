@@ -1,46 +1,75 @@
+import { isValidClassicAddress } from 'xrpl'
 import { NETWORKS, NETWORK_IDS, type NetworkId } from '@/lib/xrpl/networks'
+import { MAX_RECEIVED_LEDGER_INDEX } from '@/lib/offline-window'
+import { CborReader, encodeBytes } from '@/lib/ur/cbor'
+import { decodeSinglePart, encodeSinglePart, looksLikeUr } from '@/lib/ur/ur'
 
 /**
- * The two-device signing payloads (FR-78; AD-30). This is the only place either
- * one is defined, and a `lib` leaf: it imports no crypto, store or UI.
+ * The QR payloads between two devices (OS-FR-14, OS-FR-15, OS-FR-17, OS-FR-24). This is the only
+ * place a payload is defined, and a `lib` leaf: it imports no crypto, store or UI.
  *
- *   unsigned  xrplbench:1:u:<base64url of {"v":1,"network_id":n,"tx":{...}}>
- *   signed    xrplbench:1:s:<base64url of {"v":1,"tx_blob":"..."}>
+ * Every payload is a Uniform Resource (BCR-2020-005): its UR type names the kind
+ * and its message is a CBOR byte string holding the UTF-8 JSON envelope:
  *
- * `network_id` is an envelope field (the ledger's own `NetworkID` transaction
+ *   unsigned  ur:xrplbench-unsigned/<bytewords of bstr({"v":1,"network_id":n,"tx":{...}})>
+ *   signed    ur:xrplbench-signed/<bytewords of bstr({"v":1,"network_id":n,"tx_blob":"..."})>
+ *
+ * `encode*` returns the whole payload as one single-part UR. Drawing it as one
+ * still code or as an animated QR with fountain codes is `qr-frames.ts`'s job;
+ * joining the frames a scanner reads back into this one text is
+ * `qr-scan-session.ts`'s. `decode*` therefore always judges the whole payload,
+ * never a frame, and so does every check after it.
+ *
+ * The single-code form of builds before story 13, `xrplbench:<v>:<kind>:<…>` (FR-78's
+ * two-device signing, retired by story 12), is no longer read: such a code is
+ * answered as from a version this one does not understand. (A device on an older
+ * build cannot read a UR.)
+ *
+ * Both envelopes name their Network (route-checks.md "What travels by QR": a
+ * Signed Transaction carries "an envelope naming the Network", OS-FR-9); a signed
+ * code without one is refused as `bad-network`. `network_id` is an envelope field (the ledger's own `NetworkID` transaction
  * field exists only above 1024): Mainnet 0, Testnet 1, Devnet 2, from `NETWORKS`.
- * `decode*` returns a typed result and never throws. One payload is one QR code:
- * there is no multi-frame form, so a payload over one code's capacity is refused.
+ * `decode*` returns a typed result and never throws. Nothing is refused for its
+ * size (OS-FR-24) beyond a bound no payload of this app comes near.
  */
 
 export const QR_VERSION = 1
-const PREFIX = `xrplbench:${QR_VERSION}:`
-const UNSIGNED = `${PREFIX}u:`
-const SIGNED = `${PREFIX}s:`
 
-/** What one QR code holds at error correction M, version 40, byte mode. The
- * display side renders at M, so this is what it can draw. */
-export const QR_MAX_BYTES = 2331
+/** The UR type of each payload kind. Every one starts with `xrplbench-`. */
+export const PAYLOAD_UR_TYPES = {
+  u: 'xrplbench-unsigned',
+  s: 'xrplbench-signed',
+  /** Data-to-Sign Request, Offline → Transmitter (OS-FR-14). */
+  r: 'xrplbench-request',
+  /** Data to Sign, Transmitter → Offline (OS-FR-15). */
+  d: 'xrplbench-data-to-sign',
+} as const
+export type PayloadKind = keyof typeof PAYLOAD_UR_TYPES
 
-export type Encoded = { ok: true; text: string } | { ok: false; reason: string }
+/** True for a UR type this app writes (or a later build may write): the scanner collects only these. */
+export const isPayloadUrType = (type: string): boolean => type.startsWith('xrplbench-')
 
-export type CodecErrorKind = 'malformed' | 'unknown-version' | 'wrong-kind' | 'bad-network' | 'too-large'
+/** Text longer than this is not read at all: the message bound of the UR decoder, in Bytewords, plus room for the type. */
+export const MAX_TEXT_LENGTH = 2 * 65536 + 256
+
+/** Always `ok`: nothing is refused for its size (OS-FR-24). The shape is kept for the callers. */
+export type Encoded = { ok: true; text: string }
+
+export type CodecErrorKind = 'malformed' | 'unknown-version' | 'wrong-kind' | 'bad-network'
 export type Decoded<T> = { ok: true; value: T } | { ok: false; kind: CodecErrorKind; reason: string }
-
-export interface UnsignedPayload {
-  v: typeof QR_VERSION
-  network_id: number
-  /** The network `network_id` names. */
-  network: NetworkId
-  tx: Record<string, unknown>
-}
 
 export interface SignedPayload {
   v: typeof QR_VERSION
+  network_id: number
+  /** The Network `network_id` names: the one the Transmit step checks. */
+  network: NetworkId
   tx_blob: string
 }
 
-const TOO_LARGE = 'This transaction is too large for one QR code, so it cannot be carried between the two devices.'
+/** Shipped words, also shown by the scanner when a joined code fails its checksum. */
+export const CODE_UNREADABLE = 'That code could not be read.'
+const NOT_A_CODE = 'That is not an XRPL Bench signing code.'
+const UNKNOWN_VERSION = 'That code is from a version of XRPL Bench this one does not understand.'
 
 const isPlainObject = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v)
 
@@ -55,82 +84,404 @@ export function networkOfId(networkId: unknown): NetworkId | null {
   return NETWORK_IDS.find((n) => NETWORKS[n].networkId === networkId) ?? null
 }
 
-function toBase64Url(json: string): string {
-  const bytes = new TextEncoder().encode(json)
-  let bin = ''
-  for (const b of bytes) bin += String.fromCharCode(b)
-  return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
+function finish(kind: PayloadKind, payload: unknown): Encoded {
+  const json = new TextEncoder().encode(JSON.stringify(payload))
+  return { ok: true, text: encodeSinglePart({ type: PAYLOAD_UR_TYPES[kind], cbor: encodeBytes(json) }) }
 }
 
-function fromBase64Url(body: string): unknown {
-  if (!/^[A-Za-z0-9_-]+$/.test(body)) throw new Error('not base64url')
-  const padded = body.replace(/-/g, '+').replace(/_/g, '/')
-  const bin = atob(padded + '='.repeat((4 - (padded.length % 4)) % 4))
-  const bytes = Uint8Array.from(bin, (c) => c.charCodeAt(0))
-  return JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes))
+/**
+ * The whole unsigned payload (the Transmitter-builds route, story 9), as one
+ * single-part UR. The envelope carries the validated ledger index the transaction
+ * was built on (route-checks "What travels by QR").
+ */
+export function encodeUnsigned(input: { network: NetworkId; tx: Record<string, unknown>; ledgerIndex: number }): Encoded {
+  return finish('u', { v: QR_VERSION, network_id: networkIdOf(input.network), ledger_index: input.ledgerIndex, tx: input.tx })
 }
 
-function finish(prefix: string, payload: unknown): Encoded {
-  const text = prefix + toBase64Url(JSON.stringify(payload))
-  // Characters are all ASCII, so the length is the byte count.
-  return text.length > QR_MAX_BYTES ? { ok: false, reason: TOO_LARGE } : { ok: true, text }
+/** The whole signed payload, as one single-part UR. */
+export function encodeSigned(input: { network: NetworkId; txBlob: string }): Encoded {
+  return finish('s', { v: QR_VERSION, network_id: networkIdOf(input.network), tx_blob: input.txBlob })
 }
 
-export function encodeUnsigned(input: { network: NetworkId; tx: Record<string, unknown> }): Encoded {
-  return finish(UNSIGNED, { v: QR_VERSION, network_id: networkIdOf(input.network), tx: input.tx })
+const WRONG_KIND: Record<PayloadKind, string> = {
+  u: 'That is a signed transaction, not one waiting to be signed.',
+  s: 'That is an unsigned transaction, not a signed one.',
+  // The round screens dispatch on `payloadKindOf` first and answer a wrong kind in
+  // their own approved words, so these shipped words are a fallback only.
+  r: NOT_A_CODE,
+  d: NOT_A_CODE,
 }
 
-export function encodeSigned(txBlob: string): Encoded {
-  return finish(SIGNED, { v: QR_VERSION, tx_blob: txBlob })
-}
-
-function open(text: unknown, kind: 'u' | 's'): Decoded<Record<string, unknown>> {
-  if (typeof text !== 'string') return { ok: false, kind: 'malformed', reason: 'That is not an XRPL Bench signing code.' }
-  // A wrapped textarea or a pasted line break puts whitespace inside the body; none of it is data.
-  const trimmed = text.replace(/\s+/g, '')
-  if (trimmed.length > QR_MAX_BYTES) return { ok: false, kind: 'too-large', reason: TOO_LARGE }
-  const m = /^xrplbench:([^:]*):([^:]*):(.*)$/s.exec(trimmed)
-  if (!m) return { ok: false, kind: 'malformed', reason: 'That is not an XRPL Bench signing code.' }
-  if (m[1] !== String(QR_VERSION)) {
-    return { ok: false, kind: 'unknown-version', reason: 'That code is from a version of XRPL Bench this one does not understand.' }
+/** The JSON envelope of a single-part UR payload of the given kind. */
+function openUr(text: string, kind: PayloadKind): Decoded<unknown> {
+  let type: string
+  let cbor: Uint8Array
+  try {
+    ;({ type, cbor } = decodeSinglePart(text))
+  } catch {
+    // A frame of an animated code, a bad checksum, or not a UR at all.
+    return { ok: false, kind: 'malformed', reason: /^ur:xrplbench-/i.test(text) ? CODE_UNREADABLE : NOT_A_CODE }
   }
-  if (m[2] !== 'u' && m[2] !== 's') return { ok: false, kind: 'malformed', reason: 'That is not an XRPL Bench signing code.' }
-  if (m[2] !== kind) {
-    return {
-      ok: false,
-      kind: 'wrong-kind',
-      reason: kind === 'u' ? 'That is a signed transaction, not one waiting to be signed.' : 'That is an unsigned transaction, not a signed one.',
+  if (!isPayloadUrType(type)) return { ok: false, kind: 'malformed', reason: NOT_A_CODE }
+  const found = (Object.keys(PAYLOAD_UR_TYPES) as PayloadKind[]).find((k) => PAYLOAD_UR_TYPES[k] === type)
+  // A kind this build does not know: a later version wrote it.
+  if (!found) return { ok: false, kind: 'unknown-version', reason: UNKNOWN_VERSION }
+  if (found !== kind) return { ok: false, kind: 'wrong-kind', reason: WRONG_KIND[kind] }
+  try {
+    const r = new CborReader(cbor)
+    const json = r.bytes()
+    r.end()
+    return { ok: true, value: JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(json)) }
+  } catch {
+    return { ok: false, kind: 'malformed', reason: CODE_UNREADABLE }
+  }
+}
+
+/**
+ * Which payload kind a whole code is, without judging its contents: a screen
+ * that takes more than one kind (Transmit) dispatches on this, then calls that
+ * kind's decoder. `null`: not a code of this app (or a kind a later build wrote).
+ */
+export function payloadKindOf(text: unknown): PayloadKind | null {
+  if (typeof text !== 'string') return null
+  const trimmed = text.replace(/\s+/g, '')
+  if (trimmed.length > MAX_TEXT_LENGTH) return null
+  if (looksLikeUr(trimmed)) {
+    try {
+      const { type } = decodeSinglePart(trimmed)
+      return (Object.keys(PAYLOAD_UR_TYPES) as PayloadKind[]).find((k) => PAYLOAD_UR_TYPES[k] === type) ?? null
+    } catch {
+      return null
     }
   }
-  let body: unknown
-  try {
-    body = fromBase64Url(m[3])
-  } catch {
-    return { ok: false, kind: 'malformed', reason: 'That code could not be read.' }
-  }
-  if (!isPlainObject(body)) return { ok: false, kind: 'malformed', reason: 'That code could not be read.' }
-  if (body.v !== QR_VERSION) {
-    return { ok: false, kind: 'unknown-version', reason: 'That code is from a version of XRPL Bench this one does not understand.' }
-  }
-  return { ok: true, value: body }
+  return null
 }
 
-export function decodeUnsigned(text: unknown): Decoded<UnsignedPayload> {
-  const opened = open(text, 'u')
+/** The single-code form of builds before story 13 (FR-78's two-device codes): any
+ * case, whitespace stripped. `qr-scan-session.ts` uses the same test. */
+export const isOlderBuildCode = (text: string): boolean => /^xrplbench:/i.test(text.replace(/\s+/g, ''))
+
+function open(text: unknown, kind: PayloadKind): Decoded<Record<string, unknown>> {
+  if (typeof text !== 'string') return { ok: false, kind: 'malformed', reason: NOT_A_CODE }
+  // A wrapped textarea or a pasted line break puts whitespace inside the body; none of it is data.
+  const trimmed = text.replace(/\s+/g, '')
+  if (trimmed.length > MAX_TEXT_LENGTH) return { ok: false, kind: 'malformed', reason: CODE_UNREADABLE }
+  if (!looksLikeUr(trimmed)) {
+    // An older build's code is this app's, from a version this one no longer reads.
+    return isOlderBuildCode(trimmed) ? { ok: false, kind: 'unknown-version', reason: UNKNOWN_VERSION } : { ok: false, kind: 'malformed', reason: NOT_A_CODE }
+  }
+  const opened = openUr(trimmed, kind)
   if (!opened.ok) return opened
-  const { network_id, tx } = opened.value
-  const network = networkOfId(network_id)
-  if (network === null) return { ok: false, kind: 'bad-network', reason: 'That code names a network this wallet does not know.' }
-  if (!isPlainObject(tx)) return { ok: false, kind: 'malformed', reason: 'That code carries no transaction.' }
-  return { ok: true, value: { v: QR_VERSION, network_id: network_id as number, network, tx } }
+  const body = opened.value
+  if (!isPlainObject(body)) return { ok: false, kind: 'malformed', reason: CODE_UNREADABLE }
+  if (body.v !== QR_VERSION) return { ok: false, kind: 'unknown-version', reason: UNKNOWN_VERSION }
+  return { ok: true, value: body }
 }
 
 export function decodeSigned(text: unknown): Decoded<SignedPayload> {
   const opened = open(text, 's')
   if (!opened.ok) return opened
-  const { tx_blob } = opened.value
+  const { tx_blob, network_id } = opened.value
   if (typeof tx_blob !== 'string' || !/^[0-9A-Fa-f]+$/.test(tx_blob)) {
     return { ok: false, kind: 'malformed', reason: 'That code carries no signed transaction.' }
   }
-  return { ok: true, value: { v: QR_VERSION, tx_blob } }
+  // A signed code with no `network_id` is from an older version, not from an unknown network.
+  if (network_id === undefined) {
+    return { ok: false, kind: 'unknown-version', reason: UNKNOWN_VERSION }
+  }
+  const network = networkOfId(network_id)
+  if (network === null) return { ok: false, kind: 'bad-network', reason: 'That code names a network this wallet does not know.' }
+  return { ok: true, value: { v: QR_VERSION, network_id: network_id as number, network, tx_blob } }
+}
+
+// ---------------------------------------------------------------------------
+// The Offline-builds round (OS-FR-14, OS-FR-15, route-checks.md "What travels by QR").
+// Both envelopes carry exactly their set: a key outside it, or one missing, is
+// malformed (OS-FR-16). Their contents are judged again by the screen that reads
+// them (`offline-round.ts`, `answer-request.ts`); this layer checks only shape.
+// ---------------------------------------------------------------------------
+
+const HEX = (len: number) => new RegExp(`^[0-9a-f]{${len}}$`)
+const REQUEST_ID = HEX(32)
+const BUILD_HASH = HEX(64)
+const isUint32 = (v: unknown): v is number => typeof v === 'number' && Number.isInteger(v) && v >= 0 && v <= 4294967295
+/** A classic address with a correct checksum (story 6 review). */
+const isClassicAddress = (v: unknown): v is string => typeof v === 'string' && isValidClassicAddress(v)
+const isDrops = (v: unknown): v is string => typeof v === 'string' && /^[1-9][0-9]{0,17}$/.test(v)
+const exactKeys = (o: Record<string, unknown>, required: readonly string[], optional: readonly string[] = []) =>
+  required.every((k) => Object.prototype.hasOwnProperty.call(o, k)) && Object.keys(o).every((k) => required.includes(k) || optional.includes(k))
+
+/** The Built transaction a request carries (route-checks "What travels by QR"): the Build's
+ * fields only, as an exact key set per type. An XRP Payment (story 6); a TrustSet with the
+ * online screen's `tfSetNoRipple`; a SetRegularKey (no `RegularKey`: removes it); an AccountSet
+ * that turns the master key off (`SetFlag`) or on (`ClearFlag`) and nothing else (story 8). */
+export interface PaymentRequestTx {
+  TransactionType: 'Payment'
+  Account: string
+  Destination: string
+  Amount: string
+  DestinationTag?: number
+}
+export interface TrustSetRequestTx {
+  TransactionType: 'TrustSet'
+  Account: string
+  LimitAmount: { currency: string; issuer: string; value: string }
+  Flags: typeof TF_SET_NO_RIPPLE
+}
+export interface SetRegularKeyRequestTx {
+  TransactionType: 'SetRegularKey'
+  Account: string
+  RegularKey?: string
+}
+export type AccountSetRequestTx =
+  | { TransactionType: 'AccountSet'; Account: string; SetFlag: typeof ASF_DISABLE_MASTER }
+  | { TransactionType: 'AccountSet'; Account: string; ClearFlag: typeof ASF_DISABLE_MASTER }
+export type RequestTx = PaymentRequestTx | TrustSetRequestTx | SetRegularKeyRequestTx | AccountSetRequestTx
+
+/** `TrustSetFlags.tfSetNoRipple` and `AccountSetAsfFlags.asfDisableMaster`, as the ledger
+ * defines them (pinned against xrpl.js in the codec test; this leaf imports no enum). */
+export const TF_SET_NO_RIPPLE = 0x00020000
+export const ASF_DISABLE_MASTER = 4
+
+/**
+ * The Account's key state, for display only (route-checks "What travels by QR": "For a key
+ * change only: the Account's key state, for display"). `regular_key` is the set Regular Key
+ * or `null` for none; `signer_list` its signer list (`null`: none; `unknown`: its own read
+ * failed, P-29, owner approval 2026-11-14); `unknown` when the Transmitter could not read it (P-29).
+ */
+export type SignerListState = { signers: number; quorum: number } | null | 'unknown'
+export type KeyState = { regular_key: string | null; master_key: 'on' | 'off'; signer_list: SignerListState } | 'unknown'
+
+/** A Data-to-Sign Request: the Signs-for Account, the Built transaction, request ID, Build hash, Network. */
+export interface RequestPayload {
+  v: typeof QR_VERSION
+  network_id: number
+  network: NetworkId
+  request_id: string
+  build_hash: string
+  account: string
+  tx: RequestTx
+}
+
+/** Data to Sign: Sequence, Fee, the validated ledger index, Network, request ID, Build hash. Nothing else. */
+export interface DataToSignPayload {
+  v: typeof QR_VERSION
+  network_id: number
+  network: NetworkId
+  request_id: string
+  build_hash: string
+  sequence: number
+  fee: string
+  ledger_index: number
+  /** For a key change only (story 8): display, never a value of the transaction. */
+  key_state?: KeyState
+}
+
+const REQUEST_KEYS = ['v', 'network_id', 'request_id', 'build_hash', 'account', 'tx'] as const
+const DATA_TO_SIGN_KEYS = ['v', 'network_id', 'request_id', 'build_hash', 'sequence', 'fee', 'ledger_index'] as const
+
+export function encodeRequest(input: { network: NetworkId; requestId: string; buildHash: string; account: string; tx: RequestTx }): Encoded {
+  return finish('r', {
+    v: QR_VERSION,
+    network_id: networkIdOf(input.network),
+    request_id: input.requestId,
+    build_hash: input.buildHash,
+    account: input.account,
+    tx: input.tx,
+  })
+}
+
+export function encodeDataToSign(input: {
+  network: NetworkId
+  requestId: string
+  buildHash: string
+  sequence: number
+  fee: string
+  ledgerIndex: number
+  keyState?: KeyState
+}): Encoded {
+  return finish('d', {
+    v: QR_VERSION,
+    network_id: networkIdOf(input.network),
+    request_id: input.requestId,
+    build_hash: input.buildHash,
+    sequence: input.sequence,
+    fee: input.fee,
+    ledger_index: input.ledgerIndex,
+    ...(input.keyState !== undefined ? { key_state: input.keyState } : {}),
+  })
+}
+
+const malformed = <T>(): Decoded<T> => ({ ok: false, kind: 'malformed', reason: CODE_UNREADABLE })
+const unknownNetwork = <T>(): Decoded<T> => ({ ok: false, kind: 'bad-network', reason: 'That code names a network this wallet does not know.' })
+
+/**
+ * A currency code as typed (story 8 review: codes are case-sensitive): 3 letters or digits,
+ * not "XRP", or 40 hex digits not starting with 00 (that prefix is the standard form, whose
+ * all-zero code is XRP; a standard code travels as its 3 characters).
+ */
+export const isCurrencyCode = (v: unknown): v is string =>
+  typeof v === 'string' && ((/^[A-Za-z0-9]{3}$/.test(v) && v !== 'XRP') || (/^[0-9A-Fa-f]{40}$/.test(v) && !v.startsWith('00')))
+/** A trust-line limit in its canonical form (`offline-round.ts` `canonicalLimit`): "0", or a
+ * positive decimal with no leading zero and no trailing fractional zero, of at most 15
+ * significant digits (an issued-currency amount holds 15) and 40 characters. String checks only. */
+export function isCanonicalLimit(v: unknown): v is string {
+  if (typeof v !== 'string' || v.length > 40) return false
+  if (v === '0') return true
+  if (!/^(0|[1-9][0-9]*)(\.[0-9]*[1-9])?$/.test(v) || !/[1-9]/.test(v)) return false
+  const digits = v.replace('.', '').replace(/^0+/, '').replace(/0+$/, '')
+  return digits.length <= 15
+}
+
+function requestTxOf(tx: unknown, account: string): RequestTx | null {
+  if (!isPlainObject(tx) || tx.Account !== account) return null
+  switch (tx.TransactionType) {
+    case 'Payment': {
+      if (!exactKeys(tx, ['TransactionType', 'Account', 'Destination', 'Amount'], ['DestinationTag'])) return null
+      if (!isClassicAddress(tx.Destination) || !isDrops(tx.Amount)) return null
+      if (tx.DestinationTag !== undefined && !isUint32(tx.DestinationTag)) return null
+      return {
+        TransactionType: 'Payment',
+        Account: account,
+        Destination: tx.Destination,
+        Amount: tx.Amount,
+        ...(tx.DestinationTag !== undefined ? { DestinationTag: tx.DestinationTag } : {}),
+      }
+    }
+    case 'TrustSet': {
+      if (!exactKeys(tx, ['TransactionType', 'Account', 'LimitAmount', 'Flags'])) return null
+      if (tx.Flags !== TF_SET_NO_RIPPLE) return null
+      const limit = tx.LimitAmount
+      if (!isPlainObject(limit) || !exactKeys(limit, ['currency', 'issuer', 'value'])) return null
+      if (!isCurrencyCode(limit.currency) || !isClassicAddress(limit.issuer) || !isCanonicalLimit(limit.value)) return null
+      return { TransactionType: 'TrustSet', Account: account, LimitAmount: { currency: limit.currency, issuer: limit.issuer, value: limit.value }, Flags: TF_SET_NO_RIPPLE }
+    }
+    case 'SetRegularKey': {
+      if (!exactKeys(tx, ['TransactionType', 'Account'], ['RegularKey'])) return null
+      if (tx.RegularKey !== undefined && !isClassicAddress(tx.RegularKey)) return null
+      return { TransactionType: 'SetRegularKey', Account: account, ...(tx.RegularKey !== undefined ? { RegularKey: tx.RegularKey } : {}) }
+    }
+    case 'AccountSet': {
+      if (exactKeys(tx, ['TransactionType', 'Account', 'SetFlag']) && tx.SetFlag === ASF_DISABLE_MASTER) {
+        return { TransactionType: 'AccountSet', Account: account, SetFlag: ASF_DISABLE_MASTER }
+      }
+      if (exactKeys(tx, ['TransactionType', 'Account', 'ClearFlag']) && tx.ClearFlag === ASF_DISABLE_MASTER) {
+        return { TransactionType: 'AccountSet', Account: account, ClearFlag: ASF_DISABLE_MASTER }
+      }
+      return null
+    }
+    default:
+      return null
+  }
+}
+
+/** The key state's exact shape, or `null` when it is not one. */
+function keyStateOf(v: unknown): KeyState | null {
+  if (v === 'unknown') return 'unknown'
+  if (!isPlainObject(v) || !exactKeys(v, ['regular_key', 'master_key', 'signer_list'])) return null
+  if (v.regular_key !== null && !isClassicAddress(v.regular_key)) return null
+  if (v.master_key !== 'on' && v.master_key !== 'off') return null
+  const sl = v.signer_list
+  let signerList: SignerListState
+  if (sl === null || sl === 'unknown') signerList = sl
+  else {
+    // At most 32 signers (XRPL); a quorum of at least 1.
+    if (!isPlainObject(sl) || !exactKeys(sl, ['signers', 'quorum'])) return null
+    if (!isUint32(sl.signers) || sl.signers < 1 || sl.signers > 32 || !isUint32(sl.quorum) || sl.quorum < 1) return null
+    signerList = { signers: sl.signers, quorum: sl.quorum }
+  }
+  return { regular_key: v.regular_key, master_key: v.master_key, signer_list: signerList }
+}
+
+export function decodeRequest(text: unknown): Decoded<RequestPayload> {
+  const opened = open(text, 'r')
+  if (!opened.ok) return opened
+  const body = opened.value
+  if (!exactKeys(body, REQUEST_KEYS)) return malformed()
+  const network = networkOfId(body.network_id)
+  if (network === null) return unknownNetwork()
+  if (typeof body.request_id !== 'string' || !REQUEST_ID.test(body.request_id)) return malformed()
+  if (typeof body.build_hash !== 'string' || !BUILD_HASH.test(body.build_hash)) return malformed()
+  if (!isClassicAddress(body.account)) return malformed()
+  const tx = requestTxOf(body.tx, body.account)
+  if (!tx) return malformed()
+  return {
+    ok: true,
+    value: { v: QR_VERSION, network_id: body.network_id as number, network, request_id: body.request_id, build_hash: body.build_hash, account: body.account, tx },
+  }
+}
+
+/**
+ * The exact Data to Sign set, or `malformed` (an extra value, a missing one, a
+ * wrong type) or `bad-network` (a `network_id` this build does not know). Whether
+ * the Network is the Wallet's, the IDs are the kept request's and the Fee is
+ * under the cap is the Offline Wallet's judgement, not the codec's.
+ */
+export function decodeDataToSign(text: unknown): Decoded<DataToSignPayload> {
+  const opened = open(text, 'd')
+  if (!opened.ok) return opened
+  const body = opened.value
+  // `key_state` is optional here; whether it must be there is the Offline Wallet's
+  // judgement, from its kept Build's type (`offline-round.ts`, story 8).
+  if (!exactKeys(body, DATA_TO_SIGN_KEYS, ['key_state'])) return malformed()
+  if (typeof body.request_id !== 'string' || !REQUEST_ID.test(body.request_id)) return malformed()
+  if (typeof body.build_hash !== 'string' || !BUILD_HASH.test(body.build_hash)) return malformed()
+  // Sequence 0 never signs anything; a ledger index is never 0 either.
+  if (!isUint32(body.sequence) || body.sequence === 0) return malformed()
+  // Its LastLedgerSequence (index + window) must still be a UInt32: a higher index is malformed.
+  if (!isUint32(body.ledger_index) || body.ledger_index === 0 || body.ledger_index > MAX_RECEIVED_LEDGER_INDEX) return malformed()
+  if (!isDrops(body.fee)) return malformed()
+  let keyState: KeyState | undefined
+  if (Object.prototype.hasOwnProperty.call(body, 'key_state')) {
+    const k = keyStateOf(body.key_state)
+    if (k === null) return malformed()
+    keyState = k
+  }
+  const network = networkOfId(body.network_id)
+  if (network === null) return unknownNetwork()
+  return {
+    ok: true,
+    value: {
+      v: QR_VERSION,
+      network_id: body.network_id as number,
+      network,
+      request_id: body.request_id,
+      build_hash: body.build_hash,
+      sequence: body.sequence,
+      fee: body.fee,
+      ledger_index: body.ledger_index,
+      ...(keyState !== undefined ? { key_state: keyState } : {}),
+    },
+  }
+}
+
+// ---------------------------------------------------------------------------
+// The Transmitter-builds route (OS-FR-17, OS-FR-18, story 9). The Unsigned
+// Transaction's envelope carries exactly `{v, network_id, ledger_index, tx}`: a
+// key outside it, or one missing, is malformed (two-device signing's envelope, with
+// no `ledger_index`, among them). Whether every field of `tx` can be shown in words
+// is the Offline Wallet's judgement (`unsigned-judge.ts`).
+// ---------------------------------------------------------------------------
+
+export interface UnsignedForSigning {
+  v: typeof QR_VERSION
+  network_id: number
+  network: NetworkId
+  /** The validated ledger index the Transmitter built on: P-13's window and P-14's reference. */
+  ledger_index: number
+  tx: Record<string, unknown>
+}
+
+const UNSIGNED_KEYS = ['v', 'network_id', 'ledger_index', 'tx'] as const
+
+export function decodeUnsignedForSigning(text: unknown): Decoded<UnsignedForSigning> {
+  const opened = open(text, 'u')
+  if (!opened.ok) return opened
+  const body = opened.value
+  if (!exactKeys(body, UNSIGNED_KEYS)) return malformed()
+  if (!isUint32(body.ledger_index) || body.ledger_index === 0) return malformed()
+  if (!isPlainObject(body.tx)) return malformed()
+  const network = networkOfId(body.network_id)
+  if (network === null) return unknownNetwork()
+  return { ok: true, value: { v: QR_VERSION, network_id: body.network_id as number, network, ledger_index: body.ledger_index, tx: body.tx } }
 }

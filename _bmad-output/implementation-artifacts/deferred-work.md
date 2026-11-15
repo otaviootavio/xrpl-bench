@@ -582,3 +582,193 @@ Item 8 shipped as a refactor that preserves behaviour (`spec-sendtab-split.md`).
 - source_spec: `_bmad-output/implementation-artifacts/spec-batch2-d-footer-wrap-and-unknown-record.md`
   summary: Below `sm`, a sheet's sticky footer stops above the sheet's bottom edge by the dialog body's bottom padding (16px at 100% text, 32px at 200%), and form content shows through that strip under the footer.
   evidence: Seen in the batch 2 browser pass on 2026-11-06 (d1-addtrust-320-200pct-*.png, session scratchpad: a clipped "ISSUER ADDRESS" label visible under the footer). Sticky `bottom: 0` is measured inside the scroll container's padding box (`p-4` on `[data-slot=dialog-body]`). Pre-existing; not caused by the footer wrap. Settle by removing the body's bottom padding for sheets below `sm` (the footer already pads itself) and re-measuring.
+
+- source_spec: `_bmad-output/specs/spec-offline-signing/stories/1-wallet-kind-on-the-record-and-the-chooser-card.md`
+  summary: "Let another wallet sign" (operate another account) offers Offline and Transmitter Wallets as target accounts, because `eligibleTargets` in `src/lib/control.ts` does not look at the kind.
+  evidence: Found in the story 1 review on 2026-11-08. It cannot be reached until story 3 creates Offline Wallets, and story 12 removes the screen (OS-FR-19); OS-FR-21 lets any address be a Regular Key. Settle in story 3: either filter by kind or accept it until story 12.
+  resolution: (2026-11-08, `_bmad-output/specs/spec-offline-signing/stories/3-create-and-import-ask-for-the-kind-the-offline-wallet.md`) resolved. `eligibleTargets` offers Online Wallets only: the target gains an Online view that signs here, so an Offline key would sign on a connected device, and a Transmitter has no key. Pinned in `control.test.ts`.
+
+- source_spec: `_bmad-output/specs/spec-offline-signing/stories/1-wallet-kind-on-the-record-and-the-chooser-card.md`
+  summary: The Remove dialog of a Transmitter Wallet uses the Seed sentences from `removeBodyFor` ("the encrypted seed"), but a Transmitter holds no key.
+  evidence: Found in the story 1 review on 2026-11-08. `src/lib/remove-copy.ts` has no kind branch. Story 4 makes the Transmitter record without a Seed; its remove words need an approved string.
+  resolution: (2026-11-09, `_bmad-output/specs/spec-offline-signing/stories/4-transmitter-wallet-sync-to-an-address-delegates-shown.md`) resolved without new words. `removeBodyFor` returns `transmitter` (no sentence beyond the title and the plate's line) or `transmitter-last` (the last-wallet sentence only); no Seed or backup sentence. A fuller sentence would need an approved string.
+
+- source_spec: `_bmad-output/specs/spec-offline-signing/stories/1-wallet-kind-on-the-record-and-the-chooser-card.md`
+  summary: The kind is stored per Wallet view, but the Seed, Seed Method and Signing Check belong to the Seed record, so one Seed could hold an Online and an Offline Wallet.
+  evidence: Unverified (medium if a problem). Found in the story 1 review on 2026-11-08. A kind per Wallet matches the glossary. Stories 3 and 5 (create Offline, change kind) decide whether one Seed may hold Wallets of two kinds, and whether to refuse it.
+  resolution: (2026-11-08, offline signing story 3) partly settled. Every create and import writes a new record with one view, and `addControlledView` (the only path that adds a view) now has Online targets only, so after story 3 no record holds two kinds. One Seed as an Online and an Offline Wallet on two Networks is two records (allowed; the OS-FR-23 warning covers it); the same address on the same Network is refused whatever the kind (FR-93). A change of kind inside a record is story 5's to decide.
+  resolution: (2026-11-09, `_bmad-output/specs/spec-offline-signing/stories/5-change-a-wallets-kind-and-the-was-online-mark.md`) resolved. Change to offline is refused by the keystore for a record with more than one view (`shared-record`), so no record holds two kinds. The same Seed as a second record on another Network stays allowed (story 3, OS-FR-23 warning). The refusal has no approved reason words yet (only "Nothing was changed.").
+
+- source_spec: `_bmad-output/specs/spec-offline-signing/stories/2-one-transmit-step-and-show-the-signed-transaction-before-sending.md`
+  summary: No session-wide guard refuses a second transmit of a Signed Transaction already sent.
+  evidence: Story 2 keeps never-resubmit structural (one submission per entry, no blob kept). Re-scanning the same signed QR on a Transmitter is story 4's; a guard there needs approved refusal words.
+  resolution: (2026-11-09, `_bmad-output/specs/spec-offline-signing/stories/4-transmitter-wallet-sync-to-an-address-delegates-shown.md`) resolved. `transmitSignedTransaction` keeps an in-memory set of submitted hashes (added when a submission is attempted, never on a refusal or decline); a repeat is refused with the P-26 heading alone. A reason line needs an approved string.
+
+- source_spec: `_bmad-output/specs/spec-offline-signing/stories/3-create-and-import-ask-for-the-kind-the-offline-wallet.md`
+  summary: P-8's second form ("A Transmitter wallet on this device has this address…") belongs on the create and import of an Offline Wallet, but story 3 does not show it.
+  evidence: No Transmitter Wallet on this device can carry an address until story 4 (Sync), so the condition can never be true in story 3. Story 4 adds both forms of P-8, including this one on Offline create and import.
+  resolution: (2026-11-09, `_bmad-output/specs/spec-offline-signing/stories/4-transmitter-wallet-sync-to-an-address-delegates-shown.md`) resolved. The second form shows on an Offline import in the existing import warning dialog; an Offline create makes a fresh random key, so no check is needed there. "Change to an offline wallet" (story 5) still owes it.
+  resolution: (2026-11-09, `_bmad-output/specs/spec-offline-signing/stories/5-change-a-wallets-kind-and-the-was-online-mark.md`) resolved. The second form shows on the Change to an offline wallet screen when a Transmitter here is synced to the Wallet's address; a warning, never a refusal.
+
+- source_spec: `_bmad-output/specs/spec-offline-signing/stories/3-create-and-import-ask-for-the-kind-the-offline-wallet.md`
+  summary: On the create and import Review, every Change key runs past the right edge of the answers plate at 320px with 200% text.
+  evidence: Found in the story 3 browser pass, with an Online import as well (each Change button right edge 263px, plate 224px). The Label row's Change key overflows too, and story 3 did not change that row, its button or `ReviewStep`, so this is very likely pre-existing (not measured on `420a70a`). The page itself does not scroll sideways.
+
+- source_spec: `_bmad-output/specs/spec-offline-signing/stories/4-transmitter-wallet-sync-to-an-address-delegates-shown.md`
+  summary: The Synced Transmitter's Account shows the Regular Key and the master key but not the signer list, which EXPERIENCE "Screens by type" puts in the key state. An unmet spine element.
+  evidence: No approved words exist for the signer list row (its term and its values: none, a list, quorum). The read itself is one `account_objects` of type `signer_list`. Needs an approved P-n, then a row beside Regular Key and Master key (P-29 on a failed read).
+  resolution: (2026-11-14, story 8 review round two) resolved. The owner approved "Signer list", "{n} signers, quorum {q}" and "Key state"; the Account screen shows a "Key state" heading and the Signer list row ("None.", the count and quorum, or P-29), read through the key factory (`signerList`).
+
+- source_spec: `_bmad-output/specs/spec-offline-signing/stories/4-transmitter-wallet-sync-to-an-address-delegates-shown.md`
+  summary: The Sync step and the Synced address plate take the address typed or pasted only; Flow 2 says the address is scanned from the offline phone.
+  evidence: P-57 "Scan an address with the camera" is approved, but `QrScanner` hands up only `xrplbench:` codes. Needs an `accept` predicate for a plain classic address (and `ripple:` URIs), then the scanner on both places.
+
+- source_spec: `_bmad-output/specs/spec-offline-signing/stories/4-transmitter-wallet-sync-to-an-address-delegates-shown.md`
+  summary: First-run Onboarding offers "Add a Transmitter wallet" (P-2), whose approved place is the chooser key.
+  evidence: A fresh daily phone has no chooser, so without it a device holding only a Transmitter cannot be set up. The words are P-2 unchanged; the placement is the build's choice and wants the owner's confirmation. Pinned in `add-transmitter.test.tsx`.
+
+- source_spec: `_bmad-output/specs/spec-offline-signing/stories/4-transmitter-wallet-sync-to-an-address-delegates-shown.md`
+  summary: Missing words in story 4: a reason line for the already-sent refusal (only the P-26 heading shows), a sentence for the Transmitter Remove dialog beyond its title, and a visible reason for the Sync plate's aria-disabled key while the field is empty.
+  evidence: Each is in neither approved list; the build shows what approved words allow and nothing more.
+
+- source_spec: `_bmad-output/specs/spec-offline-signing/stories/5-change-a-wallets-kind-and-the-was-online-mark.md`
+  summary: Missing words in story 5: the "Wallet kind" plate title (the plate's heading is its stamps meanwhile), a reason for refusing Change to offline on a Seed record with a second view, and a success sentence after Change to an online wallet.
+  evidence: Each is in neither approved list. The plate title is the spine's plate name; story 2 needed an owner approval for its "Before sending" title. The build shows approved and shipped words only.
+
+- source_spec: `_bmad-output/specs/spec-offline-signing/stories/13-animated-qr-with-fountain-codes-for-every-payload.md`
+  summary: Parts of the QR hand-off plate and the round screens that story 13 did not build: the screen wake lock during a round, "Make the code larger" on a still and an animated code, and the plate's title, Network row and "Scan 1 of 3" caption; and the Request and Data to Sign kinds need their UR types in `PAYLOAD_UR_TYPES`.
+  evidence: EXPERIENCE "Round timing" (wake lock), "Animated QR" ("Make the code larger works on an animated code too") and the QR hand-off plate component row. None exists in the code today, and the plate itself arrives with story 6's round screens. Story 13 built the transport (`PayloadQr`, `ScanSession`) that plate should use; it carries today's Unsigned and Signed kinds only.
+  resolution: (2026-11-10, `_bmad-output/specs/spec-offline-signing/stories/6-offline-send-end-to-end-by-the-offline-builds-route.md`) partly settled. Request and Data to Sign UR types added; wake lock during a round, "Make the code larger" (P-59, still and animated), and the plate's title and Network row built (`HandoffPlate`). Not built: the "Scan 1 of 3" caption, whose words are in no approved list.
+  resolution: (2026-11-10, story 6 review round two) resolved. The "Scan n of 3" caption is built with the words the owner approved that day.
+
+- source_spec: `_bmad-output/specs/spec-offline-signing/stories/6-offline-send-end-to-end-by-the-offline-builds-route.md`
+  summary: Missing words in story 6: the "Scan n of 3" caption, titles for the Data to Sign and signed hand-off plates (their first approved lines head them), "Checking {address} on {Network}", a type-list legend, a signing-key row term, and QR alt text naming payload and Network.
+  evidence: Each is quoted in EXPERIENCE outside the P-n list, or in no list. The build shows approved and shipped words only.
+  resolution: (2026-11-10, story 6 review round two) resolved. The owner approved the six strings exactly; they are in `offline-round-words.ts`, pinned as literals, and shown: "Scan n of 3" on the hand-off and scan plates, the titles "Data to sign" and "Signed transaction", "Checking {address} on {Network}" in a status region, "Type of transaction" over the type list, "Signing key" on the signing review, and "QR code: {payload} for {Network}".
+
+- source_spec: `_bmad-output/specs/spec-offline-signing/stories/6-offline-send-end-to-end-by-the-offline-builds-route.md`
+  summary: "Start the request again" (P-18's third key) is not on the Kept transaction plate; the scanner stops its camera after a refusal; the QR shrinks at 320px with 200% text.
+  evidence: Re-requesting a signed Build hands out a new Sequence and could pay twice until story 7's Sequence comparison exists; the Build is kept for it. The camera and QR-size items are shared scanner and plate behaviour (EXPERIENCE "Notes For The Build", Accessibility Floor).
+  resolution: (2026-11-10, `_bmad-output/specs/spec-offline-signing/stories/7-retry-without-paying-twice.md`) partly settled. "Start the request again" is built on the Kept transaction plate, with the retry table deciding the Sequence. The scanner's camera after a refusal and the QR size at 320px with 200% text stay open.
+
+- source_spec: `_bmad-output/specs/spec-offline-signing/stories/7-retry-without-paying-twice.md`
+  summary: Missing words in story 7: the mockup's "Sequence received" row on retry case (a); "(same as before)" beside the Sequence in case (c); "Ledger result" with `tefPAST_SEQ` on the P-23 outcome; a reason line under P-16 when the signed list cannot be read or written (P-16 shows alone); a line on the Signed screen when its list cannot be read (P-49 shows alone, never P-56).
+  evidence: Each is in neither approved list (the first three are in `mockups/key-retry.html` only). The build shows approved words only.
+
+- source_spec: `_bmad-output/specs/spec-offline-signing/stories/7-retry-without-paying-twice.md`
+  summary: On the online Send path (`submitAndClassify`), a `tefPAST_SEQ` race still waits out the window and ends as today's "expired" outcome.
+  evidence: Story 7 reads the preliminary result on the scanned path only (`transmitSignedTransaction`), so online sending stays exactly as before (story 2). rippled answers `tx` for a rejected hash with `validated: false`, so `submitAndWait` waits until LastLedgerSequence passes. Settle by sharing the scanned path's submit-and-wait, with words for that case.
+
+- source_spec: `_bmad-output/specs/spec-offline-signing/stories/7-retry-without-paying-twice.md`
+  summary: A `tefPAST_SEQ` at the Transmit step for a blob that is NOT a retry (its Sequence used by some other transaction) still shows P-23 "Probably sent before".
+  evidence: The Transmitter cannot know a blob is a retry. An `account_tx` read comparing the transaction that used the Sequence with this blob's Destination and Amount could tell the two apart; left out by the coordinator's decision (review round two, 2026-11-14).
+
+
+- source_spec: `_bmad-output/specs/spec-offline-signing/stories/8-offline-builds-route-for-trust-lines-and-key-actions.md`
+  summary: Story 8 reuses words whose only source is a screen story 12 retires, and words outside the approved lists that need the owner's eye: "Regular Key address" (TwoDeviceSign's field label) and "Review" (the quizzes' step title, used as the review key of Trust line, Regular Key and Master key; the mockup also says "Review"). The signer list has no approved row name, so it is neither read nor shown on the Transmitter answer or the offline review (as on story 4's Account screen).
+  evidence: `offline-round-words.test.ts` pins "Regular Key address" against `TwoDeviceSign.tsx`; when story 12 deletes that file, pin it as a literal (or the owner approves a P-n). The signer-list row needs a word such as the mock's "Signer list".
+  resolution: (2026-11-14, story 8 review round two) partly settled. "Review", "Signer list", "{n} signers, quorum {q}" and "Key state" approved and built (signer list read by the Transmitter, carried in the Data to Sign's key state, shown on the answer, the offline review and the Account screen). Still open: "Regular Key address" is pinned against `TwoDeviceSign.tsx`, which story 12 deletes. (2026-11-15, `_bmad-output/specs/spec-offline-signing/stories/12-retire-operating-another-account-and-two-device-signing.md`) resolved: pinned as a literal.
+
+- source_spec: `_bmad-output/specs/spec-offline-signing/stories/8-offline-builds-route-for-trust-lines-and-key-actions.md`
+  summary: W1, W2 and P-30 are not on the offline Regular Key and Master key Builds (EXPERIENCE Flow 7 step 2 puts them there); story 11 owns W1 to W5 for every kind.
+  evidence: route-checks' "Offline Wallet, Offline-builds route" rows require none of them; the brief for story 8 left them to story 11 unless route-checks required them. Until story 11 an offline user can set a black-hole or unknown Regular Key with no W1/W2 caution (W4 and W5 do show).
+  resolution: (2026-11-15, `_bmad-output/specs/spec-offline-signing/stories/11-regular-key-and-master-key-warnings.md`) resolved. P-30 or W1, and W2 for a black-hole address, show under the address on the Offline Regular Key Build, the Synced Transmitter's Build and Unsigned plate, both offline signing reviews and the two-device review; W2 also on master key off when the read key state names a black hole.
+
+- source_spec: `_bmad-output/specs/spec-offline-signing/stories/8-offline-builds-route-for-trust-lines-and-key-actions.md`
+  summary: A Close (limit "0") for a trust line that is not on the ledger is still answered by the Transmitter; the ledger likely answers `tecNO_LINE_REDUNDANT` and the fee is spent.
+  evidence: The online screen offers Close only on a line it lists, so no shipped or approved sentence says "this line is not on the ledger". Refusing needs owner-approved words (story 8 review round two). `answer-request.ts` `answerTrustSet`.
+
+- source_spec: `_bmad-output/specs/spec-offline-signing/stories/8-offline-builds-route-for-trust-lines-and-key-actions.md`
+  summary: Notes from story 8 review round two, not built: a trust line to the Account's own address is not refused (the same as the online screen; the ledger refuses it); key-action ledger refusals other than today's mapping (`temBAD_REGKEY`, `tecNO_ALTERNATIVE_KEY`, `tecNEED_MASTER_KEY`, P-31) belong to story 11; "This is a new payment" (approved fixed string) reads oddly on a retried trust line or key change: a wording question for the owner.
+  evidence: Coordinator review, 2026-11-14.
+  resolution: (2026-11-15, `_bmad-output/specs/spec-offline-signing/stories/11-regular-key-and-master-key-warnings.md`) partly settled. The key-action ledger refusals are mapped on every route (`result-codes.ts`, P-31), and a `tem` preliminary result is now a failed outcome on both submit paths (it read as "may have been sent" at the Transmit step). The trust-line items and the "This is a new payment" wording stay open.
+
+- source_spec: `_bmad-output/specs/spec-offline-signing/stories/9-transmitter-builds-route-for-every-write.md`
+  summary: Missing words in story 9: a title for the Unsigned plate (P-33 heads it), a scan count for the two-scan route ("Scan 1 of 2" / "Scan 2 of 2"; only "Scan {n} of 3" is approved), and a way back to the scanner after a signing on the Offline Sign screen (leaving the screen resets it).
+  evidence: Each is in neither approved list. P-12's `{duration}` on this route is filled with the window in minutes ("10 minutes" for 150 ledgers, "1 minute" / "N minutes" otherwise), and P-53's `{flag in words}` with the ledger's flag name (P-52). Both fillings want the owner's eye.
+
+- source_spec: `_bmad-output/specs/spec-offline-signing/stories/9-transmitter-builds-route-for-every-write.md`
+  summary: P-62's "Other transactions" is not shown. The online app builds no write beyond Payment (XRP and token), TrustSet, SetRegularKey and the master key flag, so the type would open nothing.
+  evidence: Grep of `TransactionType:` literals and `autofill(` callers (2026-11-14). When the online app gains a write, add it under "Other transactions" on the Transmitter and to `unsigned-judge.ts`'s allow-list.
+
+- source_spec: `_bmad-output/specs/spec-offline-signing/stories/9-transmitter-builds-route-for-every-write.md`
+  summary: The Transmitter-builds route records its signings in the signed list and shows P-19, but does not apply the retry table. The Transmitter sets the Sequence, so building the same payment twice on the Transmitter gives two Sequences and both can apply.
+  evidence: route-checks puts the retry table on the Offline-builds route only. The Offline Wallet could refuse or warn when a Same Build record's window is still open, but that needs words beyond P-19 / P-22.
+
+- source_spec: `_bmad-output/specs/spec-offline-signing/stories/9-transmitter-builds-route-for-every-write.md`
+  summary: The Transmit step on the Synced Transmitter's New transaction does not compare the returned blob with the Unsigned Transaction it made (two-device's `verifySigned` does). It checks the signature, the expected Account (the Synced address), the Network and the window, as every Transmit step does.
+  evidence: route-checks "Transmit step" does not ask for it, and a refusal would need words.
+  resolution: (2026-11-14, story 9 review round two) resolved. `signedIsMade` compares them; a mismatch is refused with the P-26 heading and P-17's "This data is for a different request.".
+
+- source_spec: `_bmad-output/specs/spec-offline-signing/stories/9-transmitter-builds-route-for-every-write.md`
+  summary: On the Offline Sign review, Paths are shown as JSON and QualityIn / QualityOut as raw integers.
+  evidence: No approved words for a path step or a quality ratio (review round two, 2026-11-14).
+
+- source_spec: `_bmad-output/specs/spec-offline-signing/stories/9-transmitter-builds-route-for-every-write.md`
+  summary: The window on the Transmitter-builds review counts from this device's upper bound for the current ledger (highest seen or floor, + elapsed / 3 s + 30). A Transmitter that shifts the index and LastLedgerSequence inside that allowance still hides up to that many extra ledgers (about elapsed x (1/3 - 1/real rate) + 30; small right after a signing, hours from an old floor).
+  evidence: A low estimate at ~4.5 s a ledger read a correct first round as 29,436 ledgers on Testnet (real rate ~3.3 s since the 2026-11-10 floor). A fresher floor at each release, or a per-Network measured rate, narrows it.
+
+
+- source_spec: `_bmad-output/specs/spec-offline-signing/stories/10-a-key-that-signs-for-another-account.md`
+  summary: P-54 is offered only at a Transmit step's validated outcome (the Transmitter's Transmit screen and the Synced Transmitter's New transaction). The Online Keys plate, which P-54 also names, does not exist yet; the legacy "Let another wallet sign" flow adds a controlled view on its own and gets no P-54.
+  evidence: Story 11 builds the Online Keys plate (P-47, any Regular Key address). Hang `SignsForOffer` on its validated SetRegularKey outcome (`regularKeySetBy` + `signsForTarget`).
+  resolution: (2026-11-15, `_bmad-output/specs/spec-offline-signing/stories/11-regular-key-and-master-key-warnings.md`) resolved. The Online key plate offers P-54 (`SignsForOffer`) after its own validated SetRegularKey that sets a key.
+
+- source_spec: `_bmad-output/specs/spec-offline-signing/stories/10-a-key-that-signs-for-another-account.md`
+  summary: What story 12 removes with FR-75: `WalletView.accountAddress` and the resolver's fallback to it (`accountOfView`), `addControlledView`, `ControlWalletScreen`, `ControlPlate`, `ControlledNote`, `control.ts`'s flows, the shared-record kind refusal, and the read-only Signs for plate on a shared record. Signs for (`WalletView.signsFor`) stays. Story 12 also decides whether a controlled view stays listed after its screens go (FR-95: not converted).
+  evidence: Story 10 kept the two fields apart so the removal is a filter on `accountAddress` alone.
+  resolution: (2026-11-15, `_bmad-output/specs/spec-offline-signing/stories/12-retire-operating-another-account-and-two-device-signing.md`) resolved. All removed. FR-95 decision: a stored view with `accountAddress` is dropped, not converted: `keystore.viewsOf` leaves it out, so it is not listed, not opened, signs nothing and is not counted by FR-93; a write that rewrites the record's views does not write it back; removing the record's own Wallet deletes the record; a record holding only dropped views is never deleted automatically (review round one): it stays, with its lock and the App PIN, until Remove all, and first run treats it as residue so Remove all is offered. The field stays on `WalletView` only so the drop can tell it apart.
+
+- source_spec: `_bmad-output/specs/spec-offline-signing/stories/10-a-key-that-signs-for-another-account.md`
+  summary: Owner questions. (1) FR-93 is built as the triple (Network, Signs-for Account, key), not the pair "Signs-for Account and Network": the pair refuses Flow 7 on one device (the master Wallet and its Regular Key Wallet both sign for one Account). (2) Words reused outside their rows because the spine's "Signs for" card line, the plate's "Signs for" title, "Account" legend and "Change" key are not approved: P-17's "This wallet signs for {address}." (card line, plate state), the fixed string (plate title), P-54's "Set it" (plate set key), P-46's "Remove the address" (plate remove key), P-35 (Signs-for duplicate refusal).
+  evidence: Each is one constant in `src/lib/signs-for-words.ts` (P-46 in `transmitter-words.ts`, P-35 in `kind-change-words.ts`). For the pair reading, `hasView` drops the key comparison and P-54's first form must be refused for a key on this device.
+
+- source_spec: `_bmad-output/specs/spec-offline-signing/stories/10-a-key-that-signs-for-another-account.md`
+  summary: At 320 px with 200% text, the This wallet plate's `AddressDisplay` lays the address out one character per line (the plate grows to about 2000 px). Pre-existing: the component is unchanged since #29; seen in story 10's browser pass.
+  evidence: `.playwright-mcp/s10-zoom.js`, screenshot `s10/z-zoom-thiswallet.png`. The chunked flex row with `font-data` at 200% has no room for a chunk; let a chunk wrap inside itself or drop the chunking below a width.
+
+- source_spec: `_bmad-output/specs/spec-offline-signing/stories/10-a-key-that-signs-for-another-account.md`
+  summary: After a Signs-for change, the Signed screen (`OfflineSigned.tsx`, `EarlierSigningRecord`) lists records signed for the earlier Account beside the new ones without naming the Account (records now carry `account`; old ones mean the key address).
+  evidence: Review round one, 2026-11-15. No approved words for an Account row on the earlier-signing record (P-52 has Sequence, Transaction hash, Valid until ledger, Signed at only). Same Build matching already ignores other Accounts.
+
+
+- source_spec: `_bmad-output/specs/spec-offline-signing/stories/11-regular-key-and-master-key-warnings.md`
+  summary: Words in story 11 that want the owner's eye: the Online key plate is titled "Key state" (the approved 2026-11-14 heading over the key state), because the spine's plate name "Keys" is not an approved string; each P-47 key opens its part and the part's own key of the same words signs (no confirm word is approved); "Regular Key address" is still pinned against `TwoDeviceSign.tsx`.
+  evidence: `KeysPlate.tsx`. Precedent: "Before sending" and "Wallet kind" each needed an owner approval as plate titles.
+  resolution: (2026-11-15, `_bmad-output/specs/spec-offline-signing/stories/12-retire-operating-another-account-and-two-device-signing.md`) partly settled. "Regular Key address" is pinned as a literal in `offline-round-words.test.ts` (its source file is deleted). The plate title and the confirm wording still want the owner's eye.
+
+- source_spec: `_bmad-output/specs/spec-offline-signing/stories/11-regular-key-and-master-key-warnings.md`
+  summary: At 320 px with 200% text, a claimed outcome's bracketed code (for example "(tecNO_ALTERNATIVE_KEY)") runs past the edge of the Online key plate: the code is unbreakable by a recorded decision (`history-error.test.tsx` pins `whitespace-nowrap`).
+  evidence: Browser pass 2026-11-15, `s11/no-alternative-key-320-zoom200.png` (2 elements past the viewport). Letting the code break only when it cannot fit (`[overflow-wrap:anywhere]` plus `min-w-0`) measured 0, but changes the History rule, so it was reverted. Settle with the owner: break inside a code only when the code alone is wider than its box.
+  resolution: (2026-11-15, story 11 `dbc23fe`) resolved on this plate only: `breakableCode` lets the code break inside itself when it alone is wider than its box; History and the other outcomes keep the unbreakable code. Re-measured 0 at 320/200%.
+
+- source_spec: `_bmad-output/specs/spec-offline-signing/stories/11-regular-key-and-master-key-warnings.md`
+  summary: What story 11 leaves to story 12: two-device signing (FR-78) keeps its FR-75/FR-77 refusals on the online side (`twoDeviceBlockedReason`); `master-key.ts` `setMasterKey`/`masterKeyAction` and `control.ts` `setRegularKey` keep their refusals but no screen of the Online key actions uses them now (the FR-75 plate's "Let another wallet sign" still runs `setRegularKey`).
+  evidence: Story 11's scope is the Online key plate and the Offline and Transmitter New transaction types; two-device and the FR-75 flow are removed by story 12. W3 was added to two-device's offline review.
+  resolution: (2026-11-15, `_bmad-output/specs/spec-offline-signing/stories/12-retire-operating-another-account-and-two-device-signing.md`) resolved. `two-device.ts` (with `twoDeviceBlockedReason`), `master-key.ts`, `control.ts`, `TwoDeviceSign.tsx`, `ControlWalletScreen.tsx`, the FR-75 plate and the two-device plate are deleted, with their routes; `two-device` and `control` paths land on the wallet shell.
+
+- source_spec: `_bmad-output/specs/spec-offline-signing/stories/11-regular-key-and-master-key-warnings.md`
+  summary: Small wording differences kept as they are: the Transmit step's claimed sentence is "The network fee was still charged for this attempt." (the Online key plate uses that outcome view), where P-31 quotes today's "The network fee was still charged."; a `tem` failed outcome keeps today's explorer link to a hash that is never on the ledger; W3's "a transaction from a website" has no entry point in the app.
+  evidence: `TransmitStep.tsx` `Outcome`; `control.ts` and SendTab use the shorter sentence.
+  triage: (2026-11-15, `_bmad-output/specs/spec-offline-signing/stories/12-retire-operating-another-account-and-two-device-signing.md`) keep. `control.ts` is deleted by story 12; SendTab still says the shorter sentence, the Transmit step the longer one.
+  resolution: (2026-11-15, story 11 review) the claimed-sentence part is resolved: an outcome with a P-31 code (`tecNO_ALTERNATIVE_KEY`, `tecNEED_MASTER_KEY`) now says P-31's "The network fee was still charged." verbatim on every Transmit step outcome and the Online key plate; other codes keep the shipped "…for this attempt.". The explorer link on a `tem` outcome and W3's "website" case stay open.
+
+- source_spec: `_bmad-output/specs/spec-offline-signing/stories/12-retire-operating-another-account-and-two-device-signing.md`
+  summary: With `ControlledNote` removed (story 10's removal list), an Online Wallet that Signs for another Account no longer shows on Balances whether the ledger still has its key as the Regular Key ("Controlled" / "Not controlled"). The card and the Signs for plate say P-17's "This wallet signs for {address}."; the Key state plate shows the Regular Key read live, and a stale key is refused by the ledger.
+  evidence: The note's words are FR-75's shipped words; no approved P-n says the same for a Signs-for Wallet. An owner call: a P-n for "the ledger no longer shows this key as the Regular Key" on Balances, or accept the Key state plate as the one place.
+
+- source_spec: `_bmad-output/specs/spec-offline-signing/stories/12-retire-operating-another-account-and-two-device-signing.md`
+  summary: The product PRD's pointers now read "Replaced by" for every row of `product-prd-changes.md` and FR-86's sibling note. Other mentions of a Controlling Wallet in that PRD carry no pointer: the glossary's "Account Master Key" entry, FR-71's device-bound sentence, §6.2's "Regular-key rotation" entry and the §10 open-question history.
+  evidence: OS-FR-19 asks for a pointer on every reference; `product-prd-changes.md` lists the rows a22bb3b covered. Left as they are: they describe shipped history, not current behaviour.
+
+- source_spec: `_bmad-output/specs/spec-offline-signing/stories/12-retire-operating-another-account-and-two-device-signing.md`
+  summary: A Seed record holding only dropped FR-75 controlled views keeps its Seed on the device with no screen that reaches it: no backup, no reveal, no signing, until Remove all. Its key may be the only key of an Account whose master key is off.
+  evidence: Review round one, 2026-11-15. A recovery path (for example, listing such a record so its Seed can be revealed or made a Wallet again) needs owner-approved words.
+
+- source_spec: `_bmad-output/specs/spec-offline-signing/stories/12-retire-operating-another-account-and-two-device-signing.md`
+  summary: Address Book entries stored under a dropped controlled view's Wallet id stay in storage (nothing lists or removes them except Remove all).
+  evidence: Review round one, 2026-11-15. Not secret: addresses and labels only.
+
+- source_spec: `_bmad-output/specs/spec-offline-signing/stories/12-retire-operating-another-account-and-two-device-signing.md`
+  summary: On first run with an unlisted Seed record (only dropped FR-75 views) left on the device, the Remove all plate says "An App PIN or its failed-attempt count is still stored on this device, left over from a wallet that was removed." and "No wallet is stored here.", while an encrypted Seed is stored.
+  evidence: Browser pass on `e44d328`, `s12/r3-first-run-dark.png`. Existing words reused; a sentence for this case needs the owner.

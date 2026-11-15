@@ -4,7 +4,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { SeedReveal } from '@/components/wallet/SeedReveal'
 import { revealCheckSentence } from '@/components/wallet/reveal-copy'
 import { usePrompts } from '@/hooks/usePrompts'
-import { describeCheckFailure, revealSeed, type WalletMeta } from '@/lib/crypto/keystore'
+import { describeCheckFailure, revealSeed, type KeyWalletMeta } from '@/lib/crypto/keystore'
 import { toast } from '@/lib/notify'
 import { useAppStore } from '@/store/app-store'
 
@@ -16,7 +16,7 @@ import { useAppStore } from '@/store/app-store'
  * cleared when the dialog closes and when this component unmounts. Focus returns
  * to the Reveal seed key after either dialog.
  */
-export function RevealSeedControl({ wallet }: { wallet: WalletMeta }) {
+export function RevealSeedControl({ wallet }: { wallet: KeyWalletMeta }) {
   const prompts = usePrompts()
   const keyRef = useRef<HTMLButtonElement | null>(null)
   const [confirming, setConfirming] = useState(false)

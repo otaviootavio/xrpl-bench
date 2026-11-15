@@ -2,7 +2,7 @@
 title: XRPL Bench
 status: draft
 created: 2026-09-12
-updated: 2026-11-07
+updated: 2026-11-15
 ---
 
 # PRD: XRPL Bench
@@ -112,8 +112,8 @@ Full positioning, principles, and the reasoning behind each: `PRODUCT.md`.
   keys. Omnibus addresses are permanently out (§5); **multi-signing is a v1
   boundary rather than a closed door** — §6.2 files it as a future epic, and
   this section describes who v1 is not for, not who the product can never serve.
-  *Planned change (Offline signing PRD, `prds/prd-offline-signing-2026-11-07/prd.md`): one operator, but no
-  longer one device.*
+  *Replaced by the Offline signing PRD §2.2 (`prds/prd-offline-signing-2026-11-07/prd.md`, built 2026-11-15): one
+  operator, but no longer one device.*
 
 ### 2.3 User Journeys
 
@@ -169,9 +169,9 @@ restated only to the depth an FR needs; the full set lives in
   a Wallet with a Signing Check is never decryptable by the session key.*
 - **Controlling Wallet** — a Wallet that holds the Account Master Key of an
   Account another Wallet operates through a Regular Key (FR-75). It can be on
-  this device or on an offline device that signs by QR. *Planned change: replaced
-  by the Offline signing PRD's Wallet kinds and "Signs for" (`prds/prd-offline-signing-2026-11-07/prd.md`,
-  OS-FR-19, OS-FR-20).*
+  this device or on an offline device that signs by QR. *Replaced by the Offline
+  signing PRD's Wallet kinds and "Signs for" (`prds/prd-offline-signing-2026-11-07/prd.md`, OS-FR-19, OS-FR-20; see its
+  §3 Glossary). Removed 2026-11-15; no controlled Wallet is migrated.*
 - **Node** — one RPC endpoint on one Network. *Planned (FR-61): chosen per
   Wallet, from a built-in list or added by the user.*
 - **Open Check** — *planned (FR-65).* The per-Wallet check that must pass before
@@ -455,7 +455,7 @@ every network row under the card shows it. *Planned change (FR-93): the name bel
   is kept.
 
 #### FR-86: Remove a Wallet from the chooser
-*Planned change (FR-92): removing moves from the chooser card to the Wallet's Configure screen. Planned change (FR-93): a Wallet is one Network, so the "sibling network view stays" body ends. The sibling body stays for a controlled account that shares the key (FR-75), and the others are unchanged.*
+*Planned change (FR-92): removing moves from the chooser card to the Wallet's Configure screen. Planned change (FR-93): a Wallet is one Network, so the "sibling network view stays" body ends. The sibling body stays for a controlled account that shares the key (FR-75), and the others are unchanged. Replaced by the Offline signing PRD (OS-FR-19): the sibling body ends with FR-75.*
 
 The user can remove one Wallet view from the chooser, only while that Wallet's
 own lock is open.
@@ -491,8 +491,8 @@ Each open Wallet has one Configure screen for everything that belongs to that
 Wallet alone, reached from its card and from the Wallet's header. *Planned change (FR-92): reached from the Wallet's header only, and it also holds Rename and Remove. Planned change (FR-93): no "Other networks" section.*
 - It holds, in this order: Checks (with auto-lock, FR-10), Seed (reveal,
   FR-69), Operating another account (FR-75, FR-77), Other networks (FR-61), Node
-  (FR-61) and Two-device signing (FR-78). *Planned change: the last two are
-  replaced by the Offline signing PRD (`prds/prd-offline-signing-2026-11-07/prd.md`).*
+  (FR-61) and Two-device signing (FR-78). *Replaced by the Offline signing PRD
+  (`prds/prd-offline-signing-2026-11-07/prd.md`, OS-FR-19): Operating another account and Two-device signing are removed.*
 - It exists only while the Wallet's lock is open. Otherwise the app returns to
   the chooser.
 - Changing auto-lock asks the lock's Open Check again and cannot go below the
@@ -523,6 +523,9 @@ name and with the lamp. The update is accepted only on the chooser.*
 *Planned; partly built (the shell, the first steps and the walk). Changes how
 FR-60 is asked, not what it asks. Raised 2026-10-29. Revised 2026-10-30: no
 recommended-setup shortcut, and Create or Import is the first question.*
+*Replaced by the Offline signing PRD (OS-FR-2, OS-FR-8): step 1 adds "Online
+wallet or offline wallet?" after Create or Import, before Label and Network; an
+Offline Wallet skips the Seed Method question (Stored Seed only).*
 
 Creating or importing a Wallet (FR-87) asks the per-Wallet questions (FR-60) as
 a short quiz instead of one long form. The users are advanced, so the quiz makes
@@ -616,7 +619,10 @@ A Wallet is one address on one Network, for its whole life.
   Network, and each is its own Wallet. The app does not stop this, and does not
   make it feel natural: no "use on another network" key, no shortcut, no
   default. The same address on the *same* Network is still refused, since
-  it would be one Account twice. Confirmed 2026-11-02.
+  it would be one Account twice. Confirmed 2026-11-02. *Replaced by the Offline
+  signing PRD (OS-FR-20, OS-FR-3): the refusal compares the Signs-for Account and
+  the Network; an Offline and a Transmitter Wallet for one address on one device
+  are warned, not refused.*
 - **Each Wallet has its own lock, Open Check and auto-lock**, even when two
   Wallets share a Seed. Opening one never opens another, and a closed lock
   asks its own Open Check (FR-82).
@@ -642,13 +648,19 @@ A Wallet is one address on one Network, for its whole life.
   (FR-75, FR-77) and the QR signing round (FR-78) keep working as built. A
   controlled Wallet has no key of its own, so it opens with the lock of the
   Wallet that holds the key: the one exception to "its own lock", until the
-  Offline signing work (§6.2, now `prds/prd-offline-signing-2026-11-07/prd.md`).
+  Offline signing work (§6.2, now `prds/prd-offline-signing-2026-11-07/prd.md`). *Replaced by the Offline signing PRD
+  (OS-FR-19): controlled Wallets and two-device signing are removed with no
+  migration, so the lock exception ends.*
 - The quiz (FR-91) is unchanged: it already asks one Network at step 1 and locks
   it. Rename, Remove, the Mainnet floor (FR-65) and FR-13's removal rules are
   unchanged.
 
 #### FR-94: Every setting is the Wallet's or XRPL Bench's
 *Planned, not built. Decided 2026-11-02. Changes FR-13, FR-21, FR-45, FR-88, FR-89 and FR-92.*
+*Replaced by the Offline signing PRD (OS-FR-5, OS-FR-6, OS-FR-10, OS-FR-19), in the
+Local settings list and the plate order below: Operating another account and
+Two-device signing are removed; the kind change and "Show the signed transaction
+before sending" are added.*
 
 A setting belongs either to one Wallet or to the app as a whole, never both, and
 the words on screen say which.
@@ -701,7 +713,8 @@ made by an older build.
   first Wallet, whether created or imported at first run (§4.1). There is no
   shared lock and no lock a Wallet falls into by default. The one exception is
   FR-93's: a controlled Wallet opens with the lock of the Wallet that holds its
-  key.
+  key. *Replaced by the Offline signing PRD (OS-FR-19): the exception is gone
+  with FR-75; no controlled Wallet is migrated.*
 - **There is no migration.** The app does not read, upgrade or repair a Wallet
   record that an older build wrote. A record missing its lock, Seed id, key
   address, Network, algorithm, Open Check, Signing Check or Seed method is invalid
@@ -769,9 +782,9 @@ The app never reports a submitted transaction as final.
 The app tracks `LastLedgerSequence`; once the ledger closes past it without
 validation, the transaction is marked "expired, not applied".
 - Retry issues a fresh transaction with a new sequence number. The same signed
-  blob is never blind-resubmitted. *Planned change: for an Offline Wallet a retry
-  of the same Build reuses its Sequence unless the user confirms a new payment
-  (Offline signing PRD OS-FR-16, `prds/prd-offline-signing-2026-11-07/prd.md`).*
+  blob is never blind-resubmitted. *Replaced by the Offline signing PRD OS-FR-16
+  (`prds/prd-offline-signing-2026-11-07/prd.md`): for an Offline Wallet a retry of the same Build reuses its Sequence
+  unless the user confirms a new payment.*
 
 #### FR-58: The app never sends a partial payment
 No transaction this app signs sets `tfPartialPayment`.
@@ -1079,8 +1092,8 @@ needed, and is never stored, in any form, anywhere.
 - Before creation the app states, in plain words, that the Seed depends on this
   app's domain: if the domain ever changes, the passkey can no longer produce
   it. Only a written Seed (FR-69) or a Controlling Wallet (FR-75) recovers the
-  funds. *Planned change: the Controlling Wallet is replaced by a key that Signs
-  for the Account (Offline signing PRD OS-FR-20).* §9.3 already treats the domain as permanent; this makes it a hard
+  funds. *Replaced by the Offline signing PRD OS-FR-20: a key that Signs for the
+  Account, not a Controlling Wallet.* §9.3 already treats the domain as permanent; this makes it a hard
   requirement.
 - A Mainnet Passkey-Derived Seed is not offered while production runs on a
   `*.b-cdn.net` origin (`docs/decisions.md` §8.11). It is `aria-disabled` with
@@ -1211,9 +1224,9 @@ as today) and whose Signing Check is Standard.
 - The update obeys FR-48: it applies only when the user accepts it.
 
 #### FR-75: A Wallet can be controlled by an Account Master Key (later step)
-*Planned change: replaced by the Offline signing PRD (`prds/prd-offline-signing-2026-11-07/prd.md`):
+*Replaced by the Offline signing PRD (`prds/prd-offline-signing-2026-11-07/prd.md`):
 OS-FR-19, OS-FR-20, and OS-FR-21 (any address can be the Regular Key; the app
-warns, never refuses).*
+warns, never refuses). Removed 2026-11-15; no controlled Wallet is migrated.*
 
 After creation, a separate step asks "Will this wallet be controlled by a master
 key?". Yes means: another Wallet, the Controlling Wallet, holds the Account
@@ -1232,8 +1245,8 @@ for its Account. The Wallet's existing key keeps working.
 - An Account has one Regular Key. If one is already set, adding another replaces it, and the confirm step says in plain words that the old key stops working. *Decided 2026-10-11.*
 
 #### FR-77: Turn off the Account Master Key, from the Wallet's Configure screen
-*Planned change: the app warns and never refuses where the ledger would accept
-(Offline signing PRD OS-FR-21, `prds/prd-offline-signing-2026-11-07/prd.md`). The irreversible-class
+*Replaced by the Offline signing PRD OS-FR-21 (`prds/prd-offline-signing-2026-11-07/prd.md`): the app
+warns and never refuses where the ledger would accept. The irreversible-class
 confirm stays.*
 
 From the Wallet's Configure screen (FR-88; the Settings tab until then, the Wallet tab after FR-94), the user can turn off the Account Master Key of a Wallet
@@ -1254,8 +1267,9 @@ whose Account has a Regular Key, and turn it back on.
   as on or off.
 
 #### FR-78: Two-device signing by QR
-*Planned change: replaced by the Offline signing PRD (`prds/prd-offline-signing-2026-11-07/prd.md`):
-the Offline-builds and Transmitter-builds routes and the Transmit step.*
+*Replaced by the Offline signing PRD (`prds/prd-offline-signing-2026-11-07/prd.md`):
+the Offline-builds and Transmitter-builds routes and the Transmit step (OS-FR-17,
+OS-FR-19). Removed 2026-11-15.*
 
 An online device builds the unsigned transaction, and an offline device running
 XRPL Bench signs it by QR.
@@ -1312,8 +1326,9 @@ One list for everything not built, whether it was called planned or deferred
 before (merged 2026-11-05: the owner treats both as "not built yet, later").
 Each item carries its status. What is out for good is §5, not here.
 
-- **Offline signing** — *feature PRD written 2026-11-07:* `prds/prd-offline-signing-2026-11-07/prd.md`.
-  Next: UX and architecture.
+- **Offline signing** — *built 2026-11-15; replaced by the feature PRD:*
+  `prds/prd-offline-signing-2026-11-07/prd.md` (spec `_bmad-output/specs/spec-offline-signing/`).
+  It replaces FR-75 and FR-78.
 - **Multi-signing** — *not specified.* Split from offline signing on
   2026-11-07; its own feature PRD later, built on the offline-signing one.
 - **State-machine model of the Wallet** — *exploratory.* See the entry below.

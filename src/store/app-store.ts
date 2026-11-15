@@ -139,6 +139,19 @@ function isCompleteSavedWallet(w: unknown): w is WalletMeta {
   if (!w || typeof w !== 'object') return false
   const r = w as Record<string, unknown>
   const str = (v: unknown) => typeof v === 'string' && v.length > 0
+  // A Transmitter (OS-FR-3) has no Seed fields: its address is the Synced one or null.
+  if (r.kind === 'transmitter') {
+    return (
+      str(r.id) &&
+      str(r.seedId) &&
+      str(r.lockId) &&
+      str(r.label) &&
+      (r.address === null || str(r.address)) &&
+      typeof r.createdAt === 'number' &&
+      isNetworkId(r.network) &&
+      isOpenCheck(r.openCheck)
+    )
+  }
   return (
     str(r.id) &&
     str(r.seedId) &&

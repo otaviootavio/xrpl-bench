@@ -40,7 +40,7 @@ import { WalletTab } from '@/pages/tabs/WalletTab'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { useAppStore } from '@/store/app-store'
 
-const base = { seedId: 's', lockId: 'l', label: 'Savings', address: 'rA', keyAddress: 'rA', createdAt: 1, algorithm: 'ed25519', openCheck: 'pin', signingCheck: 'standard' }
+const base = { seedId: 's', lockId: 'l', label: 'Savings', address: 'rA', keyAddress: 'rA', createdAt: 1, algorithm: 'ed25519', openCheck: 'pin', signingCheck: 'standard', kind: 'online' }
 const TESTNET = { ...base, id: 't', network: 'testnet' }
 const MAINNET = { ...base, id: 'm', network: 'mainnet' }
 

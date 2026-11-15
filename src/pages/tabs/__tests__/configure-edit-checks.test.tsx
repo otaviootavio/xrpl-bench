@@ -68,7 +68,7 @@ import { TooltipProvider } from '@/components/ui/tooltip'
 import { PromptsContext } from '@/hooks/usePrompts'
 import { useAppStore } from '@/store/app-store'
 
-const base = { createdAt: 1, algorithm: 'ed25519', openCheck: 'pin', signingCheck: 'standard', network: 'testnet' }
+const base = { createdAt: 1, algorithm: 'ed25519', openCheck: 'pin', signingCheck: 'standard', kind: 'online', network: 'testnet' }
 const A = { ...base, id: 'a', seedId: 'a', lockId: 'X', label: 'Alpha', address: 'rAlphaAddr' }
 const B = { ...base, id: 'b', seedId: 'b', lockId: 'Y', label: 'Beta', address: 'rBetaAddr' }
 const OPEN = { key: {} as CryptoKey, autoLockMinutes: 5 }

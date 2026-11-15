@@ -6,7 +6,7 @@ import { deriveAesKeyFromBits } from '../derive'
 import { bufToB64 } from '../encoding'
 import { derivePinKeyBits } from '../pin'
 import { createLock } from '../lock'
-import { listWallets, type WalletMeta } from '../keystore'
+import { listKeyWallets, type KeyWalletMeta } from '../keystore'
 
 /**
  * Direct fixtures for the crypto tests: a PIN lock of its own and Seed records
@@ -34,7 +34,7 @@ export async function storeSeedWallet(
   lock: FixtureLock,
   network: NetworkId = 'testnet',
   seed: string = Wallet.generate().seed!,
-): Promise<{ meta: WalletMeta; seed: string }> {
+): Promise<{ meta: KeyWalletMeta; seed: string }> {
   const wallet = Wallet.fromSeed(seed)
   const id = crypto.randomUUID()
   const encrypted = await aesEncrypt(lock.key, seed)
@@ -52,7 +52,7 @@ export async function storeSeedWallet(
     views: [{ walletId: id, network }],
   }
   await putStoredWallet(stored)
-  const meta = (await listWallets()).find((m) => m.id === id)
+  const meta = (await listKeyWallets()).find((m) => m.id === id)
   if (!meta) throw new Error('fixture wallet not listed')
   return { meta, seed }
 }

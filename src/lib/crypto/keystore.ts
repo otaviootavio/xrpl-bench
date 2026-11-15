@@ -1,11 +1,16 @@
-import { decodeSeed, ECDSA, Wallet } from 'xrpl'
+import { decode, decodeSeed, deriveAddress, ECDSA, isValidClassicAddress, Wallet } from 'xrpl'
 import { canonicalNodeUrl, NETWORKS, type NetworkId } from '@/lib/xrpl/networks'
-import type { Signer, SigningHandle } from '@/lib/xrpl/writes'
+import type { SignedForReview, Signer, SigningHandle } from '@/lib/xrpl/writes'
 import { aesDecrypt, aesEncrypt } from './aes'
 import { deriveAesKeyFromBits, generateOrdinal, isOrdinal, seedSalt, walletFromSeedPrf } from './derive'
 import { buildLock, createLock, deleteLock, discardAllLocks, discardAppPin, discardUnusedAppPin, getLockInfo, hasAppPin, openLock, setAutoLockMinutes, withAppPin, type CheckResult } from './lock'
-import { checkAutoLock, checkEditAllowed, checkWalletRequest, requiresWrittenSeed, resolveEdit, type CheckEditRequest, type NewOpenCheck, type PasskeyCapability, type PasskeyChoice, type PolicyVerdict, type SigningKind } from './policy'
+import { checkAutoLock, checkLockRequest, checkEditAllowed, checkWalletRequest, requiresWrittenSeed, resolveEdit, type CheckEditRequest, type NewOpenCheck, type PasskeyCapability, type PasskeyChoice, type PolicyVerdict, type SigningKind } from './policy'
 import { b64ToBuf, bufToB64 } from './encoding'
+import { isKeyWallet } from '@/lib/wallet-meta'
+import { INVALID_ADDRESS } from '@/lib/same-address'
+import { SAME_ADDRESS_ON_NETWORK } from '@/lib/kind-change-words'
+import { DATA_REFUSAL, NOT_SIGNED } from '@/lib/offline-round-words'
+import { fill } from '@/lib/transmit-words'
 import { uniqueDefaultName, validateWalletName, type WalletNameReason } from '@/lib/wallet-name'
 import { attemptPin, getLockoutState, recordFailure, triesRemaining } from './pin'
 import {
@@ -36,16 +41,38 @@ import {
   type SigningSeal,
   type StoredWallet,
   type WalletView,
+  listTransmitterRecords,
+  mutateTransmitterRecord,
+  putTransmitterRecord,
+  transmitterVerifierText,
+  type TransmitterRecord,
 } from './db'
+import { isSignedRecord, type SignedRecord } from '@/lib/signed-list'
 
-/** A Wallet as the rest of the app sees it: one view over a Seed record.
- * `id` is the walletId — selection state is never an address (AD-18). */
-export interface WalletMeta {
+/** What every Wallet has, whatever its kind. `id` is the walletId — selection
+ * state is never an address (AD-18). */
+interface WalletMetaBase {
   id: string
+  /** The record id: the Seed record for a key Wallet, the Transmitter record itself. */
   seedId: string
-  /** The lock whose Open Key opens this Wallet's Seed (AD-21). */
+  /** The lock whose Open Key opens this Wallet (AD-21). */
   lockId: string
   label: string
+  createdAt: number
+  network: NetworkId
+  /** A custom Node's `wss://` URL, proven for `network` when it was saved.
+   * Absent: the network's built-in Nodes. */
+  node?: string
+  openCheck: OpenCheck
+  /** "Show the signed transaction before sending" is on (OS-FR-10). Absent: off.
+   * Never set on an Offline Wallet, which never transmits. */
+  showBeforeSending?: true
+}
+
+/** An Online or Offline Wallet: one view over a Seed record. */
+export interface KeyWalletMeta extends WalletMetaBase {
+  /** Online or Offline (OS-FR-1). Each kind opens its own screens. */
+  kind: 'online' | 'offline'
   /** The Account this Wallet reads and signs for: the ONLY ledger identity every
    * read, query key, send, receive and teardown uses (AD-18). It is `keyAddress`
    * unless the Wallet operates another Account as its Regular Key. */
@@ -53,41 +80,92 @@ export interface WalletMeta {
   /** The address the Seed itself derives: used only to detect a wrong credential
    * and to choose how to sign (AD-18). */
   keyAddress: string
-  createdAt: number
-  network: NetworkId
-  /** A custom Node's `wss://` URL, proven for `network` when it was saved.
-   * Absent: the network's built-in Nodes. */
-  node?: string
   algorithm: SeedAlgorithm
   /** How the Seed exists: stored under a key, or computed from a passkey (FR-62). */
   seedMethod: SeedMethod
-  openCheck: OpenCheck
   signingCheck: SigningCheck
   /** When the Seed was written down and confirmed (FR-72). Absent: never. */
   writtenSeedConfirmedAt?: number
+  /** The Was-online mark (OS-FR-7), on an Offline Wallet only. Absent: no mark. */
+  wasOnline?: true
 }
 
+/** A Transmitter Wallet (OS-FR-3): no Seed, no key, never signs. */
+export interface TransmitterMeta extends WalletMetaBase {
+  kind: 'transmitter'
+  /** The Synced address (OS-FR-4), or `null` when not synced: then there is no
+   * Account to read, and nothing account-scoped mounts. */
+  address: string | null
+}
+
+/** A Wallet as the rest of the app sees it. */
+export type WalletMeta = KeyWalletMeta | TransmitterMeta
+
+
+/** The kind a stored view names: absent is Online, a stored non-Online kind is
+ * itself, and anything else (a typo, a kind from a later build, even a literal
+ * `'online'`, which is never written) is `null`, so that view is not shown
+ * (OS-FR-1: fail closed, never read as Online). */
+function kindOfView(v: WalletView): 'online' | 'offline' | null {
+  const raw: unknown = (v as { kind?: unknown }).kind
+  if (raw === undefined) return 'online'
+  // A Seed view that says `transmitter` is a contradiction (a Transmitter holds no
+  // Seed): not shown, never read as Online or as a Transmitter (OS-FR-3).
+  return raw === 'offline' ? raw : null
+}
+
+/** The views of a Seed record the app knows. A view that carries `accountAddress`
+ * (FR-75's controlled view, written by builds before offline signing story 12) is
+ * dropped, not converted (OS-FR-19, FR-95): it is not listed, not opened, signs
+ * nothing, is not counted by FR-93, and a write that rewrites the record's views
+ * does not write it back. Its record's own view is untouched. */
 function viewsOf(w: StoredWallet): WalletView[] {
-  return w.views
+  return w.views.filter((v) => (v as { accountAddress?: unknown }).accountAddress === undefined)
 }
 
-function toMetas(w: StoredWallet): WalletMeta[] {
-  return viewsOf(w).map((v) => ({
+/** The one resolver of the Account a view signs for (AD-18, OS-FR-20): its Signs-for
+ * Account, else the Seed's own address. Every reader goes through it, so `address`
+ * and `keyAddress` agree for every caller. */
+function accountOfView(w: StoredWallet, v: WalletView): string {
+  return v.signsFor ?? w.address
+}
+
+function toMetas(w: StoredWallet): KeyWalletMeta[] {
+  return viewsOf(w).flatMap((v): KeyWalletMeta[] => {
+    const kind = kindOfView(v)
+    if (kind === null) return []
+    return [toMeta(w, v, kind)]
+  })
+}
+
+function toMeta(w: StoredWallet, v: WalletView, kind: 'online' | 'offline'): KeyWalletMeta {
+  return {
     id: v.walletId,
     seedId: w.id,
     lockId: w.lockId,
     label: w.label,
-    address: v.accountAddress ?? w.address,
+    address: accountOfView(w, v),
     keyAddress: w.address,
     createdAt: w.createdAt,
     network: v.network,
-    ...(v.node ? { node: v.node } : {}),
+    // An Offline Wallet has no Node (OS-FR-5): a stray stored one is never exposed.
+    ...(v.node && kind !== 'offline' ? { node: v.node } : {}),
     algorithm: w.algorithm,
     seedMethod: w.seedMethod,
     openCheck: w.openCheck,
     signingCheck: w.signingCheck,
     ...(w.writtenSeedConfirmedAt !== undefined ? { writtenSeedConfirmedAt: w.writtenSeedConfirmedAt } : {}),
-  }))
+    kind,
+    ...(showsBeforeSending(v, kind) ? { showBeforeSending: true as const } : {}),
+    // Kept on the view while it is Online (so a change back keeps it), shown only on an Offline one.
+    ...(kind === 'offline' && (v as { wasOnline?: unknown }).wasOnline === true ? { wasOnline: true as const } : {}),
+  }
+}
+
+/** The setting is on only when exactly `true` is stored, and never for an
+ * Offline Wallet (OS-FR-10: Online and Transmitter only). */
+function showsBeforeSending(v: WalletView, kind: 'online' | 'offline'): boolean {
+  return kind !== 'offline' && (v as { showBeforeSending?: unknown }).showBeforeSending === true
 }
 
 function findSeedRecord(all: StoredWallet[], walletId: string): StoredWallet | undefined {
@@ -97,12 +175,51 @@ function findSeedRecord(all: StoredWallet[], walletId: string): StoredWallet | u
 /** One Wallet is identified by `(network, Account, key)`; a second view with the
  * same triple, on any Seed record, is refused (AD-18). */
 function hasView(all: StoredWallet[], network: NetworkId, account: string, keyAddress: string): boolean {
-  return all.some((w) => w.address === keyAddress && viewsOf(w).some((v) => v.network === network && (v.accountAddress ?? w.address) === account))
+  return all.some((w) => w.address === keyAddress && viewsOf(w).some((v) => v.network === network && accountOfView(w, v) === account))
+}
+
+/** A Transmitter record as the app sees it. */
+function transmitterMeta(t: TransmitterRecord): TransmitterMeta {
+  return {
+    id: t.id,
+    seedId: t.id,
+    lockId: t.lockId,
+    label: t.label,
+    createdAt: t.createdAt,
+    network: t.network,
+    ...(t.node ? { node: t.node } : {}),
+    openCheck: t.openCheck,
+    kind: 'transmitter',
+    address: t.syncedAddress ?? null,
+    ...(t.showBeforeSending === true ? { showBeforeSending: true as const } : {}),
+  }
 }
 
 export async function listWallets(): Promise<WalletMeta[]> {
-  const wallets = await listStoredWallets()
-  return wallets.flatMap((w) => toMetas(w))
+  const [wallets, transmitters] = await Promise.all([listStoredWallets(), listTransmitterRecords()])
+  return [...wallets.flatMap((w) => toMetas(w)), ...transmitters.map(transmitterMeta)]
+}
+
+/** The Wallets that hold a key (Online and Offline): every caller that signs or
+ * reasons about keys reads these and never sees a Transmitter. */
+export async function listKeyWallets(): Promise<KeyWalletMeta[]> {
+  return (await listWallets()).filter(isKeyWallet)
+}
+
+/** A Seed record lists a Wallet unless every view on it is a dropped FR-75
+ * controlled view (story 12): such a record stays stored, unlisted, until Remove all. */
+const isListed = (w: StoredWallet): boolean => viewsOf(w).length > 0
+
+/** Every Wallet name on the device, one per listed record (AD-42), Transmitters included. */
+async function allRecordLabels(exceptId?: string): Promise<string[]> {
+  const [wallets, transmitters] = await Promise.all([listStoredWallets(), listTransmitterRecords()])
+  return [...wallets.filter(isListed), ...transmitters].filter((w) => w.id !== exceptId).map((w) => w.label)
+}
+
+/** True when the device stores a Seed record that lists no Wallet (only dropped FR-75
+ * controlled views). Removing the last listed Wallet then does not empty the device. */
+export async function holdsUnlistedSeedRecords(): Promise<boolean> {
+  return (await listStoredWallets()).some((w) => !isListed(w))
 }
 
 /** The algorithm a Seed's own encoding names. */
@@ -170,6 +287,13 @@ export type { CheckResult }
  * prompt is the browser's own. */
 export interface Prompts {
   pin(info: { triesRemaining: number }): Promise<string | null>
+  /**
+   * "Show the signed transaction before sending" (OS-FR-10): shows the signed
+   * blob and answers "Send it to the ledger?". Asked only for a Wallet whose
+   * setting is on. Absent while that setting is on, every send is declined:
+   * nothing is sent without the review the user asked for.
+   */
+  reviewSignedTransaction?(signed: SignedForReview): Promise<boolean>
 }
 
 /** What a check needs. `openKey` is the session's key: it opens a Standard
@@ -350,10 +474,10 @@ async function seedRecordFor(walletId: string): Promise<StoredWallet> {
   return stored
 }
 
-/** The Account a Wallet's view operates: the view's `accountAddress`, else the
- * Seed record's own address (AD-18). */
+/** The Account a Wallet's view operates (AD-18). */
 function accountOf(stored: StoredWallet, walletId: string): string {
-  return viewsOf(stored).find((v) => v.walletId === walletId)?.accountAddress ?? stored.address
+  const view = viewsOf(stored).find((v) => v.walletId === walletId)
+  return view ? accountOfView(stored, view) : stored.address
 }
 
 /**
@@ -396,19 +520,249 @@ export async function openSigner(walletId: string, ctx: SigningContext): Promise
 /** The handle `submitAndClassify` takes. `open` runs the check on demand — the
  * choke point calls it after autofill — and throws `SigningCheckError` on any
  * result but ok. */
-export async function signingHandleFor(walletId: string, ctx: SigningContext): Promise<SigningHandle> {
+export async function signingHandleFor(walletId: string, ctx: SigningContext, expectedAccount: string): Promise<SigningHandle> {
   const stored = await seedRecordFor(walletId)
   const address = accountOf(stored, walletId)
+  const view = viewsOf(stored).find((v) => v.walletId === walletId)
+  const kind = view ? kindOfView(view) : null
+  // Only an Online Wallet signs to send (OS-FR-11): a stale Online screen in another tab
+  // must not sign with a key the vault now calls Offline.
+  if (kind !== 'online') throw new NotAnOnlineWalletError()
+  // OS-FR-20: a Signs-for change in another tab must not make a stale screen sign for
+  // an Account its checks did not read. Refused before any prompt; nothing is signed.
+  assertStillSignsFor(address, expectedAccount)
+  const review = view && showsBeforeSending(view, kind)
   return {
     address,
-    // The key is the Account's own (master) key unless this is a controlled view.
+    // The key is the Account's own (master) key unless the Wallet signs for another Account.
     signsAsMaster: address === stored.address,
     async open() {
+      // Read again: the Signing Check can take seconds, and the Signer is made from a fresh read.
+      assertStillSignsFor(accountOf(await seedRecordFor(walletId), walletId), expectedAccount)
       const result = await openSigner(walletId, ctx)
       if (result.status !== 'ok') throw new SigningCheckError(result)
       return result.value
     },
+    // Only when the setting is on: with it off the handle is what it was before
+    // the setting existed. Without a reviewer the answer is "no" (fail closed).
+    ...(review ? { reviewBeforeSending: reviewerOf(ctx.prompts) } : {}),
   }
+}
+
+/**
+ * The handle an Offline Wallet signs with (OS-FR-16): the Wallet's Signing Check,
+ * then one signature, never a send (OS-FR-11). Refused for any view that is not
+ * Offline, as `signingHandleFor` refuses any that is not Online, so neither path
+ * signs for the other kind. No review hook: an Offline Wallet never transmits.
+ */
+export async function offlineSigningHandleFor(walletId: string, ctx: SigningContext, expectedAccount: string): Promise<SigningHandle> {
+  const stored = await seedRecordFor(walletId)
+  const view = viewsOf(stored).find((v) => v.walletId === walletId)
+  if (!view || kindOfView(view) !== 'offline') throw new NotAnOfflineWalletError()
+  const account = accountOf(stored, walletId)
+  assertStillSignsFor(account, expectedAccount)
+  return {
+    address: account,
+    async open() {
+      assertStillSignsFor(accountOf(await seedRecordFor(walletId), walletId), expectedAccount)
+      const result = await openSigner(walletId, ctx)
+      if (result.status !== 'ok') throw new SigningCheckError(result)
+      const inner = result.value
+      // OS-FR-20: the signed blob is for the Account this Wallet Signs for, and its
+      // signing key is this Wallet's own key. Checked on the SDK's real output; a
+      // mismatch returns no blob, so no signed QR can show.
+      return {
+        sign(tx) {
+          // A wrapper of the one-use Signer, called only from writes.ts `signPrepared`.
+          // check-write-choke-point-allow
+          const signed = inner.sign(tx)
+          assertSignedFor(signed.tx_blob, account, stored.address)
+          return signed
+        },
+        dispose: () => inner.dispose(),
+      }
+    },
+  }
+}
+
+/** Refused (OS-FR-20): the Wallet now signs for another Account than the one the
+ * screen built and checked for (a Signs-for change elsewhere). Nothing was signed.
+ * Its words are P-16 then P-17's Account reason. */
+export class SignsForChangedError extends Error {
+  constructor(expected: string, actual: string) {
+    super(`${NOT_SIGNED} ${fill(DATA_REFUSAL.account, expected, actual)}`)
+    this.name = 'SignsForChangedError'
+  }
+}
+
+function assertStillSignsFor(actual: string, expected: string): void {
+  if (actual !== expected) throw new SignsForChangedError(expected, actual)
+}
+
+/** Thrown when a signed blob is not for this Wallet's Signs-for Account or not by its
+ * key (OS-FR-20). Developer text: the screens show their own words for a failed signing. */
+export class SignedForWrongAccountError extends Error {
+  constructor() {
+    super('The signed transaction is not for this wallet. Nothing was signed.')
+    this.name = 'SignedForWrongAccountError'
+  }
+}
+
+/** The decoded blob's `Account` is `account` and its `SigningPubKey` derives `keyAddress`. */
+export function assertSignedFor(txBlob: string, account: string, keyAddress: string): void {
+  let ok = false
+  try {
+    const tx = decode(txBlob) as { Account?: unknown; SigningPubKey?: unknown }
+    ok = tx.Account === account && typeof tx.SigningPubKey === 'string' && deriveAddress(tx.SigningPubKey) === keyAddress
+  } catch {
+    ok = false
+  }
+  if (!ok) throw new SignedForWrongAccountError()
+}
+
+/** Refused: only an Offline Wallet's view signs a Built transaction for a QR. Developer text, never shown. */
+export class NotAnOfflineWalletError extends Error {
+  constructor() {
+    super('This wallet is not an offline wallet. Nothing was signed.')
+    this.name = 'NotAnOfflineWalletError'
+  }
+}
+
+/** The highest ledger index this Offline Wallet accepted, and when; `null` when none yet (P-14). */
+export async function ledgerSeenOf(walletId: string): Promise<{ index: number; at: number } | null> {
+  const stored = findSeedRecord(await listStoredWallets(), walletId)
+  const seen = stored && viewsOf(stored).find((v) => v.walletId === walletId)?.ledgerSeen
+  return seen && Number.isInteger(seen.index) && Number.isFinite(seen.at) ? { index: seen.index, at: seen.at } : null
+}
+
+/** Records a ledger index this Offline Wallet accepted, only when it is higher than
+ * the one stored (P-14 compares against the highest). Touches nothing else. */
+export async function noteLedgerSeen(walletId: string, index: number, at: number): Promise<void> {
+  const record = findSeedRecord(await listStoredWallets(), walletId)
+  if (!record) throw new Error('Wallet not found in local vault.')
+  await mutateStoredWallet(record.id, (current) => ({
+    ...current,
+    views: viewsOf(current).map((v) => {
+      if (v.walletId !== walletId || kindOfView(v) !== 'offline') return v
+      if (v.ledgerSeen && v.ledgerSeen.index >= index) return v
+      return { ...v, ledgerSeen: { index, at } }
+    }),
+  }))
+}
+
+/** Refused: the stored signed list is not a list of well-formed records. Never shown. */
+export class SignedListCorruptError extends Error {
+  constructor() {
+    super('The signed list of this wallet cannot be read.')
+    this.name = 'SignedListCorruptError'
+  }
+}
+
+/** The stored list as it is: absent is empty; anything malformed throws, so a
+ * damaged record is never read as "no earlier signing" (story 7 review). */
+function storedSignedList(view: WalletView): SignedRecord[] {
+  const list: unknown = (view as { signed?: unknown }).signed
+  if (list === undefined) return []
+  if (!Array.isArray(list) || !list.every(isSignedRecord)) throw new SignedListCorruptError()
+  return list
+}
+
+/** This Offline Wallet's signed list (OS-FR-16), oldest first. Throws when the record
+ * cannot be read or the list is malformed: the caller must not read either as an
+ * empty list, because the list is the guard against paying twice. */
+export async function signedListOf(walletId: string): Promise<SignedRecord[]> {
+  const stored = findSeedRecord(await listStoredWallets(), walletId)
+  const view = stored && viewsOf(stored).find((v) => v.walletId === walletId)
+  if (!view || kindOfView(view) !== 'offline') throw new NotAnOfflineWalletError()
+  return storedSignedList(view)
+}
+
+const signedListeners = new Set<(walletId: string) => void>()
+
+/** Called after each `noteSigned` with the Wallet's id, so the Signed screen reads again. */
+export function subscribeSignedList(listener: (walletId: string) => void): () => void {
+  signedListeners.add(listener)
+  return () => signedListeners.delete(listener)
+}
+
+/** Appends one signing to this Offline Wallet's list (OS-FR-16). Only on an Offline
+ * view; touches nothing else. Throws when it could not be written. */
+export async function noteSigned(walletId: string, record: SignedRecord): Promise<void> {
+  if (!isSignedRecord(record)) throw new Error('The signed record is not valid.')
+  const found = findSeedRecord(await listStoredWallets(), walletId)
+  if (!found) throw new Error('Wallet not found in local vault.')
+  let wrote = false
+  await mutateStoredWallet(found.id, (current) => ({
+    ...current,
+    views: viewsOf(current).map((v) => {
+      if (v.walletId !== walletId || kindOfView(v) !== 'offline') return v
+      // A malformed list throws here, aborting the write: no entry is ever dropped.
+      const before = storedSignedList(v)
+      wrote = true
+      return { ...v, signed: [...before, record] }
+    }),
+  }))
+  if (!wrote) throw new NotAnOfflineWalletError()
+  signedListeners.forEach((l) => l(walletId))
+}
+
+/** The review a Wallet's sends go through when its setting is on; without a
+ * reviewer in the prompts the answer is "no" (fail closed). */
+function reviewerOf(prompts: Prompts): (signed: SignedForReview) => Promise<boolean> {
+  return (signed) => prompts.reviewSignedTransaction?.(signed) ?? Promise.resolve(false)
+}
+
+/** Refused: only an Online Wallet's view signs a transaction to send (OS-FR-11). Developer text, never shown. */
+export class NotAnOnlineWalletError extends Error {
+  constructor() {
+    super('This wallet is not an online wallet. Nothing was signed.')
+    this.name = 'NotAnOnlineWalletError'
+  }
+}
+
+/** Refused: an Offline Wallet never sends, so it has no such setting (OS-FR-10, OS-FR-11). */
+export class SettingNotForOfflineError extends Error {
+  constructor() {
+    super('An offline wallet does not send, so this setting is not for it.')
+    this.name = 'SettingNotForOfflineError'
+  }
+}
+
+/** Turns "Show the signed transaction before sending" on or off for one Wallet's
+ * view only (OS-FR-10). Stores `true` or removes the field, and touches nothing
+ * else. Returns the Wallet's refreshed meta. */
+export async function setShowBeforeSending(walletId: string, on: boolean): Promise<WalletMeta> {
+  if (await isTransmitterId(walletId)) {
+    await mutateTransmitterRecord(walletId, (current) => {
+      const { showBeforeSending: _previous, ...rest } = current
+      return on ? { ...rest, showBeforeSending: true as const } : rest
+    })
+    return metaOf(walletId)
+  }
+  const record = findSeedRecord(await listStoredWallets(), walletId)
+  if (!record) throw new Error('Wallet not found in local vault.')
+  const view = viewsOf(record).find((v) => v.walletId === walletId)
+  // Not reachable from the UI (the plate is not on an Offline Wallet); refused
+  // so no caller can store it there.
+  if (on && view && kindOfView(view) === 'offline') throw new SettingNotForOfflineError()
+  let offline = false
+  await mutateStoredWallet(record.id, (current) => {
+    // Checked again in the transaction: the view may have become Offline meanwhile.
+    offline = on && viewsOf(current).some((v) => v.walletId === walletId && kindOfView(v) === 'offline')
+    if (offline) return current
+    return {
+      ...current,
+      views: viewsOf(current).map((v) => {
+        if (v.walletId !== walletId) return v
+        const { showBeforeSending: _previous, ...rest } = v
+        return on ? { ...rest, showBeforeSending: true as const } : rest
+      }),
+    }
+  })
+  if (offline) throw new SettingNotForOfflineError()
+  const meta = (await listWallets()).find((w) => w.id === walletId)
+  if (!meta) throw new Error('Wallet not found in local vault.')
+  return meta
 }
 
 /** The one sanctioned way a Seed leaves `lib/crypto`: the same check as
@@ -532,12 +886,18 @@ export type RenameWalletResult =
 export async function renameWallet(seedId: string, rawName: string): Promise<RenameWalletResult> {
   try {
     const all = await listStoredWallets()
-    if (!all.some((w) => w.id === seedId)) return { ok: false, reason: 'write-failed' }
-    const verdict = validateWalletName(
-      rawName,
-      all.filter((w) => w.id !== seedId).map((w) => w.label),
-    )
+    const transmitter = (await listTransmitterRecords()).find((t) => t.id === seedId)
+    if (!all.some((w) => w.id === seedId) && !transmitter) return { ok: false, reason: 'write-failed' }
+    const verdict = validateWalletName(rawName, await allRecordLabels(seedId))
     if (!verdict.ok) return verdict
+    if (transmitter) {
+      let renamed: TransmitterRecord | undefined
+      await mutateTransmitterRecord(seedId, (current) => {
+        renamed = { ...current, label: verdict.name }
+        return renamed
+      })
+      return renamed ? { ok: true, metas: [transmitterMeta(renamed)] } : { ok: false, reason: 'write-failed' }
+    }
     let written: StoredWallet | undefined
     await mutateStoredWallet(seedId, (current) => {
       written = { ...current, label: verdict.name }
@@ -556,7 +916,7 @@ export async function renameWallet(seedId: string, rawName: string): Promise<Ren
  * `Wallet`, `Wallet 2`, ... A best-effort guard across tabs, not a security boundary.
  */
 async function nameForNewWallet(raw: string): Promise<string> {
-  const others = (await listStoredWallets()).map((w) => w.label)
+  const others = await allRecordLabels()
   const verdict = validateWalletName(raw, others)
   return verdict.ok ? verdict.name : uniqueDefaultName('Wallet', others)
 }
@@ -567,6 +927,8 @@ async function nameForNewWallet(raw: string): Promise<string> {
  * never reads vault meta itself. */
 export async function appPinResidue(): Promise<boolean> {
   if (await hasAppPin()) return true
+  // A Seed record that lists no Wallet (story 12) is residue too: Remove all is the one way to remove it.
+  if (await holdsUnlistedSeedRecords()) return true
   return (await getVaultMeta()).failedAttempts > 0
 }
 
@@ -578,8 +940,10 @@ export interface RemoveWalletResult {
   appPin: 'kept' | 'discarded' | 'failed'
 }
 
-/** Removes one Wallet. Its Seed record goes with its last view and not before:
- * a controlled account's view of the same Seed keeps working. The whole removal runs
+/** Removes one Wallet. Its Seed record goes with its last view the app knows
+ * (`viewsOf`). A record that lists no Wallet (only dropped FR-75 controlled views) is
+ * never deleted here: its Seed may be the only key of an Account, so it stays, with its
+ * lock and the App PIN, until Remove all. The whole removal runs
  * under `exclusiveVaultWrite`, so a create or import in flight finishes first and
  * the emptiness check below sees what it wrote (AD-46).
  *
@@ -591,8 +955,21 @@ export function removeWallet(walletId: string): Promise<RemoveWalletResult> {
   return exclusiveVaultWrite(() => removeWalletUnguarded(walletId))
 }
 
+/** Nothing of any kind is stored: Seed records (listed or not) and Transmitter
+ * records alike. A Transmitter, or a Seed record that lists no Wallet, left on the
+ * device keeps its lock and the App PIN. */
+async function deviceHoldsWallets(): Promise<boolean> {
+  const [wallets, transmitters] = await Promise.all([listStoredWallets(), listTransmitterRecords()])
+  return wallets.length + transmitters.length > 0
+}
+
 async function removeWalletUnguarded(walletId: string): Promise<RemoveWalletResult> {
-  const record = findSeedRecord(await listStoredWallets(), walletId)
+  const transmitter = (await listTransmitterRecords()).find((t) => t.id === walletId)
+  if (transmitter) {
+    await mutateTransmitterRecord(walletId, () => null)
+    if (!(await lockIdsInUseNow()).has(transmitter.lockId)) await deleteLock(transmitter.lockId)
+  }
+  const record = transmitter ? undefined : findSeedRecord(await listStoredWallets(), walletId)
   if (record) {
     await mutateStoredWallet(record.id, (current) => {
       const remaining = viewsOf(current).filter((v) => v.walletId !== walletId)
@@ -600,11 +977,11 @@ async function removeWalletUnguarded(walletId: string): Promise<RemoveWalletResu
     })
     // A lock made for Wallets that are all gone goes with the last of them.
     const lockId = record.lockId
-    if (!(await listStoredWallets()).some((w) => w.lockId === lockId)) {
+    if (!(await lockIdsInUseNow()).has(lockId)) {
       await deleteLock(lockId)
     }
   }
-  if ((await listStoredWallets()).length > 0) return { emptied: false, appPin: 'kept' }
+  if (await deviceHoldsWallets()) return { emptied: false, appPin: 'kept' }
   // Nothing is stored: every lock record left is an orphan.
   // The PIN discard never depends on the lock-record cleanup: a failed cleanup there leaves only
   // lock records no wallet points at, while a skipped discard would leave a PIN on an empty device.
@@ -619,6 +996,107 @@ async function removeWalletUnguarded(walletId: string): Promise<RemoveWalletResu
   } catch {
     return { emptied: true, appPin: 'failed' }
   }
+}
+
+async function lockIdsInUseNow(): Promise<Set<string>> {
+  const [wallets, transmitters] = await Promise.all([listStoredWallets(), listTransmitterRecords()])
+  return new Set([...wallets.map((w) => w.lockId), ...transmitters.map((t) => t.lockId)])
+}
+
+async function isTransmitterId(walletId: string): Promise<boolean> {
+  return (await listTransmitterRecords()).some((t) => t.id === walletId)
+}
+
+async function metaOf(walletId: string): Promise<WalletMeta> {
+  const meta = (await listWallets()).find((w) => w.id === walletId)
+  if (!meta) throw new Error('Wallet not found in local vault.')
+  return meta
+}
+
+// ---------------------------------------------------------------------------
+// Transmitter Wallets (OS-FR-3, OS-FR-4): no Seed, a lock of their own
+// ---------------------------------------------------------------------------
+
+export interface CreateTransmitterInput {
+  label: string
+  network: NetworkId
+  /** A custom Node the caller already proved for `network` (`verifyNode`). */
+  node?: string
+  openCheck: NewOpenCheck
+  autoLockMinutes: number
+  /** "Sync to an address" at creation (OS-FR-4). Absent: not synced. */
+  syncedAddress?: string
+}
+
+export type CreateTransmitterResult = CheckResult<{ meta: TransmitterMeta; openKey: CryptoKey }> | { status: 'refused'; reason: string }
+
+/**
+ * Adds a Transmitter Wallet on a NEW lock of its own (OS-FR-3). The policy is the
+ * lock's alone (`checkLockRequest`: FR-65, an Open Check and the auto-lock floor on
+ * Mainnet); there is no Seed, so no written-Seed or passkey-origin rule. Order, so a
+ * failure leaves the vault as it was: name, policy, address, the lock (its
+ * credential), then one write of the record with its verifier. A failure after the
+ * lock is written removes it and any App PIN made for it.
+ */
+export function createTransmitterWallet(input: CreateTransmitterInput, ctx: { pin?: string; appPinExpected?: boolean } = {}): Promise<CreateTransmitterResult> {
+  return exclusiveVaultWrite(() => createTransmitterUnguarded(input, ctx))
+}
+
+
+async function createTransmitterUnguarded(requested: CreateTransmitterInput, ctx: { pin?: string; appPinExpected?: boolean }): Promise<CreateTransmitterResult> {
+  const label = await nameForNewWallet(requested.label)
+  const verdict = checkLockRequest({ network: requested.network, openCheck: requested.openCheck, autoLockMinutes: requested.autoLockMinutes })
+  if (!verdict.ok) return { status: 'refused', reason: verdict.reason }
+  if (requested.syncedAddress !== undefined && !isValidClassicAddress(requested.syncedAddress)) return { status: 'refused', reason: INVALID_ADDRESS }
+  const node = requested.node === undefined ? undefined : (canonicalNodeUrl(requested.node) ?? undefined)
+  if (requested.node !== undefined && !node) {
+    return { status: 'refused', reason: 'A custom Node must be a wss:// address with no username, password, query or fragment.' }
+  }
+  if (requested.openCheck === 'pin' && !ctx.pin) return { status: 'cancelled' }
+  const hadAppPin = await hasAppPin()
+  if (ctx.appPinExpected && !hadAppPin && requested.openCheck === 'pin') return { status: 'refused', reason: APP_PIN_GONE }
+  const id = crypto.randomUUID()
+  let lockId: string | null = null
+  try {
+    const lock = await createLock(
+      { network: requested.network, openCheck: requested.openCheck, autoLockMinutes: requested.autoLockMinutes, label: `${label} – open` },
+      { pin: ctx.pin },
+    )
+    if (lock.status !== 'ok') return await abandon(hadAppPin, lock)
+    lockId = lock.value.id
+    const record: TransmitterRecord = {
+      recordKind: 'transmitter',
+      id,
+      label,
+      createdAt: Date.now(),
+      lockId,
+      openCheck: requested.openCheck,
+      network: requested.network,
+      ...(node ? { node } : {}),
+      ...(requested.syncedAddress ? { syncedAddress: requested.syncedAddress } : {}),
+      verifier: await aesEncrypt(lock.value.key, transmitterVerifierText(id)),
+    }
+    await putTransmitterRecord(record)
+    return { status: 'ok', value: { meta: transmitterMeta(record), openKey: lock.value.key } }
+  } catch (err) {
+    if (lockId) await deleteLock(lockId).catch(() => {})
+    if (!hadAppPin) await discardUnusedAppPin().catch(() => {})
+    throw err
+  }
+}
+
+/** "Sync to an address" (OS-FR-4): sets the address, or removes it (`null`),
+ * without re-creating the Wallet. Only a Transmitter can be synced. */
+export async function setTransmitterSync(walletId: string, address: string | null): Promise<TransmitterMeta> {
+  if (address !== null && !isValidClassicAddress(address)) throw new Error(INVALID_ADDRESS)
+  if (!(await isTransmitterId(walletId))) throw new Error('Wallet not found in local vault.')
+  await mutateTransmitterRecord(walletId, (current) => {
+    const { syncedAddress: _previous, ...rest } = current
+    return address === null ? rest : { ...rest, syncedAddress: address }
+  })
+  const meta = await metaOf(walletId)
+  if (meta.kind !== 'transmitter') throw new Error('Wallet not found in local vault.')
+  return meta
 }
 
 // ---------------------------------------------------------------------------
@@ -637,11 +1115,17 @@ export interface CreateStoredWalletInput {
   /** What the device said about PRF. `unknown` is allowed: creation then fails
    * closed if the passkey gives no PRF output. */
   passkey?: PasskeyCapability
+  /** `offline`: an Offline Wallet (OS-FR-2). Absent: an Online Wallet. An Offline
+   * Wallet has no Node, so `node` with it is refused before anything is written. */
+  kind?: 'offline'
+  /** "This key signs for another account" (OS-FR-20): the Account this key signs
+   * for, when it is not the key's own. Absent, or equal to the key's address: none. */
+  signsFor?: string
 }
 
 export type CreateStoredWalletResult =
   | CheckResult<{
-      meta: WalletMeta
+      meta: KeyWalletMeta
       /** The new lock's Open Key (non-extractable), for the caller to open the lock with. */
       openKey: CryptoKey
       /** The generated Seed, for the backup screen only. The caller holds it in a
@@ -705,12 +1189,17 @@ export interface ImportStoredWalletInput {
   /** The parsed Seed. A parameter only: the caller holds it in a ref and clears it in `finally`. */
   seed: string
   passkey?: PasskeyCapability
+  /** `offline`: an Offline Wallet (OS-FR-2, OS-FR-7). Absent: an Online Wallet. */
+  kind?: 'offline'
+  /** "This key signs for another account" (OS-FR-20): the Account this key signs
+   * for, when it is not the key's own. Absent, or equal to the key's address: none. */
+  signsFor?: string
 }
 
 export type ImportWalletContext = CreateWalletContext
 
 /** The result carries `meta` and the new lock's `openKey`, NEVER the Seed. */
-export type ImportStoredWalletResult = CheckResult<{ meta: WalletMeta; openKey: CryptoKey }> | { status: 'refused'; reason: string }
+export type ImportStoredWalletResult = CheckResult<{ meta: KeyWalletMeta; openKey: CryptoKey }> | { status: 'refused'; reason: string }
 
 const IMPORT_MALFORMED_REASON = 'That is not a valid Seed.'
 function importDuplicateReasonText(network: NetworkId): string {
@@ -718,9 +1207,20 @@ function importDuplicateReasonText(network: NetworkId): string {
 }
 
 /** The one duplicate check, shared by the writer and the screen's probe so the two
- * cannot disagree: the key is the address plus the Network (FR-93, AD-39). */
-async function duplicateReasonFor(address: string, network: NetworkId): Promise<string | null> {
-  return hasView(await listStoredWallets(), network, address, address) ? importDuplicateReasonText(network) : null
+ * cannot disagree (FR-93, AD-39): one Wallet is `(Network, Signs-for Account, key)`.
+ * `account` is the Signs-for Account, the key's own address when there is none.
+ * A key that signs for itself keeps today's words; a Signs-for collision says P-35. */
+async function duplicateReasonFor(address: string, network: NetworkId, account: string = address): Promise<string | null> {
+  if (!hasView(await listStoredWallets(), network, account, address)) return null
+  return account === address ? importDuplicateReasonText(network) : sameAddressReason(network)
+}
+
+/** The Signs-for Account a writer stores: `undefined` when none, or when it is the
+ * key's own address (never stored equal to it). `null`: not an address. */
+function signsForToStore(signsFor: string | undefined, keyAddress: string): string | undefined | null {
+  if (signsFor === undefined || signsFor === '') return undefined
+  if (!isValidClassicAddress(signsFor)) return null
+  return signsFor === keyAddress ? undefined : signsFor
 }
 
 /**
@@ -728,14 +1228,15 @@ async function duplicateReasonFor(address: string, network: NetworkId): Promise<
  * the device on this Network: the reason to show, or `null`. A value that is not a Seed
  * is not a duplicate (the caller parses first). Reads only; the Seed is a parameter.
  */
-export async function importDuplicateReason(seed: string, network: NetworkId): Promise<string | null> {
+export async function importDuplicateReason(seed: string, network: NetworkId, signsFor?: string): Promise<string | null> {
   let address: string
   try {
     address = Wallet.fromSeed(seed).address
   } catch {
     return null
   }
-  return duplicateReasonFor(address, network)
+  const account = signsForToStore(signsFor, address)
+  return duplicateReasonFor(address, network, account ?? address)
 }
 
 /**
@@ -774,6 +1275,17 @@ interface NewWalletSpec {
   signing: SigningKind
   passkey: PasskeyCapability
   origin: 'generated' | 'imported'
+  kind?: 'offline'
+  signsFor?: string
+}
+
+/** A programming error, never shown: an Offline Wallet has no Node (OS-FR-2), so a
+ * request that names one is a caller bug. Thrown before any credential, lock or write. */
+export class OfflineWalletNodeError extends Error {
+  constructor() {
+    super('An Offline Wallet has no Node.')
+    this.name = 'OfflineWalletNodeError'
+  }
 }
 
 /** The one writer behind Generate and Import (AD-39). Order, so a failure leaves the
@@ -784,7 +1296,7 @@ async function writeNewStoredWallet(
   spec: NewWalletSpec,
   ctx: CreateWalletContext,
   obtainSeed: () => { seed: string; address: string; algorithm: 'ed25519' | 'secp256k1' } | { refused: string },
-): Promise<CheckResult<{ meta: WalletMeta; openKey: CryptoKey }> | { status: 'refused'; reason: string }> {
+): Promise<CheckResult<{ meta: KeyWalletMeta; openKey: CryptoKey }> | { status: 'refused'; reason: string }> {
   // Inside the guard, so the name is checked against the records this write will sit beside (AD-42).
   const input = { ...spec, label: await nameForNewWallet(spec.label) }
   const verdict = checkWalletRequest({
@@ -798,6 +1310,7 @@ async function writeNewStoredWallet(
     ...(input.origin === 'imported' ? { imported: true } : {}),
   })
   if (!verdict.ok) return { status: 'refused', reason: verdict.reason }
+  if (input.kind === 'offline' && input.node !== undefined) throw new OfflineWalletNodeError()
   const node = input.node === undefined ? undefined : (canonicalNodeUrl(input.node) ?? undefined)
   if (input.node !== undefined && !node) {
     return { status: 'refused', reason: 'A custom Node must be a wss:// address with no username, password, query or fragment.' }
@@ -819,10 +1332,13 @@ async function writeNewStoredWallet(
   const obtained = obtainSeed()
   if ('refused' in obtained) return { status: 'refused', reason: obtained.refused }
   const { seed, address, algorithm } = obtained
+  const signsFor = signsForToStore(input.signsFor, address)
+  if (signsFor === null) return { status: 'refused', reason: INVALID_ADDRESS }
+  // One Wallet is held once per (Network, Signs-for Account, key) (AD-39, FR-93, OS-FR-20).
+  // A generated key is new, so only an import can collide; both ask.
+  const duplicate = await duplicateReasonFor(address, input.network, signsFor ?? address)
+  if (duplicate) return { status: 'refused', reason: duplicate }
   if (input.origin === 'imported') {
-    // One Account is held once per Network (AD-39, FR-93).
-    const duplicate = await duplicateReasonFor(address, input.network)
-    if (duplicate) return { status: 'refused', reason: duplicate }
     const blocked = await pinGate()
     if (blocked) return blocked
   }
@@ -862,7 +1378,15 @@ async function writeNewStoredWallet(
       lockId,
       openCheck: input.openCheck,
       signingCheck: input.signing,
-      views: [{ walletId, network: input.network, ...(node ? { node } : {}) }],
+      views: [
+        {
+          walletId,
+          network: input.network,
+          ...(node ? { node } : {}),
+          ...(input.kind === 'offline' ? { kind: 'offline' as const } : {}),
+          ...(signsFor ? { signsFor } : {}),
+        },
+      ],
       ...(confirmedAt ? { writtenSeedConfirmedAt: confirmedAt } : {}),
       ...(sealed
         ? { sealedSeed: sealed.sealedSeed, signing: sealed.signing }
@@ -923,11 +1447,14 @@ export interface CreateDerivedWalletInput {
   ordinal?: string
   /** A restore accepts the derived Wallet only if it is this address. */
   expectedAddress?: string
+  /** "This key signs for another account" (OS-FR-20): the Account this key signs
+   * for, when it is not the key's own. Absent, or equal to the key's address: none. */
+  signsFor?: string
 }
 
 export type CreateDerivedWalletResult =
   | CheckResult<{
-      meta: WalletMeta
+      meta: KeyWalletMeta
       /** The new lock's Open Key (non-extractable), for the caller to open the lock with. */
       openKey: CryptoKey
       /** Public. Shown once so the person can write it down; rebuilds the Wallet on a new device. */
@@ -1013,7 +1540,14 @@ async function createDerivedWalletUnguarded(requested: CreateDerivedWalletInput,
     if (input.expectedAddress !== undefined && address !== input.expectedAddress) {
       return await abandon(hadAppPin, { status: 'wrong-credential', kind: 'passkey', triesRemaining: await triesRemaining() })
     }
-    const taken = (await listStoredWallets()).some(
+    const signsFor = signsForToStore(input.signsFor, address)
+    if (signsFor === null) return await abandon(hadAppPin, { status: 'refused' as const, reason: INVALID_ADDRESS })
+    // A Signs-for collision is refused as on the other writers (FR-93, OS-FR-20); without
+    // Signs for, this writer's duplicate rule is the passkey triple below, as before.
+    const duplicate = signsFor ? await duplicateReasonFor(address, input.network, signsFor) : null
+    if (duplicate) return await abandon(hadAppPin, { status: 'refused' as const, reason: duplicate })
+    // An unlisted record (only dropped FR-75 views) does not count: it stays stored beside the new one until Remove all.
+    const taken = (await listStoredWallets()).filter(isListed).some(
       (w) =>
         w.derived?.credentialIdB64 === credentialIdB64 &&
         w.derived.ordinal === ordinal &&
@@ -1056,7 +1590,7 @@ async function createDerivedWalletUnguarded(requested: CreateDerivedWalletInput,
       lockId,
       openCheck: input.openCheck,
       signingCheck: 'passkey',
-      views: [{ walletId, network: input.network, ...(node ? { node } : {}) }],
+      views: [{ walletId, network: input.network, ...(node ? { node } : {}), ...(signsFor ? { signsFor } : {}) }],
       derived: { credentialIdB64, rpId, ordinal, ...(backupEligible === undefined ? {} : { backupEligible }) },
       ...(confirmedAt ? { writtenSeedConfirmedAt: confirmedAt } : {}),
     }
@@ -1121,39 +1655,6 @@ export async function restorePasskeyWallet(
   )
 }
 
-/** Records that a Seed's key operates `accountAddress` as that Account's Regular
- * Key: a second view over the SAME Seed record, with the Account on the view and
- * nothing else changed (AD-18). Call only after a validated `SetRegularKey` and a
- * fresh read that shows this key (AD-29). A view with the same
- * `(network, accountAddress, keyAddress)` is refused and nothing is written. */
-export async function addControlledView(
-  seedWalletId: string,
-  view: { network: NetworkId; node?: string; accountAddress: string },
-): Promise<WalletMeta> {
-  const all = await listStoredWallets()
-  const record = findSeedRecord(all, seedWalletId)
-  if (!record) throw new Error('Wallet not found in local vault.')
-  if (hasView(all, view.network, view.accountAddress, record.address)) {
-    throw new Error('This wallet already operates that account.')
-  }
-  const node = view.node ? canonicalNodeUrl(view.node) : null
-  const newWalletId = crypto.randomUUID()
-  let added = false
-  await mutateStoredWallet(record.id, (current) => {
-    const views = viewsOf(current)
-    if (views.some((v) => v.network === view.network && (v.accountAddress ?? current.address) === view.accountAddress)) return current
-    added = true
-    return {
-      ...current,
-      views: [...views, { walletId: newWalletId, network: view.network, ...(node ? { node } : {}), accountAddress: view.accountAddress }],
-    }
-  })
-  if (!added) throw new Error('This wallet already operates that account.')
-  const meta = (await listWallets()).find((w) => w.id === newWalletId)
-  if (!meta) throw new Error('Wallet not found in local vault.')
-  return meta
-}
-
 /** Sets or clears (`undefined`) the custom Node on one Wallet's view only —
  * AD-18/19. The caller has already proven `node` for the Wallet's network
  * (`verifyNode`); this stores it and touches nothing else, ciphertext
@@ -1163,19 +1664,237 @@ export async function setWalletNode(walletId: string, node: string | undefined):
   if (node !== undefined && !canonical) {
     throw new Error('A custom Node must be a wss:// address with no username, password, query or fragment.')
   }
+  if (await isTransmitterId(walletId)) {
+    await mutateTransmitterRecord(walletId, (current) => {
+      const { node: _previous, ...rest } = current
+      return canonical ? { ...rest, node: canonical } : rest
+    })
+    return metaOf(walletId)
+  }
   const record = findSeedRecord(await listStoredWallets(), walletId)
   if (!record) throw new Error('Wallet not found in local vault.')
-  await mutateStoredWallet(record.id, (current) => ({
-    ...current,
-    views: viewsOf(current).map((v) => {
-      if (v.walletId !== walletId) return v
-      const { node: _previous, ...rest } = v
-      return canonical ? { ...rest, node: canonical } : rest
-    }),
-  }))
+  let offline = false
+  await mutateStoredWallet(record.id, (current) => {
+    // An Offline Wallet has no Node (OS-FR-5), checked in the transaction.
+    offline = canonical !== undefined && viewsOf(current).some((v) => v.walletId === walletId && kindOfView(v) === 'offline')
+    if (offline) return current
+    return {
+      ...current,
+      views: viewsOf(current).map((v) => {
+        if (v.walletId !== walletId) return v
+        const { node: _previous, ...rest } = v
+        return canonical ? { ...rest, node: canonical } : rest
+      }),
+    }
+  })
+  if (offline) throw new OfflineWalletNodeError()
   const meta = (await listWallets()).find((w) => w.id === walletId)
   if (!meta) throw new Error('Wallet not found in local vault.')
   return meta
+}
+
+// ---------------------------------------------------------------------------
+// Changing a Wallet's kind (OS-FR-5, OS-FR-6, OS-FR-7)
+// ---------------------------------------------------------------------------
+
+/** Why a change of kind was refused before anything was written. The message is
+ * developer text, never shown: each screen offers the change only where it is
+ * allowed, with an approved reason where it is not (P-63). */
+export type KindChangeRefusal = 'transmitter' | 'not-online' | 'not-offline' | 'passkey-derived'
+
+export class KindChangeRefusedError extends Error {
+  readonly reason: KindChangeRefusal
+  constructor(reason: KindChangeRefusal) {
+    super(`This change of kind is not allowed (${reason}). Nothing was changed.`)
+    this.name = 'KindChangeRefusedError'
+    this.reason = reason
+  }
+}
+
+/** FR-93's duplicate rule, `hasView`, with the Wallet itself left out: another
+ * view on any Seed record with the same `(network, Account, key)`. A Transmitter
+ * is not counted (FR-93 never counted one; OS-FR-3 warns, never refuses). */
+function hasOtherView(all: StoredWallet[], walletId: string, network: NetworkId, account: string, keyAddress: string): boolean {
+  return all.some(
+    (w) => w.address === keyAddress && viewsOf(w).some((v) => v.walletId !== walletId && v.network === network && accountOfView(w, v) === account),
+  )
+}
+
+/** The Seed record and the view of one key Wallet, or a typed refusal for a Transmitter. */
+async function seedViewFor(walletId: string): Promise<{ all: StoredWallet[]; record: StoredWallet; view: WalletView }> {
+  if (await isTransmitterId(walletId)) throw new KindChangeRefusedError('transmitter')
+  const all = await listStoredWallets()
+  const record = findSeedRecord(all, walletId)
+  const view = record && viewsOf(record).find((v) => v.walletId === walletId)
+  if (!record || !view) throw new Error('Wallet not found in local vault.')
+  return { all, record, view }
+}
+
+/**
+ * "Change to an offline wallet" (OS-FR-5). The one view becomes Offline: its Node
+ * and its "Show the signed transaction before sending" flag go (an Offline Wallet
+ * has neither, OS-FR-10), and it gains the Was-online mark for good (OS-FR-7).
+ * The record's address, Seed ciphertext, lock and checks are not touched, and the
+ * Network stays.
+ *
+ * Refused (typed, nothing written): a Transmitter (it never changes kind), a view
+ * that is not Online, a Passkey-Derived Seed (its key can be made again from a
+ * passkey that syncs to the cloud, OS-FR-8). A record holds one view the app knows
+ * (`viewsOf`), so its key is never both an Online and an Offline view. The same
+ * Seed as a second record on another Network stays allowed (story 3; the OS-FR-23
+ * warning covers it).
+ */
+export async function changeToOfflineWallet(walletId: string): Promise<KeyWalletMeta> {
+  const { record, view } = await seedViewFor(walletId)
+  const refusal = (current: StoredWallet, v: WalletView | undefined): KindChangeRefusal | null =>
+    !v || kindOfView(v) !== 'online' ? 'not-online' : current.seedMethod === 'passkey-derived' ? 'passkey-derived' : null
+  const before = refusal(record, view)
+  if (before) throw new KindChangeRefusedError(before)
+  let during: KindChangeRefusal | null = 'not-online'
+  let written: StoredWallet | null = null
+  await mutateStoredWallet(record.id, (current) => {
+    // Checked again in the transaction: the record read above may be stale.
+    during = refusal(current, viewsOf(current).find((v) => v.walletId === walletId))
+    if (during) return current
+    return (written = {
+      ...current,
+      views: viewsOf(current).map((v) => {
+        if (v.walletId !== walletId) return v
+        const { node: _node, showBeforeSending: _show, ...rest } = v
+        return { ...rest, kind: 'offline' as const, wasOnline: true as const }
+      }),
+    })
+  })
+  if (during) throw new KindChangeRefusedError(during)
+  // From the record the transaction wrote: no second read that could fail after the write.
+  return metaFromWritten(written, walletId)
+}
+
+/** The meta of `walletId` in a record a transaction has just written. */
+function metaFromWritten(written: StoredWallet | null, walletId: string): KeyWalletMeta {
+  const meta = written ? toMetas(written).find((m) => m.id === walletId) : undefined
+  if (!meta) throw new Error('Wallet not found in local vault.')
+  return meta
+}
+
+export type ChangeToOnlineResult = CheckResult<KeyWalletMeta> | { status: 'refused'; reason: string }
+
+/** P-35, filled with the Network: the same address on the same Network as another Wallet. */
+const sameAddressReason = (network: NetworkId) => SAME_ADDRESS_ON_NETWORK.replace('{Network}', NETWORKS[network].label)
+
+/**
+ * "Change to an online wallet" (OS-FR-6), irreversible-class. The screen takes the
+ * typed confirm; this runs the Wallet's Signing Check exactly as signing does (a
+ * one-use Signer opened and disposed, as for turning the master key off) and only
+ * then writes. The view keeps its Network and its Was-online mark, loses its kind
+ * (absent is Online) and takes the Node chosen (`undefined`: the built-in Nodes,
+ * which the caller has already proven for a custom one with `verifyNode`).
+ *
+ * The same address on the same Network as another Wallet is refused (P-35), before
+ * any prompt and again after it. Refused (typed): a Transmitter, a view that is not
+ * Offline. A check that does not pass returns its result and writes nothing.
+ */
+export async function changeToOnlineWallet(
+  walletId: string,
+  input: { node?: string; stillOpen?: () => boolean },
+  ctx: SigningContext,
+): Promise<ChangeToOnlineResult> {
+  const canonical = input.node === undefined ? undefined : canonicalNodeUrl(input.node)
+  if (input.node !== undefined && !canonical) {
+    throw new Error('A custom Node must be a wss:// address with no username, password, query or fragment.')
+  }
+  const { all, record, view } = await seedViewFor(walletId)
+  if (kindOfView(view) !== 'offline') throw new KindChangeRefusedError('not-offline')
+  const account = accountOfView(record, view)
+  if (hasOtherView(all, walletId, view.network, account, record.address)) return { status: 'refused', reason: sameAddressReason(view.network) }
+
+  const opened = await openSigner(walletId, ctx)
+  if (opened.status !== 'ok') return opened
+  opened.value.dispose()
+  // The Wallet's lock may have closed during the prompt: then nothing is written.
+  if (input.stillOpen && !input.stillOpen()) return { status: 'cancelled' }
+
+  // The prompt took time: the device may hold another Wallet for this address now.
+  if (hasOtherView(await listStoredWallets(), walletId, view.network, account, record.address)) {
+    return { status: 'refused', reason: sameAddressReason(view.network) }
+  }
+  let during: KindChangeRefusal | null = 'not-offline'
+  let written: StoredWallet | null = null
+  await mutateStoredWallet(record.id, (current) => {
+    const v = viewsOf(current).find((x) => x.walletId === walletId)
+    during = !v || kindOfView(v) !== 'offline' ? 'not-offline' : null
+    if (during) return current
+    return (written = {
+      ...current,
+      views: viewsOf(current).map((x) => {
+        if (x.walletId !== walletId) return x
+        const { kind: _kind, node: _node, ...rest } = x
+        return canonical ? { ...rest, node: canonical } : rest
+      }),
+    })
+  })
+  if (during) throw new KindChangeRefusedError(during)
+  return { status: 'ok', value: metaFromWritten(written, walletId) }
+}
+
+// ---------------------------------------------------------------------------
+// Signs for (OS-FR-20, CAP-13)
+// ---------------------------------------------------------------------------
+
+/** Why a Signs-for change was not made. `duplicate`: another Wallet here is the same
+ * `(Network, Signs-for Account, key)` (FR-93); `reason` is P-35. */
+export class SignsForRefusedError extends Error {
+  readonly refusal: 'transmitter' | 'duplicate' | 'invalid'
+  constructor(refusal: SignsForRefusedError['refusal'], message: string) {
+    super(message)
+    this.name = 'SignsForRefusedError'
+    this.refusal = refusal
+  }
+}
+
+/**
+ * Sets the Account an Online or Offline Wallet Signs for (OS-FR-20), or removes it
+ * (`null`, or the key's own address): the Wallet then signs for the key's own
+ * address. Only the view's `signsFor` changes; the Seed, lock, checks, kind, Network
+ * and signed list stay. Whether the key IS that Account's Regular Key is the
+ * ledger's to say (P-40), never checked here. Refused, nothing written: a
+ * Transmitter, an address that is not one, and FR-93's duplicate, checked again inside the transaction.
+ */
+export async function setSignsFor(walletId: string, account: string | null): Promise<KeyWalletMeta> {
+  if (await isTransmitterId(walletId)) throw new SignsForRefusedError('transmitter', 'A Transmitter wallet has no key.')
+  if (account !== null && !isValidClassicAddress(account)) throw new SignsForRefusedError('invalid', INVALID_ADDRESS)
+  const all = await listStoredWallets()
+  const record = findSeedRecord(all, walletId)
+  const view = record && viewsOf(record).find((v) => v.walletId === walletId)
+  if (!record || !view || kindOfView(view) === null) throw new Error('Wallet not found in local vault.')
+  const refusalIn = (current: StoredWallet, others: StoredWallet[]): SignsForRefusedError | null => {
+    const v = viewsOf(current).find((x) => x.walletId === walletId)
+    if (!v || kindOfView(v) === null) return new SignsForRefusedError('invalid', 'Wallet not found in local vault.')
+    const next = account ?? current.address
+    if (hasOtherView(others, walletId, v.network, next, current.address)) return new SignsForRefusedError('duplicate', sameAddressReason(v.network))
+    return null
+  }
+  const before = refusalIn(record, all)
+  if (before) throw before
+  let during: SignsForRefusedError | null = null
+  let written: StoredWallet | null = null
+  await mutateStoredWallet(record.id, (current) => {
+    // Checked again in the transaction: the read above may be stale. The other
+    // records were read just before; a duplicate written between is FR-93's race,
+    // the same window every writer here has.
+    during = refusalIn(current, all.map((w) => (w.id === current.id ? current : w)))
+    if (during) return current
+    return (written = {
+      ...current,
+      views: viewsOf(current).map((v) => {
+        if (v.walletId !== walletId) return v
+        const { signsFor: _old, ...rest } = v
+        return account === null || account === current.address ? rest : { ...rest, signsFor: account }
+      }),
+    })
+  })
+  if (during) throw during
+  return metaFromWritten(written, walletId)
 }
 
 // ---------------------------------------------------------------------------
@@ -1197,7 +1916,7 @@ export interface EditChecksContext {
 
 export type EditChecksResult =
   | CheckResult<{
-      meta: WalletMeta
+      meta: KeyWalletMeta
       /** False: nothing changed, nothing was asked and nothing was written. */
       changed: boolean
       /** The lock the Wallet was on before. */
@@ -1267,7 +1986,7 @@ async function editChecksUnguarded(walletId: string, request: CheckEditRequest, 
     autoLockMinutes: info.autoLockMinutes,
   }
   const resolved = resolveEdit(current, request)
-  const meta = (await listWallets()).find((m) => m.id === walletId)
+  const meta = (await listKeyWallets()).find((m) => m.id === walletId)
   if (!meta) throw new Error('Wallet not found in local vault.')
   const previousLockId = fromLockId
   if (!resolved.changed) {
@@ -1446,8 +2165,17 @@ async function editChecksUnguarded(walletId: string, request: CheckEditRequest, 
  * on that lock — a Mainnet Wallet's lock may not go under one minute (FR-65). A refusal
  * carries its plain reason and writes nothing. */
 export async function setLockAutoLock(lockId: string, minutes: number, ctx: { prompts: Prompts } = { prompts: unavailablePrompts }): Promise<PolicyVerdict> {
-  const onLock = (await listStoredWallets()).filter((w) => w.lockId === lockId)
+  const onLock = (await listStoredWallets()).filter((w) => w.lockId === lockId && isListed(w))
   const first = onLock[0]
+  const transmitters = (await listTransmitterRecords()).filter((t) => t.lockId === lockId)
+  if (!first && transmitters.length > 0) {
+    // A Transmitter's lock (OS-FR-3, FR-65): its Open Check is passed again first,
+    // then the floor is judged against its Network. No Seed to prove.
+    const proved = await reproveOpenKey(lockId, ctx.prompts)
+    if (proved.status === 'cancelled') return { ok: false, reason: 'Cancelled. The auto-lock was not changed.' }
+    if (proved.status !== 'ok') return { ok: false, reason: `${describeCheckFailure(proved)} The auto-lock was not changed.` }
+    return setAutoLockMinutes(lockId, minutes, transmitters.map((t) => t.network))
+  }
   if (!first) {
     // A lock with no Wallet left on it has nothing to protect and no Seed to prove.
     return setAutoLockMinutes(lockId, minutes, [])

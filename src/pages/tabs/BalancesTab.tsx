@@ -1,9 +1,7 @@
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Button } from '@/components/ui/button'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Skeleton } from '@/components/ui/skeleton'
 import { StatusLegend } from '@/components/ui/lamp'
-import { ControlledNote } from '@/components/wallet/ControlledNote'
 import { AddressDisplay } from '@/components/wallet/AddressDisplay'
 import { Readout, type ScaleMark } from '@/components/wallet/Readout'
 import { QueryErrorState } from '@/components/wallet/QueryErrorState'
@@ -13,13 +11,9 @@ import { useTrustLines } from '@/hooks/useTrustLines'
 import { useServerReserves } from '@/hooks/useServerReserves'
 import { useActiveWallet, useActiveNetwork, useActiveNode } from '@/store/app-store'
 import { formatXrp, formatXrpValue, formatAmountString, displayCurrencyCode } from '@/lib/xrpl/money'
-import { requestFaucetFunds } from '@/lib/xrpl/faucet'
 import { NETWORKS } from '@/lib/xrpl/networks'
+import { FaucetButton } from '@/components/wallet/FaucetButton'
 import { DevnetNotice } from '@/components/wallet/DevnetNotice'
-import { invalidateAccountScoped } from '@/lib/xrpl/query-keys'
-import { toast } from '@/lib/notify'
-import { useQueryClient } from '@tanstack/react-query'
-import { useState } from 'react'
 
 /**
  * The panel's primary face: what this account holds, right now.
@@ -33,29 +27,16 @@ import { useState } from 'react'
 export function BalancesTab() {
   const network = useActiveNetwork()
   const node = useActiveNode()
-  const wallet = useActiveWallet()
+  const active = useActiveWallet()
+  // Mounted only for an Online Wallet; a Transmitter is never shown here.
+  const wallet = active && active.kind !== 'transmitter' ? active : null
   const address = wallet?.address ?? null
   const accountState = useAccountState(network, address, node)
   const spendable = useSpendableBalance(network, address, node)
   const trustLines = useTrustLines(network, address, node)
   const reserves = useServerReserves(network, node)
-  const queryClient = useQueryClient()
-  const [funding, setFunding] = useState(false)
 
   if (!wallet) return <p className="text-muted-foreground">No active wallet.</p>
-
-  async function handleFaucet() {
-    setFunding(true)
-    try {
-      const result = await requestFaucetFunds(network, wallet!.address)
-      toast.success(`Funded with ${result.amountXrp} test XRP on ${NETWORKS[network].label}.`)
-      await invalidateAccountScoped(queryClient, network, wallet!.address)
-    } catch (err: any) {
-      toast.error(err?.message ?? 'Faucet request failed.')
-    } finally {
-      setFunding(false)
-    }
-  }
 
   // TanStack keeps the previous data across a failed refetch, so `data` and
   // `isError` are true together on the 15-second poll. A retained figure shown
@@ -148,9 +129,7 @@ export function BalancesTab() {
               to become an account on-ledger.
             </span>
             {NETWORKS[network].faucetUrl ? (
-              <Button size="sm" onClick={handleFaucet} disabled={funding}>
-                {funding ? 'Requesting…' : `Fund with ${NETWORKS[network].label} XRP`}
-              </Button>
+              <FaucetButton network={network} address={wallet.address} />
             ) : (
               <span>Fund it with real XRP from an exchange or another wallet — there is no faucet on Mainnet.</span>
             )}
@@ -175,13 +154,7 @@ export function BalancesTab() {
               Live
             </StatusLegend>
           }
-          footer={
-            NETWORKS[network].faucetUrl && (
-              <Button size="sm" variant="outline" onClick={handleFaucet} disabled={funding}>
-                {funding ? 'Requesting…' : `Fund with ${NETWORKS[network].label} XRP`}
-              </Button>
-            )
-          }
+          footer={NETWORKS[network].faucetUrl && <FaucetButton network={network} address={wallet.address} variant="outline" />}
         />
       )}
 
@@ -212,7 +185,6 @@ export function BalancesTab() {
       <div className="grid gap-3 sm:grid-cols-2 sm:items-start">
         <div className="flex flex-col gap-2">
           <AddressDisplay address={wallet.address} />
-          <ControlledNote wallet={wallet} />
         </div>
 
         <Card>

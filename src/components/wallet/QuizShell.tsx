@@ -8,6 +8,8 @@ export type QuizStep = {
   title: string
   /** Next is `aria-disabled` and does nothing while true. */
   blocked?: boolean
+  /** The id of the visible text that says why Next is blocked: Next points at it. */
+  blockedReasonId?: string
   /** A second forward action, shown between Back and the primary one. */
   secondary?: ReactNode
   /** Replaces Next (and the final action) on this step. */
@@ -60,7 +62,7 @@ export function QuizShell({
       ) : last ? (
         finalAction
       ) : (
-        <Button type="button" aria-disabled={step?.blocked || undefined} disabled={busy} onClick={() => !step?.blocked && onIndex(index + 1)}>
+        <Button type="button" aria-disabled={step?.blocked || undefined} aria-describedby={step?.blocked ? step.blockedReasonId : undefined} disabled={busy} onClick={() => !step?.blocked && onIndex(index + 1)}>
           Next
         </Button>
       )}

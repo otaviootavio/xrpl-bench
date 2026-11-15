@@ -1,6 +1,6 @@
 import type { QueryClient } from '@tanstack/react-query'
 import { REMOVE_DONE, REMOVE_FAILED, REMOVE_PIN_NOT_DISCARDED, removeBodyFor, type RemoveBody } from '@/lib/remove-copy'
-import { listWallets, removeWallet, type RemoveWalletResult, type WalletMeta } from '@/lib/crypto/keystore'
+import { holdsUnlistedSeedRecords, listWallets, removeWallet, type RemoveWalletResult, type WalletMeta } from '@/lib/crypto/keystore'
 import { notify } from '@/lib/notify'
 import { removeWalletData } from '@/lib/teardown'
 import { useAppStore } from '@/store/app-store'
@@ -31,6 +31,16 @@ export interface RemoveCallbacks {
   settled: () => void
 }
 
+/** Whether the device stores a Seed record that lists no Wallet (story 12). A failed read
+ * counts as "it does": the Remove dialog never claims the device is emptied on a guess. */
+export async function readHoldsUnlisted(): Promise<boolean> {
+  try {
+    return await holdsUnlistedSeedRecords()
+  } catch {
+    return true
+  }
+}
+
 export async function confirmRemoveWallet(
   queryClient: QueryClient,
   walletId: string,
@@ -45,7 +55,8 @@ export async function confirmRemoveWallet(
     return
   }
   // The dialog states a consequence; if the wallets changed under it, it no longer holds.
-  if (removeBodyFor(useAppStore.getState().wallets, walletId) !== shownBody) {
+  const holdsUnlisted = await readHoldsUnlisted()
+  if (removeBodyFor(useAppStore.getState().wallets, walletId, holdsUnlisted) !== shownBody) {
     refused()
     notify.error('The wallets on this device changed. Open Remove again to see what it does now.')
     return

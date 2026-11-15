@@ -6,6 +6,10 @@ import { Label } from '@/components/ui/label'
 import { PromptsContext } from '@/hooks/usePrompts'
 import type { Prompts } from '@/lib/crypto/keystore'
 import { MAX_ATTEMPTS_BEFORE_HARD_LOCK } from '@/lib/crypto/pin'
+import type { SignedForReview } from '@/lib/xrpl/writes'
+import { currentPathname, subscribeRoute } from '@/lib/route'
+import { useAppStore } from '@/store/app-store'
+import { SignedTransactionReview } from './SignedTransactionReview'
 
 /**
  * The App PIN prompt for a PIN Signing Check and for revealing a Seed behind
@@ -66,11 +70,19 @@ export function PinPromptDialog({
   )
 }
 
-/** Gives the screens below it a `Prompts` whose PIN prompt is the dialog above.
- * One prompt at a time: a second request dismisses the first. */
+/** Gives the screens below it a `Prompts` whose PIN prompt is the dialog above,
+ * and whose `reviewSignedTransaction` is the show-before-sending screen
+ * (OS-FR-10). One prompt of each at a time: a second request dismisses the first.
+ *
+ * The review is always answered, because the in-flight depth stays raised until
+ * it is: Send is `true`; Do not send, Escape and the close control are `false`;
+ * and so are the Wallet's lock closing, the route changing (leaving), a newer
+ * review, and this provider unmounting. */
 export function PinPromptProvider({ children }: { children: ReactNode }) {
   const [request, setRequest] = useState<{ triesRemaining: number } | null>(null)
   const resolver = useRef<((pin: string | null) => void) | null>(null)
+  const [review, setReview] = useState<{ signed: SignedForReview; lockId: string | null; pathname: string } | null>(null)
+  const reviewResolver = useRef<((send: boolean) => void) | null>(null)
 
   const prompts = useMemo<Prompts>(
     () => ({
@@ -79,6 +91,16 @@ export function PinPromptProvider({ children }: { children: ReactNode }) {
           resolver.current?.(null)
           resolver.current = resolve
           setRequest({ triesRemaining: info.triesRemaining })
+        }),
+      reviewSignedTransaction: (signed) =>
+        new Promise<boolean>((resolve) => {
+          reviewResolver.current?.(false)
+          reviewResolver.current = resolve
+          // The lock of the Wallet being sent from, if it is open now: its
+          // closing answers "no".
+          const { wallets, activeWalletId, openLocks } = useAppStore.getState()
+          const lockId = wallets.find((w) => w.id === activeWalletId)?.lockId ?? null
+          setReview({ signed, lockId: lockId && openLocks[lockId] ? lockId : null, pathname: currentPathname() })
         }),
     }),
     [],
@@ -91,6 +113,9 @@ export function PinPromptProvider({ children }: { children: ReactNode }) {
       const resolve = resolver.current
       resolver.current = null
       resolve?.(null)
+      const answer = reviewResolver.current
+      reviewResolver.current = null
+      answer?.(false)
     },
     [],
   )
@@ -102,10 +127,36 @@ export function PinPromptProvider({ children }: { children: ReactNode }) {
     resolve?.(pin)
   }
 
+  function answerReview(send: boolean) {
+    const answer = reviewResolver.current
+    reviewResolver.current = null
+    // The blob leaves memory with the screen.
+    setReview(null)
+    answer?.(send)
+  }
+
+  // A lock while the screen is open: nothing is sent.
+  useEffect(() => {
+    const lockId = review?.lockId
+    if (!lockId) return undefined
+    return useAppStore.subscribe((s) => {
+      if (!s.openLocks[lockId]) answerReview(false)
+    })
+  }, [review])
+
+  // Leaving the screen (Back, a link, a typed URL): nothing is sent.
+  useEffect(() => {
+    if (!review) return undefined
+    return subscribeRoute(() => {
+      if (currentPathname() !== review.pathname) answerReview(false)
+    })
+  }, [review])
+
   return (
     <PromptsContext.Provider value={prompts}>
       {children}
       {request && <PinPromptDialog triesRemaining={request.triesRemaining} onSubmit={settle} onCancel={() => settle(null)} />}
+      {review && <SignedTransactionReview key={review.signed.hash} signed={review.signed} onAnswer={answerReview} />}
     </PromptsContext.Provider>
   )
 }

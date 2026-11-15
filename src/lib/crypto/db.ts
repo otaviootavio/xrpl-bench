@@ -1,5 +1,7 @@
 import { openDB, type DBSchema, type IDBPDatabase } from 'idb'
+import { isValidClassicAddress } from 'xrpl'
 import { isNetworkId, type NetworkId } from '@/lib/xrpl/networks'
+import type { SignedRecord } from '@/lib/signed-list'
 
 /** Seed Method (FR-62), the one declaration; `policy.ts` re-exports it. */
 export type SeedMethod = 'stored' | 'passkey-derived'
@@ -45,12 +47,48 @@ export interface WalletView {
   walletId: string
   network: NetworkId
   node?: string
-  /** The Account this view operates when it is not the Seed's own address: the
-   * key is that Account's Regular Key (AD-18, AD-29). Absent: the record's
-   * `address`. A claim only; whether the key still controls the Account is
-   * always read from the ledger, never from this field. */
+  /** FR-75's controlled view, written by builds before offline signing story 12.
+   * Never written now. A view that carries it is dropped, not converted
+   * (OS-FR-19, FR-95): `keystore.viewsOf` leaves it out, so it is not listed and
+   * signs nothing. Read only to tell it apart. */
   accountAddress?: string
+  /** "Signs for" (OS-FR-20, CAP-13): the Account this Wallet signs for when it is
+   * not the Seed's own address, set by the quiz's optional step, the Signs for
+   * plate or P-54. The key is that Account's Regular Key, a claim only, never read
+   * back from here as proof. Kept apart from `accountAddress` (FR-75's controlled
+   * views, dropped by story 12). Absent: the record's
+   * `address`. Never stored equal to it. */
+  signsFor?: string
+  /** The Wallet's kind (OS-FR-1, CAP-1). Absent is an Online Wallet, so every
+   * record made before the kind existed reads as Online with nothing rewritten.
+   * Only `offline` is stored on a Seed view: a Transmitter holds no Seed and has a
+   * record of its own (`TransmitterRecord`). A view with any other value
+   * is not shown (`keystore.toMetas`): it is never read as Online. */
+  kind?: 'offline'
+  /** "Show the signed transaction before sending" (OS-FR-10, CAP-6). Absent is
+   * off, so every Wallet, new and existing, starts with it off and nothing is
+   * rewritten. Only `true` is ever stored. It has no effect on an Offline
+   * Wallet, which never transmits (OS-FR-11). */
+  showBeforeSending?: true
+  /** The Was-online mark (OS-FR-7): this view's key was held by an Online Wallet,
+   * set by "Change to an offline wallet" and never removed while the Wallet
+   * exists, so a change to online and back keeps it. Never set by a create or an
+   * import: the app cannot know an imported Seed's past. Only `true` is stored;
+   * it is shown on an Offline Wallet only. */
+  wasOnline?: true
+  /** The highest validated ledger index this Offline Wallet accepted in a Data to
+   * Sign, and when (ms since epoch), for the highest-seen ledger warning
+   * (OS-FR-16, P-14). Public ledger facts, no secret; only raised, never lowered. */
+  ledgerSeen?: { index: number; at: number }
+  /** The signed list of this Offline Wallet (OS-FR-16, `signed-list.ts`): one
+   * record per signing, public ledger facts only, never a signed blob or a key.
+   * It survives a lock; only removing the Wallet removes it. */
+  signed?: SignedRecord[]
 }
+
+/** Every Wallet is one of three kinds (OS-FR-1). `online` is the absent
+ * `WalletView.kind`. */
+export type WalletKind = 'online' | 'offline' | 'transmitter'
 
 /** A Seed record. `id` is the Seed id and, for the first view, also its
  * walletId, so a persisted `activeWalletId` keeps working. Everything after
@@ -82,6 +120,88 @@ export interface StoredWallet {
   /** Edit counter for the compare-and-swap of `commitWalletEdit` (AD-28, AD-18):
    * absent is 0, +1 per edit of the checks. */
   rev?: number
+}
+
+/**
+ * A Transmitter Wallet (OS-FR-3): no Seed, no Signing Check, never signs. It lives
+ * in the `wallets` store beside the Seed records, told apart by `recordKind`, so
+ * no schema change is needed. `listStoredWallets` returns Seed records only; every
+ * caller that asks "what is on this device" also reads `listTransmitterRecords`.
+ *
+ * It sits on a lock of its own. `verifier` is known ciphertext under that lock's
+ * Open Key (SPEC Assumptions, OS-FR-3): the unlock is proven by decrypting it,
+ * never by deriving a key.
+ */
+export interface TransmitterRecord {
+  recordKind: 'transmitter'
+  /** Also the walletId: one record, one Wallet. */
+  id: string
+  label: string
+  createdAt: number
+  lockId: string
+  openCheck: OpenCheck
+  network: NetworkId
+  /** A custom Node's `wss://` URL, proven for `network` when it was saved. */
+  node?: string
+  /** "Sync to an address" (OS-FR-4). Absent: not synced. */
+  syncedAddress?: string
+  /** OS-FR-10, as on a `WalletView`: only `true` is stored. */
+  showBeforeSending?: true
+  verifier: { ivB64: string; ciphertextB64: string }
+}
+
+/** The plaintext a Transmitter's verifier holds: bound to its record id. */
+export const transmitterVerifierText = (id: string) => `xrpl-bench:transmitter:${id}:v1`
+
+export function isCompleteTransmitterRecord(w: unknown): w is TransmitterRecord {
+  if (!w || typeof w !== 'object') return false
+  const r = w as Record<string, unknown>
+  const str = (v: unknown) => typeof v === 'string' && v.length > 0
+  const verifier = r.verifier as Record<string, unknown> | undefined
+  return (
+    r.recordKind === 'transmitter' &&
+    str(r.id) &&
+    str(r.label) &&
+    typeof r.createdAt === 'number' &&
+    str(r.lockId) &&
+    isOpenCheck(r.openCheck) &&
+    isNetworkId(r.network) &&
+    (r.node === undefined || str(r.node)) &&
+    (r.syncedAddress === undefined || str(r.syncedAddress)) &&
+    !!verifier &&
+    str(verifier.ivB64) &&
+    str(verifier.ciphertextB64)
+  )
+}
+
+/** Every complete Transmitter record. */
+export async function listTransmitterRecords(): Promise<TransmitterRecord[]> {
+  const db = await getDb()
+  return ((await db.getAll('wallets')) as unknown[]).filter(isCompleteTransmitterRecord)
+}
+
+export async function putTransmitterRecord(record: TransmitterRecord): Promise<void> {
+  const db = await getDb()
+  await db.put('wallets', record as unknown as StoredWallet)
+}
+
+/** Reads one Transmitter record, applies `change` and writes it back in ONE
+ * transaction; `null` deletes it. A record that is not a complete Transmitter is
+ * never touched. */
+export async function mutateTransmitterRecord(id: string, change: (current: TransmitterRecord) => TransmitterRecord | null): Promise<void> {
+  const db = await getDb()
+  const tx = db.transaction('wallets', 'readwrite')
+  const done = tx.done
+  done.catch(() => {})
+  const current: unknown = await tx.store.get(id)
+  if (!isCompleteTransmitterRecord(current)) {
+    await done
+    return
+  }
+  const next = change(current)
+  if (next) await tx.store.put(next as unknown as StoredWallet)
+  else await tx.store.delete(id)
+  await done
 }
 
 /** `lock:<id>` in the `vault` store. Holds the derivation inputs a lock's keys
@@ -199,7 +319,13 @@ export const isSigningCheck = (v: unknown): v is SigningCheck => v === 'standard
 function isCompleteView(v: unknown): boolean {
   if (!v || typeof v !== 'object') return false
   const r = v as Record<string, unknown>
-  return typeof r.walletId === 'string' && r.walletId.length > 0 && isNetworkId(r.network)
+  return (
+    typeof r.walletId === 'string' &&
+    r.walletId.length > 0 &&
+    isNetworkId(r.network) &&
+    // A Signs-for value that is not an address is never read as the key's own Account (fail closed).
+    (r.signsFor === undefined || (typeof r.signsFor === 'string' && isValidClassicAddress(r.signsFor)))
+  )
 }
 
 /** FR-95: the one validity rule for a Seed record. Every field the screens read
@@ -233,9 +359,9 @@ export async function listStoredWallets(): Promise<StoredWallet[]> {
 }
 
 /** FR-93: a Wallet has one Network for life, so a record may hold at most one
- * plain (non-controlled) view. Controlled views carry `accountAddress`. */
+ * own view. A dropped FR-75 controlled view (`accountAddress`) is not one of them. */
 function assertOneOwnView(wallet: StoredWallet): void {
-  const plain = wallet.views.filter((v) => !v.accountAddress)
+  const plain = wallet.views.filter((v) => v.accountAddress === undefined)
   if (plain.length > 1) throw new Error('A wallet can only be on one network.')
 }
 
@@ -453,7 +579,7 @@ export async function putLockRecord(record: LockRecord): Promise<void> {
  *
  * Wrapped, in `keystore.ts` (a test checks every name below):
  *  - keystore: `createStoredWallet`, `createDerivedWallet`, `importStoredWallet`,
- *    `editChecks`, `removeWallet`
+ *    `editChecks`, `removeWallet`, `createTransmitterWallet`
  * Not wrapped, because each reaches a wrapped one: `restorePasskeyWallet`
  * (`createDerivedWallet`), `setLockAutoLock` (`editChecks`).
  */

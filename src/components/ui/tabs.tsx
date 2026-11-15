@@ -5,6 +5,28 @@ import { cn } from '@/lib/utils'
 const Tabs = TabsPrimitive.Root
 
 /**
+ * The `nav` layout per number of functions (EXPERIENCE "Screens by type"). Full
+ * class strings, never built from the number, so Tailwind emits each one.
+ *
+ * - 6 (an Online Wallet): two rows of three below `sm`, six columns from `sm` up.
+ * - 5 (an Offline Wallet): below `sm`, third-width keys that grow to fill their
+ *   row and wrap by label width, so "New transaction" (wider than a third at
+ *   320px) gives 2 + 2 + 1 at 320px and 2 + 3 at 390px; five columns from `sm` up.
+ * - 2 (an unsynced Transmitter Wallet): two columns at every width.
+ *
+ * Every function is present at 320px: nothing scrolls out of view and no label
+ * is shortened (docs/decisions.md §6.13, superseding §6.8). Below `sm` (and for
+ * two, at every width) the row is a wrapping flex of fixed-fraction triggers
+ * that cannot shrink under their own word, so at 200% text it falls to fewer
+ * per row instead of overprinting: a grid's `minmax(0,1fr)` columns cannot.
+ */
+const NAV_LAYOUT = {
+  6: 'flex w-full flex-wrap sm:grid sm:grid-cols-6 [&>*]:grow [&>*]:basis-1/3 [&>*]:min-w-fit sm:[&>*]:basis-auto sm:[&>*]:min-w-0',
+  5: 'flex w-full flex-wrap sm:grid sm:grid-cols-5 [&>*]:grow [&>*]:basis-1/3 [&>*]:min-w-fit sm:[&>*]:basis-auto sm:[&>*]:min-w-0',
+  2: 'flex w-full flex-wrap [&>*]:grow [&>*]:basis-1/2 [&>*]:min-w-fit',
+} as const
+
+/**
  * The function selector.
  *
  * A flat row of engraved legends cut into the chassis, with the selected
@@ -13,12 +35,12 @@ const Tabs = TabsPrimitive.Root
  * one stock component left inside a committed panel.
  *
  * Responsive behaviour stays in the primitive, never at the call site
- * (docs/decisions.md §6.8/§6.13): two rows of three below `sm`, six equal
- * columns from `sm` up, and no fixed height so it can never clip its own
- * triggers. Every function is reachable at 320px without scrolling.
+ * (docs/decisions.md §6.8/§6.13): the layout per count is `NAV_LAYOUT`, with
+ * no fixed height so it can never clip its own triggers. Every function is
+ * reachable at 320px without scrolling.
  */
 /**
- * `nav` is the app's six-function selector. `inline` is a compact filter row
+ * `nav` is the app's function selector (six, five or two functions, `count`). `inline` is a compact filter row
  * (History's sent/received). They are different controls, so the distinction
  * lives here as a variant rather than as a call-site override that would fight
  * the primitive (docs/decisions.md §4).
@@ -26,20 +48,18 @@ const Tabs = TabsPrimitive.Root
 function TabsList({
   className,
   variant = 'nav',
+  count = 6,
   ...props
-}: React.ComponentProps<typeof TabsPrimitive.List> & { variant?: 'nav' | 'inline' }) {
+}: React.ComponentProps<typeof TabsPrimitive.List> & {
+  variant?: 'nav' | 'inline'
+  /** `nav` only: how many functions the selector holds. */
+  count?: keyof typeof NAV_LAYOUT
+}) {
   return (
     <TabsPrimitive.List
       className={cn(
         'items-stretch border-b border-border text-muted-foreground',
-        // Two rows of three below `sm`, six columns from `sm` up. Every
-        // function is present at 320px: nothing scrolls out of view and no
-        // label is shortened (docs/decisions.md §6.13, superseding §6.8). Below
-        // `sm` the row is a wrapping flex of third-width triggers that cannot
-        // shrink under their own word, so at 200% text it falls to fewer per
-        // row instead of overprinting: a grid's `minmax(0,1fr)` columns cannot.
-        variant === 'nav' &&
-          'flex w-full flex-wrap sm:grid sm:grid-cols-6 [&>*]:grow [&>*]:basis-1/3 [&>*]:min-w-fit sm:[&>*]:basis-auto sm:[&>*]:min-w-0',
+        variant === 'nav' && NAV_LAYOUT[count],
         variant === 'inline' && 'inline-flex',
         className,
       )}

@@ -2,7 +2,7 @@ import { navigate } from '@/lib/route'
 
 /**
  * Where focus goes when a task screen opened from the Local settings tab returns to it (Story 14). Edit
- * checks, Let another wallet sign and Two-device signing are opened only from the Local settings tab, so
+ * checks and the two changes of kind are opened only from the Local settings tab, so
  * the Back label is always `Back to Wallet` (`WalletScreens`) and what remains to remember is the
  * key that opened the screen. It is module state, never carried in the URL or the history state
  * (the route module's rule: a path holds a screen and a walletId and nothing else). It holds no

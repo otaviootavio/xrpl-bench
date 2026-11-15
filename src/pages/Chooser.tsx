@@ -3,7 +3,8 @@ import { useQueryClient } from '@tanstack/react-query'
 import { WalletCard } from '@/components/wallet/WalletCard'
 import { Button } from '@/components/ui/button'
 import { consumeAdded } from '@/lib/chooser-signals'
-import { ADD_WALLET_PATH, navigate } from '@/lib/route'
+import { ADD_TRANSMITTER_PATH, ADD_WALLET_PATH, navigate } from '@/lib/route'
+import { ADD_TRANSMITTER } from '@/lib/transmitter-words'
 import { tearDownLock } from '@/lib/teardown'
 import { useAppStore } from '@/store/app-store'
 import { listWalletCards, type OpenCard } from '@/store/wallet-groups'
@@ -97,6 +98,10 @@ export function Chooser() {
       </ul>
       <Button type="button" variant="outline" className="h-auto min-h-8 w-full sm:w-fit whitespace-normal py-1 pointer-coarse:min-h-11" onClick={() => navigate(ADD_WALLET_PATH)}>
         Add wallet
+      </Button>
+      {/* P-2 (OS-FR-3): a keyless Wallet, its own quiz. */}
+      <Button type="button" variant="outline" className="h-auto min-h-8 w-full sm:w-fit whitespace-normal py-1 pointer-coarse:min-h-11" onClick={() => navigate(ADD_TRANSMITTER_PATH)}>
+        {ADD_TRANSMITTER}
       </Button>
     </section>
   )

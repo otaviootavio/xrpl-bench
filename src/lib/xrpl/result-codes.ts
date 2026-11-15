@@ -1,3 +1,5 @@
+import { LEDGER_REFUSAL } from '@/lib/offline-round-words'
+
 // Plain-language mapping for common transaction result codes — see
 // docs/user-stories/sending-payments.md US-6 and transaction-history.md US-2.
 // Raw codes are always still shown alongside these (advanced/debug detail).
@@ -17,6 +19,8 @@ const MESSAGES: Record<string, string> = {
   temBAD_AMOUNT: 'The amount entered is not valid.',
   temDST_IS_SRC: "You can't send a payment to your own address as the destination.",
   temREDUNDANT: 'This trust line change has no effect (limit already set to this value).',
+  // P-31 (offline signing story 11, OS-FR-21): the key-action ledger refusals, on every route.
+  ...LEDGER_REFUSAL,
 }
 
 export function describeResultCode(code: string): string {
@@ -27,5 +31,10 @@ export function describeResultCode(code: string): string {
  * choke point's `unknown` outcome). It may have done what was asked, so it is
  * never worded as a failure or as "not sent": the operator checks the hash
  * before trying again, or pays twice. */
+/** A submit that threw: it may or may not have reached the ledger (shipped by
+ * two-device signing, retired by story 12; the Transmit step's words). Never "not sent". */
+export const UNCONFIRMED_SUBMIT_WORDS =
+  'The transaction may have been sent, but the wallet could not confirm what happened. Check the account’s history before building another, and do not send this one again.'
+
 export const UNKNOWN_OUTCOME_WORDS =
   'Outcome unknown. The transaction reached a validated ledger, but its result could not be read. Check it by its hash before trying again.'

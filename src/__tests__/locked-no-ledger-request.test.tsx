@@ -38,8 +38,8 @@ vi.mock('@/lib/crypto/lock', () => ({
 vi.mock('@/lib/crypto/auth', () => ({ wipeVault: async () => {} }))
 vi.mock('@/lib/crypto/keystore', () => ({
   listWallets: async () => [
-    { id: 'w1', seedId: 'w1', lockId: 'X', label: 'Alpha', address: 'rALPHA', createdAt: 1, network: 'mainnet', algorithm: 'ed25519', openCheck: 'pin', signingCheck: 'standard' },
-    { id: 'w2', seedId: 'w2', lockId: 'Y', label: 'Beta', address: 'rBETA', createdAt: 1, network: 'testnet', algorithm: 'ed25519', openCheck: 'pin', signingCheck: 'standard' },
+    { id: 'w1', seedId: 'w1', lockId: 'X', label: 'Alpha', address: 'rALPHA', createdAt: 1, network: 'mainnet', algorithm: 'ed25519', openCheck: 'pin', signingCheck: 'standard', kind: 'online' },
+    { id: 'w2', seedId: 'w2', lockId: 'Y', label: 'Beta', address: 'rBETA', createdAt: 1, network: 'testnet', algorithm: 'ed25519', openCheck: 'pin', signingCheck: 'standard', kind: 'online' },
   ],
 }))
 

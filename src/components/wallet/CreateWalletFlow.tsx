@@ -19,8 +19,14 @@ import {
 import { answerRows, formatNetwork, walkQuestions } from '@/components/wallet/walk-questions'
 import { defaultSigning, NETWORK_RESET_NOTE, preselection } from '@/components/wallet/network-reset'
 import { QuizShell, type QuizStep } from '@/components/wallet/QuizShell'
+import { AcknowledgedWarning, KindChoice, type NewWalletKind } from '@/components/wallet/KindChoice'
+import { ONE_SEED_ONE_NETWORK, READ_EACH_WARNING, TEXT_E } from '@/lib/offline-wallet-words'
 import { SeedReveal } from '@/components/wallet/SeedReveal'
 import { WrittenSeedConfirm } from '@/components/wallet/WrittenSeedConfirm'
+import { signsForDraftState, signsForIds } from '@/lib/signs-for'
+import { transmitterSyncedTo } from '@/lib/same-address'
+import { SAME_ADDRESS_TRANSMITTER_HERE } from '@/lib/transmitter-words'
+import { WarningSentence } from '@/components/wallet/WarningSentence'
 import { createDerivedWallet, createStoredWallet, describeCheckFailure, importStoredWallet, listWallets, type WalletMeta } from '@/lib/crypto/keystore'
 import { hasAppPin, startLockSession } from '@/lib/crypto/lock'
 import { triesRemaining } from '@/lib/crypto/pin'
@@ -68,10 +74,13 @@ export interface ImportSource {
   seedTyped: boolean
   /** Parse, duplicate probe, master-key check and its warning, in that order. A refusal
    * with `at: 'seed'` is about the typed Seed itself: the flow returns to the field. */
-  acquire: (choice: { network: NetworkId; node?: string }) => Promise<{ status: 'ok'; seed: string } | { status: 'refused'; reason: string; at?: 'seed' } | { status: 'cancelled' }>
+  acquire: (choice: AcquireChoice) => Promise<{ status: 'ok'; seed: string } | { status: 'refused'; reason: string; at?: 'seed' } | { status: 'cancelled' }>
   /** Drops the Seed from the host's ref and field. */
   clear: () => void
 }
+
+/** What `acquire` is told: `offline` makes no ledger read (an Offline Wallet never reads, OS-FR-2). */
+export type AcquireChoice = { network: NetworkId; node?: string; offline?: boolean; signsFor?: string }
 
 export interface CreateWalletFlowProps {
   /** Present: this flow imports a Seed instead of generating one. */
@@ -170,6 +179,22 @@ function CreateWalletForm({ capability, onDone, onInProgressChange, defaultLabel
   const [pinError, setPinError] = useState<{ field: 'pin' | 'confirm'; text: string } | null>(null)
   const [backedUp, setBackedUp] = useState(false)
   const [passkeyChoice, setPasskeyChoice] = useState<'new' | 'existing'>('new')
+  // The optional Signs-for step (OS-FR-20): the box and the typed Account.
+  const [signsForOn, setSignsForOn] = useState(false)
+  const [signsForDraft, setSignsForDraft] = useState('')
+  const signsForState = signsForDraftState(signsForDraft)
+  // A ticked box needs an address that checks before Next or Create.
+  const signsForBlocked = signsForOn && signsForState !== 'valid'
+  const signsFor = signsForOn && signsForState === 'valid' ? signsForDraft.trim() : undefined
+  // Step 1's kind (OS-FR-2). No default: the consequences are read before a choice.
+  const [kind, setKind] = useState<NewWalletKind | null>(null)
+  // The P-6 ticks under Text B and Text E. A kind change clears both.
+  const [textBRead, setTextBRead] = useState(false)
+  const [textERead, setTextERead] = useState(false)
+  const [ticksReset, setTicksReset] = useState(false)
+  const offline = kind === 'offline'
+  // Every WARNING on step 1 needs its own tick: Text B for Offline, and Text E as well on an Import.
+  const warningsUnread = offline && (!textBRead || (!!importSource && !textERead))
   const [derivedBackup, setDerivedBackup] = useState<DerivedBackup | null>(null)
   // The host the build's rpId is bound to: the one the domain warning names and
   // the Mainnet rule reads. Never read from the page's location here. When it
@@ -252,7 +277,9 @@ function CreateWalletForm({ capability, onDone, onInProgressChange, defaultLabel
 
   const options = describeOptions({
     network,
-    seedMethod,
+    // An Offline Wallet always uses a Stored Seed (OS-FR-8); the same policy otherwise, so
+    // the Mainnet safeguards are exactly the Online ones.
+    seedMethod: offline ? 'stored' : seedMethod,
     openCheck,
     autoLockMinutes,
     signing,
@@ -300,10 +327,47 @@ function CreateWalletForm({ capability, onDone, onInProgressChange, defaultLabel
     setNodeMode('builtin')
     setVerifiedNode(null)
     setNodeReason(null)
+    setSignsForOn(false)
+    setSignsForDraft('')
     setResetNote(NETWORK_RESET_NOTE)
     // The reset answers were never walked: Next goes step by step, not back to the Review.
     setReturnToReview(false)
     setError(null)
+  }
+
+  /** Step 1's kind. The text below the radios changes, so its ticks start again (P-60).
+   * Answers only an Online Wallet has go back to what an Offline one uses, and the
+   * next forward move walks the steps rather than returning to the Review: a walk
+   * that gained Node and Seed Method must ask them. */
+  function changeKind(next: NewWalletKind) {
+    if (next === kind) return
+    // Remembered until the boxes are ticked again; shown only where there are boxes (Offline).
+    if (textBRead || textERead) setTicksReset(true)
+    setTextBRead(false)
+    setTextERead(false)
+    setKind(next)
+    setReturnToReview(false)
+    setError(null)
+    if (next === 'offline') {
+      if (seedMethod !== 'stored') {
+        setSeedMethod('stored')
+        setSigning(defaultSigning(network, capability))
+      }
+      setNodeMode('builtin')
+      setNodeDraft('')
+      setVerifiedNode(null)
+      setNodeReason(null)
+    }
+  }
+
+  /** P-60 stays until every box the current step needs is ticked again. */
+  function readWarning(which: 'b' | 'e') {
+    return (read: boolean) => {
+      ;(which === 'b' ? setTextBRead : setTextERead)(read)
+      const b = which === 'b' ? read : textBRead
+      const e = which === 'e' ? read : textERead
+      if (b && (!importSource || e)) setTicksReset(false)
+    }
   }
 
   async function testNode() {
@@ -340,7 +404,7 @@ function CreateWalletForm({ capability, onDone, onInProgressChange, defaultLabel
   }
 
   async function handleCreate() {
-    if (busy || !options.combination.ok || labelError) return
+    if (busy || !options.combination.ok || labelError || kind === null || warningsUnread || signsForBlocked) return
     setError(null)
     setSeedError(null)
     setPinError(null)
@@ -350,7 +414,7 @@ function CreateWalletForm({ capability, onDone, onInProgressChange, defaultLabel
       setErrorTick((t) => t + 1)
       return
     }
-    if (nodeMode === 'custom' && !verifiedNode) {
+    if (!offline && nodeMode === 'custom' && !verifiedNode) {
       setError('Test the custom Node first, or use the built-in Nodes.')
       setErrorTick((t) => t + 1)
       return
@@ -380,7 +444,8 @@ function CreateWalletForm({ capability, onDone, onInProgressChange, defaultLabel
     let created = false
     const nothingDone = importSource ? 'Nothing was imported.' : 'Nothing was created.'
     try {
-      if (!importSource && seedMethod === 'passkey-derived') {
+      // Never for an Offline Wallet: it always uses a Stored Seed (OS-FR-8).
+      if (!importSource && !offline && seedMethod === 'passkey-derived') {
         const derived = await createDerivedWallet(
           {
             label: newName,
@@ -391,6 +456,7 @@ function CreateWalletForm({ capability, onDone, onInProgressChange, defaultLabel
             autoLockMinutes,
             passkeyChoice,
             passkey: capability,
+            ...(signsFor ? { signsFor } : {}),
           },
           { pin, confirmWrittenSeed, appPinExpected: appPin?.exists === true },
         )
@@ -414,12 +480,14 @@ function CreateWalletForm({ capability, onDone, onInProgressChange, defaultLabel
         }
         return
       }
-      const nodeChoice = nodeMode === 'custom' && verifiedNode ? { node: verifiedNode } : {}
+      // An Offline Wallet has no Node (OS-FR-2): nothing Node-shaped is passed for it.
+      const nodeChoice = !offline && nodeMode === 'custom' && verifiedNode ? { node: verifiedNode } : {}
+      const kindChoice = { ...(offline ? { kind: 'offline' as const } : {}), ...(signsFor ? { signsFor } : {}) }
       const ctx = { pin, confirmWrittenSeed, appPinExpected: appPin?.exists === true }
       let result: Awaited<ReturnType<typeof createStoredWallet>> | Awaited<ReturnType<typeof importStoredWallet>>
       if (importSource) {
         // Order (AD-39): parse, duplicate probe, master-key check, then the keystore.
-        const got = await importSource.acquire({ network, ...nodeChoice })
+        const got = await importSource.acquire({ network, ...nodeChoice, ...(offline ? { offline: true } : {}), ...(signsFor ? { signsFor } : {}) })
         if (got.status !== 'ok') {
           if (got.status === 'refused' && got.at === 'seed') {
             // The reason shows beside the Seed field, which is on step 1.
@@ -429,9 +497,9 @@ function CreateWalletForm({ capability, onDone, onInProgressChange, defaultLabel
           else setError('Cancelled. Nothing was imported.')
           return
         }
-        result = await importStoredWallet({ label: newName, network, ...nodeChoice, openCheck, autoLockMinutes, signing, seed: got.seed, passkey: capability }, ctx)
+        result = await importStoredWallet({ label: newName, network, ...nodeChoice, openCheck, autoLockMinutes, signing, seed: got.seed, passkey: capability, ...kindChoice }, ctx)
       } else {
-        result = await createStoredWallet({ label: newName, network, ...nodeChoice, algorithm, openCheck, autoLockMinutes, signing, passkey: capability }, ctx)
+        result = await createStoredWallet({ label: newName, network, ...nodeChoice, algorithm, openCheck, autoLockMinutes, signing, passkey: capability, ...kindChoice }, ctx)
       }
       switch (result.status) {
         case 'ok':
@@ -466,9 +534,10 @@ function CreateWalletForm({ capability, onDone, onInProgressChange, defaultLabel
           setError(`${describeCheckFailure(result)} ${nothingDone}`)
           break
       }
-    } catch (err: unknown) {
+    } catch {
       // An import never shows a library message: it is not ours to promise it holds no Seed.
-      setError(importSource ? 'Could not import the wallet. Nothing was imported.' : err instanceof Error ? err.message : 'Could not create the wallet. Nothing was created.')
+      // Never a thrown message: it is developer text (OfflineWalletNodeError, a storage error), not approved words.
+      setError(importSource ? 'Could not import the wallet. Nothing was imported.' : 'Could not create the wallet. Nothing was created.')
     } finally {
       importSource?.clear()
       clearPinFields()
@@ -594,7 +663,7 @@ function CreateWalletForm({ capability, onDone, onInProgressChange, defaultLabel
   const verdict = options.combination
 
   const createButton = (
-    <Button type="button" aria-disabled={!verdict.ok || labelError || (needsPin && pinReadFailed) ? true : undefined} aria-describedby={!verdict.ok ? `${group}-blocked` : labelError ? `${group}-label-error` : network === 'mainnet' ? `${group}-consequence` : undefined} disabled={busy} onClick={() => void handleCreate()}>
+    <Button type="button" aria-disabled={!verdict.ok || labelError || (needsPin && pinReadFailed) || kind === null || warningsUnread || signsForBlocked ? true : undefined} aria-describedby={!verdict.ok ? `${group}-blocked` : labelError ? `${group}-label-error` : network === 'mainnet' ? `${group}-consequence` : undefined} disabled={busy} onClick={() => void handleCreate()}>
       {busy ? (importSource ? 'Importing…' : 'Creating…') : importSource ? 'Import wallet' : 'Create wallet'}
     </Button>
   )
@@ -643,12 +712,29 @@ function CreateWalletForm({ capability, onDone, onInProgressChange, defaultLabel
     onSigning: (kind) => {
       setSigning(kind)
     },
+    signsForOn,
+    onSignsForOn: setSignsForOn,
+    signsForDraft,
+    onSignsForDraft: setSignsForDraft,
   }
 
-  const walk = walkQuestions(!!importSource)
+  const walk = walkQuestions(!!importSource, kind)
+  const kindLegendId = `${group}-kind-legend`
+  const unreadId = `${group}-unread`
   const quizSteps: QuizStep[] = [
-    { id: 'name-network', title: pathChoice ? 'Create or import' : 'Name and network', blocked: !!labelError || (!!importSource && !importSource.seedTyped) },
-    ...walk.map((q) => ({ id: q.id, title: q.title })),
+    {
+      id: 'name-network',
+      title: pathChoice ? 'Create or import' : 'Name and network',
+      blocked: !!labelError || (!!importSource && !importSource.seedTyped) || kind === null || warningsUnread,
+      // The reason Next points at: the unanswered question itself, then P-7.
+      ...(kind === null ? { blockedReasonId: kindLegendId } : warningsUnread ? { blockedReasonId: unreadId } : {}),
+    },
+    ...walk.map((q) =>
+      q.id === 'signs-for'
+        ? // Next points at the visible reason: the shipped words for a bad address, else the field's own note (P-40).
+          { id: q.id, title: q.title, blocked: signsForBlocked, ...(signsForBlocked ? { blockedReasonId: signsForState === 'invalid' ? signsForIds(group).error : signsForIds(group).note } : {}) }
+        : { id: q.id, title: q.title },
+    ),
     { id: 'review', title: 'Review' },
   ]
   const reviewIndex = quizSteps.length - 1
@@ -705,9 +791,28 @@ function CreateWalletForm({ capability, onDone, onInProgressChange, defaultLabel
   return (
     <QuizShell steps={quizSteps} index={quizIndex} onIndex={goToIndex} busy={busy} actionHost={actionHost} finalAction={createButton}>
       {pathChoice && quizIndex === 0 && <PathChoice group={group} path={{ ...pathChoice, disabled: pathChoice.disabled || busy }} />}
+      {quizIndex === 0 && (
+        <KindChoice
+          group={group}
+          kind={kind}
+          onKind={changeKind}
+          legendId={kindLegendId}
+          warningRead={textBRead}
+          onWarningRead={readWarning('b')}
+          ticksReset={ticksReset && offline}
+          disabled={busy}
+        />
+      )}
+      {/* Text E sits directly above the Seed field (OS-FR-7). */}
+      {importSource && offline && quizIndex === 0 && <AcknowledgedWarning warning={TEXT_E.warning} read={textERead} onRead={readWarning('e')} disabled={busy} />}
       {/* Mounted once and only hidden elsewhere: unmounting would clear a typed Seed. */}
       {importSource && <div hidden={quizIndex !== 0} onChange={() => setSeedError(null)}>{importSource.field(busy, seedError)}</div>}
       {quizIndex === 0 && <NameAndNetworkStep {...questionProps} resetNote={resetNote} />}
+      {quizIndex === 0 && warningsUnread && (
+        <p id={unreadId} className="text-sm text-text-warning">
+          {READ_EACH_WARNING}
+        </p>
+      )}
       {walkQuestion && network === 'mainnet' && (
         <p className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
           <Badge variant="warning">Real funds</Badge>
@@ -720,7 +825,7 @@ function CreateWalletForm({ capability, onDone, onInProgressChange, defaultLabel
 
       {quizIndex === reviewIndex && (
         <ReviewStep
-          rows={answerRows(questionProps, pathChoice?.value)}
+          rows={answerRows(questionProps, pathChoice?.value, kind)}
           onChange={changeAnswer}
           disabled={busy}
           footer={
@@ -730,6 +835,10 @@ function CreateWalletForm({ capability, onDone, onInProgressChange, defaultLabel
                 {createConsequence(network, !!importSource)}
               </p>
               {fact && <p className="text-sm text-muted-foreground">{fact}</p>}
+              <OneSeedOneNetwork />
+              {/* P-8, second form (OS-FR-3, OS-FR-20): an Offline create that signs for an Account a
+                  Transmitter here is synced to. Warned, never refused. An import warns in its own step. */}
+              {offline && !importSource && signsFor && transmitterSyncedTo(storedWallets, signsFor) && <WarningSentence words={SAME_ADDRESS_TRANSMITTER_HERE} />}
             </>
           }
         />
@@ -793,5 +902,19 @@ function CreateWalletForm({ capability, onDone, onInProgressChange, defaultLabel
         </div>
       )}
     </QuizShell>
+  )
+}
+
+/** OS-FR-23, on the Review for every kind that holds a Seed, before the Seed is
+ * saved. A caution Alert; its first sentence is the lit legend, the words unchanged. */
+function OneSeedOneNetwork() {
+  const split = ONE_SEED_ONE_NETWORK.indexOf('. ') + 1
+  return (
+    <Alert variant="warning" role="none">
+      <AlertTitle className="max-w-full [overflow-wrap:break-word]">
+        <span className="min-w-0">{ONE_SEED_ONE_NETWORK.slice(0, split)}</span>
+      </AlertTitle>
+      <AlertDescription className="break-words">{ONE_SEED_ONE_NETWORK.slice(split + 1)}</AlertDescription>
+    </Alert>
   )
 }

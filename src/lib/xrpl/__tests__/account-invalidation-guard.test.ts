@@ -222,7 +222,8 @@ describe('the account-invalidation guard on the real tree', () => {
         'src/hooks/useAccountLiveUpdates.ts',
         'src/pages/tabs/SendTab.tsx',
         'src/pages/tabs/TrustLinesTab.tsx',
-        'src/pages/tabs/BalancesTab.tsx',
+        // The faucet, shared by Balances and the Transmitter's Account (issue #71).
+        'src/components/wallet/FaucetButton.tsx',
       ]),
     )
   })

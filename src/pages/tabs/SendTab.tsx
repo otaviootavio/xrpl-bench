@@ -400,7 +400,7 @@ export function SendTab() {
     // A new attempt: what the last one reported (a refusal, an expiry) is not current.
     toast.resolve('send')
     try {
-      const base = await signingHandleFor(wallet.id, { openKey: vaultKey, prompts })
+      const base = await signingHandleFor(wallet.id, { openKey: vaultKey, prompts }, wallet.address ?? '')
       // A Cancel during the unlock: go no further, not even into autofill.
       if (attempt.cancelled) throw new PreflightAbort('cancelled')
 

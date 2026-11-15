@@ -153,7 +153,7 @@ export function TrustLinesTab() {
     // A new attempt: what the last one reported is not current.
     toast.resolve('trustline')
     try {
-      const signing = await signingHandleFor(wallet.id, { openKey: vaultKey, prompts })
+      const signing = await signingHandleFor(wallet.id, { openKey: vaultKey, prompts }, wallet.address ?? '')
       const result = await submitTrustSet(network, signing, { currency: currencyArg, issuer: issuerArg, limit: limitArg, feeDrops }, node)
       if (result.status === 'validated') {
         toast.success('Trust line updated.')

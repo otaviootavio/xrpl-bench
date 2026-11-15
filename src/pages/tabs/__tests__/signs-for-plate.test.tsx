@@ -9,7 +9,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
  * write and the lock read. Online and Offline Wallets have it; a change of the
  * Account drops the old Account's cached reads on an Online Wallet.
  */
-const h = vi.hoisted(() => ({ setSignsFor: vi.fn(), lockInfo: vi.fn() }))
+const h = vi.hoisted(() => ({ setSignsFor: vi.fn(), lockInfo: vi.fn(), clearRound: vi.fn() }))
 vi.mock('@/lib/crypto/auth', () => ({ wipeVault: async () => {} }))
 vi.mock('@/lib/crypto/lock', () => ({
   endLockSession: async () => {},
@@ -23,6 +23,11 @@ vi.mock('@/lib/xrpl/client', () => ({ disconnectAllClients: () => {}, retireNode
 vi.mock('@/lib/crypto/keystore', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/lib/crypto/keystore')>()
   return { ...actual, setSignsFor: (...a: unknown[]) => h.setSignsFor(...a) }
+})
+
+vi.mock('@/lib/offline-round', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/lib/offline-round')>()
+  return { ...actual, clearRound: (...a: unknown[]) => h.clearRound(...a) }
 })
 
 import { WalletTab } from '../WalletTab'
@@ -53,6 +58,7 @@ const plate = () => screen.getByRole('heading', { name: 'This key signs for anot
 
 beforeEach(() => {
   h.setSignsFor.mockReset()
+  h.clearRound.mockReset()
   h.lockInfo.mockReset().mockResolvedValue({ id: 'L', openCheck: 'pin', autoLockMinutes: 5, pin: true, passkey: false })
 })
 afterEach(cleanup)
@@ -83,6 +89,8 @@ describe('the Signs for plate (OS-FR-20)', () => {
     await act(async () => void fireEvent.click(within(plate()).getByRole('button', { name: 'Set it' })))
     expect(h.setSignsFor).toHaveBeenCalledWith('w', X)
     await waitFor(() => expect(within(plate()).getByText(`This wallet signs for ${X}.`)).toBeTruthy())
+    // The kept round was for the old Account: erased (frozen matrix row).
+    expect(h.clearRound).toHaveBeenCalledWith('w')
     await act(async () => void fireEvent.click(within(plate()).getByRole('button', { name: 'Remove the address' })))
     expect(h.setSignsFor).toHaveBeenLastCalledWith('w', null)
     await waitFor(() => expect(within(plate()).queryByText(/This wallet signs for/)).toBeNull())
@@ -123,5 +131,15 @@ describe('the Signs for plate (OS-FR-20)', () => {
     useAppStore.setState({ wallets: [{ id: 'w', seedId: 'w', lockId: 'L', label: 'Send', createdAt: 1, network: 'testnet', openCheck: 'pin', kind: 'transmitter', address: null }], openLocks: { L: {} } } as never)
     mount()
     expect(screen.queryByRole('heading', { name: 'This key signs for another account' })).toBeNull()
+  })
+
+  it('P-8 second form when an Offline Wallet would sign for an Account a Transmitter here is synced to (warned, Set it stays)', () => {
+    const transmitter = { id: 't', seedId: 't', lockId: 'LT', label: 'Carrier', createdAt: 1, network: 'testnet', openCheck: 'pin', kind: 'transmitter', address: X }
+    useAppStore.setState({ wallets: [meta('offline'), transmitter], openLocks: { L: {} } } as never)
+    mount()
+    expect(within(plate()).queryByText(/^WARNING: A Transmitter wallet/)).toBeNull()
+    fireEvent.change(within(plate()).getByRole('textbox', { name: 'Address' }), { target: { value: X } })
+    expect(within(plate()).getByText(/^WARNING: A Transmitter wallet on this device has this address\./)).toBeTruthy()
+    expect(within(plate()).getByRole('button', { name: 'Set it' }).getAttribute('aria-disabled')).toBeNull()
   })
 })

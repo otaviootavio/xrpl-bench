@@ -9,11 +9,16 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
  * validated Regular Key change, the key's Wallet here is offered "Set it" · "Not now";
  * a key elsewhere gets the second form. Faked: the keystore write.
  */
-const h = vi.hoisted(() => ({ setSignsFor: vi.fn() }))
+const h = vi.hoisted(() => ({ setSignsFor: vi.fn(), clearRound: vi.fn() }))
 vi.mock('idb-keyval', () => ({ get: async () => undefined, set: async () => {}, del: async () => {} }))
 vi.mock('@/lib/crypto/keystore', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/lib/crypto/keystore')>()
   return { ...actual, setSignsFor: (...a: unknown[]) => h.setSignsFor(...a) }
+})
+
+vi.mock('@/lib/offline-round', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/lib/offline-round')>()
+  return { ...actual, clearRound: (...a: unknown[]) => h.clearRound(...a) }
 })
 
 import { ResultView } from '../TransmitStep'
@@ -44,12 +49,13 @@ function mount(result: StepResult) {
 
 beforeEach(() => {
   h.setSignsFor.mockReset()
+  h.clearRound.mockReset()
 })
 afterEach(cleanup)
 
 describe('P-54 (OS-FR-20)', () => {
   it('the key is a Wallet here: "Set the wallet {name} to sign for this account?"; Set it sets it and the offer closes', async () => {
-    useAppStore.setState({ wallets: [keyWallet()] } as never)
+    useAppStore.setState({ wallets: [keyWallet()], openLocks: { L: {} } } as never)
     h.setSignsFor.mockResolvedValue(keyWallet(X))
     mount(validated({ account: X, regularKey: K, network: 'testnet' }))
     expect(screen.getByText('Set the wallet Cold key to sign for this account?')).toBeTruthy()
@@ -57,10 +63,31 @@ describe('P-54 (OS-FR-20)', () => {
     expect(h.setSignsFor).toHaveBeenCalledWith('k', X)
     await waitFor(() => expect(screen.queryByText(/Set the wallet/)).toBeNull())
     expect(useAppStore.getState().wallets[0]).toMatchObject({ address: X })
+    // The Offline Wallet's kept round was for the old Account: erased (frozen matrix row).
+    expect(h.clearRound).toHaveBeenCalledWith('k')
+  })
+
+  it('P-8 second form when the Offline key Wallet would sign for an Account a Transmitter here is synced to (warned, Set it stays)', () => {
+    const transmitter = { id: 't', seedId: 't', lockId: 'LT', label: 'Carrier', createdAt: 1, network: 'testnet', openCheck: 'pin', kind: 'transmitter', address: X }
+    useAppStore.setState({ wallets: [keyWallet(), transmitter], openLocks: { L: {} } } as never)
+    mount(validated({ account: X, regularKey: K, network: 'testnet' }))
+    expect(screen.getByText(/^WARNING: A Transmitter wallet on this device has this address\./)).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Set it' })).toBeTruthy()
+    cleanup()
+    // An Online key Wallet: no P-8 (the risk is an offline key on a connected device).
+    useAppStore.setState({ wallets: [{ ...keyWallet(), kind: 'online' }, transmitter], openLocks: { L: {} } } as never)
+    mount(validated({ account: X, regularKey: K, network: 'testnet' }))
+    expect(screen.queryByText(/^WARNING: A Transmitter wallet/)).toBeNull()
+  })
+
+  it('a key Wallet on a closed lock is not offered: the second form', () => {
+    useAppStore.setState({ wallets: [keyWallet()], openLocks: {} } as never)
+    mount(validated({ account: X, regularKey: K, network: 'testnet' }))
+    expect(screen.getByText('In the wallet that has this key, set the key to sign for this account.')).toBeTruthy()
   })
 
   it('Not now closes it and writes nothing', () => {
-    useAppStore.setState({ wallets: [keyWallet()] } as never)
+    useAppStore.setState({ wallets: [keyWallet()], openLocks: { L: {} } } as never)
     mount(validated({ account: X, regularKey: K, network: 'testnet' }))
     fireEvent.click(screen.getByRole('button', { name: 'Not now' }))
     expect(screen.queryByText(/Set the wallet/)).toBeNull()
@@ -68,7 +95,7 @@ describe('P-54 (OS-FR-20)', () => {
   })
 
   it('a refusal by FR-93 shows P-35 and keeps the offer', async () => {
-    useAppStore.setState({ wallets: [keyWallet()] } as never)
+    useAppStore.setState({ wallets: [keyWallet()], openLocks: { L: {} } } as never)
     h.setSignsFor.mockImplementation(async () => {
       throw new SignsForRefusedError('duplicate', 'Another wallet on this device has this address on Testnet.')
     })
@@ -86,7 +113,7 @@ describe('P-54 (OS-FR-20)', () => {
   })
 
   it('no offer for any other outcome', () => {
-    useAppStore.setState({ wallets: [keyWallet()] } as never)
+    useAppStore.setState({ wallets: [keyWallet()], openLocks: { L: {} } } as never)
     mount(validated())
     expect(screen.queryByText(/sign for this account/)).toBeNull()
   })

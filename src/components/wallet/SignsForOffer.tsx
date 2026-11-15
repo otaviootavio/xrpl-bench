@@ -4,7 +4,10 @@ import { Button } from '@/components/ui/button'
 import { setSignsFor, SignsForRefusedError, type KeyWalletMeta } from '@/lib/crypto/keystore'
 import { notify } from '@/lib/notify'
 import { NOT_NOW, SET_IT, SET_IT_ELSEWHERE, SET_WALLET_TO_SIGN_FOR } from '@/lib/signs-for-words'
-import { forgetSyncedAddress } from '@/lib/teardown'
+import { forgetSignsFor } from '@/lib/teardown'
+import { transmitterSyncedTo } from '@/lib/same-address'
+import { SAME_ADDRESS_TRANSMITTER_HERE } from '@/lib/transmitter-words'
+import { WarningSentence } from '@/components/wallet/WarningSentence'
 import { fill } from '@/lib/transmit-words'
 import type { RegularKeySet } from '@/lib/transmit-step'
 import { signsForTarget } from '@/lib/signs-for'
@@ -20,11 +23,12 @@ import { useAppStore } from '@/store/app-store'
 export function SignsForOffer({ set }: { set: RegularKeySet }) {
   const queryClient = useQueryClient()
   const wallets = useAppStore((s) => s.wallets)
+  const openLocks = useAppStore((s) => s.openLocks)
   const setWallets = useAppStore((s) => s.setWallets)
   const [closed, setClosed] = useState(false)
   const [busy, setBusy] = useState(false)
   const [refusal, setRefusal] = useState<string | null>(null)
-  const target = signsForTarget(wallets, set)
+  const target = signsForTarget(wallets, set, openLocks)
   if (closed || target === 'done') return null
   if (target === null) {
     return <p className="text-sm">{SET_IT_ELSEWHERE}</p>
@@ -38,7 +42,7 @@ export function SignsForOffer({ set }: { set: RegularKeySet }) {
       const meta = await setSignsFor(wallet.id, set.account)
       const { wallets: current } = useAppStore.getState()
       setWallets(current.map((w) => (w.id === meta.id ? meta : w)))
-      if (wallet.kind === 'online' && wallet.address !== meta.address) forgetSyncedAddress(queryClient, wallet.id, wallet.network, wallet.address)
+      if (wallet.address !== meta.address) forgetSignsFor(queryClient, wallet)
       setClosed(true)
     } catch (err) {
       if (err instanceof SignsForRefusedError && err.refusal === 'duplicate') setRefusal(err.message)
@@ -51,6 +55,8 @@ export function SignsForOffer({ set }: { set: RegularKeySet }) {
   return (
     <div className="flex min-w-0 flex-col gap-2">
       <p className="text-sm [overflow-wrap:anywhere]">{fill(SET_WALLET_TO_SIGN_FOR, target.label)}</p>
+      {/* P-8, second form (OS-FR-3): an Offline Wallet set to sign for an Account a Transmitter here is synced to. Warned, never refused. */}
+      {target.kind === 'offline' && transmitterSyncedTo(wallets, set.account) && <WarningSentence words={SAME_ADDRESS_TRANSMITTER_HERE} />}
       {refusal && (
         <p role="alert" className="text-sm text-text-destructive">
           {refusal}

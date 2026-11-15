@@ -302,7 +302,7 @@ export async function signUnsigned(walletId: string, text: string, ctx: SignCont
   const reviewed = reviewUnsigned(text, wallet)
   if (reviewed.status === 'refused') return reviewed
   try {
-    const signing = await signingHandleFor(walletId, { openKey: ctx.openKey ?? null, prompts: ctx.prompts })
+    const signing = await signingHandleFor(walletId, { openKey: ctx.openKey ?? null, prompts: ctx.prompts }, wallet.address)
     const signed = await signPrepared(signing, reviewed.review.tx)
     return { status: 'signed', text: encodeSigned({ network: wallet.network, txBlob: signed.tx_blob }).text }
   } catch (err) {

@@ -79,7 +79,8 @@ context:
 - Import: the probe gets the Signs-for Account; a Signs-for collision shows on the Review (not beside the Seed); the master-key pre-check of the key's own Account is skipped when the key signs for another Account (that Account's master key says nothing about it); P-8's Transmitter check compares the Signs-for Account.
 - Offline signing handle wraps the one-use Signer: after signing, `assertSignedFor` decodes the blob and requires `Account` = Signs for and `deriveAddress(SigningPubKey)` = this Wallet's key; otherwise no blob returns. The Transmit step was confirmed to compare only `tx.Account` with the expected Account (story 2's `checkSignedBlob`), so master or Regular Key signatures pass and the ledger judges the key; pinned with a real blob.
 - Signed list: `SignedRecord.account` (absent on old records = the key address); `latestSameBuild(list, hash, { account, keyAddress })` never matches a record for another Account, so a Signs-for change cannot reuse another Account's Sequence.
-- A Signs-for change on an Online Wallet forgets the old Account's cached reads (`forgetSyncedAddress`); on an Offline Wallet the kept round is kept (it may hold a signed transaction still in its window) and any answer for it is refused by P-17, its Build being for the old Account.
+- A Signs-for change (plate and P-54) runs `teardown.ts` `forgetSignsFor`: an Online Wallet forgets the old Account's cached reads; an Offline Wallet's kept round is erased (`clearRound`), as the frozen matrix row says. (Round one kept the round; review round one corrected it: the frozen row wins.)
+- Review round one: `signingHandleFor` and `offlineSigningHandleFor` take the `expectedAccount` the screen built and checked for (SendTab, TrustLinesTab, master-key, control, two-device: the Wallet's address; offline paths: the Build's or the judged transaction's Account) and refuse (`SignsForChangedError`, words P-16 + P-17's Account reason) when the vault's Signs-for Account differs, at the handle and again at `open()` before the Signing Check. P-8's second form shows on the create Review, the plate and the P-54 first form when an Offline Wallet would sign for an Account a Transmitter here is synced to. `signsForTarget` offers only key Wallets on open locks, preferring one that signs for its own address.
 - P-54: `sendReady` returns `regularKeySet` for a validated SetRegularKey that sets a key; `ResultView` renders `SignsForOffer` (both Transmit step screens). Target: a key Wallet here with that key on that Network; `'done'` when one already signs for the Account. The Online Keys plate does not exist (story 11; deferred entry).
 - Card: the address row is the key address; P-17's sentence with the Signs-for Account when it differs (locked and open: a record field).
 
@@ -87,11 +88,26 @@ context:
 
 ## Review Triage Log
 
+Review round one (coordinator, 2026-11-15), each checked at the code.
+
+| # | Finding | Verdict | Fix |
+|---|---|---|---|
+| 1 | The signing handles read the Account fresh from the vault: after a Signs-for change in another tab, a stale Send/TrustSet screen signs for Y with X's checks | real | `expectedAccount` on both handles, checked at the handle and at `open()`; refused with P-16 + P-17 (`SignsForChangedError`), nothing signed; passed from every caller. Tests in `crypto/__tests__/signs-for.test.ts` |
+| 2 | P-8 missing on Offline create with Signs for, the plate, and P-54 | real | second form on the create Review, in the plate under the field, in the P-54 first form; warn, never refuse. Tests (flow, plate, offer) |
+| 3 | Frozen row "Offline: kept round cleared" but the round was kept | real | `forgetSignsFor` clears it (plate and P-54); Implementation Notes corrected. Tests |
+| 4 | `signsForTarget` took `holders[0]`, and could change a Wallet on a closed lock | real | prefer the holder that signs for its own address; only open locks (closed: second form). Tests |
+| 5 | The signed list shows records of an earlier Account without naming it | deferred | no approved words; `deferred-work.md` |
+| 6 | Malformed `signsFor` hides the whole record; master key off may rely on an Offline Regular Key holder | recorded | Design Notes |
+
 ## Design Notes
 
 **Storage: a new field, not `accountAddress`.** Both mean "the Account this view signs for", and `KeyWalletMeta.address` already resolves to it, so every reader (reads, requests, checks, signing with `masterAddress`) is unchanged. A separate `signsFor` lets story 12 tell today's controlled views (`accountAddress`, a second view on another Wallet's Seed record and lock, made by "Let another wallet sign") from a Signs-for Wallet with a one-line filter. One resolver, `signsFor ?? accountAddress ?? record.address`; `assertOneOwnView` still counts only `accountAddress` views as controlled, so a Signs-for view is the record's own view. **Story 12 removes:** `accountAddress` and the resolver's fallback to it, `addControlledView`, `ControlWalletScreen`, `ControlPlate`, `ControlledNote`, `control.ts`'s flows, the shared-record kind refusal and the read-only Signs for plate on a shared record, and decides whether controlled views stay listed (FR-95: not converted).
 
 **FR-93 reading (owner question).** product-prd-changes says the refusal "compares the Signs-for Account and the Network". Read as the pair, it refuses Flow 7 on one device: Offline X (master) sets Offline K as its Regular Key, and P-54 asks to set K to sign for X, but X already signs for X on that Network. Built as the triple `(Network, Signs for, key)`, today's `hasView` rule with the Account resolved through Signs for, so P-54 works. If the owner means the pair, `hasView` drops the key comparison and P-54's first form must be refused for a key on this device.
+
+**A malformed stored `signsFor` hides the whole Seed record** (FR-95 fail-closed, `isCompleteView`): every view of that record disappears, and FR-93's duplicate checks no longer see it, so the same key could be imported again on that Network. Accepted: only a hand-edited or corrupt record has one, and showing it would risk reading it as the key's own Account.
+
+**Master key off can now rely on an Offline Wallet as the Regular Key holder.** `master-key.ts` refuses unless a Wallet here holds the Regular Key; a Signs-for Offline Wallet now counts as one (it is a key Wallet with that `keyAddress`). The master key can then be turned on again only through the Transmitter-builds or Offline-builds route from that Offline Wallet (an Offline Wallet never sends), never from the Online Keys controls. Story 11 owns the W4 wording for this.
 
 **Words reused outside their place (owner to confirm).** The spine's "Signs for r…" card line, the plate's "Signs for" title, "Account" legend and "Change" key are not approved. Used instead: the fixed string as plate title (the spine places it in the plate); P-17's second sentence "This wallet signs for {address}." as the card line and the plate's state line; P-54's "Set it" as the plate's set key; P-46's "Remove the address" as its remove key; P-35 as the Signs-for duplicate refusal. Each is one constant in `signs-for-words.ts`.
 

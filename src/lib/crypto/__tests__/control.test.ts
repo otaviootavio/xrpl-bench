@@ -456,12 +456,12 @@ describe('a controlled Wallet signs (AD-18)', () => {
   it('signs as the Account with the target key, and reads the Account', async () => {
     await setRegularKey(controller.id, target.id, ctx())
     const claimed = (await listWallets()).find((m) => m.seedId === target.seedId && m.address === controller.address)!
-    const handle = await signingHandleFor(claimed.id, ctx())
+    const handle = await signingHandleFor(claimed.id, ctx(), claimed.address)
     expect(handle.address).toBe(controller.address)
     // The controlled view signs as the Regular Key; the controller and the target's own view sign as their master key.
     expect(handle.signsAsMaster).toBe(false)
-    expect((await signingHandleFor(controller.id, ctx())).signsAsMaster).toBe(true)
-    expect((await signingHandleFor(target.id, ctx())).signsAsMaster).toBe(true)
+    expect((await signingHandleFor(controller.id, ctx(), controller.address)).signsAsMaster).toBe(true)
+    expect((await signingHandleFor(target.id, ctx(), target.address)).signsAsMaster).toBe(true)
     const result = await openSigner(claimed.id, ctx())
     if (result.status !== 'ok') throw new Error('expected ok')
     const tx = { TransactionType: 'Payment', Account: controller.address, Destination: target.keyAddress, Amount: '1', Fee: '12', Sequence: 1 } as any

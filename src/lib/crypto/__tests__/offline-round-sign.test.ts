@@ -147,16 +147,16 @@ describe('Offline Wallet signs a round (OS-FR-16, OS-FR-11)', () => {
   it('refuses a Build for another Account than the one the Wallet signs for', async () => {
     const lock = await makePinLock('2468')
     const { meta } = await offlineWallet(lock)
-    await expect(signRound(meta, buildFor(DESTINATION), { sequence: 1, fee: '12', ledger_index: 10 }, { openKey: lock.key, prompts })).rejects.toThrow(/not for this wallet/)
+    await expect(signRound(meta, buildFor(DESTINATION), { sequence: 1, fee: '12', ledger_index: 10 }, { openKey: lock.key, prompts })).rejects.toThrow(/The app did not sign the transaction\. This transaction is for .*\. This wallet signs for /)
   })
 
   it('signs only for an Offline view; an Online view never gets this handle, nor an Offline one the Online handle', async () => {
     const lock = await makePinLock('2468')
     const { meta: online } = await storeSeedWallet('Daily', lock)
-    await expect(offlineSigningHandleFor(online.id, { openKey: lock.key, prompts })).rejects.toBeInstanceOf(NotAnOfflineWalletError)
+    await expect(offlineSigningHandleFor(online.id, { openKey: lock.key, prompts }, online.address)).rejects.toBeInstanceOf(NotAnOfflineWalletError)
     const { meta: offline } = await offlineWallet(lock)
-    await expect(signingHandleFor(offline.id, { openKey: lock.key, prompts })).rejects.toBeInstanceOf(NotAnOnlineWalletError)
-    expect((await offlineSigningHandleFor(offline.id, { openKey: lock.key, prompts })).address).toBe(offline.address)
+    await expect(signingHandleFor(offline.id, { openKey: lock.key, prompts }, offline.address)).rejects.toBeInstanceOf(NotAnOnlineWalletError)
+    expect((await offlineSigningHandleFor(offline.id, { openKey: lock.key, prompts }, offline.address)).address).toBe(offline.address)
   })
 
   it('the assembled transaction is the Build plus Sequence, Fee and its own window', () => {
@@ -260,7 +260,7 @@ describe('Offline Wallet signs trust lines and key actions (OS-FR-16, OS-FR-21, 
     const account = Wallet.generate().address
     // The Signs-for state story 10 records; forced here on the stored view.
     await mutateStoredWallet(meta.seedId, (r: StoredWallet) => ({ ...r, views: r.views.map((v) => ({ ...v, accountAddress: account })) }))
-    expect((await offlineSigningHandleFor(meta.id, { openKey: lock.key, prompts })).address).toBe(account)
+    expect((await offlineSigningHandleFor(meta.id, { openKey: lock.key, prompts }, account)).address).toBe(account)
     const tx = blobOf((await signRound(meta, { type: 'master-key', account, enable: true }, data, { openKey: lock.key, prompts })).text)
     expect(tx).toMatchObject({ TransactionType: 'AccountSet', Account: account, ClearFlag: 4 })
     // Signed by the Regular Key's own key pair, not the Account's.

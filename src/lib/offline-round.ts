@@ -287,7 +287,7 @@ export async function signRound(
   now: () => number = Date.now,
 ): Promise<SignedRound> {
   const tx = assembleTransaction(build, data)
-  const signing = await offlineSigningHandleFor(wallet.id, ctx)
+  const signing = await offlineSigningHandleFor(wallet.id, ctx, build.account)
   const signed = await signPrepared(signing, tx)
   return {
     text: encodeSigned({ network: wallet.network, txBlob: signed.tx_blob }).text,

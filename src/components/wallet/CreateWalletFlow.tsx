@@ -24,6 +24,9 @@ import { ONE_SEED_ONE_NETWORK, READ_EACH_WARNING, TEXT_E } from '@/lib/offline-w
 import { SeedReveal } from '@/components/wallet/SeedReveal'
 import { WrittenSeedConfirm } from '@/components/wallet/WrittenSeedConfirm'
 import { signsForDraftState, signsForIds } from '@/lib/signs-for'
+import { transmitterSyncedTo } from '@/lib/same-address'
+import { SAME_ADDRESS_TRANSMITTER_HERE } from '@/lib/transmitter-words'
+import { WarningSentence } from '@/components/wallet/WarningSentence'
 import { createDerivedWallet, createStoredWallet, describeCheckFailure, importStoredWallet, listWallets, type WalletMeta } from '@/lib/crypto/keystore'
 import { hasAppPin, startLockSession } from '@/lib/crypto/lock'
 import { triesRemaining } from '@/lib/crypto/pin'
@@ -833,6 +836,9 @@ function CreateWalletForm({ capability, onDone, onInProgressChange, defaultLabel
               </p>
               {fact && <p className="text-sm text-muted-foreground">{fact}</p>}
               <OneSeedOneNetwork />
+              {/* P-8, second form (OS-FR-3, OS-FR-20): an Offline create that signs for an Account a
+                  Transmitter here is synced to. Warned, never refused. An import warns in its own step. */}
+              {offline && !importSource && signsFor && transmitterSyncedTo(storedWallets, signsFor) && <WarningSentence words={SAME_ADDRESS_TRANSMITTER_HERE} />}
             </>
           }
         />

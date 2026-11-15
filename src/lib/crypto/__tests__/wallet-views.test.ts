@@ -111,7 +111,8 @@ let key: CryptoKey
 const ctx = () => ({ openKey: key, prompts: unavailablePrompts })
 /** The address of the Wallet a Standard open gives a Signer for. */
 async function openedAddress(id: string) {
-  const handle = await signingHandleFor(id, ctx())
+  const meta = (await listWallets()).find((m) => m.id === id)!
+  const handle = await signingHandleFor(id, ctx(), meta.address)
   ;(await handle.open()).dispose()
   return handle.address
 }

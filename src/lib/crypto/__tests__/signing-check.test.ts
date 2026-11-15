@@ -198,7 +198,7 @@ describe('a PIN Signing Check', () => {
       await openSigner(walletId, cancel),
       await revealSeed(walletId, cancel),
     ]
-    await expect((await signingHandleFor(walletId, cancel)).open()).rejects.toBeInstanceOf(SigningCheckError)
+    await expect((await signingHandleFor(walletId, cancel, address)).open()).rejects.toBeInstanceOf(SigningCheckError)
     expect(results[0]).toEqual({ status: 'cancelled' })
     expect(results[1]).toEqual({ status: 'cancelled' })
     expect(JSON.stringify(results)).not.toContain(seed)

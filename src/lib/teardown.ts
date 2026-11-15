@@ -4,6 +4,7 @@ import type { WalletMeta } from '@/lib/crypto/keystore'
 import { disconnectAllClients, retireNetworkClient } from '@/lib/xrpl/client'
 import { removeAccountScoped } from '@/lib/xrpl/query-keys'
 import { clearPersistedAppState, useAppStore } from '@/store/app-store'
+import { clearRound } from '@/lib/offline-round'
 
 /**
  * The one owner of local teardown — AD-16, amended by AD-26. It has **three**
@@ -162,6 +163,17 @@ export function forgetSyncedAddress(queryClient: QueryClient, walletId: string, 
   const { wallets, openLocks } = useAppStore.getState()
   const shared = wallets.some((w) => w.id !== walletId && w.lockId in openLocks && w.network === network && w.address === oldAddress)
   if (!shared) removeAccountScoped(queryClient, network, oldAddress)
+}
+
+/**
+ * A Signs-for change (OS-FR-20): what belonged to the old Account goes, so nothing
+ * for it shows as current for the new one. An Online Wallet's cached reads of the
+ * old Account (unless another open Wallet holds it), an Offline Wallet's kept round
+ * (its Build is for the old Account). `before` is the meta as it was.
+ */
+export function forgetSignsFor(queryClient: QueryClient, before: WalletMeta): void {
+  if (before.kind === 'online') forgetSyncedAddress(queryClient, before.id, before.network, before.address)
+  else if (before.kind === 'offline') clearRound(before.id)
 }
 
 /**

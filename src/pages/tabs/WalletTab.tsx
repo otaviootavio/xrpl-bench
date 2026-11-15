@@ -33,8 +33,8 @@ import { isValidClassicAddress } from 'xrpl'
 import { Input } from '@/components/ui/input'
 import { WarningSentence } from '@/components/wallet/WarningSentence'
 import { forgetSyncedAddress } from '@/lib/teardown'
-import { INVALID_ADDRESS, offlineWalletHas } from '@/lib/same-address'
-import { NO_KEY, REMOVE_THE_ADDRESS, SAME_ADDRESS_OFFLINE_HERE, SYNC_TO_AN_ADDRESS } from '@/lib/transmitter-words'
+import { INVALID_ADDRESS, offlineWalletHas, transmitterSyncedTo } from '@/lib/same-address'
+import { NO_KEY, REMOVE_THE_ADDRESS, SAME_ADDRESS_OFFLINE_HERE, SAME_ADDRESS_TRANSMITTER_HERE, SYNC_TO_AN_ADDRESS } from '@/lib/transmitter-words'
 import { BEFORE_SENDING_DESCRIPTION, BEFORE_SENDING_PLATE, SHOW_BEFORE_SENDING } from '@/lib/transmit-words'
 import { notify } from '@/lib/notify'
 import { AUTO_LOCK_CHOICES } from '@/lib/crypto/policy'
@@ -55,6 +55,7 @@ import { clearKindChanged, peekKindChanged } from '@/lib/kind-change-result'
 import { fill } from '@/lib/transmit-words'
 import { SET_IT, SIGNS_FOR_ANOTHER_ACCOUNT, WALLET_SIGNS_FOR } from '@/lib/signs-for-words'
 import { SignsForFields } from '@/components/wallet/SignsForFields'
+import { forgetSignsFor } from '@/lib/teardown'
 import { signsForDraftState, signsForIds } from '@/lib/signs-for'
 
 /** A key that wraps its legend rather than push a plate past 320px or 200% text. */
@@ -279,8 +280,8 @@ function ControlPlate({ wallet }: { wallet: KeyWalletMeta }) {
  * without re-creating the Wallet. The title is the fixed string; the state line is
  * P-17's sentence; the keys reuse P-54's "Set it" and P-46's "Remove the address"
  * (story 10: the spine's "Signs for", "Account" and "Change" are not approved).
- * A change forgets the old Account's cached reads (Online), so nothing for the old
- * Account shows as current for the new one. A
+ * A change forgets the old Account's cached reads (Online) or erases the kept round
+ * (Offline), so nothing for the old Account shows as current for the new one. A
  * Wallet that shares its Seed record (today's controlled views, FR-75) shows the
  * Account and no keys until story 12 removes those views.
  */
@@ -296,6 +297,9 @@ function SignsForPlate({ wallet }: { wallet: KeyWalletMeta }) {
   const typed = draft.trim()
   const signsForAnother = wallet.address !== wallet.keyAddress
   const shared = allWallets.filter((w) => w.seedId === wallet.seedId).length > 1
+  // P-8, second form (OS-FR-3): an Offline Wallet that would sign for an Account a
+  // Transmitter here is synced to. Warned before Set it, never refused.
+  const sameAsTransmitter = wallet.kind === 'offline' && state === 'valid' && transmitterSyncedTo(allWallets, typed)
 
   async function apply(next: string | null) {
     if (busy || (next !== null && signsForDraftState(next) !== 'valid')) return
@@ -315,10 +319,8 @@ function SignsForPlate({ wallet }: { wallet: KeyWalletMeta }) {
     try {
       const { wallets: current } = useAppStore.getState()
       setWallets(current.map((w) => (w.id === meta.id ? meta : w)))
-      // An Offline Wallet reads nothing; its kept round stays (it may hold a signed
-      // transaction still in its window), and any answer for it is refused by the
-      // Account check (P-17), since its Build is for the old Account.
-      if (before.address !== meta.address && before.kind === 'online') forgetSyncedAddress(queryClient, before.id, before.network, before.address)
+      // The old Account's state goes: an Online Wallet's cached reads, an Offline Wallet's kept round.
+      if (before.address !== meta.address) forgetSignsFor(queryClient, before)
       setDraft('')
     } finally {
       setBusy(false)
@@ -331,6 +333,7 @@ function SignsForPlate({ wallet }: { wallet: KeyWalletMeta }) {
       {!shared && (
         <>
           <SignsForFields draft={draft} onDraft={(d) => (setDraft(d), setRefusal(null))} disabled={busy} idPrefix={id} />
+          {sameAsTransmitter && <WarningSentence words={SAME_ADDRESS_TRANSMITTER_HERE} />}
           {refusal && (
             <p role="alert" className="text-sm text-text-destructive">
               {refusal}

@@ -141,7 +141,7 @@ export async function setMasterKey(walletId: string, enable: boolean, ctx: SetMa
 
   let outcome: SubmitOutcome
   try {
-    const signing = await signingHandleFor(walletId, { openKey: ctx.openKey ?? null, prompts: ctx.prompts })
+    const signing = await signingHandleFor(walletId, { openKey: ctx.openKey ?? null, prompts: ctx.prompts }, wallet.address)
     outcome = await submitMasterKeyFlag(wallet.network, signing, { enable }, wallet.node)
   } catch (err) {
     if (err instanceof SigningCheckError) {

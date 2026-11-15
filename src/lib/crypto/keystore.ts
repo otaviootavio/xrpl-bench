@@ -9,6 +9,8 @@ import { b64ToBuf, bufToB64 } from './encoding'
 import { isKeyWallet } from '@/lib/wallet-meta'
 import { INVALID_ADDRESS } from '@/lib/same-address'
 import { SAME_ADDRESS_ON_NETWORK } from '@/lib/kind-change-words'
+import { DATA_REFUSAL, NOT_SIGNED } from '@/lib/offline-round-words'
+import { fill } from '@/lib/transmit-words'
 import { uniqueDefaultName, validateWalletName, type WalletNameReason } from '@/lib/wallet-name'
 import { attemptPin, getLockoutState, recordFailure, triesRemaining } from './pin'
 import {
@@ -504,7 +506,7 @@ export async function openSigner(walletId: string, ctx: SigningContext): Promise
 /** The handle `submitAndClassify` takes. `open` runs the check on demand — the
  * choke point calls it after autofill — and throws `SigningCheckError` on any
  * result but ok. */
-export async function signingHandleFor(walletId: string, ctx: SigningContext): Promise<SigningHandle> {
+export async function signingHandleFor(walletId: string, ctx: SigningContext, expectedAccount: string): Promise<SigningHandle> {
   const stored = await seedRecordFor(walletId)
   const address = accountOf(stored, walletId)
   const view = viewsOf(stored).find((v) => v.walletId === walletId)
@@ -512,12 +514,17 @@ export async function signingHandleFor(walletId: string, ctx: SigningContext): P
   // Only an Online Wallet signs to send (OS-FR-11): a stale Online screen in another tab
   // must not sign with a key the vault now calls Offline.
   if (kind !== 'online') throw new NotAnOnlineWalletError()
+  // OS-FR-20: a Signs-for change in another tab must not make a stale screen sign for
+  // an Account its checks did not read. Refused before any prompt; nothing is signed.
+  assertStillSignsFor(address, expectedAccount)
   const review = view && showsBeforeSending(view, kind)
   return {
     address,
     // The key is the Account's own (master) key unless this is a controlled view.
     signsAsMaster: address === stored.address,
     async open() {
+      // Read again: the Signing Check can take seconds, and the Signer is made from a fresh read.
+      assertStillSignsFor(accountOf(await seedRecordFor(walletId), walletId), expectedAccount)
       const result = await openSigner(walletId, ctx)
       if (result.status !== 'ok') throw new SigningCheckError(result)
       return result.value
@@ -534,14 +541,16 @@ export async function signingHandleFor(walletId: string, ctx: SigningContext): P
  * Offline, as `signingHandleFor` refuses any that is not Online, so neither path
  * signs for the other kind. No review hook: an Offline Wallet never transmits.
  */
-export async function offlineSigningHandleFor(walletId: string, ctx: SigningContext): Promise<SigningHandle> {
+export async function offlineSigningHandleFor(walletId: string, ctx: SigningContext, expectedAccount: string): Promise<SigningHandle> {
   const stored = await seedRecordFor(walletId)
   const view = viewsOf(stored).find((v) => v.walletId === walletId)
   if (!view || kindOfView(view) !== 'offline') throw new NotAnOfflineWalletError()
   const account = accountOf(stored, walletId)
+  assertStillSignsFor(account, expectedAccount)
   return {
     address: account,
     async open() {
+      assertStillSignsFor(accountOf(await seedRecordFor(walletId), walletId), expectedAccount)
       const result = await openSigner(walletId, ctx)
       if (result.status !== 'ok') throw new SigningCheckError(result)
       const inner = result.value
@@ -560,6 +569,20 @@ export async function offlineSigningHandleFor(walletId: string, ctx: SigningCont
       }
     },
   }
+}
+
+/** Refused (OS-FR-20): the Wallet now signs for another Account than the one the
+ * screen built and checked for (a Signs-for change elsewhere). Nothing was signed.
+ * Its words are P-16 then P-17's Account reason. */
+export class SignsForChangedError extends Error {
+  constructor(expected: string, actual: string) {
+    super(`${NOT_SIGNED} ${fill(DATA_REFUSAL.account, expected, actual)}`)
+    this.name = 'SignsForChangedError'
+  }
+}
+
+function assertStillSignsFor(actual: string, expected: string): void {
+  if (actual !== expected) throw new SignsForChangedError(expected, actual)
 }
 
 /** Thrown when a signed blob is not for this Wallet's Signs-for Account or not by its

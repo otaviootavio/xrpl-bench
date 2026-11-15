@@ -722,3 +722,7 @@ Item 8 shipped as a refactor that preserves behaviour (`spec-sendtab-split.md`).
 - source_spec: `_bmad-output/specs/spec-offline-signing/stories/10-a-key-that-signs-for-another-account.md`
   summary: At 320 px with 200% text, the This wallet plate's `AddressDisplay` lays the address out one character per line (the plate grows to about 2000 px). Pre-existing: the component is unchanged since #29; seen in story 10's browser pass.
   evidence: `.playwright-mcp/s10-zoom.js`, screenshot `s10/z-zoom-thiswallet.png`. The chunked flex row with `font-data` at 200% has no room for a chunk; let a chunk wrap inside itself or drop the chunking below a width.
+
+- source_spec: `_bmad-output/specs/spec-offline-signing/stories/10-a-key-that-signs-for-another-account.md`
+  summary: After a Signs-for change, the Signed screen (`OfflineSigned.tsx`, `EarlierSigningRecord`) lists records signed for the earlier Account beside the new ones without naming the Account (records now carry `account`; old ones mean the key address).
+  evidence: Review round one, 2026-11-15. No approved words for an Account row on the earlier-signing record (P-52 has Sequence, Transaction hash, Valid until ledger, Signed at only). Same Build matching already ignores other Accounts.

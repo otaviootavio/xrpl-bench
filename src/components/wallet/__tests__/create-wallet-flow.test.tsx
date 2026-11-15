@@ -1787,3 +1787,33 @@ describe('the optional "This key signs for another account" step (offline signin
     expect(screen.queryByRole('textbox', { name: 'Address' })).toBeNull()
   })
 })
+
+describe('P-8 on an Offline create that signs for an Account a Transmitter here is synced to (story 10 review; OS-FR-3, OS-FR-20)', () => {
+  const X = 'rHb9CJAWyB4rj91VRWn96DkukG4bwdtyTh'
+  const heading = () => screen.getByRole('heading', { level: 2 }).textContent
+  async function offlineToReview(signsFor: string) {
+    render(<CreateWalletFlow />)
+    await screen.findByLabelText('Label')
+    await click(screen.getByRole('radio', { name: 'Offline' }))
+    for (const box of screen.getAllByRole('checkbox')) await click(box)
+    for (let i = 0; i < 8 && heading() !== 'This key signs for another account'; i++) await click(nextButton())
+    await click(screen.getByRole('checkbox', { name: 'This key signs for another account' }))
+    type(screen.getByRole('textbox', { name: 'Address' }), signsFor)
+    await click(nextButton())
+    expect(heading()).toBe('Review')
+  }
+  const transmitter = (address: string) => ({ id: 't', seedId: 't', lockId: 'LT', label: 'Carrier', createdAt: 1, network: 'testnet', openCheck: 'pin', kind: 'transmitter', address })
+
+  it('the second form shows on the Review, and Create stays available (warned, never refused)', async () => {
+    useAppStore.setState({ wallets: [transmitter(X)], activeWalletId: null, openLocks: {} } as never)
+    await offlineToReview(X)
+    expect(screen.getByText(/^WARNING: A Transmitter wallet on this device has this address\./)).toBeTruthy()
+    expect(createButton().getAttribute('aria-disabled')).toBeNull()
+  })
+
+  it('not for another Account', async () => {
+    useAppStore.setState({ wallets: [transmitter('rPT1Sjq2YGrBMTttX4GZHjKu9dyfzbpAYe')], activeWalletId: null, openLocks: {} } as never)
+    await offlineToReview(X)
+    expect(screen.queryByText(/^WARNING: A Transmitter wallet/)).toBeNull()
+  })
+})

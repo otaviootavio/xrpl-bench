@@ -282,7 +282,7 @@ describe('review round two: nothing below the screens treats an Offline view as 
   it('signingHandleFor refuses an Offline view (a stale Online tab cannot sign)', async () => {
     const { meta } = await onlineWallet()
     await changeToOfflineWallet(meta.id)
-    await expect(signingHandleFor(meta.id, { openKey: lock.key, prompts: pinPrompt(null) })).rejects.toBeInstanceOf(NotAnOnlineWalletError)
+    await expect(signingHandleFor(meta.id, { openKey: lock.key, prompts: pinPrompt(null) }, meta.address)).rejects.toBeInstanceOf(NotAnOnlineWalletError)
   })
 
   it('setWalletNode and setShowBeforeSending refuse an Offline view and write nothing; clearing is still allowed', async () => {

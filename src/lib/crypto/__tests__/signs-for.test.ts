@@ -126,6 +126,9 @@ import {
   setSignsFor,
   SignedForWrongAccountError,
   SignsForRefusedError,
+  SignsForChangedError,
+  offlineSigningHandleFor,
+  signingHandleFor,
   type ImportStoredWalletInput,
   type Prompts,
 } from '../keystore'
@@ -346,5 +349,35 @@ describe('assertSignedFor: the signing key is this Wallet\'s key (OS-FR-20)', ()
     expect(() => assertSignedFor(tx_blob, Y, key.address)).toThrow(SignedForWrongAccountError)
     expect(() => assertSignedFor(tx_blob, X, Wallet.generate().address)).toThrow(SignedForWrongAccountError)
     expect(() => assertSignedFor('zz', X, key.address)).toThrow(SignedForWrongAccountError)
+  })
+})
+
+describe('a stale screen never signs for an Account it did not check (OS-FR-20)', () => {
+  const words = (expected: string, actual: string) => `The app did not sign the transaction. This transaction is for ${expected}. This wallet signs for ${actual}.`
+
+  it('Online: the handle is refused when the Wallet now signs for another Account, before any prompt', async () => {
+    const lock = await makePinLock('2468')
+    const { meta } = await storeSeedWallet('Daily', lock)
+    await setSignsFor(meta.id, X)
+    let asked = 0
+    const ctx = { openKey: lock.key, prompts: { pin: async () => (asked++, null) } }
+    await expect(signingHandleFor(meta.id, ctx, meta.keyAddress)).rejects.toBeInstanceOf(SignsForChangedError)
+    await expect(signingHandleFor(meta.id, ctx, meta.keyAddress)).rejects.toThrow(words(meta.keyAddress, X))
+    expect(asked).toBe(0)
+    expect((await signingHandleFor(meta.id, ctx, X)).address).toBe(X)
+  })
+
+  it('Online and Offline: a change between the handle and the Signing Check refuses at open; no Signer comes out', async () => {
+    const lock = await makePinLock('2468')
+    const { meta } = await storeSeedWallet('Daily', lock)
+    const handle = await signingHandleFor(meta.id, { openKey: lock.key, prompts }, meta.address)
+    await setSignsFor(meta.id, Y)
+    await expect(handle.open()).rejects.toBeInstanceOf(SignsForChangedError)
+
+    const off = await offlineSigner(X)
+    const offHandle = await offlineSigningHandleFor(off.meta.id, { openKey: off.lock.key, prompts }, X)
+    await setSignsFor(off.meta.id, Y)
+    await expect(offHandle.open()).rejects.toThrow(words(X, Y))
+    await expect(offlineSigningHandleFor(off.meta.id, { openKey: off.lock.key, prompts }, X)).rejects.toBeInstanceOf(SignsForChangedError)
   })
 })

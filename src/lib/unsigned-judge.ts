@@ -451,7 +451,7 @@ export async function signJudged(
   ctx: SigningContext,
   now: () => number = Date.now,
 ): Promise<SignedUnsigned> {
-  const signing = await offlineSigningHandleFor(wallet.id, ctx)
+  const signing = await offlineSigningHandleFor(wallet.id, ctx, judged.tx.Account as string)
   const signed = await signPrepared(signing, judged.tx)
   return {
     text: encodeSigned({ network: wallet.network, txBlob: signed.tx_blob }).text,

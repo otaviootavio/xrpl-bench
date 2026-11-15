@@ -177,7 +177,7 @@ describe('"Show the signed transaction before sending" on the record (OS-FR-10)'
 describe('the signing handle carries the review only when the setting is on (OS-FR-10)', () => {
   it('off: the handle has no review, so a write goes to the Transmit step as before', async () => {
     put(rec('a'))
-    const handle = await signingHandleFor('a', { openKey: null, prompts: { ...noPin, reviewSignedTransaction: async () => true } })
+    const handle = await signingHandleFor('a', { openKey: null, prompts: { ...noPin, reviewSignedTransaction: async () => true } }, 'ra')
     expect(handle.reviewBeforeSending).toBeUndefined()
   })
 
@@ -187,14 +187,14 @@ describe('the signing handle carries the review only when the setting is on (OS-
     const handle = await signingHandleFor('a', {
       openKey: null,
       prompts: { ...noPin, reviewSignedTransaction: async (s) => (asked.push(s), false) },
-    })
+    }, 'ra')
     expect(await handle.reviewBeforeSending?.(SIGNED)).toBe(false)
     expect(asked).toEqual([SIGNED])
   })
 
   it('on with no reviewer: every send is declined (fail closed)', async () => {
     put(rec('a', { showBeforeSending: true }))
-    const handle = await signingHandleFor('a', { openKey: null, prompts: noPin })
+    const handle = await signingHandleFor('a', { openKey: null, prompts: noPin }, 'ra')
     expect(handle.reviewBeforeSending).toBeDefined()
     expect(await handle.reviewBeforeSending?.(SIGNED)).toBe(false)
   })

@@ -186,7 +186,7 @@ export async function setRegularKey(controllerId: string, targetId: string, ctx:
 
   let outcome: SubmitOutcome
   try {
-    const signing = await signingHandleFor(controllerId, { openKey: ctx.openKey ?? null, prompts: ctx.prompts })
+    const signing = await signingHandleFor(controllerId, { openKey: ctx.openKey ?? null, prompts: ctx.prompts }, controller.address)
     outcome = await submitSetRegularKey(controller.network, signing, { regularKey: target.keyAddress }, controller.node)
   } catch (err) {
     if (err instanceof SigningCheckError) {

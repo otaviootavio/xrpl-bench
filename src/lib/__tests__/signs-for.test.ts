@@ -39,16 +39,24 @@ describe('signsForTarget: which Wallet P-54 offers to set', () => {
   const key = (id: string, o: Partial<WalletMeta> = {}) =>
     ({ id, seedId: id, lockId: id, label: id, createdAt: 1, network: 'testnet', openCheck: 'pin', kind: 'offline', address: K, keyAddress: K, algorithm: 'ed25519', seedMethod: 'stored', signingCheck: 'standard', ...o }) as WalletMeta
   const set = { account: X, regularKey: K, network: 'testnet' as const }
+  const OPEN = { a: {}, b: {}, t: {} }
   it('a key Wallet here with that key on that Network (Online or Offline)', () => {
-    expect(signsForTarget([key('a')], set)).toMatchObject({ id: 'a' })
-    expect(signsForTarget([key('a', { kind: 'online' })], set)).toMatchObject({ id: 'a' })
+    expect(signsForTarget([key('a')], set, OPEN)).toMatchObject({ id: 'a' })
+    expect(signsForTarget([key('a', { kind: 'online' })], set, OPEN)).toMatchObject({ id: 'a' })
   })
   it('none on another Network, another key, or a Transmitter: the second form', () => {
-    expect(signsForTarget([key('a', { network: 'mainnet' })], set)).toBeNull()
-    expect(signsForTarget([key('a', { keyAddress: X, address: X })], set)).toBeNull()
-    expect(signsForTarget([{ ...key('t'), kind: 'transmitter', address: K } as WalletMeta], set)).toBeNull()
+    expect(signsForTarget([key('a', { network: 'mainnet' })], set, OPEN)).toBeNull()
+    expect(signsForTarget([key('a', { keyAddress: X, address: X })], set, OPEN)).toBeNull()
+    expect(signsForTarget([{ ...key('t'), kind: 'transmitter', address: K } as WalletMeta], set, OPEN)).toBeNull()
+  })
+  it('prefers the holder that signs for its key\'s own address', () => {
+    expect(signsForTarget([key('a', { address: 'rOTHERxxxxxxxxxxxxxxxxxxxxxxxx' }), key('b')], set, OPEN)).toMatchObject({ id: 'b' })
+  })
+  it('never a holder on a closed lock (setSignsFor has no Open Check): the second form', () => {
+    expect(signsForTarget([key('a')], set, {})).toBeNull()
+    expect(signsForTarget([key('a'), key('b')], set, { b: {} })).toMatchObject({ id: 'b' })
   })
   it("'done' when a Wallet with that key already signs for the Account", () => {
-    expect(signsForTarget([key('a'), key('b', { address: X })], set)).toBe('done')
+    expect(signsForTarget([key('a'), key('b', { address: X })], set, OPEN)).toBe('done')
   })
 })

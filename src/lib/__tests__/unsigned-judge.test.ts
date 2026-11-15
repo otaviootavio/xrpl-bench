@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import { AccountSetAsfFlags, PaymentFlags, TrustSetFlags, validate, Wallet } from 'xrpl'
 import { encodeRequest, encodeSigned, encodeUnsigned } from '@/lib/qr-codec'
+import { encodeBytes } from '@/lib/ur/cbor'
+import { encodeSinglePart } from '@/lib/ur/ur'
 import { judgeUnsigned, sameBuildHashOf, USUAL_WINDOW, windowOf } from '@/lib/unsigned-judge'
 import { LEDGER_FLOORS } from '@/lib/offline-window'
 import { buildHashOf } from '@/lib/offline-round'
@@ -195,7 +197,7 @@ describe('judgeUnsigned refuses in P-17 words (OS-FR-18)', () => {
   })
 
   it('an envelope with no ledger index (two-device signing\'s code) is malformed', () => {
-    const twoDevice = encodeUnsigned({ network: 'testnet', tx: xrpPayment }).text
+    const twoDevice = encodeSinglePart({ type: 'xrplbench-unsigned', cbor: encodeBytes(new TextEncoder().encode(JSON.stringify({ v: 1, network_id: 1, tx: xrpPayment }))) })
     expect(reasonOf(judgeUnsigned(twoDevice, wallet))).toBe(W.DATA_REFUSAL.malformed)
   })
 

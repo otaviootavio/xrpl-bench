@@ -85,7 +85,6 @@ import {
   createDerivedWallet,
   createStoredWallet,
   editChecks,
-  addControlledView,
   listKeyWallets as listWallets,
   openSigner,
   revealSeed,
@@ -200,6 +199,13 @@ afterEach(() => {
 })
 
 /** A Stored Wallet made the way the creation flow makes it, and its Seed. */
+/** Moves a created Wallet's one view to Mainnet, with no written Seed confirmed, straight in the store. */
+function toMainnet(walletId: string) {
+  const row = h.state.stores.wallets.get(walletId)
+  const { writtenSeedConfirmedAt: _confirmed, ...rest } = row
+  h.state.stores.wallets.set(walletId, { ...rest, views: row.views.map((v: { network: string }) => ({ ...v, network: 'mainnet' })) })
+}
+
 async function made(input: Partial<CreateStoredWalletInput> = {}) {
   const created = ok(await createStoredWallet({ ...base, ...input }, { pin: PIN, confirmWrittenSeed: async () => true }))
   return created
@@ -651,7 +657,9 @@ describe('what is stored', () => {
 describe('review fixes', () => {
   it('an auto-lock-only edit is judged on the floor alone: a Mainnet passkey-only Wallet never confirmed still edits, and PRF "no" does not refuse it', async () => {
     const { meta } = await made({ openCheck: 'passkey', signing: 'passkey' })
-    const main = await addControlledView(meta.id, { network: 'mainnet', accountAddress: 'rControlledAccount1111111111111111' })
+    // Moved to Mainnet in place (story 12: no controlled view adds a Mainnet view any more).
+    toMainnet(meta.id)
+    const main = meta
     expect(recordOf(meta.id).writtenSeedConfirmedAt).toBeUndefined()
     let asked = 0
     const result = ok(await editChecks(main.id, { autoLockMinutes: 15 }, { prompts: pinPrompt(null), passkey: 'no', confirmWrittenSeed: async () => (asked++, true) }))
@@ -673,9 +681,9 @@ describe('review fixes', () => {
     expect((await openLock(result.meta.lockId, 'passkey')).status).toBe('ok')
   })
 
-  it('a Testnet-primary Seed with a Mainnet controlled view: no Open Check and a sub-minute lock are refused, and a passkey-only result asks for the written Seed', async () => {
+  it('a Mainnet Wallet whose written Seed was not confirmed: no Open Check and a sub-minute lock are refused, and a passkey-only result asks for the written Seed', async () => {
     const { meta, seed } = await made()
-    await addControlledView(meta.id, { network: 'mainnet', accountAddress: 'rControlledAccount1111111111111111' })
+    toMainnet(meta.id)
     const before = snapshot()
     expect(await editChecks(meta.id, { openCheck: { kind: 'none' } }, { prompts: pinPrompt(PIN) })).toMatchObject({ status: 'refused' })
     expect(await editChecks(meta.id, { autoLockMinutes: 0.5 }, { prompts: pinPrompt(PIN) })).toMatchObject({ status: 'refused' })

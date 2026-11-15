@@ -79,9 +79,8 @@ describe('kind change words (OS-FR-5, OS-FR-6, OS-FR-7, OS-FR-12)', () => {
     expect(W.ONLINE_PHRASE_LABEL).toBe(`Type “${W.ONLINE_PHRASE}” to confirm`)
   })
 
-  it('the three strings the owner approved on 2026-11-09 are exactly as approved', () => {
+  it('the strings the owner approved on 2026-11-09 that are still shown are exactly as approved', () => {
     expect(W.WALLET_KIND).toBe('Wallet kind')
-    expect(W.SHARED_SEED_NO_CHANGE).toBe('This seed has more than one wallet. The app cannot change the kind of this wallet.')
     expect(W.NOW_ONLINE).toBe('This wallet is now an online wallet. The network is {Network}.')
   })
 })

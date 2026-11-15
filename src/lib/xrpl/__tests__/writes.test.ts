@@ -12,11 +12,7 @@ import {
   submitTrustSet,
   submitXrpPayment,
   FeeAboveCapError,
-  TWO_DEVICE_LEDGER_WINDOW,
-  prepareUnsigned,
   signPrepared,
-  submitSignedBlob,
-  validatedLedgerIndex,
 } from '../writes'
 
 /**
@@ -1023,25 +1019,8 @@ describe('a master-key change signs AccountSet asfDisableMaster for the handleâ€
   })
 })
 
-describe('two-device building, signing and submitting (AD-30)', () => {
+describe('signPrepared: one signing on the offline device', () => {
   const payment: any = { TransactionType: 'Payment', Account: realWallet.address, Destination: 'rPT1Sjq2YGrBMTttX4GZHjKu9dyfzbpAYe', Amount: '1000000' }
-
-  it('sets LastLedgerSequence to the validated ledger plus 75, explicitly, over autofill\'s own', async () => {
-    installFakeClient({ validatedLedgerIndex: 1000 })
-    // The fake's first ledger read answers 80 (the signing window); drain it.
-    await validatedLedgerIndex('testnet')
-    expect(TWO_DEVICE_LEDGER_WINDOW).toBe(75)
-    const prepared: any = await prepareUnsigned('testnet', payment)
-    expect(prepared.LastLedgerSequence).toBe(1075)
-    expect(prepared.Sequence).toBe(1)
-    expect(prepared.Fee).toBe('12')
-    expect(log).not.toContain('submitAndWait')
-  })
-
-  it('refuses a fee above the cap, building nothing', async () => {
-    installFakeClient({ autofillFee: '20000' })
-    await expect(prepareUnsigned('testnet', payment)).rejects.toThrow(FeeAboveCapError)
-  })
 
   it('signs once, disposes the Signer in finally, and refuses a foreign Account or an over-cap fee', async () => {
     let disposed = 0
@@ -1058,23 +1037,5 @@ describe('two-device building, signing and submitting (AD-30)', () => {
     const throwing = { ...handle, open: async () => ({ sign: () => { throw new Error('boom') }, dispose: () => void (disposed += 1) }) }
     await expect(signPrepared(throwing, tx)).rejects.toThrow('boom')
     expect(disposed).toBe(2)
-  })
-
-  it('submits a received blob through the choke point: in-flight signal, one submission of that exact blob', async () => {
-    const client = installFakeClient()
-    const tx: any = { ...payment, Sequence: 3, Fee: '12', LastLedgerSequence: 500 }
-    const blob = realWallet.sign(tx).tx_blob
-    const outcome = await submitSignedBlob('testnet', tx, blob)
-    expect(outcome.status).toBe('validated')
-    expect(client.submitted).toEqual([blob])
-    expect(log[0]).toBe('in-flight:true')
-    expect(log.at(-1)).toBe('in-flight:false')
-  })
-
-  it('still caps the fee of a received blob', async () => {
-    const client = installFakeClient()
-    const tx: any = { ...payment, Sequence: 3, Fee: '20000', LastLedgerSequence: 500 }
-    await expect(submitSignedBlob('testnet', tx, 'AB')).rejects.toThrow(FeeAboveCapError)
-    expect(client.submitted).toEqual([])
   })
 })

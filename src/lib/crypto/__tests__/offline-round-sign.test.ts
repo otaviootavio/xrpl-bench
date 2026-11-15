@@ -259,7 +259,7 @@ describe('Offline Wallet signs trust lines and key actions (OS-FR-16, OS-FR-21, 
     const { meta, seed } = await offlineWallet(lock)
     const account = Wallet.generate().address
     // The Signs-for state story 10 records; forced here on the stored view.
-    await mutateStoredWallet(meta.seedId, (r: StoredWallet) => ({ ...r, views: r.views.map((v) => ({ ...v, accountAddress: account })) }))
+    await mutateStoredWallet(meta.seedId, (r: StoredWallet) => ({ ...r, views: r.views.map((v) => ({ ...v, signsFor: account })) }))
     expect((await offlineSigningHandleFor(meta.id, { openKey: lock.key, prompts }, account)).address).toBe(account)
     const tx = blobOf((await signRound(meta, { type: 'master-key', account, enable: true }, data, { openKey: lock.key, prompts })).text)
     expect(tx).toMatchObject({ TransactionType: 'AccountSet', Account: account, ClearFlag: 4 })

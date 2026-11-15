@@ -18,8 +18,7 @@ import { UREncoder, decodeSinglePart, looksLikeUr } from '@/lib/ur/ur'
  *   not more than three frames each second (`FRAME_INTERVAL_MS`).
  *
  * A UR is drawn in upper case so the QR uses its alphanumeric mode (about 5.5
- * bits a character, not 8). Today's single-code form is drawn as it is: base64url
- * is case-sensitive.
+ * bits a character, not 8).
  */
 
 export const STILL_MAX_MESSAGE_BYTES = 500

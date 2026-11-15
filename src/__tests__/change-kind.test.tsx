@@ -64,7 +64,6 @@ import {
   NOW_OFFLINE,
   NOW_ONLINE,
   ONLINE_PHRASE_LABEL,
-  SHARED_SEED_NO_CHANGE,
   WALLET_KIND,
   PASSKEY_SEED_NOT_OFFLINE,
   SAME_ADDRESS_ON_NETWORK,
@@ -162,14 +161,12 @@ describe('the Wallet kind plate (OS-FR-1, OS-FR-5 to OS-FR-7)', () => {
     expect(within(plate).getByRole('button', { name: CHANGE_TO_ONLINE }).className).toContain('destructive')
   })
 
-  it('a Seed with more than one Wallet: the key is aria-disabled with the approved reason (2026-11-09)', async () => {
-    await openApp([keyMeta(), keyMeta({ id: 'w2', address: 'rOTHERaccount', createdAt: 2 })])
+  it('a Signs-for Online Wallet: the key is available (story 12: no shared-record reason is left)', async () => {
+    await openApp([keyMeta({ address: 'rOTHERaccount' })])
     await openSettings()
     const key = within(kindPlate()).getByRole('button', { name: CHANGE_TO_OFFLINE })
-    expect(key.getAttribute('aria-disabled')).toBe('true')
-    expect(key.getAttribute('aria-describedby')).toBe(within(kindPlate()).getByText(SHARED_SEED_NO_CHANGE).id)
-    fireEvent.click(key)
-    expect(window.location.pathname).toBe('/wallets/w1')
+    expect(key.getAttribute('aria-disabled')).toBeNull()
+    expect(kindPlate().textContent).not.toContain('more than one wallet')
   })
 
   it('an unmarked Offline Wallet shows no Was-online stamp', async () => {

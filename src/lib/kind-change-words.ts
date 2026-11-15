@@ -97,7 +97,5 @@ export const PASSKEY_SEED_NOT_OFFLINE =
  */
 /** The Wallet kind plate's title. */
 export const WALLET_KIND = 'Wallet kind'
-/** Why "Change to an offline wallet" is not available on a Seed record with more than one view. */
-export const SHARED_SEED_NO_CHANGE = 'This seed has more than one wallet. The app cannot change the kind of this wallet.'
 /** The result of Change to an online wallet. */
 export const NOW_ONLINE = 'This wallet is now an online wallet. The network is {Network}.'

@@ -12,7 +12,7 @@ export function QrCode({
   imgStyle,
 }: {
   address?: string
-  /** Arbitrary text to draw instead of an address: the two-device signing payload (AD-30). */
+  /** Arbitrary text to draw instead of an address: a payload between two devices (OS-FR-24). */
   text?: string
   destinationTag?: number
   className?: string

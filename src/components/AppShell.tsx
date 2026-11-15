@@ -16,7 +16,7 @@ import { useClearCacheOnLock } from '@/hooks/useClearCacheOnLock'
 import { useAppStore } from '@/store/app-store'
 import { leaveWallet } from '@/lib/teardown'
 import { clearAdded } from '@/lib/chooser-signals'
-import { enteredWalletId, isWalletScreen, leaveScreen, navigate, resetToHome, SETTINGS_PATH, type Route } from '@/lib/route'
+import { enteredWalletId, isWalletScreen, leaveScreen, navigate, resetToHome, resetToWalletShell, SETTINGS_PATH, type Route } from '@/lib/route'
 
 /** The wallet in view on this route: the one the user is inside, or none. */
 // oxlint-disable-next-line react/only-export-components -- pinned to this file, beside the route switch that shares it
@@ -72,9 +72,13 @@ export function AppShell() {
   const shellReachable = shellRoute && route.walletId === activeWalletId && activeExists
   const chooserSide = !isWalletScreen(route) || (shellRoute && !shellReachable)
   const walletSide = isWalletScreen(route)
+  const shellWalletId = shellRoute ? route.walletId : null
   useEffect(() => {
     if (shellRoute && !shellReachable) resetToHome()
-  }, [shellRoute, shellReachable])
+    // A path that parses as the shell but is not its own (a retired screen's segment,
+    // OS-FR-19) is replaced by the shell's path, so no dead screen's location stays.
+    else if (shellWalletId !== null) resetToWalletShell(shellWalletId)
+  }, [shellRoute, shellReachable, shellWalletId])
 
   // Leaving a wallet-side screen for the chooser (Wallets key, Back, Lock): the
   // wallet that was left sheds what it read (AD-38) and focus lands on the

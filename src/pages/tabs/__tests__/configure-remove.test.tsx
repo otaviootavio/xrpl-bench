@@ -39,7 +39,7 @@ vi.mock('@/lib/crypto/keystore', () => ({
 
 import { WalletTab } from '@/pages/tabs/WalletTab'
 import { TooltipProvider } from '@/components/ui/tooltip'
-import { REMOVE_BACKUP, REMOVE_DONE, REMOVE_FAILED, REMOVE_LAST, REMOVE_PIN_NOT_DISCARDED, REMOVE_SIBLING, REMOVE_SOLE } from '@/components/wallet/remove-copy'
+import { REMOVE_BACKUP, REMOVE_DONE, REMOVE_FAILED, REMOVE_LAST, REMOVE_PIN_NOT_DISCARDED, REMOVE_SOLE } from '@/components/wallet/remove-copy'
 import { queryKeys } from '@/lib/xrpl/query-keys'
 import { navigate } from '@/lib/route'
 import { useAppStore } from '@/store/app-store'
@@ -48,7 +48,8 @@ const useAppStoreRef = useAppStore
 const KEY = {} as CryptoKey
 const base = { lockId: 'L1', createdAt: 1, algorithm: 'ed25519', openCheck: 'pin', signingCheck: 'standard', kind: 'online' }
 const W = { ...base, id: 'w1', seedId: 's1', label: 'Savings', address: 'rA', keyAddress: 'rA', network: 'testnet' }
-const SIBLING = { ...base, id: 'w1b', seedId: 's1', label: 'Savings', address: 'rA2', keyAddress: 'rA', network: 'devnet' }
+// Another Seed on the same lock (story 12: no Seed record lists two Wallets any more).
+const SIBLING = { ...base, id: 'w1b', seedId: 's3', label: 'Savings', address: 'rA2', keyAddress: 'rA2', network: 'devnet' }
 const OTHER = { ...base, id: 'w2', seedId: 's2', label: 'Travel', address: 'rB', keyAddress: 'rB', network: 'mainnet', lockId: 'other' }
 const state = () => useAppStore.getState()
 
@@ -84,11 +85,12 @@ beforeEach(() => {
 afterEach(cleanup)
 
 describe('Configure Remove plate', () => {
-  it('is the last plate, after Two-device signing, in plate styling, with a danger key named for its network', () => {
+  it('is the last plate, after Before sending (Two-device signing is retired, story 12), in plate styling, with a danger key named for its network', () => {
     mount()
     const titles = screen.getAllByRole('heading', { level: 2 }).map((n) => n.textContent)
     expect(titles[titles.length - 1]).toBe('Remove this wallet')
-    expect(titles.indexOf('Two-device signing')).toBe(titles.length - 2)
+    expect(titles.indexOf('Before sending')).toBe(titles.length - 2)
+    expect(titles).not.toContain('Two-device signing')
     const plate = key().closest('[data-slot="config-plate"]') as HTMLElement
     expect(plate.className).toMatch(/panel-plate/)
     expect(key().textContent).toBe('Remove')
@@ -98,7 +100,6 @@ describe('Configure Remove plate', () => {
   })
 
   it.each([
-    ['a controlled account shares the Seed', [W, SIBLING, OTHER], [REMOVE_SIBLING, REMOVE_BACKUP]],
     ['the only view of the Seed', [W, OTHER], [REMOVE_SOLE, REMOVE_BACKUP]],
     ['the last wallet', [W], [REMOVE_LAST, REMOVE_SOLE, REMOVE_BACKUP]],
   ])('the confirm body when %s', (_n, wallets, sentences) => {
@@ -117,7 +118,7 @@ describe('Configure Remove plate', () => {
     expect(dialog().textContent).toMatch(/App PIN/)
   })
 
-  it('controlled sibling: removes that view only, leaves before the store write, keeps the Seed and its lock', async () => {
+  it('a wallet that shares the lock: removes this one only, leaves before the store write, keeps the lock open', async () => {
     vaultWithout('w1')
     mount()
     fireEvent.click(key())
@@ -127,7 +128,8 @@ describe('Configure Remove plate', () => {
     expect(h.remove).toHaveBeenCalledWith('w1')
     expect(h.order).toEqual(['leave:3'])
     expect(Object.keys(state().openLocks).sort()).toEqual(['L1', 'other'])
-    expect(state().activeWalletId).toBe('w1b')
+    // The first Wallet left in chooser order.
+    expect(state().activeWalletId).toBe('w2')
     expect(h.success).toHaveBeenCalledWith(REMOVE_DONE)
   })
 
@@ -184,8 +186,8 @@ describe('Configure Remove plate', () => {
   it('wallets that changed under the dialog: refused with the changed message', async () => {
     mount()
     fireEvent.click(key())
-    expect(dialog().textContent).toContain(REMOVE_SIBLING)
-    useAppStore.setState({ wallets: [W, OTHER] } as never) // the sibling went: the body is now "sole"
+    expect(dialog().textContent).toContain(REMOVE_SOLE)
+    useAppStore.setState({ wallets: [W] } as never) // the other wallet went: the body is now "last"
     fireEvent.click(confirm())
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
     expect(h.remove).not.toHaveBeenCalled()

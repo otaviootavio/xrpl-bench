@@ -5,7 +5,7 @@ import { CborReader, encodeBytes } from '@/lib/ur/cbor'
 import { decodeSinglePart, encodeSinglePart, looksLikeUr } from '@/lib/ur/ur'
 
 /**
- * The QR payloads between two devices (FR-78, OS-FR-24; AD-30). This is the only
+ * The QR payloads between two devices (OS-FR-14, OS-FR-15, OS-FR-17, OS-FR-24). This is the only
  * place a payload is defined, and a `lib` leaf: it imports no crypto, store or UI.
  *
  * Every payload is a Uniform Resource (BCR-2020-005): its UR type names the kind
@@ -20,9 +20,10 @@ import { decodeSinglePart, encodeSinglePart, looksLikeUr } from '@/lib/ur/ur'
  * `qr-scan-session.ts`'s. `decode*` therefore always judges the whole payload,
  * never a frame, and so does every check after it.
  *
- * It still reads today's single-code form, `xrplbench:1:<u|s>:<base64url JSON>`,
- * so a code from a device on an older build is judged as before; it never writes
- * it. (A device on an older build cannot read a UR.)
+ * The single-code form of builds before story 13, `xrplbench:<v>:<kind>:<…>` (FR-78's
+ * two-device signing, retired by story 12), is no longer read: such a code is
+ * answered as from a version this one does not understand. (A device on an older
+ * build cannot read a UR.)
  *
  * Both envelopes name their Network (route-checks.md "What travels by QR": a
  * Signed Transaction carries "an envelope naming the Network", OS-FR-9); a signed
@@ -57,14 +58,6 @@ export type Encoded = { ok: true; text: string }
 export type CodecErrorKind = 'malformed' | 'unknown-version' | 'wrong-kind' | 'bad-network'
 export type Decoded<T> = { ok: true; value: T } | { ok: false; kind: CodecErrorKind; reason: string }
 
-export interface UnsignedPayload {
-  v: typeof QR_VERSION
-  network_id: number
-  /** The network `network_id` names. */
-  network: NetworkId
-  tx: Record<string, unknown>
-}
-
 export interface SignedPayload {
   v: typeof QR_VERSION
   network_id: number
@@ -91,32 +84,18 @@ export function networkOfId(networkId: unknown): NetworkId | null {
   return NETWORK_IDS.find((n) => NETWORKS[n].networkId === networkId) ?? null
 }
 
-function fromBase64Url(body: string): unknown {
-  if (!/^[A-Za-z0-9_-]+$/.test(body)) throw new Error('not base64url')
-  const padded = body.replace(/-/g, '+').replace(/_/g, '/')
-  const bin = atob(padded + '='.repeat((4 - (padded.length % 4)) % 4))
-  const bytes = Uint8Array.from(bin, (c) => c.charCodeAt(0))
-  return JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes))
-}
-
 function finish(kind: PayloadKind, payload: unknown): Encoded {
   const json = new TextEncoder().encode(JSON.stringify(payload))
   return { ok: true, text: encodeSinglePart({ type: PAYLOAD_UR_TYPES[kind], cbor: encodeBytes(json) }) }
 }
 
 /**
- * The whole unsigned payload, as one single-part UR. With `ledgerIndex` (the
- * Transmitter-builds route, story 9) the envelope also carries the validated ledger
- * index the transaction was built on (route-checks "What travels by QR"); two-device
- * signing (FR-78, until story 12) writes none.
+ * The whole unsigned payload (the Transmitter-builds route, story 9), as one
+ * single-part UR. The envelope carries the validated ledger index the transaction
+ * was built on (route-checks "What travels by QR").
  */
-export function encodeUnsigned(input: { network: NetworkId; tx: Record<string, unknown>; ledgerIndex?: number }): Encoded {
-  return finish('u', {
-    v: QR_VERSION,
-    network_id: networkIdOf(input.network),
-    ...(input.ledgerIndex !== undefined ? { ledger_index: input.ledgerIndex } : {}),
-    tx: input.tx,
-  })
+export function encodeUnsigned(input: { network: NetworkId; tx: Record<string, unknown>; ledgerIndex: number }): Encoded {
+  return finish('u', { v: QR_VERSION, network_id: networkIdOf(input.network), ledger_index: input.ledgerIndex, tx: input.tx })
 }
 
 /** The whole signed payload, as one single-part UR. */
@@ -158,21 +137,6 @@ function openUr(text: string, kind: PayloadKind): Decoded<unknown> {
   }
 }
 
-/** The JSON envelope of a code in today's single-code form. */
-function openLegacy(trimmed: string, kind: PayloadKind): Decoded<unknown> {
-  const m = /^xrplbench:([^:]*):([^:]*):(.*)$/s.exec(trimmed)
-  if (!m) return { ok: false, kind: 'malformed', reason: NOT_A_CODE }
-  if (m[1] !== String(QR_VERSION)) return { ok: false, kind: 'unknown-version', reason: UNKNOWN_VERSION }
-  // The old single-code form only ever carried these two kinds.
-  if (m[2] !== 'u' && m[2] !== 's') return { ok: false, kind: 'malformed', reason: NOT_A_CODE }
-  if (m[2] !== kind) return { ok: false, kind: 'wrong-kind', reason: WRONG_KIND[kind] }
-  try {
-    return { ok: true, value: fromBase64Url(m[3]) }
-  } catch {
-    return { ok: false, kind: 'malformed', reason: CODE_UNREADABLE }
-  }
-}
-
 /**
  * Which payload kind a whole code is, without judging its contents: a screen
  * that takes more than one kind (Transmit) dispatches on this, then calls that
@@ -190,31 +154,27 @@ export function payloadKindOf(text: unknown): PayloadKind | null {
       return null
     }
   }
-  const m = /^xrplbench:1:([us]):/.exec(trimmed)
-  return m ? (m[1] as PayloadKind) : null
+  return null
 }
+
+/** The single-code form of builds before story 13 (FR-78's two-device codes). */
+const isOlderBuildCode = (trimmed: string): boolean => /^xrplbench:/i.test(trimmed)
 
 function open(text: unknown, kind: PayloadKind): Decoded<Record<string, unknown>> {
   if (typeof text !== 'string') return { ok: false, kind: 'malformed', reason: NOT_A_CODE }
   // A wrapped textarea or a pasted line break puts whitespace inside the body; none of it is data.
   const trimmed = text.replace(/\s+/g, '')
   if (trimmed.length > MAX_TEXT_LENGTH) return { ok: false, kind: 'malformed', reason: CODE_UNREADABLE }
-  const opened = looksLikeUr(trimmed) ? openUr(trimmed, kind) : openLegacy(trimmed, kind)
+  if (!looksLikeUr(trimmed)) {
+    // An older build's code is this app's, from a version this one no longer reads.
+    return isOlderBuildCode(trimmed) ? { ok: false, kind: 'unknown-version', reason: UNKNOWN_VERSION } : { ok: false, kind: 'malformed', reason: NOT_A_CODE }
+  }
+  const opened = openUr(trimmed, kind)
   if (!opened.ok) return opened
   const body = opened.value
   if (!isPlainObject(body)) return { ok: false, kind: 'malformed', reason: CODE_UNREADABLE }
   if (body.v !== QR_VERSION) return { ok: false, kind: 'unknown-version', reason: UNKNOWN_VERSION }
   return { ok: true, value: body }
-}
-
-export function decodeUnsigned(text: unknown): Decoded<UnsignedPayload> {
-  const opened = open(text, 'u')
-  if (!opened.ok) return opened
-  const { network_id, tx } = opened.value
-  const network = networkOfId(network_id)
-  if (network === null) return { ok: false, kind: 'bad-network', reason: 'That code names a network this wallet does not know.' }
-  if (!isPlainObject(tx)) return { ok: false, kind: 'malformed', reason: 'That code carries no transaction.' }
-  return { ok: true, value: { v: QR_VERSION, network_id: network_id as number, network, tx } }
 }
 
 export function decodeSigned(text: unknown): Decoded<SignedPayload> {
@@ -224,8 +184,7 @@ export function decodeSigned(text: unknown): Decoded<SignedPayload> {
   if (typeof tx_blob !== 'string' || !/^[0-9A-Fa-f]+$/.test(tx_blob)) {
     return { ok: false, kind: 'malformed', reason: 'That code carries no signed transaction.' }
   }
-  // A signed code from a build before the envelope named its Network (story 4) has
-  // no `network_id`: it is from an older version, not from an unknown network.
+  // A signed code with no `network_id` is from an older version, not from an unknown network.
   if (network_id === undefined) {
     return { ok: false, kind: 'unknown-version', reason: UNKNOWN_VERSION }
   }
@@ -498,10 +457,9 @@ export function decodeDataToSign(text: unknown): Decoded<DataToSignPayload> {
 // ---------------------------------------------------------------------------
 // The Transmitter-builds route (OS-FR-17, OS-FR-18, story 9). The Unsigned
 // Transaction's envelope carries exactly `{v, network_id, ledger_index, tx}`: a
-// key outside it, or one missing, is malformed. Two-device signing's code (no
-// `ledger_index`) is therefore malformed here; `decodeUnsigned` above still reads
-// it for two-device until story 12 removes that screen. Whether every field of
-// `tx` can be shown in words is the Offline Wallet's judgement (`unsigned-judge.ts`).
+// key outside it, or one missing, is malformed (two-device signing's envelope, with
+// no `ledger_index`, among them). Whether every field of `tx` can be shown in words
+// is the Offline Wallet's judgement (`unsigned-judge.ts`).
 // ---------------------------------------------------------------------------
 
 export interface UnsignedForSigning {

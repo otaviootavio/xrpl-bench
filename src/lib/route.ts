@@ -19,8 +19,6 @@ export type Route =
   | { screen: 'add-transmitter' }
   | { screen: 'wallet'; walletId: string }
   | { screen: 'edit-checks'; walletId: string }
-  | { screen: 'two-device'; walletId: string }
-  | { screen: 'control'; walletId: string }
   | { screen: 'change-to-offline'; walletId: string }
   | { screen: 'change-to-online'; walletId: string }
 
@@ -34,13 +32,16 @@ export const ADD_TRANSMITTER_PATH = '/wallets/new-transmitter'
 const SEGMENTS = {
   wallet: '',
   'edit-checks': 'checks',
-  'two-device': 'two-device',
-  control: 'control',
   // OS-FR-5, OS-FR-6: the two change-of-kind task screens, opened from the Wallet kind plate.
   'change-to-offline': 'to-offline',
   'change-to-online': 'to-online',
 } as const
 type WalletScreen = keyof typeof SEGMENTS
+
+/** Segments of screens retired by offline signing story 12 (OS-FR-19): FR-78's
+ * `two-device` and FR-75's `control`. They parse as the Wallet itself, never as a
+ * screen; the shell then replaces the location with the Wallet's own path. */
+const RETIRED_SEGMENTS: readonly string[] = ['two-device', 'control']
 
 export function walletScreenPath(screen: WalletScreen, walletId: string): string {
   const base = `/wallets/${encodeURIComponent(walletId)}`
@@ -52,8 +53,6 @@ export function isWalletScreen(route: Route): route is Extract<Route, { walletId
   return (
     route.screen === 'wallet' ||
     route.screen === 'edit-checks' ||
-    route.screen === 'two-device' ||
-    route.screen === 'control' ||
     route.screen === 'change-to-offline' ||
     route.screen === 'change-to-online'
   )
@@ -68,13 +67,11 @@ export function enteredWalletId(route: Route, activeWalletId: string | null): st
 }
 
 /** The routed task screens `WalletScreens` renders in place of the shell. Add wallet is not one: the app shell renders it (AD-32). */
-export type TaskRoute = Extract<Route, { screen: 'edit-checks' | 'two-device' | 'control' | 'change-to-offline' | 'change-to-online' }>
+export type TaskRoute = Extract<Route, { screen: 'edit-checks' | 'change-to-offline' | 'change-to-online' }>
 
 export function isTaskRoute(route: Route): route is TaskRoute {
   return (
     route.screen === 'edit-checks' ||
-    route.screen === 'two-device' ||
-    route.screen === 'control' ||
     route.screen === 'change-to-offline' ||
     route.screen === 'change-to-online'
   )
@@ -89,7 +86,7 @@ export function parseRoute(pathname: string): Route {
   if (parts.length === 2 && parts[1] === 'new-transmitter') return { screen: 'add-transmitter' }
   if (parts.length === 2 || parts.length === 3) {
     const segment = parts[2] ?? ''
-    const screen = (Object.keys(SEGMENTS) as WalletScreen[]).find((s) => SEGMENTS[s] === segment)
+    const screen = RETIRED_SEGMENTS.includes(segment) ? 'wallet' : (Object.keys(SEGMENTS) as WalletScreen[]).find((s) => SEGMENTS[s] === segment)
     if (screen) {
       try {
         const walletId = decodeURIComponent(parts[1])

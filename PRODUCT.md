@@ -120,8 +120,9 @@ hardcoded endpoint plus one failover per network).
 
 **Planned, decided but not built.** Per-Wallet key setup and signing checks:
 each Wallet chooses its network and Node, how its Seed is kept, and the check
-that opens it and the check that signs for it; regular keys, turning off the
-Account Master Key, and two-device signing. This narrows the regular-key and
+that opens it and the check that signs for it; regular keys and turning off the
+Account Master Key (two-device signing was replaced by offline signing,
+`_bmad-output/planning-artifacts/prds/prd-offline-signing-2026-11-07/prd.md`). This narrows the regular-key and
 custom-endpoint deferrals above. Specified in the PRD
 (`_bmad-output/planning-artifacts/prds/prd-xrpl-wallet-2026-09-12/prd.md`
 §4.14); why it changes `docs/decisions.md` §2 is in §15 there.

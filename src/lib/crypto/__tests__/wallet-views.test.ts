@@ -74,7 +74,6 @@ vi.mock('idb', () => ({
 }))
 
 import {
-  addControlledView,
   listKeyWallets as listWallets,
   removeWallet,
   setWalletNode,
@@ -203,42 +202,39 @@ describe('first decrypt resolves the algorithm', () => {
   })
 })
 
-describe('Wallets as views over a Seed record', () => {
-  it('lists one Wallet per view, and a controlled account adds a view with no new ciphertext', async () => {
+describe('a dropped FR-75 controlled view (OS-FR-19, FR-95, story 12)', () => {
+  const CONTROLLED = { walletId: 'c1', network: 'testnet', accountAddress: 'rControlledAccount1111111111111111' }
+
+  it('is not listed, not opened, and the own view is listed and signs as before', async () => {
     const w = Wallet.generate()
     const [r] = await seedWallets(w)
-
-    const added = await addControlledView('w1', { network: 'testnet', accountAddress: 'rControlledAccount1111111111111111' })
-    expect(added).toMatchObject({ seedId: 'w1', network: 'testnet', address: 'rControlledAccount1111111111111111', keyAddress: w.address })
-    expect(added.id).not.toBe('w1')
-    expect(h.state.stores.wallets.size).toBe(1)
-    expect(h.state.stores.wallets.get('w1').encryptedSeed).toEqual(r.encryptedSeed)
-
-    const metas = await listWallets()
-    expect(metas.map((m) => [m.id, m.network])).toEqual([['w1', 'mainnet'], [added.id, 'testnet']])
-    // The new view unlocks the same Seed. (A reveal would re-pass the lock's
-    // Open Check, which this fixture has no PIN for; the choke point does not.)
-    expect(await openedAddress(added.id)).toBe('rControlledAccount1111111111111111')
+    h.state.stores.wallets.set('w1', { ...r, views: [...r.views, CONTROLLED] })
+    expect((await listWallets()).map((m) => m.id)).toEqual(['w1'])
+    await expect(openSigner('c1', ctx())).rejects.toThrow(/not found/i)
+    expect(await openedAddress('w1')).toBe(w.address)
   })
 
-  it('removing one view keeps the Seed; removing the last deletes it', async () => {
-    await seedWallets(Wallet.generate())
-    const added = await addControlledView('w1', { network: 'testnet', accountAddress: 'rControlledAccount1111111111111111' })
-
-    await removeWallet(added.id)
-    expect(h.state.stores.wallets.has('w1')).toBe(true)
-    expect((await listWallets()).map((m) => m.id)).toEqual(['w1'])
-
+  it('removing the own view deletes the whole record: the dropped view keeps no Seed on the device', async () => {
+    const [r] = await seedWallets(Wallet.generate())
+    h.state.stores.wallets.set('w1', { ...r, views: [...r.views, CONTROLLED] })
+    await removeWallet('c1')
+    expect(h.state.stores.wallets.get('w1').views).toHaveLength(2)
     await removeWallet('w1')
     expect(h.state.stores.wallets.has('w1')).toBe(false)
+  })
+
+  it('a write that rewrites the views does not write it back', async () => {
+    const [r] = await seedWallets(Wallet.generate())
+    h.state.stores.wallets.set('w1', { ...r, views: [...r.views, CONTROLLED] })
+    await setWalletNode('w1', 'wss://node.example.com')
+    expect(h.state.stores.wallets.get('w1').views).toEqual([{ ...r.views[0], node: 'wss://node.example.com' }])
   })
 })
 
 describe('review follow-ups', () => {
-  it('does not list a record with no views, and addControlledView finds nothing to extend', async () => {
+  it('does not list a record with no views', async () => {
     const r = await seedViewlessWallet(Wallet.generate())
     expect(await listWallets()).toEqual([])
-    await expect(addControlledView('w1', { network: 'testnet', accountAddress: 'rControlledAccount1111111111111111' })).rejects.toThrow(/not found/)
     expect(h.state.stores.wallets.get('w1')).toEqual(r)
   })
 
@@ -259,17 +255,13 @@ describe('a Node is a field of one Wallet view (story 2)', () => {
 
   it('stores a node on that view only, touching no ciphertext, and clears it', async () => {
     const [r] = await seedWallets(Wallet.generate())
-    const added = await addControlledView('w1', { network: 'testnet', accountAddress: 'rControlledAccount1111111111111111' })
-
-    const meta = await setWalletNode(added.id, 'wss://node.example.com')
+    const meta = await setWalletNode('w1', 'wss://node.example.com')
     expect(meta.node).toBe('wss://node.example.com')
-    const metas = await listWallets()
-    expect(metas.find((m) => m.id === 'w1')?.node).toBeUndefined()
-    expect(metas.find((m) => m.id === added.id)?.node).toBe('wss://node.example.com')
+    expect((await listWallets()).find((m) => m.id === 'w1')?.node).toBe('wss://node.example.com')
     expect(h.state.stores.wallets.get('w1').encryptedSeed).toEqual(r.encryptedSeed)
 
-    expect((await setWalletNode(added.id, undefined)).node).toBeUndefined()
-    expect(h.state.stores.wallets.get('w1').views.find((v: { walletId: string }) => v.walletId === added.id)).not.toHaveProperty('node')
+    expect((await setWalletNode('w1', undefined)).node).toBeUndefined()
+    expect(h.state.stores.wallets.get('w1').views.find((v: { walletId: string }) => v.walletId === 'w1')).not.toHaveProperty('node')
   })
 
   it('refuses to set a node on a record with no views, persisting no view', async () => {

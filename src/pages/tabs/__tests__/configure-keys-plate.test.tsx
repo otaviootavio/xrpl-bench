@@ -81,11 +81,12 @@ beforeEach(() => {
 afterEach(cleanup)
 
 describe('the Online key plate (story 11)', () => {
-  it('sits after Signs for and before the FR-75 plate; titled "Key state" with the live rows and P-47\'s four keys', () => {
+  it('sits after Signs for and before Node (the FR-75 plate is retired, story 12); titled "Key state" with the live rows and P-47\'s four keys', () => {
     mount(MASTER)
     const titles = screen.getAllByRole('heading', { level: 2 }).map((e) => e.textContent)
     expect(titles.indexOf(W.KEY_STATE)).toBe(titles.indexOf('This key signs for another account') + 1)
-    expect(titles.indexOf('Operating another account')).toBe(titles.indexOf(W.KEY_STATE) + 1)
+    expect(titles.indexOf('Node')).toBe(titles.indexOf(W.KEY_STATE) + 1)
+    expect(titles).not.toContain('Operating another account')
     const p = plate()
     expect(within(p).getByText(W.REGULAR_KEY_TYPE)).toBeTruthy()
     expect(within(p).getAllByText(NONE)).toHaveLength(2)
@@ -93,8 +94,8 @@ describe('the Online key plate (story 11)', () => {
     for (const k of [W.SET_A_REGULAR_KEY, W.REMOVE_THE_REGULAR_KEY, W.TURN_OFF_THE_MASTER_KEY, W.TURN_ON_THE_MASTER_KEY]) {
       expect(opener(k).hasAttribute('aria-disabled')).toBe(false)
     }
-    // The FR-75 plate keeps its own keys only: no second master key control.
-    expect(screen.getByRole('button', { name: 'Let another wallet sign' })).toBeTruthy()
+    // One master key control on the screen: the FR-75 plate and its key are gone.
+    expect(screen.queryByRole('button', { name: 'Let another wallet sign' })).toBeNull()
     expect(screen.queryByTestId('master-key-control')).toBeNull()
   })
 
@@ -227,12 +228,14 @@ describe('the Online key plate (story 11)', () => {
   })
 })
 
-describe('the FR-75 plate until story 12', () => {
-  it('a wallet that operates another account shows the ControlledNote and no Let another wallet sign key', () => {
+describe('the FR-75 plate is retired (story 12)', () => {
+  it('a Signs-for wallet shows the Key state plate and no FR-75 plate, note or key', () => {
     h.account = { isError: false, data: state({ regularKey: KEY }) }
     useAppStore.setState({ wallets: [MASTER, PHONE_FOR] } as never)
     mount(PHONE_FOR)
-    expect(screen.getByTestId('controlled-note').textContent).toContain('This wallet operates another account')
+    expect(plate()).toBeTruthy()
+    expect(screen.queryByText('Operating another account')).toBeNull()
+    expect(screen.queryByTestId('controlled-note')).toBeNull()
     expect(screen.queryByRole('button', { name: 'Let another wallet sign' })).toBeNull()
   })
 })

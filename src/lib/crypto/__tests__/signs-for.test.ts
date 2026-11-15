@@ -253,7 +253,7 @@ describe('setSignsFor: the Signs for plate and P-54 (OS-FR-20)', () => {
     expect(h.state.stores.wallets.get(meta.seedId).views[0]).not.toHaveProperty('signsFor')
   })
 
-  it('refuses a duplicate with P-35, a shared record, a bad address and a Transmitter; nothing is written', async () => {
+  it('refuses a duplicate with P-35 and a bad address; nothing is written', async () => {
     const seed = Wallet.generate().seed!
     const a = await offlineSigner(X, seed)
     const lock = await makePinLock('2468')
@@ -262,20 +262,52 @@ describe('setSignsFor: the Signs for plate and P-54 (OS-FR-20)', () => {
     const stored = () => JSON.stringify([...h.state.stores.wallets.values()])
     const snapshot = stored()
     await expect(setSignsFor(b.id, X)).rejects.toMatchObject({ refusal: 'duplicate', message: P35 })
+    await expect(setSignsFor(b.id, 'rBAD')).rejects.toBeInstanceOf(SignsForRefusedError)
     await expect(setSignsFor(b.id, 'rBAD')).rejects.toMatchObject({ refusal: 'invalid' })
-    // A record with two views (today's controlled views, FR-75) is left alone until story 12.
-    await mutateStoredWallet(a.meta.seedId, (r) => ({ ...r, views: [...r.views, { walletId: 'controlled', network: 'testnet', accountAddress: Y }] }))
-    await expect(setSignsFor(a.meta.id, null)).rejects.toBeInstanceOf(SignsForRefusedError)
-    await expect(setSignsFor(a.meta.id, null)).rejects.toMatchObject({ refusal: 'shared-record' })
-    await mutateStoredWallet(a.meta.seedId, (r) => ({ ...r, views: r.views.filter((v) => v.walletId !== 'controlled') }))
+    void a
     expect(stored()).toBe(snapshot)
   })
+})
 
-  it("today's controlled views keep working: the second view still reads its accountAddress", async () => {
-    const { meta } = await offlineSigner(undefined)
-    await mutateStoredWallet(meta.seedId, (r) => ({ ...r, views: [{ ...r.views[0], kind: undefined }, { walletId: 'controlled', network: 'testnet', accountAddress: Y }] }))
-    const controlled = (await listKeyWallets()).find((m) => m.id === 'controlled')!
-    expect([controlled.address, controlled.keyAddress]).toEqual([Y, meta.keyAddress])
+describe('an FR-75 controlled view is dropped, not converted (OS-FR-19, FR-95, story 12)', () => {
+  /** Today's controlled view, as builds before story 12 wrote it: the key's record gains a view for Account Y. */
+  async function withControlledView(account = Y) {
+    const lock = await makePinLock('2468')
+    const seed = Wallet.generate().seed!
+    const { meta } = await storeSeedWallet(`Key ${Math.random()}`, lock, 'testnet', seed)
+    await mutateStoredWallet(meta.seedId, (r) => ({ ...r, views: [...r.views, { walletId: 'controlled', network: 'testnet', accountAddress: account }] }))
+    return { meta, seed }
+  }
+
+  it('is not listed; the own Wallet is listed for the key\'s own Account and signs for nothing else', async () => {
+    const { meta } = await withControlledView()
+    const listed = await listKeyWallets()
+    expect(listed.map((m) => m.id)).toEqual([meta.id])
+    expect([listed[0].address, listed[0].keyAddress]).toEqual([meta.keyAddress, meta.keyAddress])
+  })
+
+  it('FR-93 no longer counts it: the key may Sign for that Account by the Signs for plate or by an import', async () => {
+    const { meta, seed } = await withControlledView()
+    expect(await importDuplicateReason(seed, 'testnet', Y)).toBeNull()
+    // The App PIN is the fixture lock's.
+    ok(await importStoredWallet(base(seed, { signsFor: Y }), { pin: '2468' }))
+    // A second key Wallet for Y now exists: the plate on the first is refused as a duplicate, by FR-93's own rule.
+    await expect(setSignsFor(meta.id, Y)).rejects.toMatchObject({ refusal: 'duplicate', message: P35 })
+  })
+
+  it('the Signs for plate on that record works (no shared-record refusal) and does not write the dropped view back', async () => {
+    const { meta } = await withControlledView()
+    const changed = await setSignsFor(meta.id, Y)
+    expect(changed.address).toBe(Y)
+    expect(h.state.stores.wallets.get(meta.seedId).views).toEqual([{ walletId: meta.id, network: 'testnet', signsFor: Y }])
+  })
+})
+
+describe('Signs for refusals that stay', () => {
+  it('a Transmitter has no key', async () => {
+    const lock = await makePinLock('2468')
+    h.state.stores.wallets.set('tx', { recordKind: 'transmitter', id: 'tx', label: 'T', createdAt: 3, lockId: lock.lockId, openCheck: 'pin', network: 'testnet', verifier: { ivB64: 'iv', ciphertextB64: 'ct' } })
+    await expect(setSignsFor('tx', X)).rejects.toMatchObject({ refusal: 'transmitter' })
   })
 })
 

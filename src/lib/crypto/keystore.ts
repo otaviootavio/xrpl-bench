@@ -114,16 +114,20 @@ function kindOfView(v: WalletView): 'online' | 'offline' | null {
   return raw === 'offline' ? raw : null
 }
 
+/** The views of a Seed record the app knows. A view that carries `accountAddress`
+ * (FR-75's controlled view, written by builds before offline signing story 12) is
+ * dropped, not converted (OS-FR-19, FR-95): it is not listed, not opened, signs
+ * nothing, is not counted by FR-93, and a write that rewrites the record's views
+ * does not write it back. Its record's own view is untouched. */
 function viewsOf(w: StoredWallet): WalletView[] {
-  return w.views
+  return w.views.filter((v) => (v as { accountAddress?: unknown }).accountAddress === undefined)
 }
 
 /** The one resolver of the Account a view signs for (AD-18, OS-FR-20): its Signs-for
- * Account, else a controlled view's `accountAddress` (FR-75, removed by story 12),
- * else the Seed's own address. Every reader goes through it, so `address` and
- * `keyAddress` agree for every caller. */
+ * Account, else the Seed's own address. Every reader goes through it, so `address`
+ * and `keyAddress` agree for every caller. */
 function accountOfView(w: StoredWallet, v: WalletView): string {
-  return v.signsFor ?? v.accountAddress ?? w.address
+  return v.signsFor ?? w.address
 }
 
 function toMetas(w: StoredWallet): KeyWalletMeta[] {
@@ -520,7 +524,7 @@ export async function signingHandleFor(walletId: string, ctx: SigningContext, ex
   const review = view && showsBeforeSending(view, kind)
   return {
     address,
-    // The key is the Account's own (master) key unless this is a controlled view.
+    // The key is the Account's own (master) key unless the Wallet signs for another Account.
     signsAsMaster: address === stored.address,
     async open() {
       // Read again: the Signing Check can take seconds, and the Signer is made from a fresh read.
@@ -924,8 +928,8 @@ export interface RemoveWalletResult {
   appPin: 'kept' | 'discarded' | 'failed'
 }
 
-/** Removes one Wallet. Its Seed record goes with its last view and not before:
- * a controlled account's view of the same Seed keeps working. The whole removal runs
+/** Removes one Wallet. Its Seed record goes with its last view the app knows
+ * (`viewsOf`): a dropped FR-75 controlled view does not keep the Seed on the device. The whole removal runs
  * under `exclusiveVaultWrite`, so a create or import in flight finishes first and
  * the emptiness check below sees what it wrote (AD-46).
  *
@@ -1635,44 +1639,6 @@ export async function restorePasskeyWallet(
   )
 }
 
-/** Records that a Seed's key operates `accountAddress` as that Account's Regular
- * Key: a second view over the SAME Seed record, with the Account on the view and
- * nothing else changed (AD-18). Call only after a validated `SetRegularKey` and a
- * fresh read that shows this key (AD-29). A view with the same
- * `(network, accountAddress, keyAddress)` is refused and nothing is written. */
-export async function addControlledView(
-  seedWalletId: string,
-  view: { network: NetworkId; node?: string; accountAddress: string },
-): Promise<KeyWalletMeta> {
-  const all = await listStoredWallets()
-  const record = findSeedRecord(all, seedWalletId)
-  if (!record) throw new Error('Wallet not found in local vault.')
-  if (hasView(all, view.network, view.accountAddress, record.address)) {
-    throw new Error('This wallet already operates that account.')
-  }
-  const node = view.node ? canonicalNodeUrl(view.node) : null
-  const newWalletId = crypto.randomUUID()
-  let added = false
-  let notOnline = false
-  await mutateStoredWallet(record.id, (current) => {
-    const views = viewsOf(current)
-    // One record holds one kind (story 5): no Online view is added to a record that became Offline.
-    notOnline = views.some((v) => kindOfView(v) !== 'online')
-    if (notOnline) return current
-    if (views.some((v) => v.network === view.network && accountOfView(current, v) === view.accountAddress)) return current
-    added = true
-    return {
-      ...current,
-      views: [...views, { walletId: newWalletId, network: view.network, ...(node ? { node } : {}), accountAddress: view.accountAddress }],
-    }
-  })
-  if (notOnline) throw new KindChangeRefusedError('not-online')
-  if (!added) throw new Error('This wallet already operates that account.')
-  const meta = (await listKeyWallets()).find((w) => w.id === newWalletId)
-  if (!meta) throw new Error('Wallet not found in local vault.')
-  return meta
-}
-
 /** Sets or clears (`undefined`) the custom Node on one Wallet's view only —
  * AD-18/19. The caller has already proven `node` for the Wallet's network
  * (`verifyNode`); this stores it and touches nothing else, ciphertext
@@ -1718,7 +1684,7 @@ export async function setWalletNode(walletId: string, node: string | undefined):
 /** Why a change of kind was refused before anything was written. The message is
  * developer text, never shown: each screen offers the change only where it is
  * allowed, with an approved reason where it is not (P-63). */
-export type KindChangeRefusal = 'transmitter' | 'not-online' | 'not-offline' | 'passkey-derived' | 'shared-record'
+export type KindChangeRefusal = 'transmitter' | 'not-online' | 'not-offline' | 'passkey-derived'
 
 export class KindChangeRefusedError extends Error {
   readonly reason: KindChangeRefusal
@@ -1757,15 +1723,15 @@ async function seedViewFor(walletId: string): Promise<{ all: StoredWallet[]; rec
  *
  * Refused (typed, nothing written): a Transmitter (it never changes kind), a view
  * that is not Online, a Passkey-Derived Seed (its key can be made again from a
- * passkey that syncs to the cloud, OS-FR-8), and a record with more than one view:
- * a record holds one kind, so its key is never both an Online and an Offline view.
- * The same Seed as a second record on another Network stays allowed (story 3; the
- * OS-FR-23 warning covers it).
+ * passkey that syncs to the cloud, OS-FR-8). A record holds one view the app knows
+ * (`viewsOf`), so its key is never both an Online and an Offline view. The same
+ * Seed as a second record on another Network stays allowed (story 3; the OS-FR-23
+ * warning covers it).
  */
 export async function changeToOfflineWallet(walletId: string): Promise<KeyWalletMeta> {
   const { record, view } = await seedViewFor(walletId)
   const refusal = (current: StoredWallet, v: WalletView | undefined): KindChangeRefusal | null =>
-    !v || kindOfView(v) !== 'online' ? 'not-online' : current.seedMethod === 'passkey-derived' ? 'passkey-derived' : viewsOf(current).length !== 1 ? 'shared-record' : null
+    !v || kindOfView(v) !== 'online' ? 'not-online' : current.seedMethod === 'passkey-derived' ? 'passkey-derived' : null
   const before = refusal(record, view)
   if (before) throw new KindChangeRefusedError(before)
   let during: KindChangeRefusal | null = 'not-online'
@@ -1823,7 +1789,6 @@ export async function changeToOnlineWallet(
   }
   const { all, record, view } = await seedViewFor(walletId)
   if (kindOfView(view) !== 'offline') throw new KindChangeRefusedError('not-offline')
-  if (viewsOf(record).length !== 1) throw new KindChangeRefusedError('shared-record')
   const account = accountOfView(record, view)
   if (hasOtherView(all, walletId, view.network, account, record.address)) return { status: 'refused', reason: sameAddressReason(view.network) }
 
@@ -1841,7 +1806,7 @@ export async function changeToOnlineWallet(
   let written: StoredWallet | null = null
   await mutateStoredWallet(record.id, (current) => {
     const v = viewsOf(current).find((x) => x.walletId === walletId)
-    during = !v || kindOfView(v) !== 'offline' ? 'not-offline' : viewsOf(current).length !== 1 ? 'shared-record' : null
+    during = !v || kindOfView(v) !== 'offline' ? 'not-offline' : null
     if (during) return current
     return (written = {
       ...current,
@@ -1860,12 +1825,10 @@ export async function changeToOnlineWallet(
 // Signs for (OS-FR-20, CAP-13)
 // ---------------------------------------------------------------------------
 
-/** Why a Signs-for change was not made. `shared-record`: the Seed record holds more
- * than one view (today's controlled views, FR-75), so its views are left as they are
- * until story 12. `duplicate`: another Wallet here is the same `(Network, Signs-for
- * Account, key)` (FR-93); `reason` is P-35. */
+/** Why a Signs-for change was not made. `duplicate`: another Wallet here is the same
+ * `(Network, Signs-for Account, key)` (FR-93); `reason` is P-35. */
 export class SignsForRefusedError extends Error {
-  readonly refusal: 'transmitter' | 'shared-record' | 'duplicate' | 'invalid'
+  readonly refusal: 'transmitter' | 'duplicate' | 'invalid'
   constructor(refusal: SignsForRefusedError['refusal'], message: string) {
     super(message)
     this.name = 'SignsForRefusedError'
@@ -1879,8 +1842,7 @@ export class SignsForRefusedError extends Error {
  * address. Only the view's `signsFor` changes; the Seed, lock, checks, kind, Network
  * and signed list stay. Whether the key IS that Account's Regular Key is the
  * ledger's to say (P-40), never checked here. Refused, nothing written: a
- * Transmitter, a record with more than one view, an address that is not one, and
- * FR-93's duplicate, checked again inside the transaction.
+ * Transmitter, an address that is not one, and FR-93's duplicate, checked again inside the transaction.
  */
 export async function setSignsFor(walletId: string, account: string | null): Promise<KeyWalletMeta> {
   if (await isTransmitterId(walletId)) throw new SignsForRefusedError('transmitter', 'A Transmitter wallet has no key.')
@@ -1892,7 +1854,6 @@ export async function setSignsFor(walletId: string, account: string | null): Pro
   const refusalIn = (current: StoredWallet, others: StoredWallet[]): SignsForRefusedError | null => {
     const v = viewsOf(current).find((x) => x.walletId === walletId)
     if (!v || kindOfView(v) === null) return new SignsForRefusedError('invalid', 'Wallet not found in local vault.')
-    if (viewsOf(current).length !== 1) return new SignsForRefusedError('shared-record', 'This wallet shares its seed record. Nothing was changed.')
     const next = account ?? current.address
     if (hasOtherView(others, walletId, v.network, next, current.address)) return new SignsForRefusedError('duplicate', sameAddressReason(v.network))
     return null

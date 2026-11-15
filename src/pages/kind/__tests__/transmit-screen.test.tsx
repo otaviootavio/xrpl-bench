@@ -123,13 +123,17 @@ describe('Transmit on a Synced Transmitter (OS-FR-9)', () => {
     expect(screen.queryByRole('button', { name: 'Send' })).toBeNull()
   })
 
-  it('answers an Unsigned Transaction with P-36, and a signed code with no Network (an older build) with the codec version words', async () => {
+  it('answers an Unsigned Transaction with P-36, and an older build\'s code (FR-78\'s form, story 12) with the codec version words', async () => {
     mount(transmitter())
-    paste((encodeUnsigned({ network: 'testnet', tx: { TransactionType: 'Payment', Account: master.address } }) as { text: string }).text)
+    paste((encodeUnsigned({ network: 'testnet', tx: { TransactionType: 'Payment', Account: master.address }, ledgerIndex: 1 }) as { text: string }).text)
     expect((await screen.findByRole('alert')).textContent).toBe(UNSIGNED_ON_TRANSMIT)
-    const noNetwork = 'xrplbench:1:s:' + btoa(JSON.stringify({ v: 1, tx_blob: 'AB' })).replace(/=+$/, '')
-    paste(noNetwork)
-    await waitFor(() => expect(screen.getByRole('alert').textContent).toBe('That code is from a version of XRPL Bench this one does not understand.'))
+    const b64 = (o: unknown) => btoa(JSON.stringify(o)).replace(/=+$/, '')
+    // An older build's signed code, with and without a Network, and its unsigned code: none is read.
+    for (const older of ['xrplbench:1:s:' + b64({ v: 1, tx_blob: 'AB' }), 'xrplbench:1:s:' + b64({ v: 1, network_id: 1, tx_blob: 'AB' }), 'xrplbench:1:u:' + b64({ v: 1, network_id: 1, tx: {} })]) {
+      paste(older)
+      await waitFor(() => expect(screen.getByRole('alert').textContent).toBe('That code is from a version of XRPL Bench this one does not understand.'))
+      expect(screen.queryByRole('button', { name: 'Send' })).toBeNull()
+    }
   })
 
   it('with the setting on, Send goes through the reviewer; a decline is a caution status, nothing sent', async () => {

@@ -82,9 +82,10 @@ describe('codec: Data-to-Sign Request and Data to Sign (OS-FR-14, OS-FR-15, OS-F
   it('tells the four kinds apart without judging them', () => {
     expect(payloadKindOf(requestText('testnet', build, requestId))).toBe('r')
     expect(payloadKindOf(dataText())).toBe('d')
-    expect(payloadKindOf(encodeUnsigned({ network: 'testnet', tx: {} }).text)).toBe('u')
+    expect(payloadKindOf(encodeUnsigned({ network: 'testnet', tx: {}, ledgerIndex: 1 }).text)).toBe('u')
     expect(payloadKindOf(encodeSigned({ network: 'testnet', txBlob: 'AB' }).text)).toBe('s')
-    expect(payloadKindOf('xrplbench:1:s:e30')).toBe('s')
+    // An older build's single-code form (FR-78, retired by story 12) is no kind this build reads.
+    expect(payloadKindOf('xrplbench:1:s:e30')).toBeNull()
     expect(payloadKindOf('hello')).toBeNull()
     expect(payloadKindOf(raw('xrplbench-later', {}))).toBeNull()
   })

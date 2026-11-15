@@ -80,7 +80,6 @@ vi.mock('idb', () => ({
 import { makePinLock, sealRecordUnderPin, storeSeedWallet, type FixtureLock } from './fixtures'
 import type { StoredWallet } from '../db'
 import {
-  addControlledView,
   changeToOfflineWallet,
   NotAnOnlineWalletError,
   SettingNotForOfflineError,
@@ -165,16 +164,17 @@ describe('Change to an offline wallet (OS-FR-5, OS-FR-7)', () => {
     expect(snapshot()).toBe(before)
   })
 
-  it('refuses a record with a second view: one record holds one kind', async () => {
+  it('a record with a dropped FR-75 controlled view (story 12): the own view changes, the dropped one is not found and not written back', async () => {
     const { meta } = await storeSeedWallet('Shared', lock)
     h.state.stores.wallets.set(meta.id, {
       ...recordOf(meta.id),
       views: [{ walletId: meta.id, network: 'testnet' }, { walletId: 'ctl', network: 'testnet', accountAddress: 'rOther' }],
     })
     const before = snapshot()
-    expect(await refusal(changeToOfflineWallet(meta.id))).toBe('shared-record')
-    expect(await refusal(changeToOfflineWallet('ctl'))).toBe('shared-record')
+    await expect(changeToOfflineWallet('ctl')).rejects.toThrow(/not found/)
     expect(snapshot()).toBe(before)
+    expect((await changeToOfflineWallet(meta.id)).kind).toBe('offline')
+    expect(recordOf(meta.id).views).toEqual([{ walletId: meta.id, network: 'testnet', kind: 'offline', wasOnline: true }])
   })
 })
 
@@ -301,23 +301,14 @@ describe('review round two: nothing below the screens treats an Offline view as 
     expect(await metaOf(meta.id)).not.toHaveProperty('node')
   })
 
-  it('addControlledView refuses a record whose view is Offline (one record holds one kind)', async () => {
-    const { meta } = await onlineWallet()
-    await changeToOfflineWallet(meta.id)
-    const before = snapshot()
-    expect(await refusal(addControlledView(meta.id, { network: 'testnet', accountAddress: 'rOtherAccountXXXXXXXXXXXXXXX' }))).toBe('not-online')
-    expect(snapshot()).toBe(before)
-  })
-
-  it('changeToOnlineWallet refuses a record with a second view', async () => {
+  it('changeToOnlineWallet on a record with a dropped FR-75 controlled view (story 12): changed, and the dropped view is not written back', async () => {
     const { meta } = await storeSeedWallet('Shared', lock)
     h.state.stores.wallets.set(meta.id, {
       ...recordOf(meta.id),
-      views: [{ walletId: meta.id, network: 'testnet', kind: 'offline' }, { walletId: 'ctl', network: 'testnet', kind: 'offline', accountAddress: 'rOther' }],
+      views: [{ walletId: meta.id, network: 'testnet', kind: 'offline' }, { walletId: 'ctl', network: 'testnet', accountAddress: 'rOther' }],
     })
-    const before = snapshot()
-    expect(await refusal(changeToOnlineWallet(meta.id, {}, { openKey: lock.key, prompts: pinPrompt(null) }))).toBe('shared-record')
-    expect(snapshot()).toBe(before)
+    expect((await changeToOnlineWallet(meta.id, {}, { openKey: lock.key, prompts: pinPrompt(null) })).status).toBe('ok')
+    expect(recordOf(meta.id).views).toEqual([{ walletId: meta.id, network: 'testnet' }])
   })
 
   it('a duplicate that appears during the Signing Check prompt is refused after it (P-35), and nothing is written', async () => {

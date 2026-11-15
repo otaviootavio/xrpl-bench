@@ -1556,6 +1556,11 @@ authenticator.
 
 ### 15.1 Controlling Wallet and Regular Key (story 9; AD-18, AD-29)
 
+**Retired (offline signing story 12, 2026-11-15; OS-FR-19).** `addControlledView`,
+`lib/control.ts` and the controlled view are gone. A stored view with `accountAddress`
+is dropped, not converted (FR-95): not listed, signs nothing. A key signs for another
+Account through `WalletView.signsFor` (OS-FR-20). Kept below as the record.
+
 A Wallet's view may carry `accountAddress`: the Account its key operates as a Regular
 Key. `WalletMeta.address` is that Account (else the Seed's own address) and is the only
 ledger identity every read, query key, send, receive and teardown uses;
@@ -1570,6 +1575,10 @@ guard from `fetchAccountStateFresh` (staleTime 0, same key), not the 15-second
 cache. Duplicate `(network, account, key)` views are refused. No IndexedDB version bump.
 
 ### 15.2 Account Master Key off and on (story 10; AD-29, FR-77)
+
+**Retired (offline signing story 12; OS-FR-21).** `lib/master-key.ts` and
+`MasterKeyControl.tsx` are gone; the Key state plate (`KeysPlate.tsx`,
+`lib/key-actions.ts`) warns and never refuses. Kept below as the record.
 
 `lib/master-key.ts` owns the rule: `masterKeyStatus` is `on`, `off` or `unknown` (an
 errored or loading read, or an Account not on the ledger), read from `account_info`
@@ -1589,6 +1598,12 @@ Not verified against a real ledger: a Testnet disable and re-enable remains to b
 
 
 ### 15.3 Two-device signing by QR (story 11; AD-30, FR-78)
+
+**Retired (offline signing story 12; OS-FR-19).** `lib/two-device.ts`,
+`TwoDeviceSign.tsx`, `prepareUnsigned`, `submitSignedBlob` and the
+`xrplbench:1:<u|s>:` form are gone; such a code is answered as from a version this one
+does not understand. The offline routes and the Transmit step replace it. Kept below
+as the record.
 
 `lib/qr-codec.ts` is the only definition of either payload: `xrplbench:1:u:<base64url
 JSON {v, network_id, tx}>` and `xrplbench:1:s:<base64url JSON {v, tx_blob}>`. It is a

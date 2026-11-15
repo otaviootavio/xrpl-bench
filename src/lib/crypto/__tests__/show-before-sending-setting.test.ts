@@ -148,13 +148,11 @@ describe('"Show the signed transaction before sending" on the record (OS-FR-10)'
     expect(row('s').views[0]).toEqual({ walletId: 's', network: 'testnet' })
   })
 
-  it('leaves the other view of the same record untouched, on and off', async () => {
+  it('a dropped FR-75 controlled view (story 12) is not a Wallet to set, and is not written back', async () => {
     put({ ...rec('s'), views: [{ walletId: 's', network: 'testnet' }, { walletId: 's2', network: 'testnet', accountAddress: 'rOther' }] })
-    await setShowBeforeSending('s2', true)
-    expect(row('s').views).toEqual([{ walletId: 's', network: 'testnet' }, { walletId: 's2', network: 'testnet', accountAddress: 'rOther', showBeforeSending: true }])
+    await expect(setShowBeforeSending('s2', true)).rejects.toThrow()
     await setShowBeforeSending('s', true)
-    await setShowBeforeSending('s2', false)
-    expect(row('s').views).toEqual([{ walletId: 's', network: 'testnet', showBeforeSending: true }, { walletId: 's2', network: 'testnet', accountAddress: 'rOther' }])
+    expect(row('s').views).toEqual([{ walletId: 's', network: 'testnet', showBeforeSending: true }])
   })
 
   it('refuses to turn it on for an Offline Wallet, writing nothing; turning it off is allowed', async () => {

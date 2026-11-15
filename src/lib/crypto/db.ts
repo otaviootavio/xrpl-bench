@@ -47,16 +47,16 @@ export interface WalletView {
   walletId: string
   network: NetworkId
   node?: string
-  /** The Account this view operates when it is not the Seed's own address: the
-   * key is that Account's Regular Key (AD-18, AD-29). Absent: the record's
-   * `address`. A claim only; whether the key still controls the Account is
-   * always read from the ledger, never from this field. */
+  /** FR-75's controlled view, written by builds before offline signing story 12.
+   * Never written now. A view that carries it is dropped, not converted
+   * (OS-FR-19, FR-95): `keystore.viewsOf` leaves it out, so it is not listed and
+   * signs nothing. Read only to tell it apart. */
   accountAddress?: string
   /** "Signs for" (OS-FR-20, CAP-13): the Account this Wallet signs for when it is
    * not the Seed's own address, set by the quiz's optional step, the Signs for
    * plate or P-54. The key is that Account's Regular Key, a claim only, never read
-   * back from here as proof. Kept apart from `accountAddress` (today's controlled
-   * views, FR-75) so story 12 can remove those alone. Absent: the record's
+   * back from here as proof. Kept apart from `accountAddress` (FR-75's controlled
+   * views, dropped by story 12). Absent: the record's
    * `address`. Never stored equal to it. */
   signsFor?: string
   /** The Wallet's kind (OS-FR-1, CAP-1). Absent is an Online Wallet, so every
@@ -359,9 +359,9 @@ export async function listStoredWallets(): Promise<StoredWallet[]> {
 }
 
 /** FR-93: a Wallet has one Network for life, so a record may hold at most one
- * plain (non-controlled) view. Controlled views carry `accountAddress`. */
+ * own view. A dropped FR-75 controlled view (`accountAddress`) is not one of them. */
 function assertOneOwnView(wallet: StoredWallet): void {
-  const plain = wallet.views.filter((v) => !v.accountAddress)
+  const plain = wallet.views.filter((v) => v.accountAddress === undefined)
   if (plain.length > 1) throw new Error('A wallet can only be on one network.')
 }
 

@@ -25,7 +25,7 @@ const MAX_PASTED_FRAMES = 1024
 type Progress = { percent: number } | 'complete' | null
 
 /**
- * Takes a two-device payload (AD-30) from the camera where the browser has
+ * Takes a payload (OS-FR-24) from the camera where the browser has
  * `BarcodeDetector` and `getUserMedia`, and always from pasted text. Both hand
  * the same string to `onPayload`; judging it is the codec's job. Holds no
  * payload after it is handed up, and stops the camera when it stops scanning

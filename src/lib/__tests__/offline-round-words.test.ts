@@ -12,11 +12,7 @@ const SPINE = readFileSync('_bmad-output/planning-artifacts/ux-designs/ux-xrpl-w
 const FIXED = readFileSync('_bmad-output/specs/spec-offline-signing/consequence-texts.md', 'utf8')
 const SEND_TAB = readFileSync('src/pages/tabs/SendTab.tsx', 'utf8')
 const FUNDS = readFileSync('src/lib/xrpl/funds-check.ts', 'utf8')
-const TWO_DEVICE = readFileSync('src/lib/two-device.ts', 'utf8')
 const TRUST_TAB = readFileSync('src/pages/tabs/TrustLinesTab.tsx', 'utf8').replace(/\s+/g, ' ')
-const TWO_DEVICE_SIGN = readFileSync('src/components/wallet/TwoDeviceSign.tsx', 'utf8')
-const CONTROL = readFileSync('src/lib/control.ts', 'utf8')
-const MASTER_KEY = readFileSync('src/lib/master-key.ts', 'utf8')
 const QR_SCANNER = readFileSync('src/components/wallet/QrScanner.tsx', 'utf8')
 const CREATE_FLOW = readFileSync('src/components/wallet/CreateWalletFlow.tsx', 'utf8')
 
@@ -116,8 +112,8 @@ describe('Offline-builds round words (OS-FR-11, OS-FR-13 to OS-FR-16)', () => {
     }
     expect(SEND_TAB).toContain('label="Amount"')
     expect(SEND_TAB).toContain(`'${S.tagRequired}'`)
-    const [r1, r2] = S.belowReserve.split('{amount}')
-    expect(TWO_DEVICE).toContain(`${r1}\${formatXrp(base)}${r2}`)
+    // Shipped by two-device signing (FR-78) until story 12 retired it: pinned as the literal it shipped.
+    expect(S.belowReserve).toBe('The destination is not on the ledger yet and needs at least {amount} to be created. Nothing was built.')
     expect(FUNDS).toContain(S.accountNotActivated)
     const [before, after] = S.overSpendable.split('{amount}')
     expect(FUNDS).toContain(`${before}\${formatXrp(spendableDrops)}${after}`)
@@ -171,10 +167,11 @@ describe('Offline-builds round words (OS-FR-11, OS-FR-13 to OS-FR-16)', () => {
     expect(TRUST_TAB).toContain(`'${K.closeTrustLine}'`)
     expect(TRUST_TAB).toContain(W.SHIPPED.trustLineNotActivated)
     expect(TRUST_TAB).toContain(`"${W.SHIPPED.trustLineNotEnough}"`)
-    expect(CONTROL).toContain(W.SHIPPED.noKeysToChange)
-    expect(MASTER_KEY).toContain(W.SHIPPED.noMasterKeySetting)
-    // Story 12 retires TwoDeviceSign: pin this as a literal then.
-    expect(TWO_DEVICE_SIGN).toContain(`>${K.regularKeyAddress}</Label>`)
+    // Shipped by the FR-75 and FR-77 screens and by TwoDeviceSign until story 12 retired them:
+    // pinned as the literals those screens shipped.
+    expect(W.SHIPPED.noKeysToChange).toBe('This account is not on the ledger yet, so it has no keys to change.')
+    expect(W.SHIPPED.noMasterKeySetting).toBe('This account is not on the ledger yet, so it has no master key setting to change.')
+    expect(K.regularKeyAddress).toBe('Regular Key address')
     // Shipped by MasterKeyControl until story 11 replaced it with the Keys plate (which
     // uses them from here): pinned as the literals that screen shipped.
     expect(K.masterKeyOn).toBe('Master key on')

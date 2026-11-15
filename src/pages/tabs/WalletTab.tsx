@@ -12,9 +12,7 @@ import { KindStamp } from '@/components/wallet/KindStamp'
 import { RemoveDialog, type RemoveTarget } from '@/components/wallet/RemoveDialog'
 import { removeBodyFor, type RemoveBody } from '@/components/wallet/remove-copy'
 import { RenameDialog } from '@/components/wallet/RenameDialog'
-import { ControlledNote } from '@/components/wallet/ControlledNote'
 import { KeysPlate } from '@/components/wallet/KeysPlate'
-import { TwoDeviceSign } from '@/components/wallet/TwoDeviceSign'
 import { WalletNodeSection } from '@/components/wallet/WalletNodeSection'
 import { RevealSeedControl } from '@/components/wallet/RevealSeedControl'
 import { formatAlgorithm, formatSeedMethod, QUESTION_TERMS } from '@/components/wallet/walk-questions'
@@ -40,7 +38,6 @@ import { notify } from '@/lib/notify'
 import { AUTO_LOCK_CHOICES } from '@/lib/crypto/policy'
 import { minutesLabel } from '@/lib/minutes-label'
 import { useAppStore } from '@/store/app-store'
-import { holdsMasterKey } from '@/lib/control'
 import { getLockInfo } from '@/lib/crypto/lock'
 import { confirmRemoveWallet, openWalletNow } from '@/lib/remove-wallet'
 import { leaveToChooser, walletScreenPath } from '@/lib/route'
@@ -50,7 +47,7 @@ import { NOT_SYNCED } from '@/lib/wallet-kind-words'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { WasOnlineStamp } from '@/components/wallet/WasOnlineStamp'
 import { NeverOnlineSteps } from '@/components/wallet/ChangeKindScreens'
-import { CHANGE_TO_OFFLINE, CHANGE_TO_ONLINE, NOW_OFFLINE, NOW_ONLINE, PASSKEY_SEED_NOT_OFFLINE, SHARED_SEED_NO_CHANGE, WALLET_KIND, WAS_ONLINE_WHY } from '@/lib/kind-change-words'
+import { CHANGE_TO_OFFLINE, CHANGE_TO_ONLINE, NOW_OFFLINE, NOW_ONLINE, PASSKEY_SEED_NOT_OFFLINE, WALLET_KIND, WAS_ONLINE_WHY } from '@/lib/kind-change-words'
 import { clearKindChanged, peekKindChanged } from '@/lib/kind-change-result'
 import { fill } from '@/lib/transmit-words'
 import { SET_IT, SIGNS_FOR_ANOTHER_ACCOUNT, WALLET_SIGNS_FOR } from '@/lib/signs-for-words'
@@ -250,34 +247,6 @@ function SeedPlate({ wallet }: { wallet: KeyWalletMeta }) {
   )
 }
 
-const CONTROL_KEY = 'let-another-wallet-sign'
-const TWO_DEVICE_KEY = 'two-device'
-
-/**
- * Today's FR-75 plate, until story 12 removes it: the controlled-view note and "Let another
- * wallet sign". Its master key control moved to the Keys plate (story 11), which refuses
- * nothing the ledger allows, so one screen never holds two master key controls.
- */
-function ControlPlate({ wallet }: { wallet: KeyWalletMeta }) {
-  return (
-    <ConfigPlate title="Operating another account">
-      <ControlledNote wallet={wallet} />
-      {holdsMasterKey(wallet) && (
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          className={KEY}
-          data-configure-key={CONTROL_KEY}
-          onClick={() => launchFromConfigure(walletScreenPath('control', wallet.id), CONTROL_KEY)}
-        >
-          Let another wallet sign
-        </Button>
-      )}
-    </ConfigPlate>
-  )
-}
-
 /**
  * Signs for (OS-FR-20, CAP-13; EXPERIENCE "Local settings plates, per kind"), on an
  * Online and an Offline Wallet: the Account this key signs for, changed or removed
@@ -285,9 +254,7 @@ function ControlPlate({ wallet }: { wallet: KeyWalletMeta }) {
  * P-17's sentence; the keys reuse P-54's "Set it" and P-46's "Remove the address"
  * (story 10: the spine's "Signs for", "Account" and "Change" are not approved).
  * A change forgets the old Account's cached reads (Online) or erases the kept round
- * (Offline), so nothing for the old Account shows as current for the new one. A
- * Wallet that shares its Seed record (today's controlled views, FR-75) shows the
- * Account and no keys until story 12 removes those views.
+ * (Offline), so nothing for the old Account shows as current for the new one.
  */
 function SignsForPlate({ wallet }: { wallet: KeyWalletMeta }) {
   const queryClient = useQueryClient()
@@ -300,7 +267,6 @@ function SignsForPlate({ wallet }: { wallet: KeyWalletMeta }) {
   const state = signsForDraftState(draft)
   const typed = draft.trim()
   const signsForAnother = wallet.address !== wallet.keyAddress
-  const shared = allWallets.filter((w) => w.seedId === wallet.seedId).length > 1
   // P-8, second form (OS-FR-3): an Offline Wallet that would sign for an Account a
   // Transmitter here is synced to. Warned before Set it, never refused.
   const sameAsTransmitter = wallet.kind === 'offline' && state === 'valid' && transmitterSyncedTo(allWallets, typed)
@@ -334,36 +300,32 @@ function SignsForPlate({ wallet }: { wallet: KeyWalletMeta }) {
   return (
     <ConfigPlate title={SIGNS_FOR_ANOTHER_ACCOUNT}>
       {signsForAnother && <p className="text-sm [overflow-wrap:anywhere]">{fill(WALLET_SIGNS_FOR, wallet.address)}</p>}
-      {!shared && (
-        <>
-          <SignsForFields draft={draft} onDraft={(d) => (setDraft(d), setRefusal(null))} disabled={busy} idPrefix={id} />
-          {sameAsTransmitter && <WarningSentence words={SAME_ADDRESS_TRANSMITTER_HERE} />}
-          {refusal && (
-            <p role="alert" className="text-sm text-text-destructive">
-              {refusal}
-            </p>
-          )}
-          <div className="flex flex-wrap gap-2">
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              className={KEY}
-              aria-disabled={state !== 'valid' ? true : undefined}
-              aria-describedby={state === 'invalid' ? signsForIds(id).error : undefined}
-              disabled={busy}
-              onClick={() => void apply(typed)}
-            >
-              {SET_IT}
-            </Button>
-            {signsForAnother && (
-              <Button type="button" variant="outline" size="sm" className={KEY} disabled={busy} onClick={() => void apply(null)}>
-                {REMOVE_THE_ADDRESS}
-              </Button>
-            )}
-          </div>
-        </>
+      <SignsForFields draft={draft} onDraft={(d) => (setDraft(d), setRefusal(null))} disabled={busy} idPrefix={id} />
+      {sameAsTransmitter && <WarningSentence words={SAME_ADDRESS_TRANSMITTER_HERE} />}
+      {refusal && (
+        <p role="alert" className="text-sm text-text-destructive">
+          {refusal}
+        </p>
       )}
+      <div className="flex flex-wrap gap-2">
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          className={KEY}
+          aria-disabled={state !== 'valid' ? true : undefined}
+          aria-describedby={state === 'invalid' ? signsForIds(id).error : undefined}
+          disabled={busy}
+          onClick={() => void apply(typed)}
+        >
+          {SET_IT}
+        </Button>
+        {signsForAnother && (
+          <Button type="button" variant="outline" size="sm" className={KEY} disabled={busy} onClick={() => void apply(null)}>
+            {REMOVE_THE_ADDRESS}
+          </Button>
+        )}
+      </div>
     </ConfigPlate>
   )
 }
@@ -595,13 +557,11 @@ const KIND_KEY = 'change-kind'
  * The Wallet kind plate (OS-FR-1, OS-FR-5 to OS-FR-7, EXPERIENCE "Local settings
  * plates, per kind"): the kind stamp, the Was-online stamp with P-4, and the change
  * key. A key that is not available stays, `aria-disabled`, with its reason in visible
- * text: P-63 for a Passkey-Derived Seed (OS-FR-8), and the owner's sentence of
- * 2026-11-09 for a Seed with more than one Wallet (one record holds one kind). A
- * Transmitter has no key: it never changes kind.
+ * text: P-63 for a Passkey-Derived Seed (OS-FR-8). A Transmitter has no key: it
+ * never changes kind.
  */
 function KindPlate({ wallet }: { wallet: WalletMeta }) {
   const id = useId()
-  const wallets = useAppStore((s) => s.wallets)
   const marked = wallet.kind === 'offline' && wallet.wasOnline === true
   const reasonId = `${id}-reason`
   const reason =
@@ -609,9 +569,7 @@ function KindPlate({ wallet }: { wallet: WalletMeta }) {
       ? null
       : wallet.kind === 'online' && wallet.seedMethod === 'passkey-derived'
         ? PASSKEY_SEED_NOT_OFFLINE
-        : wallets.filter((w) => w.seedId === wallet.seedId).length > 1
-          ? SHARED_SEED_NO_CHANGE
-          : null
+        : null
   const to = wallet.kind === 'online' ? 'change-to-offline' : 'change-to-online'
   return (
     <ConfigPlate title={WALLET_KIND}>
@@ -684,15 +642,10 @@ function KindPlates({ wallet }: { wallet: WalletMeta }) {
           <SignsForPlate wallet={wallet} />
           {/* The Keys plate (story 11), in the spine's place; titled with the approved "Key state". */}
           <KeysPlate wallet={wallet} />
-          {/* FR-75 until story 12: a wallet either operates another account or holds the Account Master Key, so this plate always has something to say. */}
-          <ControlPlate wallet={wallet} />
           <ConfigPlate title="Node">
             <WalletNodeSection wallet={wallet} />
           </ConfigPlate>
           <BeforeSendingPlate wallet={wallet} />
-          <ConfigPlate title="Two-device signing">
-            <TwoDeviceSign wallet={wallet} configureKey={TWO_DEVICE_KEY} />
-          </ConfigPlate>
         </>
       )
     case 'offline':

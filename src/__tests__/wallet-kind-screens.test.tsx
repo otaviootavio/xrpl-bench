@@ -274,13 +274,25 @@ describe('an Online Wallet keeps today\'s screens', () => {
       'Seed',
       'This key signs for another account',
       'Key state',
-      'Operating another account',
       'Node',
       'Before sending',
-      'Two-device signing',
       'Remove this wallet',
     ])
   })
+})
+
+describe('the FR-75 and FR-78 plates are retired (OS-FR-19, story 12)', () => {
+  for (const kind of ['online', 'offline', 'transmitter'] as const) {
+    it(`${kind}: Local settings shows neither "Operating another account" nor "Two-device signing"`, async () => {
+      await openApp(kind)
+      await openSettings()
+      expect(plateTitles().length).toBeGreaterThan(0)
+      expect(plateTitles()).not.toContain('Operating another account')
+      expect(plateTitles()).not.toContain('Two-device signing')
+      expect(screen.queryByRole('button', { name: 'Let another wallet sign' })).toBeNull()
+      expect(document.body.textContent).not.toMatch(/two-device|operates another account/i)
+    })
+  }
 })
 
 describe('the Before sending plate (OS-FR-10)', () => {
@@ -308,8 +320,9 @@ describe('the Before sending plate (OS-FR-10)', () => {
   })
 })
 
-describe('an Online task screen on another kind (OS-FR-1)', () => {
-  for (const kind of ['offline', 'transmitter'] as const) {
+describe('a retired or another kind\'s task screen (OS-FR-1, OS-FR-19)', () => {
+  // `two-device` (FR-78) and `control` (FR-75) were retired by story 12: on every kind they land on the shell.
+  for (const kind of ['online', 'offline', 'transmitter'] as const) {
     for (const segment of kind === 'transmitter' ? ['two-device', 'control', 'checks'] : ['two-device', 'control']) {
       it(`${kind}: /wallets/w1/${segment} resets to the wallet shell and renders nothing of that screen`, async () => {
         await act(async () => {
@@ -320,8 +333,9 @@ describe('an Online task screen on another kind (OS-FR-1)', () => {
         })
         await waitFor(() => expect(window.location.pathname).toBe('/wallets/w1'))
         await waitFor(() => expect(screen.getAllByRole('tab').length).toBeGreaterThan(0))
-        expect(screen.getAllByRole('tab')[0].textContent).toBe(kind === 'offline' ? 'New transaction' : 'Transmit')
-        expect(h.getXrplClient).not.toHaveBeenCalled()
+        expect(screen.getAllByRole('tab')[0].textContent).toBe(kind === 'online' ? 'Balances' : kind === 'offline' ? 'New transaction' : 'Transmit')
+        expect(screen.queryByRole('button', { name: /Back to Wallet/ })).toBeNull()
+        if (kind !== 'online') expect(h.getXrplClient).not.toHaveBeenCalled()
       })
     }
   }

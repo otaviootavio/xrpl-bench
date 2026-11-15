@@ -8,8 +8,9 @@ import { URDecoder, encodeSinglePart, looksLikeUr } from '@/lib/ur/ur'
  * UR `qr-codec` decodes, so every check runs on the whole payload. It accepts
  * the joined payload only when its CRC-32 equals the checksum its frames named.
  *
- * - A still code (a single-part payload UR, or today's `xrplbench:` form) is
- *   whole at once.
+ * - A still code (a single-part payload UR, or an older build's `xrplbench:`
+ *   form, which the codec answers as a version it does not understand) is whole
+ *   at once.
  * - A frame of another payload than the one being collected is ignored, until
  *   `SWITCH_AFTER_FOREIGN` such frames come in a row: then the session starts
  *   over on the new payload (a plate re-renders for a changed payload). One
@@ -29,7 +30,8 @@ export type ScanStep =
   /** Not a code this session reads, or nothing new. */
   | { status: 'ignored' }
 
-/** True for a text a scan plate should look at: a payload UR or today's form. */
+/** True for a text a scan plate should look at: a payload UR, or an older build's
+ * form (handed up so the screen says why it is not read, never ignored). */
 export function isPayloadText(text: string): boolean {
   const t = text.trim()
   if (t.startsWith('xrplbench:')) return true

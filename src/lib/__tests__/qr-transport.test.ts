@@ -1,7 +1,7 @@
 import QRCode from 'qrcode'
 import { describe, expect, it } from 'vitest'
 import { Wallet, decode } from 'xrpl'
-import { decodeSigned, decodeUnsigned, encodeSigned, encodeUnsigned } from '../qr-codec'
+import { decodeSigned, decodeUnsignedForSigning, encodeSigned, encodeUnsigned } from '../qr-codec'
 import { FRAME_INTERVAL_MS, FRAME_MAX_FRAGMENT_BYTES, STILL_MAX_MESSAGE_BYTES, planQr, qrVersionOf, type QrPlan } from '../qr-frames'
 import { ScanSession, isPayloadText, quarterOf } from '../qr-scan-session'
 import { encodeMinimal } from '../ur/bytewords'
@@ -60,15 +60,16 @@ const TXS = {
 } as const
 
 /**
- * Measured frame counts (2026-11-09): `still` is one code (its QR version), `n x vV`
- * is an animated QR of n fragments at version V. Re-measured by this test.
+ * Measured frame counts (2026-11-09; the unsigned ones re-measured 2026-11-15, story 12,
+ * with the `ledger_index` every Unsigned Transaction now carries): `still` is one code
+ * (its QR version), `n x vV` is an animated QR of n fragments at version V. Re-measured by this test.
  */
 const EXPECTED: Record<keyof typeof TXS, { unsigned: string; signed: string }> = {
-  payment: { unsigned: 'still v16', signed: 'still v19' },
-  issuedPayment: { unsigned: 'still v19', signed: 'still v21' },
-  trustSet: { unsigned: 'still v17', signed: 'still v19' },
+  payment: { unsigned: 'still v17', signed: 'still v19' },
+  issuedPayment: { unsigned: 'still v20', signed: 'still v21' },
+  trustSet: { unsigned: 'still v18', signed: 'still v19' },
   setRegularKey: { unsigned: 'still v15', signed: 'still v18' },
-  masterKeyOff: { unsigned: 'still v13', signed: 'still v17' },
+  masterKeyOff: { unsigned: 'still v14', signed: 'still v17' },
   accountSetFull: { unsigned: '4 x v15', signed: '5 x v14' },
   maxPayment: { unsigned: '36 x v15', signed: '31 x v15' },
 }
@@ -92,7 +93,7 @@ describe('largest transactions, as one still code or an animated QR (OS-FR-24)',
   for (const [name, tx] of Object.entries(TXS) as [keyof typeof TXS, Record<string, unknown>][]) {
     it(`${name}: carried whole, signed blob decodes to the same transaction`, () => {
       const signed = master.sign(tx as never)
-      const u = encodeUnsigned({ network: 'testnet', tx }).text
+      const u = encodeUnsigned({ network: 'testnet', tx, ledgerIndex: 4294967295 }).text
       const s = encodeSigned({ network: 'testnet', txBlob: signed.tx_blob }).text
       const pu = planQr(u)
       const ps = planQr(s)
@@ -101,7 +102,7 @@ describe('largest transactions, as one still code or an animated QR (OS-FR-24)',
       // Any first frame, every third frame missed: still one whole payload.
       const gotU = scan(pu, { start: 7, drop: (i) => i % 3 === 0 }).text
       const gotS = scan(ps, { start: 2, drop: (i) => i % 3 === 1 }).text
-      expect(decodeUnsigned(gotU)).toEqual({ ok: true, value: { v: 1, network_id: 1, network: 'testnet', tx } })
+      expect(decodeUnsignedForSigning(gotU)).toEqual({ ok: true, value: { v: 1, network_id: 1, network: 'testnet', ledger_index: 4294967295, tx } })
       const dec = decodeSigned(gotS)
       expect(dec).toMatchObject({ ok: true, value: { network: 'testnet' } })
       // Byte for byte the blob the SDK signed, and the SDK's decode of it is that transaction.
@@ -115,7 +116,7 @@ describe('largest transactions, as one still code or an animated QR (OS-FR-24)',
 
   it('the still bound keeps a still code at version 21 or less, and frames at version 15 or less', () => {
     const json = 'x'.repeat(STILL_MAX_MESSAGE_BYTES - 3) // a CBOR byte string header of 3 bytes
-    const atBound = encodeUnsigned({ network: 'testnet', tx: {} }).text.replace(/\/.*/, '/') + encodeMinimal(encodeBytes(new TextEncoder().encode(json)))
+    const atBound = encodeUnsigned({ network: 'testnet', tx: {}, ledgerIndex: 1 }).text.replace(/\/.*/, '/') + encodeMinimal(encodeBytes(new TextEncoder().encode(json)))
     expect(decodeSinglePart(atBound).cbor.length).toBe(STILL_MAX_MESSAGE_BYTES)
     const still = planQr(atBound)
     expect(still.kind).toBe('still')
@@ -157,7 +158,7 @@ describe('frames (OS-FR-24)', () => {
 
 describe('scan session (OS-FR-24)', () => {
   const tx = TXS.maxPayment
-  const text = encodeUnsigned({ network: 'testnet', tx }).text
+  const text = encodeUnsigned({ network: 'testnet', tx, ledgerIndex: 4294967295 }).text
   const plan = planQr(text) as Extract<QrPlan, { kind: 'animated' }>
 
   it('a still code and today\'s form are whole at once; other text is ignored', () => {
@@ -237,11 +238,11 @@ describe('scan session (OS-FR-24)', () => {
   })
 
   it('never animates a payload past what the decoder takes in (64,001 bytes)', () => {
-    const ur = encodeUnsigned({ network: 'testnet', tx: {} }).text.replace(/\/.*/, '/') + encodeMinimal(encodeBytes(new Uint8Array(64_001 - 3)))
+    const ur = encodeUnsigned({ network: 'testnet', tx: {}, ledgerIndex: 1 }).text.replace(/\/.*/, '/') + encodeMinimal(encodeBytes(new Uint8Array(64_001 - 3)))
     expect(decodeSinglePart(ur).cbor.length).toBe(64_001)
     expect(planQr(ur).kind).toBe('still')
     // Just under the bound is animated, and every frame count it makes is one the decoder accepts.
-    const under = encodeUnsigned({ network: 'testnet', tx: {} }).text.replace(/\/.*/, '/') + encodeMinimal(encodeBytes(new Uint8Array(64_000 - 3)))
+    const under = encodeUnsigned({ network: 'testnet', tx: {}, ledgerIndex: 1 }).text.replace(/\/.*/, '/') + encodeMinimal(encodeBytes(new Uint8Array(64_000 - 3)))
     expect(planQr(under)).toMatchObject({ kind: 'animated', seqLen: 256 })
   })
 

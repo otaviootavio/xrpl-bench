@@ -4,8 +4,8 @@
  * UX spine (`_bmad-output/planning-artifacts/ux-designs/ux-xrpl-wallet-2026-11-07/EXPERIENCE.md`,
  * approved by the owner on 2026-11-08); each fixed string from the spec's
  * `consequence-texts.md`; each shipped string from the screen that already shows
- * it (online Send, two-device signing, the funds check). `offline-round-words.test.ts`
- * compares every one with its source. A `{name}` is a slot, filled in order by
+ * it (online Send, the funds check; two-device signing's, retired by story 12, are
+ * pinned as literals). `offline-round-words.test.ts` compares every one with its source. A `{name}` is a slot, filled in order by
  * `fill` (`transmit-words.ts`).
  */
 
@@ -127,8 +127,8 @@ export const PAYMENT = 'Payment'
 
 /**
  * Shipped words, reused unchanged where the online screens already say the same
- * thing (online Send, the funds check, two-device signing). The test finds each
- * one in the file that ships it.
+ * thing (online Send, the funds check). The test finds each one in the file that
+ * ships it, or pins it as a literal when that screen was retired (story 12).
  */
 export const SHIPPED = {
   destinationAddress: 'Destination address',
@@ -141,14 +141,14 @@ export const SHIPPED = {
   reviewPayment: 'Review payment',
   /** Online Send's words for a recipient that requires a tag (its tag label). */
   tagRequired: 'Destination tag (required by recipient)',
-  /** Two-device's words for a payment below the base reserve to a destination not on the ledger. */
+  /** Two-device's words (FR-78, retired by story 12) for a payment below the base reserve to a destination not on the ledger. */
   belowReserve: 'The destination is not on the ledger yet and needs at least {amount} to be created. Nothing was built.',
   accountNotActivated: "This account isn't activated yet, so there is no spendable balance to check this against.",
   overSpendable: "That's more than your spendable balance ({amount}) once the network fee is included.",
   /** The online trust-line screen's add refusals (`TrustLinesTab`). */
   trustLineNotActivated: 'This account is not activated on the ledger, so it has no spendable XRP to cover the reserve and fee.',
   trustLineNotEnough: "You don't have enough spendable XRP to cover the reserve and fee.",
-  /** The online key screens' words for an Account not on the ledger (`control.ts`, `master-key.ts`). */
+  /** The FR-75/FR-77 key screens' words (retired by story 12) for an Account not on the ledger. */
   noKeysToChange: 'This account is not on the ledger yet, so it has no keys to change.',
   noMasterKeySetting: 'This account is not on the ledger yet, so it has no master key setting to change.',
 } as const
@@ -213,7 +213,7 @@ export const SHIPPED_KEYS = {
   ownerReserve: 'Owner reserve',
   currencyError: 'Use a 3-character code (like USD) or a 40-character hex code.',
   addLine: 'A trust line locks one more owner reserve while it is open, refunded when you close it. Creating it also spends the network fee.',
-  /** TwoDeviceSign: the Regular Key address field. */
+  /** TwoDeviceSign's Regular Key address field (retired by story 12). */
   regularKeyAddress: 'Regular Key address',
   /** MasterKeyControl: the state words and the Mainnet typed confirm. */
   masterKeyOn: 'Master key on',

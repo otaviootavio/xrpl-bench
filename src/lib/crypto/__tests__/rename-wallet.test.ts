@@ -116,8 +116,8 @@ describe('renameWallet', () => {
     expect(row('b').label).toBe('Beta')
     if (result.ok) {
       expect(result.metas.map((m) => [m.id, m.seedId, m.label, m.network])).toEqual([
+        // The dropped FR-75 controlled view (story 12) is not listed; rename leaves it stored.
         ['a', 'a', 'Savings account', 'testnet'],
-        ['a2', 'a', 'Savings account', 'devnet'],
       ])
       expect(result.metas).toEqual((await listWallets()).filter((m) => m.seedId === 'a'))
     }

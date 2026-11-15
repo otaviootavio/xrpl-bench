@@ -119,12 +119,13 @@ describe('the Signs for plate (OS-FR-20)', () => {
     expect(useAppStore.getState().wallets[0].address).toBe(KEY)
   })
 
-  it("a Wallet sharing its Seed record (today's controlled views) shows its Account and no keys until story 12", () => {
+  it('a Signs-for Wallet always has its field and keys (story 12: no shared-record read-only plate)', () => {
     useAppStore.setState({ wallets: [meta('online', X), meta('online', KEY, { id: 'own' })], openLocks: { L: {} } } as never)
     mount()
     expect(within(plate()).getByText(`This wallet signs for ${X}.`)).toBeTruthy()
-    expect(within(plate()).queryByRole('textbox')).toBeNull()
-    expect(within(plate()).queryByRole('button')).toBeNull()
+    expect(within(plate()).getByRole('textbox')).toBeTruthy()
+    expect(within(plate()).getByRole('button', { name: 'Set it' })).toBeTruthy()
+    expect(within(plate()).getByRole('button', { name: 'Remove the address' })).toBeTruthy()
   })
 
   it('a Transmitter has no Signs for plate', () => {

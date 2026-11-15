@@ -133,7 +133,8 @@ function Outcome({ outcome, headingRef, breakableCode }: { outcome: TransmitOutc
       {(outcome.status === 'failed' || outcome.status === 'claimed') && (
         <p className="text-sm text-text-destructive">
           {describeResultCode(outcome.resultCode)}
-          {outcome.status === 'claimed' && ' The network fee was still charged for this attempt.'}
+          {/* P-31 (story 11): its codes take its approved claimed sentence verbatim; other codes keep the shipped one. */}
+          {outcome.status === 'claimed' && (outcome.resultCode in R.LEDGER_REFUSAL ? ' The network fee was still charged.' : ' The network fee was still charged for this attempt.')}
         </p>
       )}
     </div>

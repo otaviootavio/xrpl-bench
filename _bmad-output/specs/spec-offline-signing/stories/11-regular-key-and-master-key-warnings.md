@@ -88,6 +88,16 @@ context:
 
 ## Review Triage Log
 
+Round one (coordinator review, 2026-11-15). Smallest change each; only the edited files' tests run (7 files, 91 tests) plus `tsc -b` and lint on the edited files.
+
+| # | Finding | Verdict | Fix |
+|---|---|---|---|
+| 1 | While the key read is pending, W5/W2 are false and the plate's signing keys stay live: a key could be removed, replaced or the master key turned off before W5/W2 could show | real | `useWarningKeyState` (account read alone, never waits on the signer list) feeds W5, W2 and the tester; every part's signing key is `aria-disabled` and `run` returns early until that read has answered. Tests (pending read signs nothing; W5/W2 with the signer list pending) |
+| 2 | A claimed P-31 outcome said "…charged for this attempt." where P-31 says "The network fee was still charged." | real | `TransmitStep` `Outcome`: P-31's codes take P-31's sentence verbatim (plate and every Transmit step); other codes keep the shipped one. Deferred entry closed. Test (exact text) |
+| 3 | `opened` set on `open()`, so a throw after signing but before the submit (window read, a check's read) read "may have been sent" | real | `SigningHandle.onSubmitting`, passed by `submitAndClassify` to `transmit`; `key-actions.ts` says "may have been sent" only after it fired, else P-26's "The app did not send the transaction.". Test (window read fails) |
+| 4 | W2/W4 on the answer and the Transmitter's Build/Unsigned plate keyed on any `SetFlag` | real | compared with `ASF_DISABLE_MASTER`, as `OfflineSign.tsx`. Test (SetFlag 6: no W2, no W4) |
+| 5 | Scanned path: a `tem` for a blob that applied earlier via another Transmitter would read "Failed" | real | scanned path only: one `tx` read of the hash; `failed` only on `txnNotFound`; a validated hit is its outcome; a failed or unvalidated read is passed on (unconfirmed). The online path keeps `failed` at once. Tests |
+
 ## Design Notes
 
 - **Words.** Only W1–W5, "Test the Regular Key", P-16, P-29, P-30, P-31, P-47, P-50, P-54, the 2026-11-14 "Key state"/"Signer list", and shipped words ("Regular Key address", "Type “turn off” to confirm", "Master key on/off", the outcome words). Not approved and so not used: the spine's plate name "Keys" (the plate is titled "Key state" — owner to confirm), a confirm word distinct from P-47's, W-labels as alert titles, the old MasterKeyControl dialog sentences.

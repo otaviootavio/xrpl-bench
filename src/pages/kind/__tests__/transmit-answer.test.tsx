@@ -291,4 +291,13 @@ describe('after an answer, the Transmit step expects the request\'s Account (OS-
     const w2 = await screen.findByText(R.W2_SENTENCE)
     expect(w2.compareDocumentPosition(screen.getByText(R.W4_SENTENCE)) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
   })
+
+  it('story 11 review: W2 and W4 only for SetFlag asfDisableMaster, not another account flag', async () => {
+    h.answer.mockResolvedValueOnce(answered({ checks: { type: 'key' }, tx: { TransactionType: 'AccountSet', Account: master, SetFlag: 6 }, keyState: { regular_key: 'rrrrrrrrrrrrrrrrrrrrrhoLvTp', master_key: 'on', signer_list: null } }))
+    mount()
+    paste(REQUEST)
+    expect(await screen.findByRole('heading', { name: R.DATA_TO_SIGN_TITLE })).toBeTruthy()
+    expect(screen.queryByText(R.W4_SENTENCE)).toBeNull()
+    expect(screen.queryByText(R.W2_SENTENCE)).toBeNull()
+  })
 })

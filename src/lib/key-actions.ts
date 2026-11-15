@@ -1,6 +1,7 @@
 import type { QueryClient } from '@tanstack/react-query'
 import { NotAnOnlineWalletError, SigningCheckError, signingHandleFor, SignsForChangedError, type KeyWalletMeta, type Prompts } from '@/lib/crypto/keystore'
 import { NOT_SIGNED } from '@/lib/offline-round-words'
+import { NOT_SENT } from '@/lib/transmit-words'
 import type { RegularKeySet, StepResult } from '@/lib/transmit-step'
 import { invalidateAccountScoped } from '@/lib/xrpl/query-keys'
 import {
@@ -68,8 +69,11 @@ async function submitWith(
   ctx: KeyActionContext,
   submit: (signing: SigningHandle) => Promise<SubmitOutcome>,
 ): Promise<KeyActionResult> {
-  // Whether the Signing Check was reached: before it nothing was signed, so nothing was sent.
+  // Whether the Signing Check was reached (before it nothing was signed), and whether the
+  // blob was handed to the ledger (before that nothing was sent: a window read or a check
+  // that throws after signing is not "may have been sent").
   let opened = false
+  let submitted = false
   try {
     const handle = await signingHandleFor(signer.id, { openKey: ctx.openKey, prompts: ctx.prompts }, account)
     const signing: SigningHandle = {
@@ -77,6 +81,9 @@ async function submitWith(
       open: () => {
         opened = true
         return handle.open()
+      },
+      onSubmitting: () => {
+        submitted = true
       },
     }
     const outcome = await submit(signing)
@@ -94,7 +101,8 @@ async function submitWith(
       return { kind: 'refused', text: err.message }
     }
     if (err instanceof NotAnOnlineWalletError || !opened) return { kind: 'refused', text: NOT_SIGNED }
-    // Signed, then a throw: it may have reached the ledger. Never "not sent", never offered again.
+    if (!submitted) return { kind: 'refused', text: NOT_SENT }
+    // Submitted, then a throw: it may have reached the ledger. Never "not sent", never offered again.
     await invalidateAccountScoped(ctx.queryClient, signer.network, account).catch(() => {})
     return { kind: 'unconfirmed' }
   }

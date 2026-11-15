@@ -23,3 +23,22 @@ export function useLiveKeyState(network: NetworkId, address: string | null, node
     signer_list: signers.isError ? 'unknown' : (signers.data ?? null),
   }
 }
+
+/**
+ * The key state the warnings need (W5, W2), from the account read alone: the signer list
+ * plays no part in them, so they never wait on it (story 11 review). `settled` is false
+ * while the account read is in flight: the Online key plate holds its signing keys until
+ * then, so no key changes before W5 or W2 could show. `keyState` is `'unknown'` on a failed
+ * read (P-29; no W5) and `null` for an Account not on the ledger.
+ */
+export function useWarningKeyState(network: NetworkId, address: string | null, node?: string): { settled: boolean; keyState: KeyState | null } {
+  const account = useAccountState(network, address, node)
+  if (account.isError) return { settled: true, keyState: 'unknown' }
+  const state = account.data
+  if (state === undefined) return { settled: false, keyState: null }
+  if (!state.exists) return { settled: true, keyState: null }
+  return {
+    settled: true,
+    keyState: { regular_key: state.regularKey ?? null, master_key: state.disableMasterKey ? 'off' : 'on', signer_list: 'unknown' },
+  }
+}

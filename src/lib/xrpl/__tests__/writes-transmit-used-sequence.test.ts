@@ -151,11 +151,24 @@ describe('every other result classifies as submitAndWait did (story 2 outcomes)'
     expect((await send(signedPayment().tx_blob)).status).toBe('expired')
   })
 
-  it('a tem preliminary result is a failed outcome with its code, never "may have been sent" (story 11, P-31)', async () => {
-    const client = installRawClient({ preliminary: 'temBAD_REGKEY' })
+  it('a tem preliminary result, its hash not found: a failed outcome with its code, never "may have been sent" (story 11, P-31)', async () => {
+    const client = installRawClient({ preliminary: 'temBAD_REGKEY', tx: [{ error: 'txnNotFound' }] })
     expect(await send(signedPayment().tx_blob)).toEqual({ status: 'failed', hash: expect.any(String), resultCode: 'temBAD_REGKEY' })
     expect(client.submits).toHaveLength(1)
-    expect(client.txReads).toBe(0)
+    expect(client.txReads).toBe(1)
+  })
+
+  it('a tem preliminary result for a blob that applied earlier (another Transmitter): its validated outcome, never "Failed"', async () => {
+    installRawClient({ preliminary: 'temBAD_REGKEY', tx: [VALIDATED] })
+    expect(await send(signedPayment().tx_blob)).toMatchObject({ status: 'validated', resultCode: 'tesSUCCESS' })
+  })
+
+  it('a tem preliminary result whose hash read fails, or is not validated: passed on (unconfirmed), never failed', async () => {
+    installRawClient({ preliminary: 'temBAD_REGKEY', tx: [new Error('socket closed')] })
+    await expect(send(signedPayment().tx_blob)).rejects.toThrow()
+    resetSentThisSession()
+    installRawClient({ preliminary: 'temBAD_REGKEY', tx: [{ result: { validated: false } }] })
+    await expect(send(signedPayment().tx_blob)).rejects.toThrow()
   })
 
   it('a lookup error other than txnNotFound is passed on (it may have been sent)', async () => {

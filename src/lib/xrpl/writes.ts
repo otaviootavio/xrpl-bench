@@ -111,6 +111,8 @@ export interface SigningHandle {
    * so the ledger refuses it once the master key is off. Absent: not known. */
   signsAsMaster?: boolean
   open(): Promise<Signer>
+  /** Called once, just before the blob is handed to the ledger (story 11): before it, nothing was sent. */
+  onSubmitting?: () => void
   /**
    * "Show the signed transaction before sending" (OS-FR-10): present only when
    * the Wallet's setting is on. The choke point calls it after signing and
@@ -285,6 +287,7 @@ export async function submitAndClassify(
         { signedNetwork: network, expectedAccount: signing.address, validatedIndex: validatedAtSigning },
         signing.reviewBeforeSending,
         node,
+        signing.onSubmitting,
       )
     } catch (err) {
       // An online write whose window passed before it was sent (after a long
@@ -576,7 +579,12 @@ async function transmit(
     // and can never apply, so nothing was applied and no fee was taken. Today's `failed`
     // outcome, on both submit paths, never "may have been sent".
     const tem = temResultOf(err)
-    if (tem) return { status: 'failed', hash: signed.hash, resultCode: tem }
+    if (tem && !reportUsedSequence) return { status: 'failed', hash: signed.hash, resultCode: tem }
+    // Scanned path: the same blob may have applied earlier through another Transmitter
+    // (the ledger then answers this submit with a tem of its own only if malformed, but a
+    // read settles it). `failed` only when the hash is not found; a validated hit is its
+    // outcome; anything else is passed on as unconfirmed ("may have been sent").
+    if (tem) return temOutcomeAfterRead(client, signed.hash, tem)
     // The "stuck/expired" case from docs/decisions.md: the network moved past
     // this transaction's LastLedgerSequence without it appearing in a
     // validated ledger. It may simply never have been included. NEVER
@@ -607,6 +615,24 @@ export function temResultOf(err: unknown): string | null {
   if (name !== 'XrplError' || typeof message !== 'string') return null
   const m = /^Transaction failed, (tem[A-Z_]+):/.exec(message)
   return m ? m[1] : null
+}
+
+/** Story 11 review: one `tx` read of a scanned blob whose submit answered `tem`. */
+async function temOutcomeAfterRead(client: Awaited<ReturnType<typeof holdXrplClient>>['client'], hash: string, tem: string): Promise<SubmitOutcome> {
+  let read: TxRead
+  try {
+    read = (await client.request({ command: 'tx', transaction: hash })) as TxRead
+  } catch (error) {
+    const data = isRecord(error) && isRecord(error.data) ? error.data : {}
+    if (data.error === 'txnNotFound') return { status: 'failed', hash, resultCode: tem }
+    throw new Error(`The ${tem} submit could not be checked by hash.`, { cause: error })
+  }
+  if (!read.result.validated) throw new Error(`The ${tem} submit is known to the server but not validated.`)
+  const meta: unknown = read.result.meta
+  if (!isRecord(meta) || typeof meta.TransactionResult !== 'string' || meta.TransactionResult === '') return { status: 'unknown', hash }
+  const resultCode = meta.TransactionResult
+  const status = classify(resultCode)
+  return status === 'failed' ? { status, hash, resultCode } : { status, hash, resultCode, ledgerIndex: read.result.ledger_index }
 }
 
 /** Internal: the submit said `tefPAST_SEQ` and the blob's hash is not on the ledger. */

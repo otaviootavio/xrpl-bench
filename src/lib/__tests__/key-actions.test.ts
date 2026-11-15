@@ -41,8 +41,9 @@ import { resetTxInFlightReporter } from '@/lib/xrpl/writes'
 import { runKeyAction, testRegularKey } from '../key-actions'
 import { SigningCheckError, type KeyWalletMeta } from '@/lib/crypto/keystore'
 import { NOT_SIGNED } from '../offline-round-words'
+import { NOT_SENT } from '../transmit-words'
 
-const ledger = { submitted: [] as string[], result: 'tesSUCCESS', flags: 0, autofillThrows: false, submitThrows: false }
+const ledger = { submitted: [] as string[], result: 'tesSUCCESS', flags: 0, autofillThrows: false, submitThrows: false, windowFails: false }
 const base = { seedId: 's', lockId: 'L', createdAt: 1, network: 'testnet', algorithm: 'ed25519', seedMethod: 'stored', openCheck: 'pin', signingCheck: 'standard', kind: 'online' } as const
 const MASTER: KeyWalletMeta = { ...base, id: 'm', label: 'Vault', address: master.address, keyAddress: master.address }
 const HOLDER: KeyWalletMeta = { ...base, id: 'k', seedId: 'k', label: 'Phone', address: master.address, keyAddress: keyOwn.address }
@@ -52,7 +53,7 @@ const sent = () => decode(ledger.submitted.at(-1)!)
 beforeEach(() => {
   h.handles = []
   h.openThrows = null
-  Object.assign(ledger, { submitted: [], result: 'tesSUCCESS', flags: 0, autofillThrows: false, submitThrows: false })
+  Object.assign(ledger, { submitted: [], result: 'tesSUCCESS', flags: 0, autofillThrows: false, submitThrows: false, windowFails: false })
   resetXrplClients()
   setXrplClientFactory(
     () =>
@@ -65,6 +66,7 @@ beforeEach(() => {
         },
         request: async (req: { command: string }) => {
           if (req.command === 'account_info') return { result: { account_data: { Balance: '100000000', OwnerCount: 0, Sequence: 7, Flags: ledger.flags } } }
+          if (ledger.windowFails) throw new Error('socket closed')
           return { result: { ledger_index: 80 } }
         },
         submitAndWait: async (blob: string) => {
@@ -149,6 +151,12 @@ describe('what is said when it does not reach an outcome', () => {
     ledger.submitThrows = true
     expect(await runKeyAction(MASTER, { type: 'remove' }, ctx())).toEqual({ kind: 'unconfirmed' })
     expect(ledger.submitted).toHaveLength(1)
+  })
+
+  it('a throw after the Signing Check but before the submit (the window read): "not sent", never "may have been sent" (review)', async () => {
+    ledger.windowFails = true
+    expect(await runKeyAction(HOLDER, { type: 'remove' }, ctx())).toEqual({ kind: 'refused', text: NOT_SENT })
+    expect(ledger.submitted).toHaveLength(0)
   })
 
   it('master signing while the master key is off: today\'s refusal before the Signing Check', async () => {

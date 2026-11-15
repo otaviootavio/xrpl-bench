@@ -1,3 +1,4 @@
+import { ASF_DISABLE_MASTER } from '@/lib/qr-codec'
 import { RegularKeyNotes } from '@/components/wallet/KeyWarnings'
 import { masterOffToBlackHole } from '@/lib/key-warnings'
 import { useEffect, useRef, useState } from 'react'
@@ -213,8 +214,8 @@ function UnsignedPlate({ made, wallet, headingRef }: { made: Made; wallet: Trans
       {made.keyState !== undefined && <KeyStateRows keyState={made.keyState} />}
       {tx.TransactionType === 'SetRegularKey' && typeof tx.RegularKey === 'string' && <RegularKeyNotes address={tx.RegularKey} />}
       {tx.TransactionType === 'SetRegularKey' && replacesRegularKey(tx.RegularKey as string | undefined, made.keyState) && <KeyWarning words={W.W5_SENTENCE} />}
-      {tx.TransactionType === 'AccountSet' && tx.SetFlag !== undefined && masterOffToBlackHole(made.keyState) && <KeyWarning words={W.W2_SENTENCE} />}
-      {tx.TransactionType === 'AccountSet' && tx.SetFlag !== undefined && <KeyWarning words={W.W4_SENTENCE} />}
+      {tx.TransactionType === 'AccountSet' && tx.SetFlag === ASF_DISABLE_MASTER && masterOffToBlackHole(made.keyState) && <KeyWarning words={W.W2_SENTENCE} />}
+      {tx.TransactionType === 'AccountSet' && tx.SetFlag === ASF_DISABLE_MASTER && <KeyWarning words={W.W4_SENTENCE} />}
     </HandoffPlate>
   )
 }

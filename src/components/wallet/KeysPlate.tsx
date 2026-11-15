@@ -9,7 +9,7 @@ import { ConfigPlate } from '@/components/wallet/ConfigPlate'
 import { KeyStateRows, KeyWarning } from '@/components/wallet/KeyStateRows'
 import { RegularKeyNotes } from '@/components/wallet/KeyWarnings'
 import { ResultView } from '@/components/wallet/TransmitStep'
-import { useLiveKeyState } from '@/hooks/useLiveKeyState'
+import { useLiveKeyState, useWarningKeyState } from '@/hooks/useLiveKeyState'
 import { usePrompts } from '@/hooks/usePrompts'
 import type { KeyWalletMeta } from '@/lib/crypto/keystore'
 import { runKeyAction, testRegularKey, type KeyAction, type KeyActionResult } from '@/lib/key-actions'
@@ -47,7 +47,10 @@ export function KeysPlate({ wallet }: { wallet: KeyWalletMeta }) {
   const wallets = useAppStore((s) => s.wallets)
   const openLocks = useAppStore((s) => s.openLocks)
   const keyState = useLiveKeyState(wallet.network, wallet.address, wallet.node)
-  const known = keyState !== null && keyState !== 'unknown' ? keyState : null
+  // W5, W2 and the tester read the account alone (never wait on the signer list); every
+  // signing key is held until that read has answered (story 11 review).
+  const warn = useWarningKeyState(wallet.network, wallet.address, wallet.node)
+  const known = warn.keyState !== null && warn.keyState !== 'unknown' ? warn.keyState : null
   const [section, setSection] = useState<Section | null>(null)
   const [busy, setBusy] = useState(false)
   const [result, setResult] = useState<KeyActionResult | null>(null)
@@ -77,7 +80,7 @@ export function KeysPlate({ wallet }: { wallet: KeyWalletMeta }) {
   }
 
   async function run(action: KeyAction) {
-    if (busy || held) return
+    if (busy || held || !warn.settled) return
     setBusy(true)
     setResult(null)
     try {
@@ -152,12 +155,12 @@ export function KeysPlate({ wallet }: { wallet: KeyWalletMeta }) {
             <AddressScan onAddress={setAddress} />
           </div>
           {valid && <RegularKeyNotes address={address} />}
-          {valid && endsSetRegularKey(address, keyState) && <KeyWarning words={W.W5_SENTENCE} />}
+          {valid && endsSetRegularKey(address, warn.keyState) && <KeyWarning words={W.W5_SENTENCE} />}
           <Button
             type="button"
             className="w-fit"
             disabled={busy}
-            aria-disabled={!valid ? true : undefined}
+            aria-disabled={!valid || !warn.settled ? true : undefined}
             aria-describedby={address.length > 0 && !valid ? `${id}-key-error` : undefined}
             onClick={() => valid && void run({ type: 'set', regularKey: address })}
           >
@@ -168,8 +171,8 @@ export function KeysPlate({ wallet }: { wallet: KeyWalletMeta }) {
 
       {section === 'remove' && (
         <div id={`${id}-part`} className="flex min-w-0 flex-col gap-3">
-          {endsSetRegularKey(null, keyState) && <KeyWarning words={W.W5_SENTENCE} />}
-          <Button type="button" className="w-fit" disabled={busy} onClick={() => void run({ type: 'remove' })}>
+          {endsSetRegularKey(null, warn.keyState) && <KeyWarning words={W.W5_SENTENCE} />}
+          <Button type="button" className="w-fit" disabled={busy} aria-disabled={!warn.settled ? true : undefined} onClick={() => void run({ type: 'remove' })}>
             {W.REMOVE_THE_REGULAR_KEY}
           </Button>
         </div>
@@ -196,7 +199,7 @@ export function KeysPlate({ wallet }: { wallet: KeyWalletMeta }) {
               </div>
             )}
           </div>
-          {masterOffToBlackHole(keyState) && <KeyWarning words={W.W2_SENTENCE} />}
+          {masterOffToBlackHole(warn.keyState) && <KeyWarning words={W.W2_SENTENCE} />}
           <KeyWarning words={W.W4_SENTENCE} />
           {mainnet && (
             <div className="grid gap-1.5">
@@ -217,7 +220,7 @@ export function KeysPlate({ wallet }: { wallet: KeyWalletMeta }) {
             variant="destructive"
             className="w-fit"
             disabled={busy}
-            aria-disabled={held ? true : undefined}
+            aria-disabled={held || !warn.settled ? true : undefined}
             aria-describedby={held ? `${id}-phrase` : undefined}
             onClick={() => void run({ type: 'master', enable: false })}
           >
@@ -228,7 +231,7 @@ export function KeysPlate({ wallet }: { wallet: KeyWalletMeta }) {
 
       {section === 'on' && (
         <div id={`${id}-part`} className="flex min-w-0 flex-col gap-3">
-          <Button type="button" className="w-fit" disabled={busy} onClick={() => void run({ type: 'master', enable: true })}>
+          <Button type="button" className="w-fit" disabled={busy} aria-disabled={!warn.settled ? true : undefined} onClick={() => void run({ type: 'master', enable: true })}>
             {W.TURN_ON_THE_MASTER_KEY}
           </Button>
         </div>

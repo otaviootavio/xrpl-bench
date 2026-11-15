@@ -158,7 +158,8 @@ describe('the Online key plate (story 11)', () => {
     await click(confirm(W.REMOVE_THE_REGULAR_KEY))
     expect(h.run.mock.calls[0][1]).toEqual({ type: 'remove' })
     const reason = await screen.findByText(new RegExp(W.LEDGER_REFUSAL.tecNO_ALTERNATIVE_KEY))
-    expect(reason.textContent).toContain('The network fee was still charged')
+    // P-31's approved claimed sentence, verbatim (review): not the Transmit step's "for this attempt".
+    expect(reason.textContent).toBe(`${W.LEDGER_REFUSAL.tecNO_ALTERNATIVE_KEY} The network fee was still charged.`)
   })
 
   it('Turn off with no Regular Key is sent (the ledger answers): test points elsewhere (P-50), W4, no phrase off Mainnet', async () => {
@@ -233,5 +234,36 @@ describe('the FR-75 plate until story 12', () => {
     mount(PHONE_FOR)
     expect(screen.getByTestId('controlled-note').textContent).toContain('This wallet operates another account')
     expect(screen.queryByRole('button', { name: 'Let another wallet sign' })).toBeNull()
+  })
+})
+
+describe('story 11 review: no key changes before the warnings can show', () => {
+  it('while the account read is pending every signing key is held and signs nothing', async () => {
+    h.account = { isError: false, data: undefined }
+    mount(MASTER)
+    await click(opener(W.REMOVE_THE_REGULAR_KEY))
+    expect(confirm(W.REMOVE_THE_REGULAR_KEY).getAttribute('aria-disabled')).toBe('true')
+    await click(confirm(W.REMOVE_THE_REGULAR_KEY))
+    await click(opener(W.TURN_OFF_THE_MASTER_KEY))
+    expect(confirm(W.TURN_OFF_THE_MASTER_KEY).getAttribute('aria-disabled')).toBe('true')
+    await click(confirm(W.TURN_OFF_THE_MASTER_KEY))
+    await click(opener(W.TURN_ON_THE_MASTER_KEY))
+    await click(confirm(W.TURN_ON_THE_MASTER_KEY))
+    await click(opener(W.SET_A_REGULAR_KEY))
+    type(W.SHIPPED_KEYS.regularKeyAddress, KEY)
+    expect(confirm(W.SET_A_REGULAR_KEY).getAttribute('aria-disabled')).toBe('true')
+    await click(confirm(W.SET_A_REGULAR_KEY))
+    expect(h.run).not.toHaveBeenCalled()
+  })
+
+  it('W5 and W2 come from the account read alone, while the signer list is still pending', async () => {
+    h.signers = { isError: false, data: undefined }
+    h.account = { isError: false, data: state({ regularKey: 'rrrrrrrrrrrrrrrrrrrrBZbvji' }) }
+    mount(MASTER)
+    await click(opener(W.REMOVE_THE_REGULAR_KEY))
+    expect(within(plate()).getByText(W.W5_SENTENCE)).toBeTruthy()
+    expect(confirm(W.REMOVE_THE_REGULAR_KEY).hasAttribute('aria-disabled')).toBe(false)
+    await click(opener(W.TURN_OFF_THE_MASTER_KEY))
+    expect(within(plate()).getByText(W.W2_SENTENCE)).toBeTruthy()
   })
 })
